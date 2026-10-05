@@ -1,0 +1,45 @@
+# Keyring Notes
+#
+#   docker compose up -d                      # http://127.0.0.1:8787 (이 컴퓨터에서만)
+#   docker compose --profile https up -d      # Caddy가 KEYRING_DOMAIN으로 HTTPS 인증서를 받아 앞에 선다
+#
+# 처음 실행하면 로그에 설정 코드가 나온다: docker compose logs keyring
+# 설정은 .env 파일에 둔다(.env.example 참고).
+services:
+  keyring:
+    image: ghcr.io/jang2162/keyring-notes:${KEYRING_TAG:-latest}
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      # 인터넷에 직접 열지 않는다. 원격 접속은 https 프로필(Caddy)이나 VPN(Tailscale)으로.
+      - "${KEYRING_BIND:-127.0.0.1}:${KEYRING_PORT:-8787}:8787"
+    environment:
+      KEYRING_PUBLIC_URL: ${KEYRING_PUBLIC_URL:-}
+      KEYRING_ALLOWED_HOSTS: ${KEYRING_ALLOWED_HOSTS:-}
+      KEYRING_FETCH_ALLOW_PRIVATE: ${KEYRING_FETCH_ALLOW_PRIVATE:-0}
+      TZ: ${TZ:-Asia/Seoul}
+    volumes:
+      - keyring-data:/data
+
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on: [keyring]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      KEYRING_DOMAIN: ${KEYRING_DOMAIN:?https 프로필에는 KEYRING_DOMAIN이 필요합니다}
+      CADDY_TLS: ${CADDY_TLS:-}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  keyring-data:
+  caddy-data:
+  caddy-config:

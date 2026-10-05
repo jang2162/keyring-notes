@@ -143,6 +143,16 @@ export class GitHistory {
     return (await this.run(["rev-parse", "HEAD"])).stdout.trim();
   }
 
+  /** 백업·복원용 저수준 git 명령(인자는 호출하는 쪽이 만든다). */
+  raw(args: string[], allowFail = false) {
+    return this.run(args, { allowFail });
+  }
+
+  async head(): Promise<string | null> {
+    const r = await this.run(["rev-parse", "--verify", "--quiet", "HEAD"], { allowFail: true });
+    return r.code === 0 ? r.stdout.trim() : null;
+  }
+
   /** 실패한 일괄 쓰기 뒤에 스테이징만 되돌린다. */
   async unstage(paths: string[]): Promise<void> {
     if (paths.length === 0) return;

@@ -99,7 +99,92 @@ export interface AuthStatus {
   passwordSet: boolean;
 }
 
+export type Level = "hidden" | "read" | "append" | "write" | "delete";
+
+export interface AgentInfo {
+  name: string;
+  createdAt: string;
+  rules: Record<string, Level>;
+  lastUsed: string | null;
+}
+
+export interface BackupInfo {
+  name: string;
+  kind: "auto" | "manual" | "pre-restore";
+  size: number;
+  createdAt: string;
+  head: string | null;
+  commits: number;
+  includesConfig: boolean;
+  appVersion: string;
+}
+
+export interface BackupSettings {
+  enabled: boolean;
+  intervalHours: number;
+  keep: number;
+  includeConfig: boolean;
+}
+
+export interface AdminStatus {
+  app: { version: string; node: string; startedAt: string; uptimeSec: number; memoryMb: number };
+  vault: { path: string; documents: number; files: number; bytes: number; topics: number; wikiTopics: string[] };
+  history: { commits: number; bytes: number; last: { author: string; date: string; message: string } | null };
+  index: { documents: number; bytes: number };
+  disk: { freeBytes: number; totalBytes: number } | null;
+  backups: { dir: string; count: number; last: BackupInfo | null; next: string | null; settings: BackupSettings; lastError: string | null };
+  agents: { name: string; lastUsed: string | null }[];
+  security: { https: boolean; publicUrl: string | null; allowedHosts: string[] | null };
+}
+
+export interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  checked: boolean;
+  updateAvailable?: boolean;
+  url?: string | null;
+  notes?: string;
+  error?: string;
+  instructions: { docker: string; source: string };
+}
+
+const enc = encodeURIComponent;
+
+export const admin = {
+  status: () => request<AdminStatus>("GET", "/api/admin/status"),
+  update: (force = false) => request<UpdateInfo>("GET", `/api/admin/update${force ? "?force=1" : ""}`),
+  agents: () => request<{ agents: AgentInfo[] }>("GET", "/api/admin/agents").then((r) => r.agents),
+  createAgent: (name: string) => request<{ name: string; token: string }>("POST", "/api/admin/agents", { name }),
+  rotate: (name: string) => request<{ name: string; token: string }>("POST", `/api/admin/agents/${enc(name)}/rotate`, {}),
+  setRules: (name: string, rules: Record<string, Level>) =>
+    request<{ rules: Record<string, Level> }>("PUT", `/api/admin/agents/${enc(name)}/rules`, { rules }),
+  removeAgent: (name: string) => request<unknown>("DELETE", `/api/admin/agents/${enc(name)}`, {}),
+  password: (current: string, next: string) => request<unknown>("POST", "/api/admin/password", { current, next }),
+  backups: () => request<{ backups: BackupInfo[]; settings: BackupSettings }>("GET", "/api/admin/backups"),
+  createBackup: (includeConfig?: boolean) => request<BackupInfo>("POST", "/api/admin/backups", { includeConfig }),
+  backupSettings: (s: Partial<BackupSettings>) => request<{ settings: BackupSettings }>("PUT", "/api/admin/backups/settings", s),
+  removeBackup: (name: string) => request<unknown>("DELETE", `/api/admin/backups/${enc(name)}`, {}),
+  restore: (name: string, restoreConfig: boolean) =>
+    request<{ restoredHead: string; previousRef: string | null; preRestoreBackup: string | null; configRestored: boolean }>(
+      "POST",
+      `/api/admin/backups/${enc(name)}/restore`,
+      { restoreConfig },
+    ),
+  downloadUrl: (name: string) => `/api/admin/backups/${enc(name)}`,
+  async upload(file: File): Promise<BackupInfo> {
+    const res = await fetch("/api/admin/backups/upload", {
+      method: "POST",
+      headers: { "content-type": "application/gzip", "x-keyring-upload": "1" },
+      body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText);
+    return data as BackupInfo;
+  },
+};
+
 export const api = {
+  setup: (code: string, password: string) => request<{ ok: true }>("POST", "/api/auth/setup", { code, password }),
   status: () => request<AuthStatus>("GET", "/api/auth/status"),
   login: (password: string) => request<{ ok: true }>("POST", "/api/auth/login", { password }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),

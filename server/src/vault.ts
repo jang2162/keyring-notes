@@ -102,6 +102,16 @@ export class Vault {
     await this.exclusive(() => this.git.commit("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
   }
 
+  /** 쓰기를 잠시 막고 fn을 실행한다(백업 복원처럼 볼트 전체를 바꾸는 작업). */
+  maintenance<T>(fn: () => Promise<T>): Promise<T> {
+    return this.exclusive(fn);
+  }
+
+  /** 서버 밖(다른 에디터 등)에서 생긴 변경을 커밋한다. 백업 직전에 부른다. */
+  absorbOutsideChanges(): Promise<string | null> {
+    return this.exclusive(() => this.git.commit("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
+  }
+
   /** 변경이 커밋된 직후(다음 쓰기보다 먼저) 바뀐 경로 목록으로 호출된다. 인덱스 갱신용. */
   onChange(fn: (paths: string[]) => Promise<void> | void): void {
     this.listeners.push(fn);

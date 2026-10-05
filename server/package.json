@@ -17,6 +17,7 @@
     "@mozilla/readability": "^0.6.0",
     "hono": "^4.13.13",
     "linkedom": "^0.18.13",
+    "tar": "^7.5.22",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",
     "unpdf": "^1.8.1",

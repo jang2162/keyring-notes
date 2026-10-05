@@ -11,11 +11,34 @@ export interface AgentConfig {
   createdAt: string;
 }
 
+export interface BackupSettings {
+  /** 자동 백업 사용 여부 */
+  enabled: boolean;
+  /** 자동 백업 간격(시간). 마지막 백업 뒤 바뀐 것이 없으면 건너뛴다. */
+  intervalHours: number;
+  /** 자동 백업을 몇 개까지 남길지(수동·복원 전 백업은 지우지 않는다) */
+  keep: number;
+  /** 백업에 설정 파일(비밀번호·토큰 해시, 권한 표)을 넣을지 */
+  includeConfig: boolean;
+}
+
 export interface KeyringConfig {
   owner: { name: string; passwordHash: string | null };
   /** 로그인 쿠키 서명 키. 비밀번호를 바꾸면 새로 만들어 기존 세션을 모두 끊는다. */
   sessionSecret: string;
   agents: AgentConfig[];
+  backup: BackupSettings;
+}
+
+export const DEFAULT_BACKUP: BackupSettings = { enabled: true, intervalHours: 24, keep: 14, includeConfig: true };
+
+export function validateBackupSettings(raw: unknown): BackupSettings {
+  const b = (raw ?? {}) as Partial<BackupSettings>;
+  const out = { ...DEFAULT_BACKUP, ...b };
+  if (typeof out.enabled !== "boolean" || typeof out.includeConfig !== "boolean") throw new Error("설정 오류: backup.enabled·includeConfig는 true/false");
+  if (!Number.isFinite(out.intervalHours) || out.intervalHours < 1 || out.intervalHours > 24 * 30) throw new Error("설정 오류: backup.intervalHours는 1~720");
+  if (!Number.isInteger(out.keep) || out.keep < 1 || out.keep > 365) throw new Error("설정 오류: backup.keep은 1~365 정수");
+  return { enabled: out.enabled, intervalHours: out.intervalHours, keep: out.keep, includeConfig: out.includeConfig };
 }
 
 export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -28,7 +51,12 @@ function sha256(s: string) {
 }
 
 function defaultConfig(): KeyringConfig {
-  return { owner: { name: "me", passwordHash: null }, sessionSecret: randomBytes(32).toString("hex"), agents: [] };
+  return {
+    owner: { name: "me", passwordHash: null },
+    sessionSecret: randomBytes(32).toString("hex"),
+    agents: [],
+    backup: { ...DEFAULT_BACKUP },
+  };
 }
 
 function validate(raw: unknown): KeyringConfig {
@@ -46,6 +74,7 @@ function validate(raw: unknown): KeyringConfig {
     owner: { name: c.owner?.name ?? base.owner.name, passwordHash: c.owner?.passwordHash ?? null },
     sessionSecret: typeof c.sessionSecret === "string" && c.sessionSecret.length >= 32 ? c.sessionSecret : base.sessionSecret,
     agents: agents.map((a) => ({ name: a.name, tokenHash: a.tokenHash, rules: a.rules ?? {}, createdAt: a.createdAt ?? "" })),
+    backup: validateBackupSettings(c.backup),
   };
 }
 
@@ -56,6 +85,8 @@ function validate(raw: unknown): KeyringConfig {
 export class ConfigStore {
   private cached: KeyringConfig | null = null;
   private mtime = -1;
+  /** 에이전트별 마지막 접속 시각(서버가 켜진 뒤부터, 저장하지 않음) */
+  readonly lastUsed = new Map<string, Date>();
 
   constructor(readonly file: string) {}
 
@@ -138,6 +169,7 @@ export class ConfigStore {
     for (const a of this.get().agents) {
       const stored = Buffer.from(a.tokenHash, "hex");
       if (stored.length === h.length && timingSafeEqual(stored, h)) {
+        this.lastUsed.set(a.name, new Date());
         return { kind: "agent", name: a.name, email: `${a.name}@agent.keyring-notes.local`, policy: new AccessPolicy(a.rules) };
       }
     }
@@ -162,6 +194,26 @@ export class ConfigStore {
       c.agents = c.agents.filter((a) => a.name !== name);
       if (c.agents.length === before) throw new Error(`에이전트가 없습니다: ${name}`);
     });
+  }
+
+  /** 에이전트 권한 표를 통째로 바꾼다(관리 콘솔). */
+  setRules(name: string, rules: Record<string, Level>) {
+    const normalized: Record<string, Level> = {};
+    for (const [k, v] of Object.entries(rules)) {
+      if (!isLevel(v)) throw new Error(`권한 값이 잘못되었습니다: ${String(v)}`);
+      normalized[normalizeRulePath(k) || "/"] = v;
+    }
+    this.update((c) => {
+      const a = c.agents.find((x) => x.name === name);
+      if (!a) throw new Error(`에이전트가 없습니다: ${name}`);
+      a.rules = normalized;
+    });
+  }
+
+  /** 설정 파일 전체를 바꾼다(백업 복원). 형식이 틀리면 바꾸지 않는다. */
+  replaceAll(raw: unknown) {
+    const valid = validate(raw);
+    this.save(valid);
   }
 
   setRule(name: string, rulePath: string, level: Level | null) {

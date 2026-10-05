@@ -1,8 +1,10 @@
+import { timingSafeEqual } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Principal } from "./access.js";
 import { SESSION_COOKIE, type ConfigStore } from "./config.js";
+import { adminRoutes, type AdminDeps } from "./admin.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { Ingestor } from "./ingest.js";
 import type { NoteIndex } from "./noteindex.js";
@@ -29,7 +31,27 @@ export interface AppOptions {
   config: ConfigStore;
   wiki: Wiki;
   ingestor: Ingestor;
+  /** 관리 콘솔(백업·업데이트·보안 설정). vault·index·wiki·config는 위와 같은 것을 쓴다. */
+  admin: Omit<AdminDeps, "vault" | "index" | "wiki" | "config">;
+  /** 비밀번호가 없을 때 웹에서 처음 설정하는 데 쓰는 일회용 코드(서버 로그에만 나온다). */
+  setupCode?: () => string | null;
 }
+
+/** 앱 페이지에 거는 보안 헤더. 첨부 파일(/api/raw)은 자기 CSP(sandbox)를 따로 건다. */
+const APP_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  // CodeMirror가 <style>을 넣고, 차트 툴팁이 style 속성을 쓴다
+  "style-src 'self' 'unsafe-inline'",
+  // 클립한 문서의 원격 이미지
+  "img-src 'self' data: blob: https:",
+  "connect-src 'self'",
+  "font-src 'self' data:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
 
 type Env = { Variables: { scoped: ScopedVault } };
 
@@ -77,9 +99,32 @@ class LoginThrottle {
   }
 }
 
-export function createApp({ vault, index, config, wiki, ingestor }: AppOptions) {
+export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
+  const secureCookies = (c: Context) => isHttps(c) || (admin.publicUrl ?? "").startsWith("https:");
+  const allowedHosts = admin.allowedHosts?.map((h) => h.toLowerCase());
+
+  // DNS 리바인딩 방지: 허용한 호스트 이름으로 온 요청만 받는다(설정했을 때). 컨테이너 헬스체크용 localhost는 늘 허용.
+  app.use("*", async (c, next) => {
+    if (allowedHosts && allowedHosts.length > 0) {
+      // node 서버는 Host 헤더로 요청 URL을 만들므로 URL의 호스트 이름이 곧 Host 헤더다
+      const host = new URL(c.req.url).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+      if (!allowedHosts.includes(host) && !["localhost", "127.0.0.1", "::1"].includes(host)) {
+        return c.text("허용되지 않은 호스트입니다 (KEYRING_ALLOWED_HOSTS)", 421);
+      }
+    }
+    await next();
+    const h = c.res.headers;
+    if (!h.has("content-security-policy")) h.set("content-security-policy", APP_CSP);
+    h.set("x-content-type-options", "nosniff");
+    h.set("x-frame-options", "DENY");
+    h.set("referrer-policy", "same-origin");
+    h.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
+    if (c.req.path.startsWith("/api/")) h.set("cache-control", h.get("cache-control") ?? "no-store");
+  });
+
+  app.get("/api/health", (c) => c.json({ ok: true }));
 
   app.onError((err, c) => {
     if (err instanceof ConflictError) {
@@ -119,7 +164,8 @@ export function createApp({ vault, index, config, wiki, ingestor }: AppOptions) 
   api.use("*", async (c, next) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
       const ct = c.req.header("content-type") ?? "";
-      const upload = c.req.path === "/api/ingest/file" && c.req.header("x-keyring-upload") === "1";
+      const rawBody = c.req.path === "/api/ingest/file" || c.req.path === "/api/admin/backups/upload";
+      const upload = rawBody && c.req.header("x-keyring-upload") === "1";
       if (!upload && !ct.toLowerCase().startsWith("application/json")) {
         return c.json({ error: "bad_request", message: "Content-Type: application/json 이 필요합니다" }, 415);
       }
@@ -127,6 +173,8 @@ export function createApp({ vault, index, config, wiki, ingestor }: AppOptions) 
     await next();
   });
   api.use("*", async (c, next) => {
+    // 백업 업로드는 디스크로 바로 흘려 쓰며 크기를 따로 센다
+    if (c.req.path === "/api/admin/backups/upload") return next();
     // 업로드·웹 클립(페이지 HTML 전체)은 크게, 나머지는 10MB까지
     const max = c.req.path === "/api/ingest/file" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
     return bodyLimit({ maxSize: max * 1024 * 1024 })(c, next);
@@ -155,10 +203,33 @@ export function createApp({ vault, index, config, wiki, ingestor }: AppOptions) 
     setCookie(c, SESSION_COOKIE, s.value, {
       httpOnly: true,
       sameSite: "Strict",
-      secure: isHttps(c),
+      secure: secureCookies(c),
       path: "/",
       maxAge: s.maxAge,
     });
+    return c.json({ ok: true });
+  });
+
+  // 처음 설치: 비밀번호가 아직 없을 때만, 서버 로그에 찍힌 일회용 코드로 웹에서 비밀번호를 정한다.
+  api.post("/auth/setup", async (c) => {
+    const { code, password } = await c.req.json();
+    const expected = setupCode?.() ?? null;
+    if (config.get().owner.passwordHash !== null || !expected) {
+      return c.json({ error: "forbidden", message: "이미 설정되었습니다" }, 403);
+    }
+    const wait = throttle.delayMs();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    const norm = (v: string) => v.replace(/[^0-9a-z]/gi, "").toUpperCase();
+    const given = Buffer.from(typeof code === "string" ? norm(code) : "");
+    const want = Buffer.from(norm(expected));
+    if (given.length !== want.length || !timingSafeEqual(given, want)) {
+      throttle.fail();
+      return c.json({ error: "unauthorized", message: "설정 코드가 맞지 않습니다(서버 로그를 확인하세요)" }, 401);
+    }
+    if (typeof password !== "string" || password.length < 8) throw new PathError("비밀번호는 8자 이상이어야 합니다");
+    config.setPassword(password);
+    const s = config.issueSession();
+    setCookie(c, SESSION_COOKIE, s.value, { httpOnly: true, sameSite: "Strict", secure: secureCookies(c), path: "/", maxAge: s.maxAge });
     return c.json({ ok: true });
   });
 
@@ -348,6 +419,8 @@ export function createApp({ vault, index, config, wiki, ingestor }: AppOptions) 
     if (typeof body.rev !== "string") throw new PathError("rev가 필요합니다");
     return c.json(await c.var.scoped.rollback(requirePath(body.path), body.rev, optionalHash(body.baseHash)));
   });
+
+  api.route("/admin", adminRoutes({ vault, index, wiki, config, ...admin }));
 
   app.route("/api", api);
   return app;

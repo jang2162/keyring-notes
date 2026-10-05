@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { api, ApiError, type CommitInfo, type SearchHit, type TreeNode } from "./api";
 import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
+import { AdminPanel } from "./Admin";
 import { ClipPage, IngestDialog } from "./Ingest";
 import { invalidateWidgets, Widget } from "./Widget";
 import { Login } from "./Login";
@@ -33,6 +34,19 @@ interface RevisionView {
 function pathFromLocation(): string | null {
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
   return h || null;
+}
+
+function folderPaths(nodes: TreeNode[]): string[] {
+  const out: string[] = [];
+  const walk = (ns: TreeNode[]) => {
+    for (const n of ns) {
+      if (n.type !== "dir") continue;
+      out.push(n.path);
+      walk(n.children ?? []);
+    }
+  };
+  walk(nodes);
+  return out;
 }
 
 function conflictCopyPath(path: string) {
@@ -147,6 +161,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
   const [ingestOpen, setIngestOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const docRef = useRef<OpenDoc | null>(null);
   docRef.current = doc;
 
@@ -429,6 +444,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             <button onClick={() => setIngestOpen(true)} title="원본 수집(파일·URL·붙여넣기)">
               📥
             </button>{" "}
+            <button onClick={() => setAdminOpen(true)} title="관리 콘솔(상태·에이전트·백업·업데이트)">
+              ⚙
+            </button>{" "}
             <button onClick={() => (!dirty || confirm("저장하지 않은 변경이 있습니다. 로그아웃할까요?")) && onLogout()} title="로그아웃">
               ⎋
             </button>
@@ -603,6 +621,19 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           </div>
         )}
       </main>
+
+      {adminOpen && (
+        <AdminPanel
+          folders={folderPaths(tree)}
+          onClose={() => {
+            setAdminOpen(false);
+            // 복원 등으로 볼트가 바뀌었을 수 있다
+            vaultChanged();
+            void refreshTree();
+            if (doc && doc.draft === doc.saved) void load(doc.path);
+          }}
+        />
+      )}
 
       {ingestOpen && (
         <IngestDialog

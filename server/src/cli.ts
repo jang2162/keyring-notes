@@ -5,7 +5,10 @@ import { isLevel, LEVELS } from "./access.js";
 import { ConfigStore } from "./config.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const configFile = path.resolve(process.env.KEYRING_CONFIG ?? path.join(here, "../../config/keyring.json"));
+const configFile = path.resolve(
+  (process.env.KEYRING_CONFIG || undefined) ??
+    (process.env.KEYRING_DATA ? path.join(process.env.KEYRING_DATA, "config", "keyring.json") : path.join(here, "../../config/keyring.json")),
+);
 const config = new ConfigStore(configFile);
 
 const USAGE = `사용법: npm run keyring -- <명령>

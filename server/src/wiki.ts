@@ -1,4 +1,4 @@
-import { readdir, stat, writeFile, mkdir, access } from "node:fs/promises";
+import { readdir, stat, writeFile, mkdir, access, rm, rmdir } from "node:fs/promises";
 import path from "node:path";
 import { SYSTEM_AUTHOR } from "./git.js";
 import { resolveLink } from "./markdown.js";
@@ -103,6 +103,7 @@ export class Wiki {
    * 시작할 때의 "서버 밖에서 생긴 변경" 커밋에 index·log가 섞이지 않게 한다. Git 명령은 쓰지 않는다.
    */
   async prepare(): Promise<void> {
+    this.topics.clear();
     const entries = await readdir(this.vault.root, { withFileTypes: true }).catch(() => []);
     for (const e of entries) {
       if (!e.isDirectory() || e.name.startsWith(".")) continue;
@@ -121,6 +122,23 @@ export class Wiki {
   /** vault.init() 뒤에 부른다: 예전에 추적되던 자동 생성 문서가 있으면 이력에서 빼고, 모두 다시 만든다. */
   async init(): Promise<void> {
     await this.updateExcludes();
+    for (const t of this.topics) await this.regenerate(t);
+  }
+
+  /**
+   * 백업 복원처럼 볼트 전체가 바뀐 뒤: 토픽을 다시 찾고, 사라진 토픽에 남은 자동 생성 문서를 지우고,
+   * 검색 인덱스를 맞춘 뒤 index·log를 다시 만든다.
+   */
+  async resync(): Promise<void> {
+    const before = new Set(this.topics);
+    await this.prepare();
+    for (const t of before) {
+      if (this.topics.has(t)) continue;
+      for (const f of ["index.md", "log.md"]) await rm(path.join(this.vault.root, t, "wiki", f), { force: true });
+      for (const d of [path.join(this.vault.root, t, "wiki"), path.join(this.vault.root, t)]) await rmdir(d).catch(() => undefined);
+    }
+    await this.updateExcludes();
+    await this.index.sync(this.vault);
     for (const t of this.topics) await this.regenerate(t);
   }
 

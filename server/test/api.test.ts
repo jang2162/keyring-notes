@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
 import type { Ingestor } from "../src/ingest.js";
 import type { NoteIndex } from "../src/noteindex.js";
@@ -40,7 +41,7 @@ beforeEach(async () => {
   config.setRule("wiki-work", "업무/wiki", "delete");
   workToken = config.issueToken("openclaw-work");
   config.setRule("openclaw-work", "업무", "read");
-  app = createApp({ vault, index, config, wiki, ingestor });
+  app = createApp({ vault, index, config, wiki, ingestor, admin: { backups: new BackupService(vault, config, path.join(vault.root, ".keyring", "backups"), () => wiki.resync()) } });
   cookie = (await login()).cookie;
   for (const [p, c] of Object.entries({
     "업무/raw/기사.md": "# 기사\n원문\n",

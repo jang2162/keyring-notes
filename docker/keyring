@@ -1,0 +1,3 @@
+#!/bin/sh
+# 컨테이너 안 관리 CLI: docker compose exec keyring keyring agent list
+exec node --disable-warning=ExperimentalWarning /app/server/dist/cli.js "$@"

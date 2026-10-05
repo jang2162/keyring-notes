@@ -3,17 +3,53 @@
 마크다운 파일을 원본으로 셀프호스팅 서버에 두고, 사람은 웹에서 편집하고 에이전트는 토픽별 권한 토큰으로만 접근하는 개인용 노트 앱.
 전체 계획은 [docs/PLAN.md](docs/PLAN.md)에 있다.
 
-> 현재 상태: **4단계** — 파일 저장소·웹 에디터·Git 이력(1단계), 로그인·토큰 × 폴더 권한·MCP·일괄 쓰기(2단계),
-> SQLite 인덱스·자동완성·위젯(3단계), LLM Wiki 지원: 원본 수집·토픽 템플릿·index/log 자동 생성(4단계).
-> 서버는 기본적으로 `127.0.0.1`에만 열린다. 원격 접속(HTTPS·VPN)은 5단계에서 다룬다.
+> 현재 상태: **5단계(노트 이전 제외)** — 파일 저장소·웹 에디터·Git 이력(1), 로그인·토큰 × 폴더 권한·MCP·일괄 쓰기(2),
+> SQLite 인덱스·자동완성·위젯(3), LLM Wiki: 원본 수집·토픽 템플릿·index/log 자동 생성(4),
+> 관리 콘솔(상태·에이전트·백업/복원·업데이트·보안), Docker 배포, HTTPS 원격 접속(5).
 
-## 실행
+## 설치(Docker, 권장)
+
+```bash
+git clone https://github.com/jang2162/keyring-notes && cd keyring-notes
+docker compose up -d --build              # http://127.0.0.1:8787 (이 컴퓨터에서만)
+docker compose logs keyring               # "처음 설치: … 설정 코드 → XXXX-XXXX-XXXX"
+```
+
+브라우저로 열어 설정 코드와 새 비밀번호를 넣으면 끝이다. 데이터(볼트·설정·백업)는 모두 `keyring-data` 볼륨의 `/data`에 있다.
+컨테이너 안 관리 CLI: `docker compose exec keyring keyring agent list`.
+
+### 원격 접속
+
+앱 포트는 기본으로 `127.0.0.1`에만 열린다. 밖에서 쓰려면 둘 중 하나:
+
+- **HTTPS 리버스 프록시(Caddy, 자동 인증서)**: 도메인의 DNS를 서버로 향하게 하고 80·443을 연 뒤
+  ```bash
+  cp .env.example .env    # KEYRING_PUBLIC_URL=https://notes.example.com, KEYRING_DOMAIN=notes.example.com
+  docker compose --profile https up -d
+  ```
+  사설망·시험용이면 `.env`에 `CADDY_TLS=internal`(Caddy 자체 CA).
+- **VPN(Tailscale 등)**: `.env`에 `KEYRING_BIND=<VPN 주소>`와 `KEYRING_ALLOWED_HOSTS=<그 주소·호스트 이름>`. Tailscale이면 `tailscale serve --bg 8787`로 tailnet 안 HTTPS를 붙이는 방법도 있다.
+
+`KEYRING_PUBLIC_URL`을 정하면 그 호스트 이름으로 온 요청만 받고(DNS 리바인딩 방지, 다른 Host는 421) 로그인 쿠키에 `Secure`가 붙는다. 모든 페이지에 CSP·`X-Frame-Options: DENY` 등 보안 헤더가 붙는다.
+
+### 업데이트
+
+관리 콘솔의 "업데이트" 탭이 최신 릴리스를 확인한다. 업데이트 전에 백업을 하나 만들고:
+
+```bash
+docker compose pull && docker compose up -d          # GHCR 이미지를 쓸 때(v* 태그마다 .github/workflows/docker.yml이 올림)
+git pull && docker compose up -d --build             # 직접 빌드할 때
+```
+
+사내 프록시처럼 TLS를 다시 서명하는 곳에서 빌드할 때는 `docker build --secret id=extra_ca,src=<CA.pem> .`(이미지에는 남지 않는다).
+
+## 소스에서 실행
 
 ```bash
 npm install
 npm run build                      # web/dist, server/dist 생성
-npm run keyring -- passwd          # 웹 로그인 비밀번호 설정(처음 한 번)
-npm start                          # http://127.0.0.1:8787
+npm start                          # http://127.0.0.1:8787 — 로그의 설정 코드로 웹에서 비밀번호 설정
+                                   # (또는 npm run keyring -- passwd)
 ```
 
 개발 모드(핫 리로드)는 터미널 두 개에서:
@@ -27,8 +63,14 @@ npm run dev:web      # 웹: http://localhost:5173 (API는 프록시)
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
+| `KEYRING_DATA` | (없음, 도커는 `/data`) | 주면 볼트·설정·백업이 모두 `<DATA>/vault`, `<DATA>/config/keyring.json`, `<DATA>/backups` |
 | `KEYRING_VAULT` | `./vault` | 볼트 폴더 |
-| `KEYRING_CONFIG` | `./config/keyring.json` | 비밀번호 해시·에이전트 토큰 해시·권한 표. 볼트 밖에 둔다 |
+| `KEYRING_CONFIG` | `./config/keyring.json` | 비밀번호 해시·에이전트 토큰 해시·권한 표·백업 설정. 볼트 밖에 둔다 |
+| `KEYRING_BACKUP_DIR` | `./backups` | 백업 파일 폴더 |
+| `KEYRING_PUBLIC_URL` | (없음) | 원격 접속 주소(https). 허용 호스트와 Secure 쿠키에 쓰인다 |
+| `KEYRING_ALLOWED_HOSTS` | `PUBLIC_URL`의 호스트 | 받을 Host 이름(쉼표로 여럿). localhost는 늘 허용 |
+| `KEYRING_UPDATE_URL` | GitHub releases/latest | 업데이트 확인 주소. 빈 값이면 확인하지 않는다 |
+| `KEYRING_BACKUP_SCHEDULER` | `1` | `0`이면 자동 백업 스케줄러를 끈다 |
 | `KEYRING_FETCH_ALLOW_PRIVATE` | (없음) | `1`이면 URL 수집에서 사설·루프백 주소(사내 위키 등)도 허용. 기본은 SSRF 방지로 막는다 |
 | `KEYRING_INDEX` | `<볼트>/.keyring/index.db` | 검색 인덱스(캐시). 지우면 다음 시작 때 다시 만든다 |
 | `KEYRING_HOST` | `127.0.0.1` | 바인드 주소 |
@@ -44,6 +86,25 @@ KEYRING_VAULT=/tmp/vault-copy npm start
 ```
 
 서버가 시작할 때 볼트 안의 기존 파일을 `system` 작성자의 커밋 하나로 흡수한다. 이후 서버 밖에서 고친 내용도 다음 시작 때 같은 방식으로 기록된다.
+
+## 관리 콘솔
+
+사이드바의 ⚙. 소유자만 쓸 수 있다(에이전트 토큰은 403).
+
+- **서버 상태**: 버전·실행 시간, 문서·파일 수와 용량, 커밋 수와 마지막 변경, 디스크 여유, 백업 현황, 에이전트별 마지막 접속. HTTPS 아님·허용 호스트 없음·백업 없음·디스크 부족이면 경고.
+- **에이전트·권한**: 에이전트 만들기(토큰과 MCP 설정 예를 한 번만 보여 줌), 폴더별 권한 표 편집, 토큰 재발급, 삭제.
+- **백업·복원**: 지금 백업, 내려받기, 다른 서버의 백업 파일 올리기, 복원, 자동 백업 설정(간격·남길 개수·설정 포함 여부).
+- **업데이트**: 지금·최신 버전 확인과 업데이트 방법.
+- **보안**: 비밀번호 변경(다른 기기의 로그인은 모두 끊김), 원격 접속 안내.
+
+### 백업 형식
+
+`keyring-<시각>-<auto|manual|pre-restore>.tar.gz` 하나에 `manifest.json`, `vault.bundle`(`git bundle --all`: 모든 문서·첨부와 전체 이력), 선택으로 `config.json`(비밀번호·토큰 해시, 권한 표)이 들어간다. 검색 인덱스와 위키 index·log는 다시 만들 수 있어 넣지 않는다.
+
+- 백업 직전에 서버 밖에서 생긴 변경도 커밋해 넣는다.
+- 자동 백업은 간격(기본 24시간)이 지났고 마지막 자동 백업 뒤 바뀐 것이 있을 때만 만들고, 자동 백업만 개수(기본 14)를 넘으면 지운다.
+- **복원**은 먼저 지금 상태를 `pre-restore` 백업으로 남기고 지금 HEAD를 `refs/keyring/before-restore-<시각>`에 보관한 뒤, 볼트 파일과 이력을 백업 시점으로 바꾼다. 그래서 복원도 되돌릴 수 있다. 설정 복원은 고를 때만.
+- 다른 서버로 옮기기: 백업을 내려받아 새 서버 관리 콘솔에서 올린 뒤 "복원"(설정도 복원하면 비밀번호·에이전트까지 그대로).
 
 ## 노트 쓰기
 
@@ -189,6 +250,9 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 | GET | `/api/section?path=` | `&heading=` 또는 `&start=&end=` | 섹션 읽기 |
 | GET | `/api/frontmatter` | `?folder=&fields=a,b` | 프런트매터 목록 |
 | GET | `/api/search?q=` | `&folder=&limit=` | 검색 |
+| GET | `/api/health` | | 헬스체크(인증 없음) |
+| POST | `/api/auth/setup` | `{code, password}` | 처음 설치(비밀번호가 없을 때만, 로그의 설정 코드) |
+| * | `/api/admin/…` | | 관리 콘솔 API(소유자만): `status`, `update`, `agents`, `agents/:name/rules`·`rotate`, `password`, `backups`, `backups/settings`, `backups/upload`, `backups/:name/restore` |
 | GET · POST | `/api/topics` | `{name}` | 토픽 목록 / 위키 토픽 만들기(소유자) |
 | POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | 원본 수집 |
 | POST | `/api/ingest/file?topic=&name=` | 파일 바이트, 헤더 `x-keyring-upload: 1` | 파일 업로드 수집 |
@@ -213,6 +277,7 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 ```bash
 npm test         # 경로 검증, 충돌, 이력·롤백, 일괄 쓰기 원자성, 권한(숨김·읽기·추가 전용), 인증, MCP,
                  # 한국어 검색, 태그, 백링크, 인덱스 동기화, 위젯, 할 일 체크,
-                 # 위키 토픽, 수집(URL·PDF·이미지·클립), SSRF 차단, index·log 생성과 권한별 내용
+                 # 위키 토픽, 수집(URL·PDF·이미지·클립), SSRF 차단, index·log 생성과 권한별 내용,
+                 # 백업·복원(되돌리기·다른 서버로 옮기기)·자동 백업, 관리 API 권한, 처음 설치, 허용 호스트·보안 헤더
 npm run typecheck
 ```

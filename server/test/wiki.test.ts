@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
 import { Ingestor } from "../src/ingest.js";
 import type { NoteIndex } from "../src/noteindex.js";
@@ -279,7 +280,7 @@ describe("REST 업로드·MCP", () => {
     const token = config.issueToken("wiki-work");
     config.setRule("wiki-work", "경제/raw", "append");
     config.setRule("wiki-work", "경제/wiki", "delete");
-    const app = createApp({ vault, index, config, wiki, ingestor });
+    const app = createApp({ vault, index, config, wiki, ingestor, admin: { backups: new BackupService(vault, config, path.join(vault.root, ".keyring", "backups"), () => wiki.resync()) } });
     const login = await app.request("/api/auth/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
