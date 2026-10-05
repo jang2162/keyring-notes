@@ -8,6 +8,7 @@ import { GraphView } from "./Graph";
 import { ClipPage, IngestDialog } from "./Ingest";
 import { invalidateWidgets, Widget } from "./Widget";
 import { Login } from "./Login";
+import { authMemo, isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
 
 type ViewMode = "split" | "edit" | "preview";
@@ -22,6 +23,8 @@ interface OpenDoc {
   seq: number;
   /** 서버가 만드는 문서(위키 index·log): 읽기 전용 */
   generated: boolean;
+  /** 연결이 없어 이 기기의 사본을 보여 주는 중 */
+  cachedOffline?: boolean;
 }
 
 interface Conflict {
@@ -108,9 +111,9 @@ function folderPaths(nodes: TreeNode[]): string[] {
   return out;
 }
 
-function conflictCopyPath(path: string) {
+function conflictCopyPath(path: string, label = "충돌 사본") {
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
-  return path.replace(/\.md$/i, ` (충돌 사본 ${stamp}).md`);
+  return path.replace(/\.md$/i, ` (${label} ${stamp}).md`);
 }
 
 function TreeView({
@@ -164,9 +167,12 @@ export function App() {
     try {
       const s = await api.status();
       const ok = s.authenticated && s.principal?.kind === "owner";
+      authMemo.set(ok);
       setAuth((a) => ({ ready: true, ok, wasIn: a.wasIn || ok, passwordSet: s.passwordSet }));
-    } catch {
-      setAuth((a) => ({ ...a, ready: true, ok: false }));
+    } catch (e) {
+      // 연결이 없을 때: 이 기기에서 로그인했었다면 오프라인으로 연다
+      const offlineOk = isNetworkError(e) && authMemo.get();
+      setAuth((a) => ({ ...a, ready: true, ok: offlineOk, wasIn: a.wasIn || offlineOk }));
     }
   }, []);
 
@@ -189,6 +195,8 @@ export function App() {
         <Workspace
           onLogout={() =>
             api.logout().finally(() => {
+              authMemo.set(false);
+              void offline.clear().catch(() => undefined);
               setAuth((a) => ({ ...a, wasIn: false }));
               void checkAuth();
             })
@@ -203,7 +211,8 @@ export function App() {
 function Workspace({ onLogout }: { onLogout: () => void }) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [doc, setDoc] = useState<OpenDoc | null>(null);
-  const [mode, setMode] = useState<ViewMode>("split");
+  // 좁은 화면에서는 나란히 보기 대신 미리보기로 시작
+  const [mode, setMode] = useState<ViewMode>(() => (window.matchMedia?.("(max-width: 800px)").matches ? "preview" : "split"));
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [saving, setSaving] = useState(false);
@@ -218,6 +227,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const [lintOpen, setLintOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [graphOpen, setGraphOpen] = useState(false);
+  const [online, setOnline] = useState(navigator.onLine);
+  const [outboxCount, setOutboxCount] = useState(0);
+  const [navOpen, setNavOpen] = useState(false);
   const [semanticOn, setSemanticOn] = useState(false);
   const [searchMode, setSearchMode] = useState<"text" | "semantic">("text");
   /** 볼트 내용이 바뀔 때마다 올려 태그·백링크·위젯을 다시 불러온다. */
@@ -322,6 +334,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
         draft: d.content,
         seq: (prev?.seq ?? 0) + 1,
         generated: d.generated === true,
+        cachedOffline: d.cachedOffline === true,
       }));
       setConflict(null);
       setRevision(null);
@@ -335,6 +348,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const open = useCallback(
     (path: string) => {
       if (dirty && !confirm("저장하지 않은 변경이 있습니다. 버리고 이동할까요?")) return;
+      setNavOpen(false);
       void load(path);
     },
     [dirty, load],
@@ -372,19 +386,95 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     setSaving(true);
     const content = doc.draft;
     try {
-      const d = await api.write(doc.path, content, doc.hash);
+      const d = await api.write(doc.path, content, doc.hash || null);
+      await offline.done(doc.path).catch(() => undefined);
+      setOutboxCount((await offline.pending().catch(() => [])).length);
       // 저장하는 동안 더 입력한 내용(draft)은 그대로 둔다.
       setDoc((prev) => (prev && prev.path === d.path ? { ...prev, saved: content, hash: d.hash } : prev));
       setConflict(null);
       setError(null);
       vaultChanged();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) setConflict({ currentHash: e.currentHash ?? null });
+      if (isNetworkError(e)) {
+        // 오프라인: 이 기기에 저장해 두고, 연결되면 보낸다
+        await offline.queue(doc.path, content, doc.hash || null);
+        setDoc((prev) => (prev && prev.path === doc.path ? { ...prev, saved: content } : prev));
+        setOutboxCount((await offline.pending()).length);
+      } else if (e instanceof ApiError && e.status === 409) setConflict({ currentHash: e.currentHash ?? null });
       else report(e);
     } finally {
       setSaving(false);
     }
   }, [doc, saving, vaultChanged]);
+
+  /** 오프라인 저장분을 서버로 보낸다. 그 사이 서버에서 바뀐 문서는 덮어쓰지 않고 충돌 사본으로 남긴다. */
+  const flushing = useRef(false);
+  const flushOutbox = useCallback(async () => {
+    if (flushing.current) return;
+    flushing.current = true;
+    const synced: string[] = [];
+    const conflicts: string[] = [];
+    try {
+      for (const item of await offline.pending()) {
+        try {
+          const d = await api.write(item.path, item.content, item.baseHash);
+          await offline.done(item.path);
+          await offline.saveDoc(d);
+          synced.push(item.path);
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409) {
+            const copy = conflictCopyPath(item.path, "오프라인 충돌 사본");
+            await api.write(copy, item.content, null);
+            await offline.done(item.path);
+            conflicts.push(copy);
+          } else break; // 아직 연결이 없거나 로그인이 필요하다
+        }
+      }
+    } finally {
+      flushing.current = false;
+      setOutboxCount((await offline.pending().catch(() => [])).length);
+    }
+    if (synced.length || conflicts.length) {
+      vaultChanged();
+      void refreshTree();
+      const cur = docRef.current;
+      // 다시 불러오기가 알림을 지우지 않도록 먼저 끝낸다
+      if (cur && (synced.includes(cur.path) || conflicts.length) && cur.draft === cur.saved) await load(cur.path);
+      setError(
+        `오프라인에서 저장한 ${synced.length + conflicts.length}개를 보냈습니다.` +
+          (conflicts.length ? ` 그 사이 서버에서 바뀐 문서는 덮어쓰지 않고 사본으로 남겼습니다: ${conflicts.join(", ")}` : ""),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultChanged, refreshTree]);
+
+  useEffect(() => {
+    const up = () => {
+      setOnline(true);
+      void flushOutbox();
+    };
+    const down = () => setOnline(false);
+    window.addEventListener("online", up);
+    window.addEventListener("offline", down);
+    void offline.pending().then((p) => {
+      setOutboxCount(p.length);
+      if (p.length && navigator.onLine) void flushOutbox();
+    }).catch(() => undefined);
+    const t = setInterval(() => {
+      if (!navigator.onLine) return;
+      void offline
+        .pending()
+        .then((p) => {
+          if (p.length) void flushOutbox();
+        })
+        .catch(() => undefined);
+    }, 30_000);
+    return () => {
+      window.removeEventListener("online", up);
+      window.removeEventListener("offline", down);
+      clearInterval(t);
+    };
+  }, [flushOutbox]);
 
   // 에디터 밖(로그인 직후 등)에서도 Ctrl/Cmd+S로 저장한다. 에디터 안에서는 에디터 키맵이 먼저 처리한다.
   useEffect(() => {
@@ -424,7 +514,11 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       await refreshTree();
       open(path);
     } catch (e) {
-      report(e);
+      if (isNetworkError(e)) {
+        await offline.queue(path, `# ${title}\n`, null);
+        setOutboxCount((await offline.pending()).length);
+        open(path);
+      } else report(e);
     }
   };
 
@@ -528,7 +622,8 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   }, [rendered.html]);
 
   return (
-    <div className="app">
+    <div className={`app${navOpen ? " nav-open" : ""}`}>
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
       <aside className="sidebar">
         <div className="sidebar-head">
           <strong>Keyring Notes</strong>
@@ -617,6 +712,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
         {doc ? (
           <>
             <header className="toolbar">
+              <button className="nav-toggle" aria-label="문서 목록" onClick={() => setNavOpen((v) => !v)}>
+                ☰
+              </button>
               <span className="doc-path" title={doc.path}>
                 {doc.path}
                 {dirty && <span className="dirty"> ●</span>}
@@ -642,6 +740,14 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
               </button>
             </header>
 
+            {(!online || outboxCount > 0) && (
+              <div className="banner offline">
+                {!online ? "오프라인입니다. 이 기기에서 연 문서만 열 수 있고, " : "연결되었습니다. "}
+                {outboxCount > 0 ? `저장한 변경 ${outboxCount}개를 ${online ? "보내는 중…" : "연결되면 서버로 보냅니다."}` : "저장하면 연결될 때 서버로 보냅니다."}
+                {online && outboxCount > 0 && <button onClick={() => void flushOutbox()}>지금 보내기</button>}
+              </div>
+            )}
+            {doc.cachedOffline && <div className="banner info">연결이 없어 이 기기에 남은 사본을 보여 줍니다.</div>}
             {doc.generated && (
               <div className="banner generated">
                 서버가 자동으로 만드는 문서입니다(위키 목차·작업 기록). 직접 고칠 수 없고, 위키가 바뀌면 다시 만들어집니다.
@@ -705,6 +811,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           </>
         ) : (
           <div className="empty">
+            <button className="nav-toggle empty-nav" aria-label="문서 목록" onClick={() => setNavOpen(true)}>
+              ☰ 문서 목록
+            </button>
             {error && <div className="banner info">{error}</div>}
             <p>왼쪽에서 문서를 고르거나 ＋ 로 새 문서를 만드세요.</p>
           </div>

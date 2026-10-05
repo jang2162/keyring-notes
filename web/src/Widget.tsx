@@ -135,6 +135,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
       )}
       {r.type === "tasks" && <TaskList result={r} link={link} onChanged={onChanged} />}
       {r.type === "chart" && <Chart result={r} />}
+      {r.type === "plugin" && <PluginWidget result={r} onOpen={onOpen} />}
       {(r.type === "query" || r.type === "table") && r.total > r.rows.length && (
         <div className="widget-more">
           {r.total}개 중 {r.rows.length}개 표시
@@ -333,4 +334,54 @@ function niceTicks(maxValue: number): { max: number; ticks: number[] } {
   const ticks: number[] = [];
   for (let t = 0; t <= max + step / 2; t += step) ticks.push(Number(t.toPrecision(12)));
   return { max, ticks };
+}
+
+/** DOM 만들기 도우미(플러그인용): h("a", { href, onclick, class }, "글자", 자식요소…) */
+function h(tag: string, props: Record<string, unknown> = {}, ...children: (Node | string | null | undefined | false)[]): HTMLElement {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props ?? {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2).toLowerCase(), v as EventListener);
+    else if (k === "class" || k === "className") el.className = String(v);
+    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+    else el.setAttribute(k, String(v));
+  }
+  for (const c of children) if (c !== null && c !== undefined && c !== false) el.append(typeof c === "string" ? document.createTextNode(c) : c);
+  return el;
+}
+
+type PluginModule = { default?: { render?: (el: HTMLElement, data: unknown, api: unknown) => void | (() => void) } };
+
+/** 위젯 플러그인: /plugins/<이름>.js 모듈의 render(el, data, api)를 부른다. */
+function PluginWidget({ result, onOpen }: { result: Extract<WidgetResult, { type: "plugin" }>; onOpen: (path: string) => void }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cleanup: void | (() => void);
+    let alive = true;
+    setError(null);
+    import(/* @vite-ignore */ `/plugins/${result.plugin}.js`)
+      .then((mod: PluginModule) => {
+        if (!alive || !host.current) return;
+        const render = mod.default?.render;
+        if (typeof render !== "function") throw new Error("default export에 render(el, data, api)가 없습니다");
+        host.current.replaceChildren();
+        cleanup = render(host.current, { rows: result.rows, columns: result.columns, total: result.total, title: result.title, options: result.options }, { open: onOpen, h });
+      })
+      .catch((e) => alive && setError(`플러그인 "${result.plugin}" 오류: ${e instanceof Error ? e.message : String(e)}`));
+    return () => {
+      alive = false;
+      try {
+        if (typeof cleanup === "function") cleanup();
+      } catch {
+        /* 플러그인 정리 오류는 무시 */
+      }
+    };
+  }, [result, onOpen]);
+  return (
+    <>
+      {error && <div className="widget-error">{error}</div>}
+      <div ref={host} className="plugin-host" />
+    </>
+  );
 }

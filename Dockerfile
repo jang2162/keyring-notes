@@ -47,6 +47,7 @@ COPY package.json ./
 COPY server/package.json server/
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist
+COPY examples examples
 COPY --chmod=755 docker/keyring /usr/local/bin/keyring
 RUN mkdir -p /data && chown node:node /data
 USER node

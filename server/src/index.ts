@@ -32,6 +32,7 @@ const allowedHosts = (env("KEYRING_ALLOWED_HOSTS") ?? (publicUrl ? new URL(publi
   .filter(Boolean);
 // KEYRING_UPDATE_URL="" 이면 업데이트 확인을 끈다(그래서 이것만 빈 값을 그대로 쓴다)
 const updateUrl = process.env.KEYRING_UPDATE_URL ?? "https://api.github.com/repos/jang2162/keyring-notes/releases/latest";
+const pluginsDir = path.resolve(env("KEYRING_PLUGINS_DIR") ?? (dataDir ? path.join(dataDir, "plugins") : path.join(here, "../../plugins")));
 const webDist = path.resolve(env("KEYRING_WEB_DIST") ?? path.join(here, "../../web/dist"));
 const host = env("KEYRING_HOST") ?? "127.0.0.1";
 const port = Number(env("KEYRING_PORT") ?? 8787);
@@ -98,6 +99,7 @@ review.onCreate((p) =>
 if (process.env.KEYRING_SCHEDULER !== "0") automation.start();
 
 const app = createApp({
+  pluginsDir,
   semantic,
   review,
   vault,

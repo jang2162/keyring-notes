@@ -16,7 +16,11 @@ import { PathError } from "./paths.js";
  *   data: [{label, value}]                          (chart, 직접 입력)
  */
 export interface WidgetSpec {
-  type: "query" | "table" | "tasks" | "chart";
+  type: "query" | "table" | "tasks" | "chart" | "plugin";
+  /** type: plugin일 때 플러그인 이름(plugins/<이름>.js) */
+  plugin?: string;
+  /** type: plugin일 때 플러그인에 그대로 넘길 설정 */
+  options?: Record<string, unknown>;
   from: string[];
   where: Condition[];
   show: string[];
@@ -48,7 +52,10 @@ export interface QueryRow {
 export type WidgetResult =
   | { type: "query" | "table"; title?: string; columns: string[]; rows: QueryRow[]; total: number }
   | { type: "tasks"; title?: string; groups: { path: string; title: string; hash: string; tasks: TaskRow[] }[]; total: number }
-  | { type: "chart"; title?: string; chart: "bar" | "line"; x: string; y: string; series: { label: string; value: number }[] };
+  | { type: "chart"; title?: string; chart: "bar" | "line"; x: string; y: string; series: { label: string; value: number }[] }
+  | { type: "plugin"; plugin: string; options: Record<string, unknown>; title?: string; columns: string[]; rows: QueryRow[]; total: number };
+
+export const PLUGIN_NAME_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
 
 const asList = (v: unknown): unknown[] => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
 
@@ -91,7 +98,13 @@ export function parseWidget(source: string): WidgetSpec {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new PathError("위젯 내용은 YAML 객체여야 합니다");
   const r = raw as Record<string, unknown>;
   const type = (r.type ?? "query") as WidgetSpec["type"];
-  if (!["query", "table", "tasks", "chart"].includes(type)) throw new PathError(`알 수 없는 위젯 종류입니다: ${String(r.type)}`);
+  if (!["query", "table", "tasks", "chart", "plugin"].includes(type)) throw new PathError(`알 수 없는 위젯 종류입니다: ${String(r.type)}`);
+  if (type === "plugin" && (typeof r.plugin !== "string" || !PLUGIN_NAME_RE.test(r.plugin))) {
+    throw new PathError("plugin 위젯에는 plugin: <이름>(영문 소문자·숫자·-)이 필요합니다");
+  }
+  if (r.options !== undefined && (typeof r.options !== "object" || r.options === null || Array.isArray(r.options))) {
+    throw new PathError("options는 YAML 객체여야 합니다");
+  }
   const sort = asList(r.sort).map((s) => {
     const str = String(s).trim();
     const m = /^(-)?(\S+)(?:\s+(asc|desc))?$/i.exec(str);
@@ -127,6 +140,8 @@ export function parseWidget(source: string): WidgetSpec {
     agg: agg as WidgetSpec["agg"],
     data,
     title: typeof r.title === "string" ? r.title : undefined,
+    plugin: type === "plugin" ? (r.plugin as string) : undefined,
+    options: type === "plugin" ? ((r.options as Record<string, unknown> | undefined) ?? {}) : undefined,
   };
 }
 
@@ -291,5 +306,8 @@ export function runWidget(spec: WidgetSpec, docs: DocMeta[], tasks: TaskRow[]): 
     title: d.title,
     values: Object.fromEntries(columns.map((c) => [c, fieldOf(d, c) ?? null])),
   }));
-  return { type: spec.type, title: spec.title, columns, rows, total: selected.length };
+  if (spec.type === "plugin") {
+    return { type: "plugin", plugin: spec.plugin!, options: spec.options ?? {}, title: spec.title, columns, rows, total: selected.length };
+  }
+  return { type: spec.type as "query" | "table", title: spec.title, columns, rows, total: selected.length };
 }

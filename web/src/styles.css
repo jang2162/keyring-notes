@@ -362,3 +362,31 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .search-box input { flex: 1; min-width: 0; }
 .search-mode { font-size: 12px; padding: 2px 8px; white-space: nowrap; }
 .hit-score { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ── 오프라인·모바일 ── */
+.banner.offline { background: var(--warn-bg); color: var(--warn-fg); }
+.nav-toggle { display: none; }
+.nav-backdrop { display: none; }
+@media (max-width: 800px) {
+  .nav-toggle { display: inline-block; font-size: 16px; padding: 4px 10px; }
+  .empty-nav { margin-bottom: 12px; }
+  .app .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; width: min(300px, 85vw);
+    transform: translateX(-100%); transition: transform 0.18s ease; box-shadow: 0 0 24px rgb(0 0 0 / 0.25);
+  }
+  .app.nav-open .sidebar { transform: none; }
+  .nav-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: rgb(0 0 0 / 0.3); }
+  .toolbar { flex-wrap: wrap; gap: 4px; padding: 6px 8px; }
+  .doc-path { order: 1; flex-basis: calc(100% - 60px); }
+  .modes button:nth-child(2) { display: none; }
+  .panes.mode-split .edit-pane { display: none; }
+  .panes.mode-split .preview-pane { display: block; }
+  .markdown-body { padding: 12px 14px 0; }
+  .backlinks { margin: 20px 14px 0; }
+  .editor .cm-editor { font-size: 16px; }
+  .history { width: min(320px, 90vw); }
+}
+@media (pointer: coarse) {
+  button { min-height: 34px; }
+  .tree .file, .tree summary { padding-top: 6px; padding-bottom: 6px; }
+}

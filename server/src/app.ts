@@ -1,4 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import { PLUGIN_NAME_RE } from "./query.js";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -35,6 +38,11 @@ export interface AppOptions {
   ingestor: Ingestor;
   /** 관리 콘솔(백업·업데이트·보안 설정). vault·index·wiki·config는 위와 같은 것을 쓴다. */
   admin: Omit<AdminDeps, "vault" | "index" | "wiki" | "config">;
+  /**
+   * 위젯 플러그인 폴더(<이름>.js). 볼트 밖에 두며 API·에이전트로는 쓸 수 없다.
+   * 플러그인은 브라우저에서 소유자 권한으로 돌아가므로 믿을 수 있는 코드만 넣는다.
+   */
+  pluginsDir?: string;
   /** 의미 검색(설정했을 때만) */
   semantic?: SemanticIndex;
   /** 변경 검토 대기열(없으면 모든 변경을 바로 반영) */
@@ -105,7 +113,7 @@ class LoginThrottle {
   }
 }
 
-export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review, semantic }: AppOptions) {
+export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review, semantic, pluginsDir }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
   const secureCookies = (c: Context) => isHttps(c) || (admin.publicUrl ?? "").startsWith("https:");
@@ -151,6 +159,19 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (config.verifySession(getCookie(c, SESSION_COOKIE))) return config.ownerPrincipal();
     return null;
   };
+
+  // ── 위젯 플러그인 모듈: 소유자 로그인 필요 ──
+  app.get("/plugins/:file", async (c) => {
+    if (!config.verifySession(getCookie(c, SESSION_COOKIE))) return c.text("로그인이 필요합니다", 401);
+    const m = /^(.+)\.js$/.exec(c.req.param("file"));
+    if (!pluginsDir || !m || !PLUGIN_NAME_RE.test(m[1])) return c.text("플러그인이 없습니다", 404);
+    try {
+      const code = await readFile(path.join(pluginsDir, `${m[1]}.js`), "utf8");
+      return c.body(code, 200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" });
+    } catch {
+      return c.text("플러그인이 없습니다", 404);
+    }
+  });
 
   // ── MCP: 에이전트 토큰만 받는다 ──
   app.all("/mcp", async (c) => {
@@ -333,6 +354,12 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   });
 
   api.get("/backlinks", async (c) => c.json({ backlinks: await c.var.scoped.backlinks(requirePath(c.req.query("path"))) }));
+
+  api.get("/plugins", async (c) => {
+    const files = pluginsDir ? await readdir(pluginsDir).catch(() => [] as string[]) : [];
+    const names = files.map((f) => /^(.+)\.js$/.exec(f)?.[1]).filter((n): n is string => !!n && PLUGIN_NAME_RE.test(n));
+    return c.json({ plugins: names.sort() });
+  });
 
   api.get("/semantic/status", (c) => c.json(semantic ? semantic.status() : { enabled: false }));
   api.get("/semantic", async (c) => {

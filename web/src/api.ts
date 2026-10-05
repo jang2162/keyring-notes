@@ -5,12 +5,18 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
+import { isNetworkError, offline } from "./offline";
+
 export interface Doc {
   path: string;
   content: string;
   hash: string;
   /** 서버가 만드는 문서(위키 index·log). 고칠 수 없다. */
   generated?: boolean;
+  /** 오프라인에서 저장해 아직 서버로 보내지 못한 내용 */
+  pendingOffline?: boolean;
+  /** 연결이 없어 이 기기에 남은 사본을 보여 주는 중 */
+  cachedOffline?: boolean;
 }
 
 export interface Topic {
@@ -91,7 +97,16 @@ export type WidgetResult =
       total: number;
     }
   | { type: "tasks"; title?: string; groups: { path: string; title: string; hash: string; tasks: TaskRow[] }[]; total: number }
-  | { type: "chart"; title?: string; chart: "bar" | "line"; x: string; y: string; series: { label: string; value: number }[] };
+  | { type: "chart"; title?: string; chart: "bar" | "line"; x: string; y: string; series: { label: string; value: number }[] }
+  | {
+      type: "plugin";
+      plugin: string;
+      options: Record<string, unknown>;
+      title?: string;
+      columns: string[];
+      rows: { path: string; title: string; values: Record<string, unknown> }[];
+      total: number;
+    };
 
 export interface AuthStatus {
   authenticated: boolean;
@@ -290,8 +305,32 @@ export const api = {
   status: () => request<AuthStatus>("GET", "/api/auth/status"),
   login: (password: string) => request<{ ok: true }>("POST", "/api/auth/login", { password }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
-  tree: () => request<{ tree: TreeNode[] }>("GET", "/api/tree").then((r) => r.tree),
-  read: (path: string) => request<Doc>("GET", `/api/file?path=${q(path)}`),
+  /** 연결이 없으면 마지막으로 받은 트리 */
+  async tree(): Promise<TreeNode[]> {
+    try {
+      const t = (await request<{ tree: TreeNode[] }>("GET", "/api/tree")).tree;
+      void offline.saveTree(t).catch(() => undefined);
+      return t;
+    } catch (e) {
+      const cached = isNetworkError(e) ? await offline.getTree().catch(() => undefined) : undefined;
+      if (cached) return cached;
+      throw e;
+    }
+  },
+  /** 오프라인 저장 대기 내용이 있으면 그것을, 연결이 없으면 이 기기의 사본을 돌려준다. */
+  async read(path: string): Promise<Doc> {
+    const pending = await offline.pendingFor(path).catch(() => undefined);
+    if (pending) return { path, content: pending.content, hash: pending.baseHash ?? "", pendingOffline: true };
+    try {
+      const d = await request<Doc>("GET", `/api/file?path=${q(path)}`);
+      void offline.saveDoc(d).catch(() => undefined);
+      return d;
+    } catch (e) {
+      const cached = isNetworkError(e) ? await offline.getDoc(path).catch(() => undefined) : undefined;
+      if (cached) return { ...cached, cachedOffline: true };
+      throw e;
+    }
+  },
   write: (path: string, content: string, baseHash: string | null) =>
     request<Doc>("PUT", "/api/file", { path, content, baseHash }),
   remove: (path: string, baseHash: string) => request<unknown>("DELETE", "/api/file", { path, baseHash }),

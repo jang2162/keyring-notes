@@ -3,9 +3,10 @@
 마크다운 파일을 원본으로 셀프호스팅 서버에 두고, 사람은 웹에서 편집하고 에이전트는 토픽별 권한 토큰으로만 접근하는 개인용 노트 앱.
 전체 계획은 [docs/PLAN.md](docs/PLAN.md)에 있다.
 
-> 현재 상태: **5단계(노트 이전 제외)** — 파일 저장소·웹 에디터·Git 이력(1), 로그인·토큰 × 폴더 권한·MCP·일괄 쓰기(2),
+> 현재 상태: **6단계** — 파일 저장소·웹 에디터·Git 이력(1), 로그인·토큰 × 폴더 권한·MCP·일괄 쓰기(2),
 > SQLite 인덱스·자동완성·위젯(3), LLM Wiki: 원본 수집·토픽 템플릿·index/log 자동 생성(4),
-> 관리 콘솔(상태·에이전트·백업/복원·업데이트·보안), Docker 배포, HTTPS 원격 접속(5).
+> 관리 콘솔·백업/복원·Docker·HTTPS 원격 접속(5, 노트 이전 제외),
+> 변경 검토 대기열·출처 연결·정리 점검·웹훅/정기 작업·그래프·의미 검색·PWA 오프라인 편집·위젯 플러그인(6).
 
 ## 설치(Docker, 권장)
 
@@ -73,6 +74,10 @@ npm run dev:web      # 웹: http://localhost:5173 (API는 프록시)
 | `KEYRING_BACKUP_SCHEDULER` | `1` | `0`이면 자동 백업 스케줄러를 끈다 |
 | `KEYRING_FETCH_ALLOW_PRIVATE` | (없음) | `1`이면 URL 수집에서 사설·루프백 주소(사내 위키 등)도 허용. 기본은 SSRF 방지로 막는다 |
 | `KEYRING_INDEX` | `<볼트>/.keyring/index.db` | 검색 인덱스(캐시). 지우면 다음 시작 때 다시 만든다 |
+| `KEYRING_EMBED_URL` · `KEYRING_EMBED_MODEL` | (없음) | 의미 검색용 OpenAI 호환 `/embeddings` 주소와 모델. 둘 다 있어야 켜진다 |
+| `KEYRING_EMBED_KEY` | (없음) | 임베딩 API 키(`Authorization: Bearer`) |
+| `KEYRING_PLUGINS_DIR` | `./plugins`(도커 `/data/plugins`) | 위젯 플러그인 폴더 |
+| `KEYRING_SCHEDULER` | `1` | `0`이면 정기 작업(웹훅) 스케줄러를 끈다 |
 | `KEYRING_HOST` | `127.0.0.1` | 바인드 주소 |
 | `KEYRING_PORT` | `8787` | 포트 |
 
@@ -111,7 +116,10 @@ KEYRING_VAULT=/tmp/vault-copy npm start
 - **위키링크**: `[[문서]]`, `[[폴더/문서]]`, `[[문서#제목|별칭]]`, `![[이미지.png|300]]`. `[[`를 치면 문서·첨부 이름이 자동완성된다(같은 이름이 여럿이면 경로로 구분).
 - **할 일**: `- [ ] 할 일`. 미리보기의 체크박스를 누르면 원문이 바뀐다(저장해야 반영).
 - **검색**: 사이드바 검색창. 공백으로 나눈 단어를 모두 포함한 문서를 찾고, `#태그` 단어는 태그 조건이 된다(하위 태그 포함). 본문·제목·경로·프런트매터를 모두 찾는다.
-- **백링크**: 미리보기 아래에 이 문서를 링크한 문서 목록.
+- **출처·인용·백링크**: 미리보기 아래에 프런트매터 `sources`가 가리키는 출처(없거나 볼 수 없으면 빨간 줄), 이 문서를 출처로 인용한 페이지, 본문에서 링크한 문서(백링크).
+- **의미 검색**: 임베딩을 설정하면 검색창 옆 "의미"로 단어가 달라도 뜻이 가까운 문서를 찾는다.
+- **그래프**(◎): 문서와 링크(실선)·출처(점선). 문서 수가 많은 토픽 3개만 색, 나머지는 "기타" 회색. 확대·이동, 호버로 이웃 강조, 누르면 열기, 현재 문서 주변만 보기.
+- **오프라인·모바일**: 홈 화면에 앱으로 설치할 수 있다(PWA). 한 번 연 문서는 연결이 없어도 열리고, 오프라인에서 저장하면 이 기기에 두었다가 연결되면 보낸다. 그 사이 서버에서 바뀐 문서는 덮어쓰지 않고 "오프라인 충돌 사본"으로 남긴다. 좁은 화면에서는 문서 목록이 서랍(☰)으로 바뀐다.
 
 ### 위젯
 
@@ -134,6 +142,7 @@ limit: 50
 | 조건 | `=` `!=` `>` `>=` `<` `<=` `contains` `!contains`, `필드`(값 있음), `!필드`(값 없음). 값 `today`는 오늘 날짜(YYYY-MM-DD) |
 | `tasks` | `status: open`(기본) / `done` / `all`. 위젯에서 체크하면 원본 문서에 바로 저장된다 |
 | `chart` | `chart: bar`(기본) / `line`, `x: 묶을 필드`, `y: 숫자 필드`, `agg: sum`(y가 있으면 기본) / `count` / `avg`. 또는 `data: [{label, value}]`로 직접 입력. "표로 보기" 제공 |
+| `plugin` | `plugin: <이름>` + 위와 같은 `from`·`where`·`show`·`sort`, `options:`는 플러그인에 그대로. 플러그인 만드는 법은 [examples/plugins](examples/plugins/README.md)(예: 칸반) |
 
 위젯도 권한 계층을 지나므로, 에이전트가 같은 쿼리를 돌려도(MCP `query`) 볼 수 있는 문서만 나온다.
 
@@ -160,6 +169,48 @@ limit: 50
    - 붙여넣기: 텍스트·마크다운 그대로.
    - 저장 위치: `<토픽>/raw/<날짜> <제목>.md`. 프런트매터에 `source_type`, `source_url`, `original`, `ingested_at`, `ingested_by`.
 4. **index·log**: 위키 토픽 안에서 무언가 바뀔 때마다 서버가 다시 만든다. 직접 고칠 수 없고 Git·검색 인덱스에도 넣지 않는다. 읽는 사람의 권한에 맞춰 만들므로, 원본을 볼 수 없는 에이전트에게는 원본 이름이 나오지 않는다. 원본은 위키 페이지가 본문 링크나 `sources`로 인용하면 "반영"으로 바뀐다.
+
+## 에이전트와 함께 운영하기
+
+### 변경 검토 대기열
+
+✔(검토) → "검토 대상"에 폴더를 적으면(`/`는 전체) 그 아래에 **에이전트가** 쓰는 변경은 바로 반영하지 않고 제안으로 쌓인다. 권한·충돌 검사는 그때 이미 하고, 사람이 diff를 보고 "승인하고 반영"하면 에이전트 이름으로 커밋된다(본문에 승인자). 그 사이 문서가 바뀌었으면 "문서가 그 사이 바뀜"으로 표시되고 승인은 충돌로 거부된다. 거절 사유는 에이전트가 MCP `my_proposals`로 본다. 사람이 쓰는 것은 늘 바로 반영된다.
+
+### 정리 점검
+
+🧹(정리) 또는 MCP `lint`: 깨진 링크·출처, 고아 위키 페이지, `sources` 없는 페이지, `title`·`summary` 누락, 오래된(기본 180일, 프런트매터 `updated` 우선) 페이지, 아직 인용 안 된 원본.
+
+### 웹훅과 정기 작업
+
+관리 콘솔 → 자동화. 웹훅은 이벤트를 JSON으로 POST한다.
+
+| 이벤트 | 언제 | data |
+| --- | --- | --- |
+| `raw.added` | 위키 토픽 `raw/`에 새 원본(수집·에이전트 쓰기·승인 모두) | `topic, path, rev, author, message` |
+| `doc.changed` | 커밋마다 | `rev, author, message, files[{status, path}]` |
+| `proposal.created` | 검토 대기열에 새 제안 | `id, agent, message, topic, files` |
+| `schedule` | 정기 작업 실행 | `job, topic, instructions, lint?{counts, issues, total}` |
+
+본문은 `{event, id, time, data}`, 헤더 `X-Keyring-Signature: sha256=<HMAC-SHA256(secret, 본문)>`. 받는 쪽 검증 예(Node):
+
+```js
+const ok = req.headers["x-keyring-signature"] === "sha256=" + crypto.createHmac("sha256", SECRET).update(rawBody).digest("hex");
+```
+
+5xx·연결 실패는 1·5·25초 뒤 다시 보낸다. 정기 작업은 cron(`분 시 일 월 요일`, 서버 시간대)마다 웹훅으로 `schedule`을 보내며, "정리 점검 포함"이면 점검 결과와 지시문을 함께 보내 에이전트가 정리 작업을 하게 한다. 예: `0 9 * * 1`(매주 월 9시).
+
+### 의미 검색 켜기
+
+OpenAI 호환 임베딩이면 무엇이든 된다.
+
+```bash
+# 로컬(Ollama): ollama pull nomic-embed-text
+KEYRING_EMBED_URL=http://localhost:11434/v1/embeddings KEYRING_EMBED_MODEL=nomic-embed-text npm start
+# OpenAI
+KEYRING_EMBED_URL=https://api.openai.com/v1/embeddings KEYRING_EMBED_MODEL=text-embedding-3-small KEYRING_EMBED_KEY=sk-... npm start
+```
+
+문서를 절 단위로 나눠 벡터를 인덱스 파일에 저장하고, 바뀐 문서만 다시 계산한다(외부 API를 쓰면 문서 내용이 그 서비스로 간다). 상태는 `GET /api/semantic/status`.
 
 ## 에이전트 연결
 
@@ -209,12 +260,16 @@ Streamable HTTP(무상태, JSON 응답) 방식이다.
 | `search` | 전체 텍스트 검색(`#태그` 단어는 태그 조건) |
 | `backlinks` | 이 문서를 링크한 문서 |
 | `list_tags` | 태그와 문서 수 |
-| `query` | 위젯과 같은 YAML 쿼리(query·table·tasks·chart) |
+| `query` | 위젯과 같은 YAML 쿼리(query·table·tasks·chart·plugin) |
+| `sources` | 출처(프런트매터 sources)·이 문서를 인용한 페이지·본문 백링크 |
+| `lint` | 정리 점검 |
+| `semantic_search` | 의미 검색(설정했을 때) |
+| `my_proposals` | 내가 올린 변경 제안의 처리 결과 |
 | `write_document` / `append_document` | 쓰기 / 끝에 덧붙이기 |
 | `move_document` / `delete_document` | 이동 / 삭제 |
 | `batch_write` | write·append·delete·move 여러 개를 한 커밋으로. 하나라도 실패하면 전부 취소 |
 
-쓰기에는 마지막으로 읽은 `hash`를 `base_hash`로 넘긴다(새 문서는 `null`). 서버 버전과 다르면 `conflict`와 `current_hash`를 돌려주고 아무것도 쓰지 않는다.
+쓰기에는 마지막으로 읽은 `hash`를 `base_hash`로 넘긴다(새 문서는 `null`). 서버 버전과 다르면 `conflict`와 `current_hash`를 돌려주고 아무것도 쓰지 않는다. 검토 대상 폴더에 쓰면 결과에 `pending`이 붙고(볼트는 그대로), 돌려준 `content`·`hash`는 승인 뒤의 모습이다.
 
 ## 저장 구조
 
@@ -252,11 +307,19 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 | GET | `/api/search?q=` | `&folder=&limit=` | 검색 |
 | GET | `/api/health` | | 헬스체크(인증 없음) |
 | POST | `/api/auth/setup` | `{code, password}` | 처음 설치(비밀번호가 없을 때만, 로그의 설정 코드) |
-| * | `/api/admin/…` | | 관리 콘솔 API(소유자만): `status`, `update`, `agents`, `agents/:name/rules`·`rotate`, `password`, `backups`, `backups/settings`, `backups/upload`, `backups/:name/restore` |
+| * | `/api/admin/…` | | 관리 콘솔 API(소유자만): `status`, `update`, `agents`, `agents/:name/rules`·`rotate`, `password`, `backups`, `backups/settings`, `backups/upload`, `backups/:name/restore`, `automation`, `automation/webhooks`·`jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
 | GET · POST | `/api/topics` | `{name}` | 토픽 목록 / 위키 토픽 만들기(소유자) |
 | POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | 원본 수집 |
 | POST | `/api/ingest/file?topic=&name=` | 파일 바이트, 헤더 `x-keyring-upload: 1` | 파일 업로드 수집 |
 | GET | `/api/backlinks?path=` | | 백링크 |
+| GET | `/api/sources?path=` | | 출처·인용·백링크 |
+| GET | `/api/lint` | `?folder=&staleDays=` | 정리 점검 |
+| GET | `/api/graph` | `?folder=` | 그래프(노드·링크) |
+| GET | `/api/semantic` · `/api/semantic/status` | `?q=&folder=&limit=` | 의미 검색 / 상태 |
+| GET · PUT | `/api/review/settings` | `{reviewPaths}` | 검토 대상 폴더(소유자) |
+| GET | `/api/review` · `/api/review/:id` | `?status=pending` | 제안 목록 / diff 포함 상세(소유자) |
+| POST | `/api/review/:id/approve` · `/reject` | `{reason?}` | 승인·거절(소유자) |
+| GET | `/api/plugins` · `/plugins/<이름>.js` | | 위젯 플러그인 목록 / 모듈(소유자 로그인) |
 | GET | `/api/tags` | | 태그와 문서 수 |
 | POST | `/api/widget` | `{source}` | 위젯 YAML 실행 |
 | POST | `/api/task` | `{path, line, done, baseHash}` | 할 일 체크 |
@@ -278,6 +341,7 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 npm test         # 경로 검증, 충돌, 이력·롤백, 일괄 쓰기 원자성, 권한(숨김·읽기·추가 전용), 인증, MCP,
                  # 한국어 검색, 태그, 백링크, 인덱스 동기화, 위젯, 할 일 체크,
                  # 위키 토픽, 수집(URL·PDF·이미지·클립), SSRF 차단, index·log 생성과 권한별 내용,
+                 # 검토 대기열, 출처·정리 점검, 웹훅 서명·재시도·cron, 그래프, 의미 검색(가짜 임베딩 서버), 플러그인,
                  # 백업·복원(되돌리기·다른 서버로 옮기기)·자동 백업, 관리 API 권한, 처음 설치, 허용 호스트·보안 헤더
 npm run typecheck
 ```
