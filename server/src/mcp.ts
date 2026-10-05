@@ -178,6 +178,16 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
   );
 
   server.registerTool(
+    "semantic_search",
+    {
+      description: "의미 검색(임베딩): 단어가 달라도 뜻이 가까운 문서·절. 서버에 임베딩 모델이 설정됐을 때만 쓸 수 있다",
+      inputSchema: { query: z.string(), folder: z.string().optional(), limit: z.number().int().min(1).max(50).optional() },
+      annotations: ro,
+    },
+    ({ query, folder, limit }) => run(() => scoped.semantic(query, { folder, limit })),
+  );
+
+  server.registerTool(
     "list_tags",
     { description: "태그(프런트매터 tags + 본문 #태그)와 문서 수", annotations: ro },
     () => run(() => scoped.tags()),

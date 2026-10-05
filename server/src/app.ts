@@ -9,6 +9,7 @@ import { handleMcpRequest } from "./mcp.js";
 import type { Ingestor } from "./ingest.js";
 import type { NoteIndex } from "./noteindex.js";
 import type { ReviewQueue } from "./review.js";
+import type { SemanticIndex } from "./embeddings.js";
 import type { Wiki } from "./wiki.js";
 import { PathError } from "./paths.js";
 import { ScopedVault } from "./scoped.js";
@@ -34,6 +35,8 @@ export interface AppOptions {
   ingestor: Ingestor;
   /** 관리 콘솔(백업·업데이트·보안 설정). vault·index·wiki·config는 위와 같은 것을 쓴다. */
   admin: Omit<AdminDeps, "vault" | "index" | "wiki" | "config">;
+  /** 의미 검색(설정했을 때만) */
+  semantic?: SemanticIndex;
   /** 변경 검토 대기열(없으면 모든 변경을 바로 반영) */
   review?: ReviewQueue;
   /** 비밀번호가 없을 때 웹에서 처음 설정하는 데 쓰는 일회용 코드(서버 로그에만 나온다). */
@@ -102,7 +105,7 @@ class LoginThrottle {
   }
 }
 
-export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review }: AppOptions) {
+export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review, semantic }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
   const secureCookies = (c: Context) => isHttps(c) || (admin.publicUrl ?? "").startsWith("https:");
@@ -157,7 +160,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
         "www-authenticate": 'Bearer realm="keyring-notes"',
       });
     }
-    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal, index, wiki, review), ingestor);
+    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal, index, wiki, review, semantic), ingestor);
   });
 
   const api = new Hono<Env>();
@@ -245,7 +248,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.use("*", async (c, next) => {
     const p = principalOf(c);
     if (!p) return c.json({ error: "unauthorized", message: "로그인이 필요합니다" }, 401);
-    c.set("scoped", new ScopedVault(vault, p, index, wiki, review));
+    c.set("scoped", new ScopedVault(vault, p, index, wiki, review, semantic));
     await next();
   });
 
@@ -330,6 +333,14 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   });
 
   api.get("/backlinks", async (c) => c.json({ backlinks: await c.var.scoped.backlinks(requirePath(c.req.query("path"))) }));
+
+  api.get("/semantic/status", (c) => c.json(semantic ? semantic.status() : { enabled: false }));
+  api.get("/semantic", async (c) => {
+    const limit = Number.parseInt(c.req.query("limit") ?? "", 10);
+    return c.json({ hits: await c.var.scoped.semantic(c.req.query("q") ?? "", { folder: c.req.query("folder"), limit: Number.isFinite(limit) ? limit : undefined }) });
+  });
+
+  api.get("/graph", async (c) => c.json(await c.var.scoped.graph(c.req.query("folder"))));
 
   api.get("/lint", async (c) => {
     const days = Number.parseInt(c.req.query("staleDays") ?? "", 10);

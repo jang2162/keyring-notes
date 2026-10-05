@@ -186,6 +186,7 @@ describe("MCP", () => {
         "my_proposals",
         "sources",
         "lint",
+        "semantic_search",
         "whoami",
         "write_document",
       ].sort(),

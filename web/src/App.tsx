@@ -4,6 +4,7 @@ import { api, ApiError, review, type CommitInfo, type SearchHit, type SourcesInf
 import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
 import { AdminPanel } from "./Admin";
 import { LintPanel, ReviewPanel } from "./Curation";
+import { GraphView } from "./Graph";
 import { ClipPage, IngestDialog } from "./Ingest";
 import { invalidateWidgets, Widget } from "./Widget";
 import { Login } from "./Login";
@@ -210,12 +211,15 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [revision, setRevision] = useState<RevisionView | null>(null);
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [hits, setHits] = useState<(SearchHit & { score?: number })[] | null>(null);
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
   const [refs, setRefs] = useState<SourcesInfo | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [lintOpen, setLintOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [graphOpen, setGraphOpen] = useState(false);
+  const [semanticOn, setSemanticOn] = useState(false);
+  const [searchMode, setSearchMode] = useState<"text" | "semantic">("text");
   /** 볼트 내용이 바뀔 때마다 올려 태그·백링크·위젯을 다시 불러온다. */
   const [vaultVersion, setVaultVersion] = useState(0);
   const editorHandle = useRef<EditorHandle | null>(null);
@@ -281,16 +285,32 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   }, [doc?.path, vaultVersion]);
 
   useEffect(() => {
+    api
+      .semanticStatus()
+      .then((s) => setSemanticOn(s.enabled))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     const q = query.trim();
     if (!q) return setHits(null);
-    const t = setTimeout(() => {
-      api.search(q).then(setHits).catch((e) => {
-        setHits([]);
-        report(e);
-      });
-    }, 200);
+    const semantic = searchMode === "semantic" && !q.startsWith("#");
+    const t = setTimeout(
+      () => {
+        (semantic
+          ? api.semantic(q).then((hs) => hs.map((h) => ({ path: h.path, title: h.title, line: 1, snippet: (h.heading ? `${h.heading} · ` : "") + h.snippet, score: h.score })))
+          : api.search(q)
+        )
+          .then(setHits)
+          .catch((e) => {
+            setHits([]);
+            report(e);
+          });
+      },
+      semantic ? 400 : 200,
+    );
     return () => clearTimeout(t);
-  }, [query, vaultVersion]);
+  }, [query, vaultVersion, searchMode]);
 
   const load = useCallback(async (path: string) => {
     try {
@@ -520,6 +540,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             <button onClick={() => setReviewOpen(true)} title="변경 검토(에이전트 제안)" className={pendingCount ? "has-badge" : ""}>
               ✔{pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
             </button>{" "}
+            <button onClick={() => setGraphOpen(true)} title="그래프 뷰">
+              ◎
+            </button>{" "}
             <button onClick={() => setLintOpen(true)} title="정리 점검(깨진 링크·고아·출처 없음…)">
               🧹
             </button>{" "}
@@ -539,6 +562,15 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Escape" && setQuery("")}
           />
+          {semanticOn && (
+            <button
+              className={`search-mode${searchMode === "semantic" ? " on" : ""}`}
+              title="의미 검색: 단어가 달라도 뜻이 가까운 문서"
+              onClick={() => setSearchMode((m) => (m === "text" ? "semantic" : "text"))}
+            >
+              의미
+            </button>
+          )}
         </div>
         {hits !== null ? (
           <ul className="search-results">
@@ -552,7 +584,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                     open(h.path);
                   }}
                 >
-                  <span className="hit-title">{h.title}</span>
+                  <span className="hit-title">
+                    {h.title} {h.score !== undefined && <span className="hit-score">{h.score.toFixed(2)}</span>}
+                  </span>
                   <span className="hit-path">{h.path}</span>
                   {h.snippet && <span className="hit-snippet">{h.snippet}</span>}
                 </a>
@@ -687,6 +721,17 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           }}
           onOpen={(p) => {
             setReviewOpen(false);
+            open(p);
+          }}
+        />
+      )}
+      {graphOpen && (
+        <GraphView
+          current={doc?.path ?? null}
+          folders={folderPaths(tree)}
+          onClose={() => setGraphOpen(false)}
+          onOpen={(p) => {
+            setGraphOpen(false);
             open(p);
           }}
         />

@@ -13,6 +13,7 @@ import { NoteIndex } from "./noteindex.js";
 import { ReviewQueue } from "./review.js";
 import { Automation } from "./automation.js";
 import { ScopedVault } from "./scoped.js";
+import { SemanticIndex } from "./embeddings.js";
 import { Wiki } from "./wiki.js";
 import { Vault } from "./vault.js";
 
@@ -65,6 +66,17 @@ if (config.get().owner.passwordHash === null) {
 }
 
 const review = new ReviewQueue(vault, config);
+
+// 의미 검색: OpenAI 호환 임베딩 엔드포인트를 설정했을 때만
+const semantic =
+  env("KEYRING_EMBED_URL") && env("KEYRING_EMBED_MODEL")
+    ? new SemanticIndex(index, vault, { url: env("KEYRING_EMBED_URL")!, model: env("KEYRING_EMBED_MODEL")!, key: env("KEYRING_EMBED_KEY") })
+    : undefined;
+if (semantic) {
+  vault.onChange(() => semantic.schedule());
+  void semantic.sync();
+  console.log(`의미 검색: ${semantic.cfg.model} (${semantic.cfg.url})`);
+}
 const ownerPrincipal = () => config.ownerPrincipal();
 const automation = new Automation({
   vault,
@@ -86,6 +98,7 @@ review.onCreate((p) =>
 if (process.env.KEYRING_SCHEDULER !== "0") automation.start();
 
 const app = createApp({
+  semantic,
   review,
   vault,
   index,

@@ -3,6 +3,7 @@ import type { Author, CommitInfo } from "./git.js";
 import { headings, parseFrontmatter, resolveLink, section, setTaskState, sourceTargets, wikilinkTargets, type Heading, type Section } from "./markdown.js";
 import type { DocMeta, NoteIndex } from "./noteindex.js";
 import type { ReviewQueue } from "./review.js";
+import type { SemanticIndex } from "./embeddings.js";
 import { parseWidget, runWidget, type WidgetResult } from "./query.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
 import { isSchemaPath, schemaTemplate, type Wiki } from "./wiki.js";
@@ -67,6 +68,7 @@ export class ScopedVault {
     private index: NoteIndex,
     private wiki?: Wiki,
     private review?: ReviewQueue,
+    private semanticIndex?: SemanticIndex,
   ) {}
 
   get author(): Author {
@@ -392,6 +394,47 @@ export class ScopedVault {
     const counts: Partial<Record<LintKind, number>> = {};
     for (const i of issues) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
     return { checkedAt: new Date().toISOString(), folder: f || null, counts, issues };
+  }
+
+  /**
+   * 그래프 뷰(W9): 볼 수 있는 문서(자동 생성 문서 제외)와 그 사이의 링크(본문 링크·출처).
+   * 숨김 문서로 가는 링크는 아예 빠진다.
+   */
+  async graph(folder?: string): Promise<{
+    nodes: { id: string; title: string; topic: string; degree: number }[];
+    edges: { source: string; target: string; kind: "link" | "source" }[];
+  }> {
+    const f = normalizeFolder(folder);
+    const docs = this.visibleDocs().filter((d) => !this.wiki?.isGenerated(d.path) && (!f || d.path.startsWith(f + "/")));
+    const ids = new Set(docs.map((d) => d.path));
+    const paths = [...ids];
+    const seen = new Set<string>();
+    const edges: { source: string; target: string; kind: "link" | "source" }[] = [];
+    const degree = new Map<string, number>();
+    const rows = this.index.db.prepare("SELECT src, target, kind FROM links").all() as { src: string; target: string; kind: "link" | "source" }[];
+    for (const r of rows) {
+      if (!ids.has(r.src)) continue;
+      const to = resolveLink(r.target, paths);
+      if (!to || to === r.src) continue;
+      const key = `${r.src}\0${to}\0${r.kind}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ source: r.src, target: to, kind: r.kind });
+      degree.set(r.src, (degree.get(r.src) ?? 0) + 1);
+      degree.set(to, (degree.get(to) ?? 0) + 1);
+    }
+    return {
+      nodes: docs.map((d) => ({ id: d.path, title: d.title, topic: d.path.includes("/") ? d.path.split("/")[0] : "(최상위)", degree: degree.get(d.path) ?? 0 })),
+      edges,
+    };
+  }
+
+  /** 의미 검색(임베딩). 설정하지 않았으면 오류. 볼 수 있는 문서만 대상으로 한다. */
+  async semantic(query: string, opts: { folder?: string; limit?: number } = {}) {
+    if (!this.semanticIndex) throw new PathError("의미 검색이 꺼져 있습니다(KEYRING_EMBED_URL·KEYRING_EMBED_MODEL 설정 필요)");
+    const f = normalizeFolder(opts.folder);
+    const limit = Math.min(Math.max(opts.limit ?? 10, 1), 50);
+    return this.semanticIndex.search(query, (p) => this.canRead(p) && !this.wiki?.isGenerated(p) && (!f || p.startsWith(f + "/")), limit);
   }
 
   /** 읽을 수 있는 문서에 쓰인 태그와 개수. */

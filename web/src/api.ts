@@ -195,6 +195,11 @@ export interface LintReport {
   issues: { kind: LintKind; path: string; detail: string; target?: string }[];
 }
 
+export interface GraphData {
+  nodes: { id: string; title: string; topic: string; degree: number }[];
+  edges: { source: string; target: string; kind: "link" | "source" }[];
+}
+
 export interface SourcesInfo {
   path: string;
   sources: { target: string; path: string | null }[];
@@ -319,5 +324,9 @@ export const api = {
   },
   lint: (folder?: string) => request<LintReport>("GET", `/api/lint${folder ? `?folder=${q(folder)}` : ""}`),
   sources: (path: string) => request<SourcesInfo>("GET", `/api/sources?path=${q(path)}`),
+  graph: (folder?: string) => request<GraphData>("GET", `/api/graph${folder ? `?folder=${q(folder)}` : ""}`),
+  semanticStatus: () => request<{ enabled: boolean; model?: string; pending?: number; chunks?: number; lastError?: string | null }>("GET", "/api/semantic/status"),
+  semantic: (query: string) =>
+    request<{ hits: { path: string; title: string; score: number; heading: string; snippet: string }[] }>("GET", `/api/semantic?q=${encodeURIComponent(query)}&limit=20`).then((r) => r.hits),
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
 };

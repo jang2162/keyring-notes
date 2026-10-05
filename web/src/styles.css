@@ -10,6 +10,11 @@
   --info-bg: #eef4ff;
   /* 차트 계열 색·격자 (dataviz 검증: 밝은 면 #fff, 어두운 면 #17191c 대비 3:1 이상, 명도 대역 통과) */
   --series: #3b6fd8;
+  /* 그래프 토픽 색: dataviz 기본 범주 팔레트 앞 3색(모든 쌍 검증 통과) + 기타 회색 */
+  --cat-1: #2a78d6;
+  --cat-2: #eb6834;
+  --cat-3: #1baf7a;
+  --cat-other: #a3a29d;
   --grid: #eceef1;
   --axis: #c9ced6;
   font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
@@ -28,6 +33,10 @@
     --warn-fg: #f5c27a;
     --info-bg: #1d2a42;
     --series: #5b8def;
+    --cat-1: #3987e5;
+    --cat-2: #d95926;
+    --cat-3: #199e70;
+    --cat-other: #6b6a66;
     --grid: #26292e;
     --axis: #3a3f46;
   }
@@ -340,3 +349,16 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .hook-grid label.wide { grid-column: 1 / -1; }
 .hook-grid input, .hook-grid select { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .event-checks { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; font-size: 13px; }
+
+/* ── 그래프 ── */
+.graph-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 8px 16px; font-size: 13px; border-bottom: 1px solid var(--border); }
+.graph-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; }
+.graph-wrap { position: relative; flex: 1; min-height: 0; }
+.graph-wrap canvas { display: block; cursor: grab; touch-action: none; }
+.graph-wrap canvas:active { cursor: grabbing; }
+.graph-tooltip { transform: translateX(-50%); }
+.graph-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.search-box { display: flex; gap: 4px; }
+.search-box input { flex: 1; min-width: 0; }
+.search-mode { font-size: 12px; padding: 2px 8px; white-space: nowrap; }
+.hit-score { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
