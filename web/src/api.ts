@@ -123,6 +123,13 @@ export interface AgentInfo {
   lastUsed: string | null;
 }
 
+export interface DeviceInfo {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsed: string | null;
+}
+
 export interface BackupInfo {
   name: string;
   kind: "auto" | "manual" | "pre-restore";
@@ -276,6 +283,8 @@ export const admin = {
   setRules: (name: string, rules: Record<string, Level>) =>
     request<{ rules: Record<string, Level> }>("PUT", `/api/admin/agents/${enc(name)}/rules`, { rules }),
   removeAgent: (name: string) => request<unknown>("DELETE", `/api/admin/agents/${enc(name)}`, {}),
+  devices: () => request<{ devices: DeviceInfo[] }>("GET", "/api/admin/devices").then((r) => r.devices),
+  removeDevice: (id: string) => request<unknown>("DELETE", `/api/admin/devices/${enc(id)}`, {}),
   password: (current: string, next: string) => request<unknown>("POST", "/api/admin/password", { current, next }),
   backups: () => request<{ backups: BackupInfo[]; settings: BackupSettings }>("GET", "/api/admin/backups"),
   createBackup: (includeConfig?: boolean) => request<BackupInfo>("POST", "/api/admin/backups", { includeConfig }),
@@ -300,7 +309,7 @@ export const admin = {
   },
 };
 
-export const api = {
+const remoteApi = {
   setup: (code: string, password: string) => request<{ ok: true }>("POST", "/api/auth/setup", { code, password }),
   status: () => request<AuthStatus>("GET", "/api/auth/status"),
   login: (password: string) => request<{ ok: true }>("POST", "/api/auth/login", { password }),
@@ -369,3 +378,24 @@ export const api = {
     request<{ hits: { path: string; title: string; score: number; heading: string; snippet: string }[] }>("GET", `/api/semantic?q=${encodeURIComponent(query)}&limit=20`).then((r) => r.hits),
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
 };
+
+/** 화면이 쓰는 볼트 API. 서버(REST)와 기기 로컬 볼트가 같은 모양으로 구현한다. */
+export type VaultApi = typeof remoteApi;
+
+export const appMode = {
+  /** 기기 로컬 볼트(데스크톱·모바일 앱, 브라우저 ?local)로 도는 중 */
+  local: false,
+};
+
+let active: VaultApi = remoteApi;
+
+/** 로컬 볼트로 바꾼다(앱 시작 때 한 번). */
+export function setLocalBackend(backend: VaultApi) {
+  active = backend;
+  appMode.local = true;
+}
+
+/** 지금 쓰는 백엔드로 넘겨 주는 대리자. 화면 코드는 어느 쪽인지 몰라도 된다. */
+export const api: VaultApi = new Proxy({} as VaultApi, {
+  get: (_t, key) => active[key as keyof VaultApi],
+});

@@ -51,6 +51,8 @@ async function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectS
 
 /** fetch 자체가 실패(연결 없음)했는지. 서버가 준 오류 응답은 아니다. */
 export function isNetworkError(e: unknown): boolean {
+  // 서버(또는 로컬 볼트)가 준 오류 응답은 연결 문제가 아니다
+  if (e && typeof e === "object" && "status" in e) return false;
   return e instanceof TypeError || (typeof navigator !== "undefined" && navigator.onLine === false);
 }
 

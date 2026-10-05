@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { api, ApiError, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
+import { api, ApiError, appMode, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
 import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
 import { AdminPanel } from "./Admin";
 import { LintPanel, ReviewPanel } from "./Curation";
@@ -10,6 +10,9 @@ import { invalidateWidgets, Widget } from "./Widget";
 import { Login } from "./Login";
 import { authMemo, isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
+import { localContext } from "./local/boot";
+import { SyncPanel, useSyncStatus } from "./Sync";
+import { confirmDialog, promptDialog } from "./dialog";
 
 type ViewMode = "split" | "edit" | "preview";
 
@@ -161,6 +164,11 @@ function TreeView({
 }
 
 export function App() {
+  // 데스크톱·모바일 앱(또는 브라우저 ?local): 기기 볼트라 로그인이 없다
+  return appMode.local ? <Workspace onLogout={() => undefined} /> : <ServerApp />;
+}
+
+function ServerApp() {
   const [auth, setAuth] = useState({ ready: false, ok: false, wasIn: false, passwordSet: true });
 
   const checkAuth = useCallback(async () => {
@@ -239,6 +247,11 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
   const [ingestOpen, setIngestOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
+  /** 브라우저 로컬 볼트의 첨부(blob URL)가 준비되면 올려 미리보기를 다시 그린다 */
+  const [assetVersion, setAssetVersion] = useState(0);
+  const local = appMode.local;
+  const syncStatus = useSyncStatus(localContext);
   const docRef = useRef<OpenDoc | null>(null);
   docRef.current = doc;
 
@@ -281,6 +294,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
   // 검토 대기 수: 볼트가 바뀔 때와 1분마다
   useEffect(() => {
+    if (local) return;
     const load = () =>
       review
         .list("pending")
@@ -346,8 +360,8 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   const open = useCallback(
-    (path: string) => {
-      if (dirty && !confirm("저장하지 않은 변경이 있습니다. 버리고 이동할까요?")) return;
+    async (path: string) => {
+      if (dirty && !(await confirmDialog("저장하지 않은 변경이 있습니다. 버리고 이동할까요?", "버리고 이동"))) return;
       setNavOpen(false);
       void load(path);
     },
@@ -449,6 +463,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   }, [vaultChanged, refreshTree]);
 
   useEffect(() => {
+    if (local) return;
     const up = () => {
       setOnline(true);
       void flushOutbox();
@@ -475,6 +490,27 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       clearInterval(t);
     };
   }, [flushOutbox]);
+
+  // 기기 볼트: 동기화로 받은 변경, 다른 편집기에서 고친 파일을 화면에 반영한다
+  useEffect(() => {
+    if (!localContext) return;
+    const onAsset = () => setAssetVersion((v) => v + 1);
+    window.addEventListener("keyring:asset-loaded", onAsset);
+    const off = localContext.vault.onChange((paths, source) => {
+      if (source === "local") return;
+      vaultChanged();
+      void refreshTree();
+      const cur = docRef.current;
+      if (cur && paths.includes(cur.path)) {
+        if (cur.draft === cur.saved) void load(cur.path);
+        else setError(source === "sync" ? "동기화로 이 문서가 바뀌었습니다. 지금 저장하면 충돌이 납니다. 사본으로 저장하거나 새 버전을 불러오세요." : "다른 편집기에서 이 문서가 바뀌었습니다.");
+      }
+    });
+    return () => {
+      off();
+      window.removeEventListener("keyring:asset-loaded", onAsset);
+    };
+  }, [vaultChanged, refreshTree, load]);
 
   // 에디터 밖(로그인 직후 등)에서도 Ctrl/Cmd+S로 저장한다. 에디터 안에서는 에디터 키맵이 먼저 처리한다.
   useEffect(() => {
@@ -504,7 +540,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
   const createDoc = async () => {
     const dir = doc?.path.includes("/") ? doc.path.slice(0, doc.path.lastIndexOf("/") + 1) : "";
-    const input = prompt("새 문서 경로 (.md 생략 가능)", dir);
+    const input = await promptDialog("새 문서 경로 (.md 생략 가능)", dir, "만들기");
     if (!input) return;
     const path = /\.md$/i.test(input) ? input : `${input}.md`;
     const title = path.split("/").pop()!.replace(/\.md$/i, "");
@@ -525,7 +561,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const moveDoc = async () => {
     if (!doc) return;
     if (dirty) return setError("먼저 저장한 뒤 이동하세요.");
-    const input = prompt("새 경로", doc.path);
+    const input = await promptDialog("새 경로", doc.path, "이동");
     if (!input || input === doc.path) return;
     const to = /\.md$/i.test(input) ? input : `${input}.md`;
     try {
@@ -539,7 +575,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   const deleteDoc = async () => {
-    if (!doc || !confirm(`"${doc.path}" 문서를 삭제할까요? (이력에서 되돌릴 수 있습니다)`)) return;
+    if (!doc || !(await confirmDialog(`"${doc.path}" 문서를 삭제할까요? (이력에서 되돌릴 수 있습니다)`, "삭제"))) return;
     try {
       await api.remove(doc.path, doc.hash);
       vaultChanged();
@@ -562,7 +598,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
   const rollback = async () => {
     if (!doc || !revision) return;
-    if (dirty && !confirm("저장하지 않은 변경을 버리고 이 버전으로 되돌릴까요?")) return;
+    if (dirty && !(await confirmDialog("저장하지 않은 변경을 버리고 이 버전으로 되돌릴까요?", "되돌리기"))) return;
     try {
       await api.rollback(doc.path, revision.commit.rev, doc.hash);
       vaultChanged();
@@ -600,20 +636,24 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     if (a.dataset.resolved === "1") {
       if (target.toLowerCase().endsWith(".md")) open(target);
       else window.open(api.rawUrl(target), "_blank", "noreferrer");
-    } else if (confirm(`"${target}" 문서가 없습니다. 새로 만들까요?`)) {
-      const path = /\.md$/i.test(target) ? target : `${target}.md`;
-      api
-        .write(path, `# ${path.split("/").pop()!.replace(/\.md$/i, "")}\n`, null)
-        .then(refreshTree)
-        .then(() => open(path))
-        .catch(report);
+    } else {
+      void confirmDialog(`"${target}" 문서가 없습니다. 새로 만들까요?`, "만들기").then((yes) => {
+        if (!yes) return;
+        const path = /\.md$/i.test(target) ? target : `${target}.md`;
+        api
+          .write(path, `# ${path.split("/").pop()!.replace(/\.md$/i, "")}\n`, null)
+          .then(refreshTree)
+          .then(() => open(path))
+          .catch(report);
+      });
     }
   };
 
   const previewSource = revision ? (revision.content ?? "") : (doc?.draft ?? "");
   const rendered = useMemo(
     () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path }) : { html: "", widgets: [] }),
-    [previewSource, resolver, doc?.path],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [previewSource, resolver, doc?.path, assetVersion],
   );
 
   // innerHTML이 바뀐 뒤 위젯 자리를 찾아 React 포털로 위젯을 그린다.
@@ -629,24 +669,45 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           <strong>Keyring Notes</strong>
           <span>
             <button onClick={createDoc} title="새 문서">＋</button>{" "}
-            <button onClick={() => setIngestOpen(true)} title="원본 수집(파일·URL·붙여넣기)">
-              📥
-            </button>{" "}
-            <button onClick={() => setReviewOpen(true)} title="변경 검토(에이전트 제안)" className={pendingCount ? "has-badge" : ""}>
-              ✔{pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
-            </button>{" "}
+            {local ? (
+              <>
+                <button
+                  onClick={() => setSyncOpen(true)}
+                  title={syncStatus?.settings ? `동기화: ${syncStatus.settings.server}` : "이 기기 · 서버 동기화(선택)"}
+                  className={`sync-button${syncStatus?.running ? " running" : ""}${syncStatus?.lastError ? " has-error" : ""}`}
+                >
+                  ⇅
+                </button>{" "}
+              </>
+            ) : (
+              <>
+                <button onClick={() => setIngestOpen(true)} title="원본 수집(파일·URL·붙여넣기)">
+                  📥
+                </button>{" "}
+                <button onClick={() => setReviewOpen(true)} title="변경 검토(에이전트 제안)" className={pendingCount ? "has-badge" : ""}>
+                  ✔{pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
+                </button>{" "}
+              </>
+            )}
             <button onClick={() => setGraphOpen(true)} title="그래프 뷰">
               ◎
             </button>{" "}
             <button onClick={() => setLintOpen(true)} title="정리 점검(깨진 링크·고아·출처 없음…)">
               🧹
             </button>{" "}
-            <button onClick={() => setAdminOpen(true)} title="관리 콘솔(상태·에이전트·백업·업데이트)">
-              ⚙
-            </button>{" "}
-            <button onClick={() => (!dirty || confirm("저장하지 않은 변경이 있습니다. 로그아웃할까요?")) && onLogout()} title="로그아웃">
-              ⎋
-            </button>
+            {!local && (
+              <>
+                <button onClick={() => setAdminOpen(true)} title="관리 콘솔(상태·에이전트·백업·업데이트)">
+                  ⚙
+                </button>{" "}
+                <button
+                  onClick={async () => (!dirty || (await confirmDialog("저장하지 않은 변경이 있습니다. 로그아웃할까요?", "로그아웃"))) && onLogout()}
+                  title="로그아웃"
+                >
+                  ⎋
+                </button>
+              </>
+            )}
           </span>
         </div>
         <div className="search-box">
@@ -740,7 +801,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
               </button>
             </header>
 
-            {(!online || outboxCount > 0) && (
+            {!local && (!online || outboxCount > 0) && (
               <div className="banner offline">
                 {!online ? "오프라인입니다. 이 기기에서 연 문서만 열 수 있고, " : "연결되었습니다. "}
                 {outboxCount > 0 ? `저장한 변경 ${outboxCount}개를 ${online ? "보내는 중…" : "연결되면 서버로 보냅니다."}` : "저장하면 연결될 때 서버로 보냅니다."}
@@ -750,7 +811,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             {doc.cachedOffline && <div className="banner info">연결이 없어 이 기기에 남은 사본을 보여 줍니다.</div>}
             {doc.generated && (
               <div className="banner generated">
-                서버가 자동으로 만드는 문서입니다(위키 목차·작업 기록). 직접 고칠 수 없고, 위키가 바뀌면 다시 만들어집니다.
+                {local ? "앱이" : "서버가"} 자동으로 만드는 문서입니다(위키 목차·작업 기록). 직접 고칠 수 없고, 위키가 바뀌면 다시 만들어집니다.
               </div>
             )}
             {error && (
@@ -762,13 +823,15 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
               <div className="banner conflict">
                 {conflict.currentHash === null
                   ? "이 문서는 다른 곳에서 삭제되었습니다."
-                  : "이 문서는 다른 곳(다른 탭이나 에이전트)에서 먼저 수정되었습니다. 덮어쓰지 않았습니다."}
+                  : local
+                    ? "이 문서는 다른 곳(동기화·다른 편집기)에서 먼저 수정되었습니다. 덮어쓰지 않았습니다."
+                    : "이 문서는 다른 곳(다른 탭이나 에이전트)에서 먼저 수정되었습니다. 덮어쓰지 않았습니다."}
                 <button onClick={saveConflictCopy}>내 변경을 사본으로 저장</button>
                 {conflict.currentHash !== null && (
                   <button
-                    onClick={() => confirm("내 변경을 버리고 서버 버전을 불러올까요?") && load(doc.path)}
+                    onClick={async () => (await confirmDialog(`내 변경을 버리고 ${local ? "저장된" : "서버"} 버전을 불러올까요?`, "불러오기")) && load(doc.path)}
                   >
-                    서버 버전 불러오기
+                    {local ? "저장된 버전 불러오기" : "서버 버전 불러오기"}
                   </button>
                 )}
               </div>
@@ -816,6 +879,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             </button>
             {error && <div className="banner info">{error}</div>}
             <p>왼쪽에서 문서를 고르거나 ＋ 로 새 문서를 만드세요.</p>
+            {local && <p className="meta">문서는 이 기기에 저장되며 서버 없이도 쓸 수 있습니다. 서버와 맞추려면 ⇅ 를 누르세요.</p>}
           </div>
         )}
       </main>
@@ -851,6 +915,17 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           onClose={() => setLintOpen(false)}
           onOpen={(p) => {
             setLintOpen(false);
+            open(p);
+          }}
+        />
+      )}
+
+      {syncOpen && localContext && (
+        <SyncPanel
+          ctx={localContext}
+          onClose={() => setSyncOpen(false)}
+          onOpen={(p) => {
+            setSyncOpen(false);
             open(p);
           }}
         />

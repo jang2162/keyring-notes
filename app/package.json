@@ -1,0 +1,20 @@
+{
+  "name": "@keyring-notes/app",
+  "private": true,
+  "description": "데스크톱(Windows·macOS·Linux)·모바일(iOS·Android) 앱. 화면은 web, 로컬 볼트·동기화는 packages/core",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon ../web/public/icon-512.png",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

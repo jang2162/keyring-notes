@@ -9,3 +9,4 @@ docs
 *.log
 Dockerfile
 docker-compose.yml
+app/src-tauri/target

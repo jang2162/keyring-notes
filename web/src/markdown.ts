@@ -1,4 +1,10 @@
 import DOMPurify from "dompurify";
+
+/**
+ * DOMPurify 기본 허용 URI에 앱의 첨부 URL을 더한다: 데스크톱·모바일 앱의 파일(asset:), 브라우저 로컬 볼트의 blob:.
+ * javascript: 등 나머지는 그대로 막힌다.
+ */
+const SAFE_URI = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|asset|blob):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
 import MarkdownIt from "markdown-it";
 import type { StateInline } from "markdown-it";
 import { api, type TreeNode } from "./api";
@@ -201,5 +207,5 @@ export function renderMarkdown(content: string, ctx: RenderContext): Rendered {
   const lineOffset = content.slice(0, content.length - body.length).split("\n").length - 1;
   const env: RenderEnv = { ...ctx, widgets: [], lineOffset };
   html += md.render(body, env as unknown as Record<string, unknown>);
-  return { html: DOMPurify.sanitize(html, { ADD_ATTR: ["target"] }), widgets: env.widgets };
+  return { html: DOMPurify.sanitize(html, { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: SAFE_URI }), widgets: env.widgets };
 }

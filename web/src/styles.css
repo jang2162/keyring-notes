@@ -390,3 +390,24 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
   button { min-height: 34px; }
   .tree .file, .tree summary { padding-top: 6px; padding-bottom: 6px; }
 }
+
+/* 기기 볼트·동기화(7단계) */
+.sync-button.running { border-color: var(--accent); animation: sync-pulse 1.2s ease-in-out infinite; }
+.sync-button.has-error { border-color: #c2410c; color: #c2410c; }
+@keyframes sync-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .sync-button.running { animation: none; } }
+.admin-body section + section { margin-top: 18px; }
+.admin-body h3 { margin: 0 0 6px; font-size: 15px; }
+.sync-form { display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
+.sync-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.sync-form button { align-self: flex-start; }
+.sync-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sync-actions label { font-size: 13px; display: flex; gap: 4px; align-items: center; }
+.sync-report ul { margin: 6px 0 0; padding-left: 18px; }
+.vault-dir { font-size: 12px; word-break: break-all; }
+.boot-error { max-width: 560px; margin: 12vh auto; padding: 0 16px; }
+.sync-report .banner { display: block; }
+.ask-dialog { width: min(440px, 100%); }
+.ask-message { white-space: pre-line; }
+.ask-dialog input { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.ask-actions { display: flex; justify-content: flex-end; gap: 8px; }

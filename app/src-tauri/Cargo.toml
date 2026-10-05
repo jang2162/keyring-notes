@@ -1,0 +1,32 @@
+[package]
+name = "keyring-notes"
+version = "0.7.0"
+description = "Keyring Notes 데스크톱·모바일 앱(로컬 우선 마크다운 노트)"
+edition = "2021"
+publish = false
+
+[lib]
+# 모바일(iOS·Android)은 라이브러리로, 데스크톱은 main.rs로 들어온다
+name = "keyring_notes_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-http = "2"
+# generate_context!가 설정(plugins 등)을 JSON으로 넣는다
+serde_json = "1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# 데스크톱에서 고른 볼트 폴더 접근 권한을 다시 켤 때도 유지
+tauri-plugin-persisted-scope = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

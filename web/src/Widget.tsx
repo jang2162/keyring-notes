@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import { api, ApiError, type WidgetResult } from "./api";
+import { api, ApiError, appMode, type WidgetResult } from "./api";
 
 // 미리보기는 타이핑할 때마다 다시 그려지므로, 같은 위젯 원문의 결과를 저장 전까지 재사용한다.
 const cache = new Map<string, Promise<WidgetResult>>();
@@ -360,6 +360,11 @@ function PluginWidget({ result, onOpen }: { result: Extract<WidgetResult, { type
     let cleanup: void | (() => void);
     let alive = true;
     setError(null);
+    if (appMode.local) {
+      // 플러그인 모듈은 서버의 plugins 폴더에 있다. 기기 볼트에서는 쿼리 결과만 표로 보여 준다.
+      setError(`플러그인 "${result.plugin}"은(는) 서버에 연결된 웹 화면에서 그립니다. 여기서는 결과 ${result.total}건만 표시합니다.`);
+      return;
+    }
     import(/* @vite-ignore */ `/plugins/${result.plugin}.js`)
       .then((mod: PluginModule) => {
         if (!alive || !host.current) return;

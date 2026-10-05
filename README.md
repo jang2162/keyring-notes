@@ -6,7 +6,8 @@
 > 현재 상태: **6단계** — 파일 저장소·웹 에디터·Git 이력(1), 로그인·토큰 × 폴더 권한·MCP·일괄 쓰기(2),
 > SQLite 인덱스·자동완성·위젯(3), LLM Wiki: 원본 수집·토픽 템플릿·index/log 자동 생성(4),
 > 관리 콘솔·백업/복원·Docker·HTTPS 원격 접속(5, 노트 이전 제외),
-> 변경 검토 대기열·출처 연결·정리 점검·웹훅/정기 작업·그래프·의미 검색·PWA 오프라인 편집·위젯 플러그인(6).
+> 변경 검토 대기열·출처 연결·정리 점검·웹훅/정기 작업·그래프·의미 검색·PWA 오프라인 편집·위젯 플러그인(6),
+> 데스크톱·모바일 앱: 서버 없이 쓰는 로컬 볼트 + 선택 동기화(7, 진행 중).
 
 ## 설치(Docker, 권장)
 
@@ -110,6 +111,43 @@ KEYRING_VAULT=/tmp/vault-copy npm start
 - 자동 백업은 간격(기본 24시간)이 지났고 마지막 자동 백업 뒤 바뀐 것이 있을 때만 만들고, 자동 백업만 개수(기본 14)를 넘으면 지운다.
 - **복원**은 먼저 지금 상태를 `pre-restore` 백업으로 남기고 지금 HEAD를 `refs/keyring/before-restore-<시각>`에 보관한 뒤, 볼트 파일과 이력을 백업 시점으로 바꾼다. 그래서 복원도 되돌릴 수 있다. 설정 복원은 고를 때만.
 - 다른 서버로 옮기기: 백업을 내려받아 새 서버 관리 콘솔에서 올린 뒤 "복원"(설정도 복원하면 비밀번호·에이전트까지 그대로).
+
+## 데스크톱·모바일 앱
+
+앱은 **서버 없이도** 동작한다. 문서는 기기 폴더의 마크다운 파일이 원본이고, 편집·검색·태그·백링크·위젯·위키 목차·정리 점검·그래프·변경 이력이 모두 기기 안에서 돈다.
+서버 연결은 선택이며, 연결하면 이 서버와 문서를 맞춘다. 화면은 웹과 같은 코드(`web`), 로컬 볼트·동기화는 `packages/core`, 앱 셸은 Tauri 2(`app`).
+
+| | 볼트 위치 | 비고 |
+| --- | --- | --- |
+| Windows · macOS · Linux | `문서/Keyring Notes` (⇅ → "다른 폴더 열기"로 Obsidian 볼트 폴더도 열 수 있음) | 다른 편집기에서 고친 파일은 창으로 돌아올 때 다시 읽는다 |
+| iOS | 앱 문서 폴더(“파일” 앱에 보임) | |
+| Android | 앱 데이터 폴더 | |
+| 브라우저 | 이 브라우저의 IndexedDB (`https://서버/?local`, 끄기 `?local=0`) | 서버 없는 PWA·시험용 |
+
+앱 메타데이터는 볼트 안 `.keyring-app/`(점 폴더라 서버·Obsidian은 무시)에 둔다: 변경 기록(`journal.jsonl`), 내용 스냅샷(`objects/`, 해시로 저장해 중복 없음), 동기화 기준점(`sync.json`).
+
+### 서버와 동기화(선택)
+
+앱의 ⇅ → 서버 주소·기기 이름·서버 비밀번호 → "연결하고 동기화". 서버는 이 기기용 토큰(`kd_…`)을 발급하고, 관리 콘솔 → 앱·기기에서 기기별로 끊을 수 있다.
+자동 동기화는 앱을 열 때, 저장하고 10초 뒤, 창으로 돌아올 때, 5분마다(모바일은 앱이 열려 있을 때만).
+
+- 문서마다 "마지막으로 같았던 버전(기준점)"과 비교해 한쪽만 바뀌었으면 그쪽을 반영한다.
+- 양쪽이 다르게 바뀌었으면 **덮어쓰지 않는다**: 원래 경로는 서버 버전, 이 기기의 내용은 `<이름> (동기화 충돌 사본 날짜-시각).md`로 양쪽에 남는다. 한쪽이 지우고 다른 쪽이 고쳤으면 고친 쪽을 살린다.
+- 마크다운은 양방향, 첨부(이미지·PDF)는 서버 → 기기만. 위키 index·log는 각자 만든다.
+- 앱이 서버에 쓴 커밋의 작성자는 `소유자 (기기 이름)`이고, 기기 토큰으로는 관리 콘솔을 쓸 수 없다. 에이전트(MCP)는 지금처럼 서버에만 붙는다.
+- 서버 없이 쓰는 기능 중 원본 수집(웹페이지·PDF 변환), 의미 검색, 변경 검토, 위젯 플러그인 그리기는 서버에 연결된 웹 화면에서 쓴다.
+
+### 빌드
+
+```bash
+npm ci
+npm run app:dev                       # 데스크톱 개발 실행(웹 개발 서버 + 앱 창)
+npm run app:build                     # 설치 파일(Windows .msi/.exe, macOS .dmg, Linux .deb/.rpm/.AppImage)
+npm run android:init -w app && npm run android:build -w app   # Android SDK·NDK 필요
+npm run ios:init -w app && npm run ios:build -w app           # macOS + Xcode 필요
+```
+
+필요한 것: Rust(stable), Node 22, 플랫폼별 [Tauri 사전 요구 사항](https://v2.tauri.app/start/prerequisites/)(Linux는 `libwebkit2gtk-4.1-dev` 등). 아이콘은 `npm run icons -w app`으로 다시 만든다.
 
 ## 노트 쓰기
 
@@ -283,16 +321,19 @@ Streamable HTTP(무상태, JSON 응답) 방식이다.
 
 ```
 웹(쿠키 로그인) ─┐
-                 ├─ REST /api/*  ─┐
+앱 기기(토큰) ───┼─ REST /api/*  ─┐
 에이전트(토큰) ──┤                ├─ ScopedVault(권한 계층) ─ Vault(파일·일괄 쓰기) ─ Git
                  └─ MCP /mcp ─────┘
+
+앱(Tauri) = 같은 웹 화면 + LocalVault(기기 폴더, 메모리 색인, 스냅샷 이력) ⇄ SyncEngine ⇄ REST
+packages/core = 마크다운 분석·위젯 쿼리·위키 목차/기록·정리 점검·그래프(서버와 앱이 같이 씀)
 ```
 
 REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 볼트와 인덱스에 닿는다. 인덱스는 권한을 모르고, 검색·백링크·태그·위젯 결과는 모두 `ScopedVault`에서 권한으로 거른다. 모든 변경은 `Vault.batch()` 하나를 지나며, 가상의 상태에서 권한·충돌을 먼저 모두 검사한 뒤 디스크에 적용하고 한 커밋으로 남긴다. 적용이나 커밋 중에 실패하면 원래 내용으로 되돌린다.
 
 ## REST API
 
-인증: 웹은 `POST /api/auth/login`이 주는 쿠키(HttpOnly, SameSite=Strict), 에이전트는 `Authorization: Bearer <토큰>`. 모든 변경 요청은 `Content-Type: application/json`이어야 한다.
+인증: 웹은 `POST /api/auth/login`이 주는 쿠키(HttpOnly, SameSite=Strict), 에이전트·앱 기기는 `Authorization: Bearer <토큰>`. 모든 변경 요청은 `Content-Type: application/json`이어야 한다. 출처가 다른 앱을 위해 `Authorization` 헤더로 온 요청(과 기기 등록)에만 CORS 응답을 연다.
 
 | 메서드 | 경로 | 본문 / 쿼리 | 설명 |
 | --- | --- | --- | --- |
@@ -306,8 +347,10 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 | GET | `/api/frontmatter` | `?folder=&fields=a,b` | 프런트매터 목록 |
 | GET | `/api/search?q=` | `&folder=&limit=` | 검색 |
 | GET | `/api/health` | | 헬스체크(인증 없음) |
+| POST | `/api/auth/device` | `{password, name}` | 앱 기기 등록 → `{id, name, token}`(토큰은 한 번만) |
+| GET | `/api/sync/manifest` | | 동기화용 파일 목록 `{files: [{path, hash, size}]}`(소유자·기기, 서버가 만드는 위키 index·log 제외) |
 | POST | `/api/auth/setup` | `{code, password}` | 처음 설치(비밀번호가 없을 때만, 로그의 설정 코드) |
-| * | `/api/admin/…` | | 관리 콘솔 API(소유자만): `status`, `update`, `agents`, `agents/:name/rules`·`rotate`, `password`, `backups`, `backups/settings`, `backups/upload`, `backups/:name/restore`, `automation`, `automation/webhooks`·`jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
+| * | `/api/admin/…` | | 관리 콘솔 API(소유자만): `status`, `update`, `devices`(·`DELETE devices/:id`), `agents`, `agents/:name/rules`·`rotate`, `password`, `backups`, `backups/settings`, `backups/upload`, `backups/:name/restore`, `automation`, `automation/webhooks`·`jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
 | GET · POST | `/api/topics` | `{name}` | 토픽 목록 / 위키 토픽 만들기(소유자) |
 | POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | 원본 수집 |
 | POST | `/api/ingest/file?topic=&name=` | 파일 바이트, 헤더 `x-keyring-upload: 1` | 파일 업로드 수집 |
@@ -342,6 +385,8 @@ npm test         # 경로 검증, 충돌, 이력·롤백, 일괄 쓰기 원자�
                  # 한국어 검색, 태그, 백링크, 인덱스 동기화, 위젯, 할 일 체크,
                  # 위키 토픽, 수집(URL·PDF·이미지·클립), SSRF 차단, index·log 생성과 권한별 내용,
                  # 검토 대기열, 출처·정리 점검, 웹훅 서명·재시도·cron, 그래프, 의미 검색(가짜 임베딩 서버), 플러그인,
-                 # 백업·복원(되돌리기·다른 서버로 옮기기)·자동 백업, 관리 API 권한, 처음 설치, 허용 호스트·보안 헤더
+                 # 백업·복원(되돌리기·다른 서버로 옮기기)·자동 백업, 관리 API 권한, 처음 설치, 허용 호스트·보안 헤더,
+                 # 로컬 볼트(서버 없이 쓰기·검색·위젯·스냅샷 이력·외부 변경·위키 목차), 동기화(3방향·충돌 사본·삭제·409·오프라인),
+                 # 기기 토큰·CORS·동기화 목록, 실제 서버 API를 거친 앱 ↔ 서버 동기화
 npm run typecheck
 ```

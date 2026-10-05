@@ -7,6 +7,7 @@ import {
   type BackupInfo,
   type BackupSettings,
   type DeliveryInfo,
+  type DeviceInfo,
   type JobInfo,
   type Level,
   type UpdateInfo,
@@ -51,7 +52,7 @@ function duration(sec: number): string {
   return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${m}분` : `${m}분`;
 }
 
-type Section = "status" | "agents" | "backups" | "automation" | "update" | "security";
+type Section = "status" | "agents" | "devices" | "backups" | "automation" | "update" | "security";
 
 export function AdminPanel({ folders, onClose }: { folders: string[]; onClose: () => void }) {
   const [section, setSection] = useState<Section>("status");
@@ -64,6 +65,7 @@ export function AdminPanel({ folders, onClose }: { folders: string[]; onClose: (
             [
               ["status", "서버 상태"],
               ["agents", "에이전트·권한"],
+              ["devices", "앱·기기"],
               ["backups", "백업·복원"],
               ["automation", "자동화"],
               ["update", "업데이트"],
@@ -82,6 +84,7 @@ export function AdminPanel({ folders, onClose }: { folders: string[]; onClose: (
       <div className="admin-body">
         {section === "status" && <StatusView />}
         {section === "agents" && <AgentsView folders={folders} />}
+        {section === "devices" && <DevicesView />}
         {section === "backups" && <BackupsView />}
         {section === "automation" && <AutomationView />}
         {section === "update" && <UpdateView />}
@@ -181,6 +184,63 @@ function TokenNotice({ name, token, onClose }: { name: string; token: string; on
       <p className="meta">MCP 클라이언트 설정 예(Streamable HTTP):</p>
       <pre>{snippet}</pre>
       <button onClick={() => copy(snippet)}>설정 복사</button> <button onClick={onClose}>닫기</button>
+    </div>
+  );
+}
+
+/** 데스크톱·모바일 앱 기기. 앱에서 서버 주소와 비밀번호로 연결하면 여기에 생긴다. */
+function DevicesView() {
+  const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(() => admin.devices().then(setDevices).catch((e) => setError(msg(e))), []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const remove = async (d: DeviceInfo) => {
+    if (!confirm(`"${d.name}" 기기의 연결을 끊을까요? 그 기기의 문서는 지워지지 않고, 다시 연결하려면 비밀번호가 필요합니다.`)) return;
+    try {
+      await admin.removeDevice(d.id);
+      await load();
+    } catch (e) {
+      setError(msg(e));
+    }
+  };
+  return (
+    <div>
+      <p className="meta">
+        앱(데스크톱·모바일)은 서버 없이도 기기 안의 문서로 동작하고, 연결하면 이 서버와 동기화합니다. 앱의 ⇅ 메뉴에서 이 서버 주소와 비밀번호를 넣으면 기기가 여기에
+        등록됩니다. 기기는 모든 문서를 소유자 권한으로 다루지만 관리 콘솔은 쓸 수 없습니다.
+      </p>
+      {error && (
+        <p className="form-error" onClick={() => setError(null)}>
+          {error}
+        </p>
+      )}
+      {devices.length === 0 && <p className="meta">연결된 기기가 없습니다.</p>}
+      {devices.length > 0 && (
+        <table className="widget-table">
+          <thead>
+            <tr>
+              <th>기기</th>
+              <th>등록</th>
+              <th>마지막 접속(서버 시작 후)</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((d) => (
+              <tr key={d.id}>
+                <td>{d.name}</td>
+                <td>{d.createdAt ? new Date(d.createdAt).toLocaleString() : "-"}</td>
+                <td>{d.lastUsed ? new Date(d.lastUsed).toLocaleString() : "-"}</td>
+                <td>
+                  <button onClick={() => remove(d)}>연결 끊기</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/core",
     "server",
-    "web"
+    "web",
+    "app"
   ],
   "scripts": {
     "dev:server": "npm run dev -w server",
@@ -15,7 +16,9 @@
     "start": "npm run start -w server",
     "test": "npm test -w packages/core && npm test -w server",
     "typecheck": "npm run typecheck -w packages/core && npm run typecheck -w server && npm run typecheck -w web",
-    "keyring": "npm run --silent keyring -w server --"
+    "keyring": "npm run --silent keyring -w server --",
+    "app:dev": "npm run dev -w app",
+    "app:build": "npm run build -w app"
   },
   "engines": {
     "node": ">=22.13"
