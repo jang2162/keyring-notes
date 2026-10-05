@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { GitHistory, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
 import { isHiddenSegment, isMarkdown, normalizeVaultPath, PathError, resolveInVault } from "./paths.js";
@@ -19,13 +19,20 @@ export interface Doc {
 
 export class NotFoundError extends Error {}
 
+export class ForbiddenError extends Error {
+  constructor(message = "권한이 없습니다") {
+    super(message);
+  }
+}
+
 /** 클라이언트가 본 버전(baseHash)과 서버의 현재 버전이 달라 쓰기를 거부할 때. */
 export class ConflictError extends Error {
   constructor(
     readonly currentHash: string | null,
     message = "다른 곳에서 먼저 수정되었습니다",
+    readonly path?: string,
   ) {
-    super(message);
+    super(path ? `${message}: ${path}` : message);
   }
 }
 
@@ -34,8 +41,42 @@ export function hashContent(content: string | Buffer): string {
 }
 
 /**
- * 볼트 파일에 대한 모든 읽기·쓰기의 단일 입구.
- * 쓰기는 직렬화되고, 각 변경은 작성자와 함께 Git 커밋으로 남는다.
+ * 일괄 쓰기의 연산 하나.
+ * - write: 문서 전체를 쓴다. baseHash가 null이면 새 문서 생성.
+ * - append: 문서 끝에 덧붙인다(없으면 만든다). baseHash를 주면 그 버전일 때만.
+ * - delete / move: baseHash가 현재 버전과 같아야 한다.
+ */
+export type Op =
+  | { op: "write"; path: string; content: string; baseHash: string | null }
+  | { op: "append"; path: string; content: string; baseHash?: string | null }
+  | { op: "delete"; path: string; baseHash: string }
+  | { op: "move"; from: string; to: string; baseHash: string };
+
+/** 권한 계층이 연산 종류별로 검사할 수 있게 넘겨주는 동작 이름. */
+export type Action = "create" | "append" | "modify" | "delete";
+export type Guard = (action: Action, relPath: string) => void;
+
+export interface BatchResult {
+  rev: string | null;
+  /** 바뀐 문서의 새 해시. 삭제된 문서는 null. */
+  files: { path: string; hash: string | null }[];
+}
+
+interface Slot {
+  abs: string;
+  original: Buffer | null;
+  content: string | null;
+  hash: string | null;
+}
+
+function appendText(current: string, addition: string): string {
+  if (current.length === 0 || current.endsWith("\n")) return current + addition;
+  return `${current}\n${addition}`;
+}
+
+/**
+ * 볼트 파일 저장소. 권한은 모르며, 권한 검사는 ScopedVault가 guard로 넘긴다.
+ * 모든 변경은 batch() 하나를 지나고, 직렬화되며, 한 번에 한 커밋으로 남는다.
  */
 export class Vault {
   readonly git: GitHistory;
@@ -61,7 +102,7 @@ export class Vault {
   }
 
   /** 경로 검증 + 심볼릭 링크로 볼트 밖을 가리키는 경우 차단. */
-  private async resolve(input: string): Promise<{ rel: string; abs: string }> {
+  async resolve(input: string): Promise<{ rel: string; abs: string }> {
     const rel = normalizeVaultPath(input);
     const abs = resolveInVault(this.root, rel);
     // 존재하는 가장 가까운 상위까지 실제 경로를 따라가 볼트 안인지 확인한다.
@@ -102,11 +143,25 @@ export class Vault {
     return walk(this.root, "");
   }
 
-  private async currentHash(abs: string): Promise<string | null> {
+  /** 볼트의 모든 마크다운 문서 경로. */
+  async markdownPaths(): Promise<string[]> {
+    const out: string[] = [];
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.type === "dir") walk(n.children ?? []);
+        else if (isMarkdown(n.path)) out.push(n.path);
+      }
+    };
+    walk(await this.tree());
+    return out;
+  }
+
+  private async readBuffer(abs: string): Promise<Buffer | null> {
     try {
-      return hashContent(await readFile(abs));
+      return await readFile(abs);
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "EISDIR" || code === "ENOTDIR") return null;
       throw e;
     }
   }
@@ -114,15 +169,8 @@ export class Vault {
   async read(input: string): Promise<Doc> {
     const { rel, abs } = await this.resolve(input);
     if (!isMarkdown(rel)) throw new PathError("마크다운 문서만 열 수 있습니다");
-    let buf: Buffer;
-    try {
-      buf = await readFile(abs);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT" || (e as NodeJS.ErrnoException).code === "EISDIR") {
-        throw new NotFoundError(`문서가 없습니다: ${rel}`);
-      }
-      throw e;
-    }
+    const buf = await this.readBuffer(abs);
+    if (buf === null) throw new NotFoundError(`문서가 없습니다: ${rel}`);
     return { path: rel, content: buf.toString("utf8"), hash: hashContent(buf) };
   }
 
@@ -140,54 +188,151 @@ export class Vault {
   }
 
   /**
-   * 문서를 쓴다. baseHash는 클라이언트가 마지막으로 본 버전이며,
-   * null이면 "새 문서 생성"을 뜻한다. 서버 쪽 현재 버전과 다르면 덮어쓰지 않고 거부한다.
+   * 여러 연산을 하나의 커밋으로 적용한다. 하나라도 실패하면(충돌, 권한, 파일 오류, 커밋 오류)
+   * 아무것도 바뀌지 않는다. 연산은 앞 연산의 결과 위에서 차례로 검사된다.
    */
-  async write(input: string, content: string, baseHash: string | null, author: Author): Promise<Doc & { rev: string | null }> {
-    const { rel, abs } = await this.resolve(input);
-    if (!isMarkdown(rel)) throw new PathError("마크다운 문서(.md)만 쓸 수 있습니다");
-    return this.exclusive(async () => {
-      const current = await this.currentHash(abs);
-      if (current !== baseHash) {
-        throw new ConflictError(current, current === null ? "문서가 이미 삭제되었습니다" : undefined);
+  async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard } = {}): Promise<BatchResult> {
+    if (ops.length === 0) throw new PathError("연산이 비어 있습니다");
+    if (ops.length > 500) throw new PathError("한 번에 500개까지 처리할 수 있습니다");
+    const guard = opts.guard ?? (() => undefined);
+
+    // 경로 검증은 잠금 밖에서 먼저 한다.
+    const resolved = new Map<string, string>();
+    const resolvedAbs = new Map<string, string>();
+    const want = async (p: string) => {
+      const { rel, abs } = await this.resolve(p);
+      if (!isMarkdown(rel)) throw new PathError(`마크다운 문서(.md)만 바꿀 수 있습니다: ${rel}`);
+      resolved.set(p, rel);
+      resolvedAbs.set(rel, abs);
+    };
+    for (const op of ops) {
+      if (op.op === "move") {
+        await want(op.from);
+        await want(op.to);
+      } else {
+        if (op.op !== "delete" && typeof op.content !== "string") throw new PathError("content가 필요합니다");
+        await want(op.path);
       }
-      await mkdir(path.dirname(abs), { recursive: true });
-      await writeFile(abs, content, "utf8");
-      const rev = await this.git.commit(`${current === null ? "생성" : "수정"}: ${rel}`, author, [rel]);
-      return { path: rel, content, hash: hashContent(content), rev };
+    }
+
+    return this.exclusive(async () => {
+      const slots = new Map<string, Slot>();
+      const slot = async (rel: string): Promise<Slot> => {
+        let s = slots.get(rel);
+        if (!s) {
+          const abs = resolvedAbs.get(rel)!;
+          const original = await this.readBuffer(abs);
+          s = {
+            abs,
+            original,
+            content: original === null ? null : original.toString("utf8"),
+            hash: original === null ? null : hashContent(original),
+          };
+          slots.set(rel, s);
+        }
+        return s;
+      };
+      const set = (s: Slot, content: string | null) => {
+        s.content = content;
+        s.hash = content === null ? null : hashContent(content);
+      };
+
+      // 1) 계획: 가상의 상태 위에서 모든 연산을 검사한다. 디스크는 아직 그대로다.
+      const verbs: string[] = [];
+      for (const op of ops) {
+        if (op.op === "move") {
+          const from = resolved.get(op.from)!;
+          const to = resolved.get(op.to)!;
+          const a = await slot(from);
+          const b = await slot(to);
+          if (a.content === null) throw new NotFoundError(`문서가 없습니다: ${from}`);
+          guard("delete", from);
+          guard("create", to);
+          if (a.hash !== op.baseHash) throw new ConflictError(a.hash, undefined, from);
+          if (from === to) continue;
+          if (b.content !== null) throw new ConflictError(b.hash, "이미 같은 이름의 문서가 있습니다", to);
+          set(b, a.content);
+          set(a, null);
+          verbs.push(`이동: ${from} → ${to}`);
+          continue;
+        }
+        const rel = resolved.get(op.path)!;
+        const s = await slot(rel);
+        if (op.op === "write") {
+          const action: Action = s.content === null ? "create" : op.content.startsWith(s.content) ? "append" : "modify";
+          guard(action, rel);
+          if (s.hash !== op.baseHash) {
+            throw new ConflictError(s.hash, s.hash === null ? "문서가 없습니다(삭제되었을 수 있음)" : undefined, rel);
+          }
+          verbs.push(`${s.content === null ? "생성" : "수정"}: ${rel}`);
+          set(s, op.content);
+        } else if (op.op === "append") {
+          guard(s.content === null ? "create" : "append", rel);
+          if (op.baseHash !== undefined && s.hash !== op.baseHash) throw new ConflictError(s.hash, undefined, rel);
+          verbs.push(`${s.content === null ? "생성" : "덧붙임"}: ${rel}`);
+          set(s, s.content === null ? op.content : appendText(s.content, op.content));
+        } else {
+          if (s.content === null) throw new NotFoundError(`문서가 없습니다: ${rel}`);
+          guard("delete", rel);
+          if (s.hash !== op.baseHash) throw new ConflictError(s.hash, undefined, rel);
+          verbs.push(`삭제: ${rel}`);
+          set(s, null);
+        }
+      }
+
+      const changed = [...slots.entries()].filter(([, s]) => {
+        const before = s.original === null ? null : hashContent(s.original);
+        return before !== s.hash;
+      });
+      const files = [...slots.entries()].map(([p, s]) => ({ path: p, hash: s.hash }));
+      if (changed.length === 0) return { rev: null, files };
+
+      // 2) 적용: 실패하면 원래 바이트로 되돌린다.
+      const written: [string, Slot][] = [];
+      try {
+        for (const [rel, s] of changed) {
+          written.push([rel, s]);
+          if (s.content === null) {
+            await rm(s.abs, { force: true });
+            await this.pruneEmptyDirs(path.dirname(s.abs));
+          } else {
+            await mkdir(path.dirname(s.abs), { recursive: true });
+            await writeFile(s.abs, s.content, "utf8");
+          }
+        }
+        const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0] : `일괄 변경 ${verbs.length}건`);
+        const body = verbs.length > 1 || opts.message ? `${message}\n\n${verbs.join("\n")}` : message;
+        const rev = await this.git.commit(body, author, changed.map(([rel]) => rel));
+        return { rev, files };
+      } catch (e) {
+        for (const [, s] of written.reverse()) {
+          try {
+            if (s.original === null) await rm(s.abs, { force: true });
+            else {
+              await mkdir(path.dirname(s.abs), { recursive: true });
+              await writeFile(s.abs, s.original);
+            }
+          } catch (restoreErr) {
+            console.error("일괄 쓰기 복구 실패", restoreErr);
+          }
+        }
+        await this.git.unstage(changed.map(([rel]) => rel)).catch(() => undefined);
+        throw e;
+      }
     });
   }
 
-  async delete(input: string, baseHash: string, author: Author): Promise<{ rev: string | null }> {
-    const { rel, abs } = await this.resolve(input);
-    if (!isMarkdown(rel)) throw new PathError("마크다운 문서(.md)만 삭제할 수 있습니다");
-    return this.exclusive(async () => {
-      const current = await this.currentHash(abs);
-      if (current === null) throw new NotFoundError(`문서가 없습니다: ${rel}`);
-      if (current !== baseHash) throw new ConflictError(current);
-      await rm(abs);
-      const rev = await this.git.commit(`삭제: ${rel}`, author, [rel]);
-      return { rev };
-    });
-  }
-
-  async move(fromInput: string, toInput: string, baseHash: string, author: Author): Promise<Doc & { rev: string | null }> {
-    const from = await this.resolve(fromInput);
-    const to = await this.resolve(toInput);
-    if (!isMarkdown(from.rel) || !isMarkdown(to.rel)) throw new PathError("마크다운 문서(.md)만 옮길 수 있습니다");
-    return this.exclusive(async () => {
-      const current = await this.currentHash(from.abs);
-      if (current === null) throw new NotFoundError(`문서가 없습니다: ${from.rel}`);
-      if (current !== baseHash) throw new ConflictError(current);
-      if ((await this.currentHash(to.abs)) !== null) {
-        throw new ConflictError(null, `이미 같은 이름의 문서가 있습니다: ${to.rel}`);
+  /** 삭제로 비게 된 상위 폴더를 볼트 루트 직전까지 정리한다. */
+  private async pruneEmptyDirs(dirAbs: string): Promise<void> {
+    let dir = dirAbs;
+    while (path.relative(this.root, dir) && !path.relative(this.root, dir).startsWith("..")) {
+      try {
+        await rmdir(dir);
+      } catch {
+        return;
       }
-      await mkdir(path.dirname(to.abs), { recursive: true });
-      await rename(from.abs, to.abs);
-      const rev = await this.git.commit(`이동: ${from.rel} → ${to.rel}`, author, [from.rel, to.rel]);
-      const content = await readFile(to.abs, "utf8");
-      return { path: to.rel, content, hash: current, rev };
-    });
+      dir = path.dirname(dir);
+    }
   }
 
   async history(input: string): Promise<CommitInfo[]> {
@@ -198,21 +343,5 @@ export class Vault {
   async revision(input: string, rev: string): Promise<{ path: string; rev: string; content: string | null }> {
     const { rel } = await this.resolve(input);
     return { path: rel, rev, content: await this.git.show(rev, rel) };
-  }
-
-  /** 문서를 과거 리비전의 내용으로 되돌린다. 이력은 지우지 않고 새 커밋으로 남긴다. */
-  async rollback(input: string, rev: string, baseHash: string | null, author: Author): Promise<Doc & { rev: string | null }> {
-    const { rel, abs } = await this.resolve(input);
-    if (!isMarkdown(rel)) throw new PathError("마크다운 문서(.md)만 되돌릴 수 있습니다");
-    const old = await this.git.show(rev, rel);
-    if (old === null) throw new NotFoundError(`해당 리비전에 문서가 없습니다: ${rev.slice(0, 7)}`);
-    return this.exclusive(async () => {
-      const current = await this.currentHash(abs);
-      if (current !== baseHash) throw new ConflictError(current);
-      await mkdir(path.dirname(abs), { recursive: true });
-      await writeFile(abs, old, "utf8");
-      const newRev = await this.git.commit(`되돌리기: ${rel} @ ${rev.slice(0, 7)}`, author, [rel]);
-      return { path: rel, content: old, hash: hashContent(old), rev: newRev };
-    });
   }
 }

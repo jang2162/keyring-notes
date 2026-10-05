@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { api, ApiError, type CommitInfo, type TreeNode } from "./api";
 import { Editor } from "./Editor";
+import { Login } from "./Login";
 import { LinkResolver, renderMarkdown } from "./markdown";
 
 type ViewMode = "split" | "edit" | "preview";
@@ -79,6 +80,45 @@ function TreeView({
 }
 
 export function App() {
+  const [auth, setAuth] = useState({ ready: false, ok: false, wasIn: false, passwordSet: true });
+
+  const checkAuth = useCallback(async () => {
+    try {
+      const s = await api.status();
+      const ok = s.authenticated && s.principal?.kind === "owner";
+      setAuth((a) => ({ ready: true, ok, wasIn: a.wasIn || ok, passwordSet: s.passwordSet }));
+    } catch {
+      setAuth((a) => ({ ...a, ready: true, ok: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkAuth();
+    const onUnauthorized = () => setAuth((a) => ({ ...a, ok: false }));
+    window.addEventListener("keyring:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("keyring:unauthorized", onUnauthorized);
+  }, [checkAuth]);
+
+  if (!auth.ready) return null;
+  // 세션이 끊겨도 작업 화면은 남겨 두어 저장하지 않은 내용을 잃지 않게 한다.
+  return (
+    <>
+      {(auth.ok || auth.wasIn) && (
+        <Workspace
+          onLogout={() =>
+            api.logout().finally(() => {
+              setAuth((a) => ({ ...a, wasIn: false }));
+              void checkAuth();
+            })
+          }
+        />
+      )}
+      {!auth.ok && <Login passwordSet={auth.passwordSet} onDone={checkAuth} />}
+    </>
+  );
+}
+
+function Workspace({ onLogout }: { onLogout: () => void }) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [doc, setDoc] = useState<OpenDoc | null>(null);
   const [mode, setMode] = useState<ViewMode>("split");
@@ -161,6 +201,18 @@ export function App() {
       setSaving(false);
     }
   }, [doc, saving]);
+
+  // 에디터 밖(로그인 직후 등)에서도 Ctrl/Cmd+S로 저장한다. 에디터 안에서는 에디터 키맵이 먼저 처리한다.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && !e.defaultPrevented) {
+        e.preventDefault();
+        void save();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [save]);
 
   const saveConflictCopy = async () => {
     if (!doc) return;
@@ -267,7 +319,12 @@ export function App() {
       <aside className="sidebar">
         <div className="sidebar-head">
           <strong>Keyring Notes</strong>
-          <button onClick={createDoc} title="새 문서">＋</button>
+          <span>
+            <button onClick={createDoc} title="새 문서">＋</button>{" "}
+            <button onClick={() => (!dirty || confirm("저장하지 않은 변경이 있습니다. 로그아웃할까요?")) && onLogout()} title="로그아웃">
+              ⎋
+            </button>
+          </span>
         </div>
         <TreeView nodes={tree} current={doc?.path ?? null} onOpen={open} />
       </aside>

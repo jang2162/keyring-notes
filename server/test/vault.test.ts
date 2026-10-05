@@ -1,19 +1,21 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ScopedVault } from "../src/scoped.js";
 import { hashContent, Vault } from "../src/vault.js";
-
-const me = { name: "me", email: "me@test" };
-const agent = { name: "openclaw-work", email: "agent@test" };
+import { agentPrincipal, ownerPrincipal } from "./helpers.js";
 
 let dir: string;
 let vault: Vault;
+let me: ScopedVault;
+let agent: ScopedVault;
 
 beforeEach(async () => {
   dir = await mkdtemp(path.join(os.tmpdir(), "keyring-vault-"));
   vault = new Vault(dir);
+  me = new ScopedVault(vault, ownerPrincipal);
+  agent = new ScopedVault(vault, agentPrincipal("openclaw-work", { "/": "delete" }));
 });
 
 afterEach(async () => {
@@ -32,60 +34,61 @@ describe("Vault", () => {
     expect(log).toHaveLength(1);
     expect(log[0].author).toBe("system");
 
-    const tree = await vault.tree();
+    const tree = await me.tree();
     expect(tree.map((n) => n.name)).toEqual(["업무"]); // 숨김 폴더는 트리에서 빠진다
     expect(tree[0].children?.[0].path).toBe("업무/회의.md");
   });
 
   it("쓰기마다 작성자와 함께 커밋하고, 과거 리비전으로 되돌린다", async () => {
     await vault.init();
-    const v1 = await vault.write("노트/a.md", "첫 버전\n", null, me);
-    const v2 = await vault.write("노트/a.md", "둘째 버전\n", v1.hash, agent);
+    const v1 = await me.write("노트/a.md", "첫 버전\n", null);
+    const v2 = await agent.write("노트/a.md", "둘째 버전\n", v1.hash);
 
-    const history = await vault.history("노트/a.md");
+    const history = await me.history("노트/a.md");
     expect(history.map((h) => h.author)).toEqual(["openclaw-work", "me"]);
     expect(history[1].rev).toBe(v1.rev);
 
-    const old = await vault.revision("노트/a.md", v1.rev!);
+    const old = await me.revision("노트/a.md", v1.rev!);
     expect(old.content).toBe("첫 버전\n");
 
-    const rolled = await vault.rollback("노트/a.md", v1.rev!, v2.hash, me);
+    const rolled = await me.rollback("노트/a.md", v1.rev!, v2.hash);
     expect(rolled.content).toBe("첫 버전\n");
-    expect((await vault.read("노트/a.md")).content).toBe("첫 버전\n");
-    expect(await vault.history("노트/a.md")).toHaveLength(3);
+    expect((await me.read("노트/a.md")).content).toBe("첫 버전\n");
+    expect(await me.history("노트/a.md")).toHaveLength(3);
   });
 
   it("baseHash가 현재 버전과 다르면 덮어쓰지 않는다", async () => {
     await vault.init();
-    const v1 = await vault.write("a.md", "원본", null, me);
-    await vault.write("a.md", "에이전트 수정", v1.hash, agent);
+    const v1 = await me.write("a.md", "원본", null);
+    await agent.write("a.md", "에이전트 수정", v1.hash);
 
-    await expect(vault.write("a.md", "사람 수정", v1.hash, me)).rejects.toMatchObject({
+    await expect(me.write("a.md", "사람 수정", v1.hash)).rejects.toMatchObject({
       currentHash: hashContent("에이전트 수정"),
     });
     // 새 문서로 만들려 했는데 이미 있으면 거부
-    await expect(vault.write("a.md", "새로", null, me)).rejects.toThrow();
-    expect((await vault.read("a.md")).content).toBe("에이전트 수정");
+    await expect(me.write("a.md", "새로", null)).rejects.toThrow();
+    expect((await me.read("a.md")).content).toBe("에이전트 수정");
   });
 
-  it("이동과 삭제도 이력에 남는다", async () => {
+  it("이동과 삭제도 이력에 남고, 빈 폴더는 정리된다", async () => {
     await vault.init();
-    const v1 = await vault.write("a.md", "내용", null, me);
-    const moved = await vault.move("a.md", "폴더/b.md", v1.hash, me);
+    const v1 = await me.write("a.md", "내용", null);
+    const moved = await me.move("a.md", "폴더/b.md", v1.hash);
     expect(moved.path).toBe("폴더/b.md");
-    await expect(vault.read("a.md")).rejects.toThrow();
-    await vault.delete("폴더/b.md", moved.hash, me);
-    await expect(vault.read("폴더/b.md")).rejects.toThrow();
+    await expect(me.read("a.md")).rejects.toThrow();
+    await me.delete("폴더/b.md", moved.hash);
+    await expect(me.read("폴더/b.md")).rejects.toThrow();
     const log = await vault.git.log();
     expect(log.map((l) => l.message)).toEqual(["삭제: 폴더/b.md", "이동: a.md → 폴더/b.md", "생성: a.md"]);
+    expect(await me.tree()).toEqual([]);
   });
 
   it("볼트 밖이나 숨김 경로, 마크다운이 아닌 파일 쓰기는 거부한다", async () => {
     await vault.init();
     for (const bad of ["../x.md", "/etc/passwd", "a/../../x.md", ".history/HEAD", "a/.obsidian/x.md", "a\u0000.md", ""]) {
-      await expect(vault.write(bad, "x", null, me), bad).rejects.toThrow();
+      await expect(me.write(bad, "x", null), bad).rejects.toThrow();
     }
-    await expect(vault.write("script.js", "x", null, me)).rejects.toThrow();
+    await expect(me.write("script.js", "x", null)).rejects.toThrow();
   });
 
   it("볼트 밖을 가리키는 심볼릭 링크는 따라가지 않는다", async () => {
@@ -95,8 +98,8 @@ describe("Vault", () => {
       await mkdir(dir, { recursive: true });
       await symlink(outside, path.join(dir, "link"));
       await vault.init();
-      await expect(vault.read("link/secret.md")).rejects.toThrow(/볼트 밖/);
-      await expect(vault.write("link/new.md", "x", null, me)).rejects.toThrow(/볼트 밖/);
+      await expect(me.read("link/secret.md")).rejects.toThrow(/볼트 밖/);
+      await expect(me.write("link/new.md", "x", null)).rejects.toThrow(/볼트 밖/);
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
@@ -104,48 +107,76 @@ describe("Vault", () => {
 
   it("동시에 들어온 쓰기는 직렬화되어 하나만 성공한다", async () => {
     await vault.init();
-    const v1 = await vault.write("a.md", "원본", null, me);
-    const results = await Promise.allSettled([
-      vault.write("a.md", "A", v1.hash, me),
-      vault.write("a.md", "B", v1.hash, agent),
-    ]);
+    const v1 = await me.write("a.md", "원본", null);
+    const results = await Promise.allSettled([me.write("a.md", "A", v1.hash), agent.write("a.md", "B", v1.hash)]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
   });
 });
 
-describe("REST API", () => {
-  it("문서 생성·조회·충돌 응답", async () => {
+describe("일괄 쓰기", () => {
+  it("여러 문서 변경을 한 커밋으로 묶는다", async () => {
     await vault.init();
-    const app = createApp({ vault, author: me });
-    const json = { "content-type": "application/json" };
+    const a = await me.write("wiki/a.md", "A", null);
+    const before = (await vault.git.log()).length;
+    const res = await agent.batch(
+      [
+        { op: "write", path: "wiki/a.md", content: "A2", baseHash: a.hash },
+        { op: "write", path: "wiki/b.md", content: "B", baseHash: null },
+        { op: "append", path: "wiki/log.md", content: "- 수집: 문서 A" },
+        { op: "append", path: "wiki/log.md", content: "- 수집: 문서 B" },
+      ],
+      "위키 갱신",
+    );
+    expect(res.rev).toBeTruthy();
+    const log = await vault.git.log();
+    expect(log).toHaveLength(before + 1);
+    expect(log[0]).toMatchObject({ author: "openclaw-work", message: "위키 갱신" });
+    expect((await me.read("wiki/log.md")).content).toBe("- 수집: 문서 A\n- 수집: 문서 B");
+  });
 
-    let res = await app.request("/api/file", {
-      method: "PUT",
-      headers: json,
-      body: JSON.stringify({ path: "노트.md", content: "안녕", baseHash: null }),
-    });
-    expect(res.status).toBe(200);
-    const created = await res.json();
+  it("앞 연산 결과 위에서 검사한다(만든 뒤 옮기기)", async () => {
+    await vault.init();
+    await agent.batch([
+      { op: "write", path: "x.md", content: "X", baseHash: null },
+      { op: "move", from: "x.md", to: "y/x.md", baseHash: hashContent("X") },
+    ]);
+    expect((await me.read("y/x.md")).content).toBe("X");
+    await expect(me.read("x.md")).rejects.toThrow();
+  });
 
-    res = await app.request(`/api/file?path=${encodeURIComponent("노트.md")}`);
-    expect(await res.json()).toMatchObject({ content: "안녕", hash: created.hash });
+  it("중간 연산이 실패하면 아무것도 바뀌지 않는다", async () => {
+    await vault.init();
+    const a = await me.write("a.md", "A", null);
+    const before = await vault.git.log();
+    await expect(
+      agent.batch([
+        { op: "write", path: "a.md", content: "A2", baseHash: a.hash },
+        { op: "write", path: "new.md", content: "N", baseHash: null },
+        { op: "delete", path: "a.md", baseHash: a.hash }, // 앞에서 바뀌었으므로 충돌
+      ]),
+    ).rejects.toThrow(/먼저 수정/);
+    expect((await me.read("a.md")).content).toBe("A");
+    await expect(me.read("new.md")).rejects.toThrow();
+    expect(await vault.git.log()).toEqual(before);
+  });
 
-    res = await app.request("/api/file", {
-      method: "PUT",
-      headers: json,
-      body: JSON.stringify({ path: "노트.md", content: "다시", baseHash: null }),
-    });
-    expect(res.status).toBe(409);
-    expect((await res.json()).currentHash).toBe(created.hash);
-
-    res = await app.request("/api/file?path=../x.md");
-    expect(res.status).toBe(400);
-
-    // JSON이 아닌 변경 요청은 거부(CSRF 방어)
-    res = await app.request("/api/file", { method: "PUT", body: "path=x.md&content=x" });
-    expect(res.status).toBe(415);
-
-    res = await app.request(`/api/history?path=${encodeURIComponent("노트.md")}`);
-    expect((await res.json()).commits[0].author).toBe("me");
+  it("디스크 적용·커밋 단계에서 실패해도 원래 내용으로 복구한다", async () => {
+    await vault.init();
+    const a = await me.write("a.md", "A", null);
+    const spy = vi.spyOn(vault.git, "commit").mockRejectedValueOnce(new Error("디스크 가득"));
+    await expect(
+      agent.batch([
+        { op: "write", path: "a.md", content: "A2", baseHash: a.hash },
+        { op: "write", path: "n/new.md", content: "N", baseHash: null },
+      ]),
+    ).rejects.toThrow("디스크 가득");
+    spy.mockRestore();
+    expect(await readFile(path.join(dir, "a.md"), "utf8")).toBe("A");
+    await expect(me.read("n/new.md")).rejects.toThrow();
+    // 스테이징도 비어 있어 다음 커밋에 섞이지 않는다
+    const b = await me.write("b.md", "B", null);
+    const log = await vault.git.log();
+    expect(log[0].rev).toBe(b.rev);
+    expect((await vault.git.show(b.rev!, "a.md"))).toBe("A");
   });
 });

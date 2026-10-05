@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdir, writeFile, access } from "node:fs/promises";
 import path from "node:path";
+import { PathError } from "./paths.js";
 
 export interface Author {
   name: string;
@@ -94,6 +95,12 @@ export class GitHistory {
     return head.stdout.trim();
   }
 
+  /** 실패한 일괄 쓰기 뒤에 스테이징만 되돌린다. */
+  async unstage(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    await this.run(["reset", "--quiet", "--", ...paths], { allowFail: true });
+  }
+
   async log(relPath?: string, limit = 100): Promise<CommitInfo[]> {
     const fmt = ["%H", "%an", "%ae", "%aI", "%s"].join(FIELD) + RECORD;
     const args = ["log", `--max-count=${limit}`, `--format=${fmt}`];
@@ -112,7 +119,7 @@ export class GitHistory {
 
   /** 특정 리비전의 파일 내용. 그 리비전에 파일이 없으면 null. */
   async show(rev: string, relPath: string): Promise<string | null> {
-    if (!/^[0-9a-f]{7,64}$/i.test(rev)) throw new Error("잘못된 리비전입니다");
+    if (!/^[0-9a-f]{7,64}$/i.test(rev)) throw new PathError("잘못된 리비전입니다");
     const res = await this.run(["show", `${rev}:${relPath}`], { allowFail: true });
     return res.code === 0 ? res.stdout : null;
   }

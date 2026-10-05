@@ -154,3 +154,10 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
   .history { position: fixed; right: 0; top: 0; bottom: 0; z-index: 10; }
   .panes.mode-split .preview-pane { display: none; }
 }
+
+.login { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: var(--bg-soft); }
+.login form { display: flex; flex-direction: column; gap: 10px; width: min(320px, calc(100% - 32px)); padding: 24px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+.login h1 { font-size: 20px; margin: 0 0 6px; }
+.login input { font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.login button { padding: 8px; }
+.login-error { color: #c0392b; font-size: 13px; margin: 0; }

@@ -37,6 +37,9 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && !url.startsWith("/api/auth/")) {
+    window.dispatchEvent(new Event("keyring:unauthorized"));
+  }
   if (!res.ok) {
     throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText, data.currentHash);
   }
@@ -45,7 +48,16 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 
 const q = (path: string) => encodeURIComponent(path);
 
+export interface AuthStatus {
+  authenticated: boolean;
+  principal: { name: string; kind: "owner" | "agent" } | null;
+  passwordSet: boolean;
+}
+
 export const api = {
+  status: () => request<AuthStatus>("GET", "/api/auth/status"),
+  login: (password: string) => request<{ ok: true }>("POST", "/api/auth/login", { password }),
+  logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
   tree: () => request<{ tree: TreeNode[] }>("GET", "/api/tree").then((r) => r.tree),
   read: (path: string) => request<Doc>("GET", `/api/file?path=${q(path)}`),
   write: (path: string, content: string, baseHash: string | null) =>
