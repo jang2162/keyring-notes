@@ -231,3 +231,32 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .login input { font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .login button { padding: 8px; }
 .login-error { color: #c0392b; font-size: 13px; margin: 0; }
+
+/* ── 수집 ── */
+.banner.generated { background: var(--info-bg); }
+.modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / 0.35); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px; overflow: auto; }
+.modal { width: min(560px, 100%); background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.2); }
+.modal-head { display: flex; justify-content: space-between; align-items: center; }
+.modal p { margin: 0; }
+.topic-picker { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.topic-picker select, .ingest-form input, .ingest-form textarea, .clip-field input:not([type="checkbox"]) {
+  font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg);
+}
+.tabs { display: flex; gap: 4px; }
+.dropzone { border: 2px dashed var(--border); border-radius: 8px; padding: 28px 16px; text-align: center; color: var(--muted); font-size: 13px; cursor: pointer; }
+.dropzone.over { border-color: var(--accent); background: var(--info-bg); }
+.ingest-form { display: flex; flex-direction: column; gap: 8px; }
+.ingest-form textarea { resize: vertical; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.ingest-form > button { align-self: flex-start; }
+.bookmarklet { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; display: flex; flex-direction: column; gap: 6px; }
+.bookmarklet-link { align-self: flex-start; padding: 4px 10px; border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); text-decoration: none; font-size: 13px; cursor: grab; }
+.ingest-log { list-style: none; margin: 0; padding: 0; font-size: 12px; max-height: 160px; overflow: auto; }
+.ingest-log .ok { color: var(--fg); }
+.ingest-log .fail { color: #c0392b; }
+.form-error { color: #c0392b; font-size: 13px; width: 100%; }
+.clip-page { max-width: 520px; margin: 0 auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+.clip-page h1 { font-size: 18px; margin: 0; }
+.clip-url { word-break: break-all; }
+.clip-field { display: flex; gap: 8px; align-items: center; }
+.clip-field input:not([type="checkbox"]) { flex: 1; }
+.clip-actions { display: flex; gap: 8px; }

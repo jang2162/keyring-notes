@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { api, ApiError, type CommitInfo, type SearchHit, type TreeNode } from "./api";
 import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
+import { ClipPage, IngestDialog } from "./Ingest";
 import { invalidateWidgets, Widget } from "./Widget";
 import { Login } from "./Login";
 import { LinkResolver, renderMarkdown } from "./markdown";
@@ -16,6 +17,8 @@ interface OpenDoc {
   draft: string;
   /** 에디터를 새 내용으로 다시 만들 때 올린다. */
   seq: number;
+  /** 서버가 만드는 문서(위키 index·log): 읽기 전용 */
+  generated: boolean;
 }
 
 interface Conflict {
@@ -102,6 +105,10 @@ export function App() {
   }, [checkAuth]);
 
   if (!auth.ready) return null;
+  // 북마클릿이 연 클리퍼 창
+  if (location.hash.startsWith("#/clip")) {
+    return auth.ok ? <ClipPage /> : <Login passwordSet={auth.passwordSet} onDone={checkAuth} />;
+  }
   // 세션이 끊겨도 작업 화면은 남겨 두어 저장하지 않은 내용을 잃지 않게 한다.
   return (
     <>
@@ -139,6 +146,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const editorHandle = useRef<EditorHandle | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
+  const [ingestOpen, setIngestOpen] = useState(false);
+  const docRef = useRef<OpenDoc | null>(null);
+  docRef.current = doc;
 
   const resolver = useMemo(() => new LinkResolver(tree), [tree]);
 
@@ -167,6 +177,10 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const vaultChanged = useCallback(() => {
     invalidateWidgets();
     setVaultVersion((v) => v + 1);
+    // 위키 index·log를 열어 두었다면 서버가 새로 만든 내용으로 바꾼다.
+    const cur = docRef.current;
+    if (cur?.generated) setTimeout(() => void load(cur.path), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -193,7 +207,14 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const load = useCallback(async (path: string) => {
     try {
       const d = await api.read(path);
-      setDoc((prev) => ({ path: d.path, saved: d.content, hash: d.hash, draft: d.content, seq: (prev?.seq ?? 0) + 1 }));
+      setDoc((prev) => ({
+        path: d.path,
+        saved: d.content,
+        hash: d.hash,
+        draft: d.content,
+        seq: (prev?.seq ?? 0) + 1,
+        generated: d.generated === true,
+      }));
       setConflict(null);
       setRevision(null);
       setError(null);
@@ -239,7 +260,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   }, [historyOpen, doc?.path, doc?.hash]);
 
   const save = useCallback(async () => {
-    if (!doc || saving || doc.draft === doc.saved) return;
+    if (!doc || saving || doc.generated || doc.draft === doc.saved) return;
     setSaving(true);
     const content = doc.draft;
     try {
@@ -405,6 +426,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           <strong>Keyring Notes</strong>
           <span>
             <button onClick={createDoc} title="새 문서">＋</button>{" "}
+            <button onClick={() => setIngestOpen(true)} title="원본 수집(파일·URL·붙여넣기)">
+              📥
+            </button>{" "}
             <button onClick={() => (!dirty || confirm("저장하지 않은 변경이 있습니다. 로그아웃할까요?")) && onLogout()} title="로그아웃">
               ⎋
             </button>
@@ -473,16 +497,25 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                   </button>
                 ))}
               </div>
-              <button onClick={save} disabled={!dirty || saving}>
+              <button onClick={save} disabled={!dirty || saving || doc.generated}>
                 {saving ? "저장 중…" : "저장"}
               </button>
-              <button onClick={moveDoc}>이동</button>
-              <button onClick={deleteDoc}>삭제</button>
+              <button onClick={moveDoc} disabled={doc.generated}>
+                이동
+              </button>
+              <button onClick={deleteDoc} disabled={doc.generated}>
+                삭제
+              </button>
               <button className={historyOpen ? "on" : ""} onClick={() => setHistoryOpen((v) => !v)}>
                 이력
               </button>
             </header>
 
+            {doc.generated && (
+              <div className="banner generated">
+                서버가 자동으로 만드는 문서입니다(위키 목차·작업 기록). 직접 고칠 수 없고, 위키가 바뀌면 다시 만들어집니다.
+              </div>
+            )}
             {error && (
               <div className="banner info" onClick={() => setError(null)}>
                 {error}
@@ -521,6 +554,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                   onSave={save}
                   linkCandidates={() => linkCandidates}
                   handle={editorHandle}
+                  readOnly={doc.generated}
                 />
               </div>
               <div className="pane preview-pane" onClick={onPreviewClick}>
@@ -569,6 +603,20 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           </div>
         )}
       </main>
+
+      {ingestOpen && (
+        <IngestDialog
+          onClose={() => setIngestOpen(false)}
+          onDone={(_results, openPath) => {
+            vaultChanged();
+            void refreshTree();
+            if (openPath) {
+              setIngestOpen(false);
+              open(openPath);
+            }
+          }}
+        />
+      )}
 
       {historyOpen && doc && (
         <aside className="history">

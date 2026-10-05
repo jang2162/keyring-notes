@@ -5,11 +5,12 @@ import { DatabaseSync } from "node:sqlite";
 import { analyze, resolveLink, type TaskItem } from "./markdown.js";
 import { hashContent } from "./vault.js";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export interface DocMeta {
   path: string;
   title: string;
+  summary: string;
   hash: string;
   mtime: number;
   size: number;
@@ -46,6 +47,8 @@ function escapeLike(s: string) {
  */
 export class NoteIndex {
   readonly db: DatabaseSync;
+  /** 색인하지 않을 경로(서버가 만드는 위키 index·log 등). 사용자별로 다르게 보이는 문서라 검색·백링크에서 뺀다. */
+  skip: (rel: string) => boolean = () => false;
 
   constructor(file: string) {
     if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
@@ -59,7 +62,7 @@ export class NoteIndex {
     this.db.exec(`
       DROP TABLE IF EXISTS docs; DROP TABLE IF EXISTS tags; DROP TABLE IF EXISTS links;
       DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS fts;
-      CREATE TABLE docs (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+      CREATE TABLE docs (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, title TEXT NOT NULL, summary TEXT NOT NULL,
         hash TEXT NOT NULL, mtime REAL NOT NULL, size INTEGER NOT NULL, fm TEXT);
       CREATE TABLE tags (path TEXT NOT NULL, tag TEXT NOT NULL);
       CREATE INDEX tags_tag ON tags(tag); CREATE INDEX tags_path ON tags(path);
@@ -101,8 +104,8 @@ export class NoteIndex {
     const a = analyze(rel, content);
     this.removeRow(rel);
     const res = this.db
-      .prepare("INSERT INTO docs (path, title, hash, mtime, size, fm) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(rel, a.title, hashContent(content), mtime, size, a.frontmatter ? JSON.stringify(a.frontmatter) : null);
+      .prepare("INSERT INTO docs (path, title, summary, hash, mtime, size, fm) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(rel, a.title, a.summary, hashContent(content), mtime, size, a.frontmatter ? JSON.stringify(a.frontmatter) : null);
     this.db.prepare("INSERT INTO fts (rowid, path, title, body) VALUES (?, ?, ?, ?)").run(res.lastInsertRowid, rel, a.title, content);
     const tag = this.db.prepare("INSERT INTO tags (path, tag) VALUES (?, ?)");
     for (const t of a.tags) tag.run(rel, t);
@@ -114,7 +117,7 @@ export class NoteIndex {
 
   /** 볼트 전체와 맞춘다: 바뀐(mtime·크기) 문서만 다시 읽고, 사라진 문서는 지운다. */
   async sync(source: IndexSource): Promise<{ updated: number; removed: number }> {
-    const paths = await source.markdownPaths();
+    const paths = (await source.markdownPaths()).filter((p) => !this.skip(p));
     const known = new Map(
       (this.db.prepare("SELECT path, mtime, size FROM docs").all() as { path: string; mtime: number; size: number }[]).map((r) => [r.path, r]),
     );
@@ -140,6 +143,10 @@ export class NoteIndex {
     const rows: { rel: string; content: string | null; mtime: number; size: number }[] = [];
     for (const rel of rels) {
       if (!rel.toLowerCase().endsWith(".md")) continue;
+      if (this.skip(rel)) {
+        rows.push({ rel, content: null, mtime: 0, size: 0 });
+        continue;
+      }
       const abs = path.join(root, rel);
       const st = await stat(abs).catch(() => null);
       rows.push(st ? { rel, content: await readFile(abs, "utf8"), mtime: st.mtimeMs, size: st.size } : { rel, content: null, mtime: 0, size: 0 });
@@ -200,9 +207,10 @@ export class NoteIndex {
   docs(): DocMeta[] {
     const tagMap = new Map<string, string[]>();
     for (const r of this.tagRows()) tagMap.set(r.path, [...(tagMap.get(r.path) ?? []), r.tag]);
-    return (this.db.prepare("SELECT path, title, hash, mtime, size, fm FROM docs ORDER BY path").all() as {
+    return (this.db.prepare("SELECT path, title, summary, hash, mtime, size, fm FROM docs ORDER BY path").all() as {
       path: string;
       title: string;
+      summary: string;
       hash: string;
       mtime: number;
       size: number;
@@ -210,6 +218,7 @@ export class NoteIndex {
     }[]).map((r) => ({
       path: r.path,
       title: r.title,
+      summary: r.summary,
       hash: r.hash,
       mtime: r.mtime,
       size: r.size,

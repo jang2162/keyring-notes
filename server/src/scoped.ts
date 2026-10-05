@@ -4,6 +4,7 @@ import { headings, parseFrontmatter, resolveLink, section, setTaskState, wikilin
 import type { DocMeta, NoteIndex } from "./noteindex.js";
 import { parseWidget, runWidget, type WidgetResult } from "./query.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
+import { isSchemaPath, schemaTemplate, type Wiki } from "./wiki.js";
 import { ConflictError, ForbiddenError, hashContent, NotFoundError, type Action, type BatchResult, type Doc, type Op, type TreeNode, type Vault } from "./vault.js";
 
 const ACTION_LEVEL: Record<Action, Level> = {
@@ -41,6 +42,7 @@ export class ScopedVault {
     private vault: Vault,
     readonly principal: Principal,
     private index: NoteIndex,
+    private wiki?: Wiki,
   ) {}
 
   get author(): Author {
@@ -48,7 +50,10 @@ export class ScopedVault {
   }
 
   level(relPath: string): Level {
-    return levelOf(this.principal, relPath);
+    const level = levelOf(this.principal, relPath);
+    // 위키 SCHEMA.md는 사람만 고친다. 에이전트 규칙이 무엇이든 읽기까지만.
+    if (this.principal.kind === "agent" && isSchemaPath(relPath) && atLeast(level, "append")) return "read";
+    return level;
   }
 
   private canRead(relPath: string): boolean {
@@ -116,12 +121,53 @@ export class ScopedVault {
     return (await this.vault.markdownPaths()).filter((p) => this.canRead(p));
   }
 
-  async read(input: string): Promise<Doc> {
-    return this.vault.read(this.requireRead(input));
+  async read(input: string): Promise<Doc & { generated?: true }> {
+    const rel = this.requireRead(input);
+    if (this.wiki?.isGenerated(rel)) {
+      // 위키 index·log는 읽는 사람이 볼 수 있는 문서만으로 다시 만든다.
+      const content = this.principal.kind === "owner" ? (await this.vault.read(rel)).content : await this.wiki.render(rel, (p) => this.canRead(p));
+      return { path: rel, content, hash: hashContent(content), generated: true };
+    }
+    return this.vault.read(rel);
   }
 
   async readRaw(input: string) {
-    return this.vault.readRaw(this.requireRead(input));
+    const rel = this.requireRead(input);
+    if (this.wiki?.isGenerated(rel)) {
+      const doc = await this.read(rel);
+      return { path: rel, data: Buffer.from(doc.content) };
+    }
+    return this.vault.readRaw(rel);
+  }
+
+  /** 최상위 폴더(토픽) 목록. 위키 토픽이면 페이지·원본 수를 함께. */
+  async topics(): Promise<{ name: string; wiki: boolean; pages: number; raw: number; access: Level | "partial" }[]> {
+    const tree = await this.tree();
+    const docs = this.visibleDocs();
+    return tree
+      .filter((n) => n.type === "dir")
+      .map((n) => {
+        const wiki = this.wiki?.topics.has(n.name) ?? false;
+        return {
+          name: n.name,
+          wiki,
+          pages: wiki ? docs.filter((d) => d.path.startsWith(`${n.name}/wiki/`)).length : 0,
+          raw: wiki ? docs.filter((d) => d.path.startsWith(`${n.name}/raw/`) && !d.path.startsWith(`${n.name}/raw/assets/`)).length : 0,
+          // 토픽 자체 규칙은 숨김이지만 하위 폴더 규칙으로 일부가 보이면 "partial"
+          access: this.level(n.name) === "hidden" ? ("partial" as const) : this.level(n.name),
+        };
+      });
+  }
+
+  /** 새 위키 토픽(SCHEMA.md 템플릿). 소유자만. 기존 폴더에 만들면 그 폴더가 위키 토픽이 된다. */
+  async createTopic(name: string): Promise<{ topic: string; schema: string }> {
+    if (this.principal.kind !== "owner") throw new ForbiddenError("위키 토픽은 소유자만 만들 수 있습니다");
+    const topic = normalizeVaultPath(name.trim());
+    if (topic.includes("/")) throw new PathError("토픽 이름에는 /를 쓸 수 없습니다(최상위 폴더 하나)");
+    if (this.wiki?.topics.has(topic)) throw new ConflictError(null, "이미 위키 토픽입니다", topic);
+    const schema = `${topic}/SCHEMA.md`;
+    await this.batch([{ op: "write", path: schema, content: schemaTemplate(topic), baseHash: null }], `위키 토픽 만들기: ${topic}`);
+    return { topic, schema };
   }
 
   async outline(input: string): Promise<Outline> {
@@ -154,6 +200,7 @@ export class ScopedVault {
     const docs = await this.documents(folder);
     const out: { path: string; frontmatter: Record<string, unknown> | null; error?: string }[] = [];
     for (const d of docs) {
+      if (this.wiki?.isGenerated(d.path)) continue;
       const { content } = await this.vault.read(d.path);
       const fm = parseFrontmatter(content);
       let data = fm.data;
@@ -253,6 +300,8 @@ export class ScopedVault {
       if (op.op === "move") {
         this.requireLevel(normalizeVaultPath(op.from), "delete");
         this.requireLevel(normalizeVaultPath(op.to), "append");
+      } else if (op.op === "put") {
+        this.requireLevel(normalizeVaultPath(op.path), "append");
       } else if (op.op === "write" || op.op === "append" || op.op === "delete") {
         this.requireLevel(normalizeVaultPath(op.path), op.op === "delete" ? "delete" : "append");
       } else {
@@ -273,6 +322,7 @@ export class ScopedVault {
 
   private async single(op: Op): Promise<Doc & { rev: string | null }> {
     const res = await this.batch([op]);
+    if (op.op === "put") throw new PathError("put은 batch로만 쓸 수 있습니다");
     const target = op.op === "move" ? op.to : op.path;
     const doc = await this.vault.read(normalizeVaultPath(target));
     return { ...doc, rev: res.rev };

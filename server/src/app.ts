@@ -4,7 +4,9 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Principal } from "./access.js";
 import { SESSION_COOKIE, type ConfigStore } from "./config.js";
 import { handleMcpRequest } from "./mcp.js";
+import type { Ingestor } from "./ingest.js";
 import type { NoteIndex } from "./noteindex.js";
+import type { Wiki } from "./wiki.js";
 import { PathError } from "./paths.js";
 import { ScopedVault } from "./scoped.js";
 import { ConflictError, ForbiddenError, NotFoundError, type Op, type Vault } from "./vault.js";
@@ -25,6 +27,8 @@ export interface AppOptions {
   vault: Vault;
   index: NoteIndex;
   config: ConfigStore;
+  wiki: Wiki;
+  ingestor: Ingestor;
 }
 
 type Env = { Variables: { scoped: ScopedVault } };
@@ -73,7 +77,7 @@ class LoginThrottle {
   }
 }
 
-export function createApp({ vault, index, config }: AppOptions) {
+export function createApp({ vault, index, config, wiki, ingestor }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
 
@@ -105,22 +109,28 @@ export function createApp({ vault, index, config }: AppOptions) {
         "www-authenticate": 'Bearer realm="keyring-notes"',
       });
     }
-    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal, index));
+    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal, index, wiki), ingestor);
   });
 
   const api = new Hono<Env>();
 
   // 변경 요청은 JSON만 받는다. 다른 사이트의 단순 폼 전송(CSRF)이 preflight 없이 닿는 것을 막는다.
+  // 파일 업로드는 원본 바이트를 받되, 사용자 정의 헤더(x-keyring-upload)를 요구해 같은 효과를 낸다.
   api.use("*", async (c, next) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
       const ct = c.req.header("content-type") ?? "";
-      if (!ct.toLowerCase().startsWith("application/json")) {
+      const upload = c.req.path === "/api/ingest/file" && c.req.header("x-keyring-upload") === "1";
+      if (!upload && !ct.toLowerCase().startsWith("application/json")) {
         return c.json({ error: "bad_request", message: "Content-Type: application/json 이 필요합니다" }, 415);
       }
     }
     await next();
   });
-  api.use("*", bodyLimit({ maxSize: 10 * 1024 * 1024 }));
+  api.use("*", async (c, next) => {
+    // 업로드·웹 클립(페이지 HTML 전체)은 크게, 나머지는 10MB까지
+    const max = c.req.path === "/api/ingest/file" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
+    return bodyLimit({ maxSize: max * 1024 * 1024 })(c, next);
+  });
 
   // ── 로그인 ──
   api.get("/auth/status", (c) => {
@@ -161,7 +171,7 @@ export function createApp({ vault, index, config }: AppOptions) {
   api.use("*", async (c, next) => {
     const p = principalOf(c);
     if (!p) return c.json({ error: "unauthorized", message: "로그인이 필요합니다" }, 401);
-    c.set("scoped", new ScopedVault(vault, p, index));
+    c.set("scoped", new ScopedVault(vault, p, index, wiki));
     await next();
   });
 
@@ -198,6 +208,51 @@ export function createApp({ vault, index, config }: AppOptions) {
       limit: Number.isFinite(limit) ? limit : undefined,
     });
     return c.json({ hits });
+  });
+
+  api.get("/topics", async (c) => c.json({ topics: await c.var.scoped.topics() }));
+
+  api.post("/topics", async (c) => {
+    const body = await c.req.json();
+    if (typeof body.name !== "string") throw new PathError("name이 필요합니다");
+    return c.json(await c.var.scoped.createTopic(body.name));
+  });
+
+  api.post("/ingest", async (c) => {
+    const b = await c.req.json();
+    const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+    if (typeof b.topic !== "string") throw new PathError("topic이 필요합니다");
+    switch (b.kind) {
+      case "url":
+        if (typeof b.url !== "string") throw new PathError("url이 필요합니다");
+        return c.json(await ingestor.ingest(c.var.scoped, { kind: "url", topic: b.topic, url: b.url, title: str(b.title) }));
+      case "html":
+        if (typeof b.html !== "string") throw new PathError("html이 필요합니다");
+        return c.json(
+          await ingestor.ingest(c.var.scoped, {
+            kind: "html",
+            topic: b.topic,
+            html: b.html,
+            url: str(b.url),
+            selectionHtml: str(b.selectionHtml),
+            title: str(b.title),
+          }),
+        );
+      case "text":
+        if (typeof b.text !== "string" || typeof b.title !== "string") throw new PathError("text, title이 필요합니다");
+        return c.json(await ingestor.ingest(c.var.scoped, { kind: "text", topic: b.topic, text: b.text, title: b.title, url: str(b.url) }));
+      default:
+        throw new PathError("kind는 url, html, text 중 하나입니다");
+    }
+  });
+
+  api.post("/ingest/file", async (c) => {
+    const topic = c.req.query("topic");
+    const name = c.req.query("name");
+    if (!topic || !name) throw new PathError("topic, name이 필요합니다");
+    const data = new Uint8Array(await c.req.arrayBuffer());
+    if (data.byteLength === 0) throw new PathError("빈 파일입니다");
+    return c.json(await ingestor.ingest(c.var.scoped, { kind: "file", topic, filename: name, data, title: c.req.query("title") }));
   });
 
   api.get("/backlinks", async (c) => c.json({ backlinks: await c.var.scoped.backlinks(requirePath(c.req.query("path"))) }));

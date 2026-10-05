@@ -31,6 +31,7 @@ interface Props {
   /** 위키링크 자동완성 후보. 호출 시점의 최신 목록을 돌려준다. */
   linkCandidates: () => LinkCandidate[];
   handle?: MutableRefObject<EditorHandle | null>;
+  readOnly?: boolean;
 }
 
 /** `[[` 또는 `![[` 뒤에서 문서·첨부 이름을 제안하고, 고르면 `]]`까지 닫아 준다. */
@@ -61,7 +62,7 @@ function wikilinkSource(get: () => LinkCandidate[]) {
   };
 }
 
-export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle }: Props) {
+export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle, readOnly = false }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const callbacks = useRef({ onChange, onSave, linkCandidates });
   callbacks.current = { onChange, onSave, linkCandidates };
@@ -81,6 +82,7 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           markdown({ base: markdownLanguage, codeLanguages: languages }),
           autocompletion({ override: [wikilinkSource(() => callbacks.current.linkCandidates())], icons: false }),
           EditorView.lineWrapping,
+          EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
             ...completionKeymap,
@@ -107,14 +109,14 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
         },
       };
     }
-    view.focus();
+    if (!readOnly) view.focus();
     return () => {
       if (handle) handle.current = null;
       view.destroy();
     };
     // initial은 docKey가 바뀔 때만 반영한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docKey]);
+  }, [docKey, readOnly]);
 
   return <div className="editor" ref={host} />;
 }

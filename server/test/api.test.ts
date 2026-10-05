@@ -4,7 +4,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { ConfigStore } from "../src/config.js";
+import type { Ingestor } from "../src/ingest.js";
 import type { NoteIndex } from "../src/noteindex.js";
+import type { Wiki } from "../src/wiki.js";
 import type { Vault } from "../src/vault.js";
 import { openVault, tempDir } from "./helpers.js";
 
@@ -28,7 +30,9 @@ async function login(password = "correct horse") {
 beforeEach(async () => {
   const t = await tempDir("keyring-api-");
   cleanup = t.cleanup;
-  ({ vault, index } = await openVault(path.join(t.dir, "vault")));
+  let wiki: Wiki;
+  let ingestor: Ingestor;
+  ({ vault, index, wiki, ingestor } = await openVault(path.join(t.dir, "vault")));
   config = new ConfigStore(path.join(t.dir, "config", "keyring.json"));
   config.setPassword("correct horse");
   wikiToken = config.issueToken("wiki-work");
@@ -36,7 +40,7 @@ beforeEach(async () => {
   config.setRule("wiki-work", "업무/wiki", "delete");
   workToken = config.issueToken("openclaw-work");
   config.setRule("openclaw-work", "업무", "read");
-  app = createApp({ vault, index, config });
+  app = createApp({ vault, index, config, wiki, ingestor });
   cookie = (await login()).cookie;
   for (const [p, c] of Object.entries({
     "업무/raw/기사.md": "# 기사\n원문\n",
@@ -175,6 +179,9 @@ describe("MCP", () => {
         "backlinks",
         "list_tags",
         "query",
+        "list_topics",
+        "ingest_url",
+        "ingest_text",
         "whoami",
         "write_document",
       ].sort(),

@@ -1,11 +1,14 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync, readFileSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
 import { ConfigStore } from "./config.js";
+import { Ingestor } from "./ingest.js";
 import { NoteIndex } from "./noteindex.js";
+import { Wiki } from "./wiki.js";
 import { Vault } from "./vault.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -17,16 +20,25 @@ const port = Number(process.env.KEYRING_PORT ?? 8787);
 
 const config = new ConfigStore(configFile);
 const vault = new Vault(vaultDir);
-await vault.init();
+await mkdir(vaultDir, { recursive: true });
 
 // 인덱스는 지워도 되는 캐시다. 볼트 안 숨김 폴더에 두고 Git 추적에서는 뺀다.
 const index = new NoteIndex(path.resolve(process.env.KEYRING_INDEX ?? path.join(vaultDir, ".keyring", "index.db")));
+const wiki = new Wiki(vault, index);
 const started = Date.now();
+// 순서: 위키 토픽을 먼저 찾아 자동 생성 문서를 Git·인덱스 제외 목록에 올린 뒤 볼트를 연다.
+await wiki.prepare();
+await vault.init();
+await wiki.init();
 const synced = await index.sync(vault);
-console.log(`인덱스 동기화: ${synced.updated}개 갱신, ${synced.removed}개 제거 (${Date.now() - started}ms)`);
+for (const t of wiki.topics) await wiki.regenerate(t);
+console.log(`인덱스 동기화: ${synced.updated}개 갱신, ${synced.removed}개 제거, 위키 토픽 ${wiki.topics.size}개 (${Date.now() - started}ms)`);
+// 순서가 중요하다: 인덱스를 먼저 고친 뒤 그 인덱스로 위키 index·log를 만든다.
 vault.onChange((paths) => index.refresh(vault.root, paths));
+vault.onChange((paths) => wiki.onChange(paths));
 
-const app = createApp({ vault, index, config });
+const ingestor = new Ingestor(vault, wiki, { allowPrivate: process.env.KEYRING_FETCH_ALLOW_PRIVATE === "1" });
+const app = createApp({ vault, index, config, wiki, ingestor });
 
 if (existsSync(path.join(webDist, "index.html"))) {
   const root = path.relative(process.cwd(), webDist);

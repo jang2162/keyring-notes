@@ -50,7 +50,9 @@ export type Op =
   | { op: "write"; path: string; content: string; baseHash: string | null }
   | { op: "append"; path: string; content: string; baseHash?: string | null }
   | { op: "delete"; path: string; baseHash: string }
-  | { op: "move"; from: string; to: string; baseHash: string };
+  | { op: "move"; from: string; to: string; baseHash: string }
+  /** 첨부 파일(이미지·PDF 등) 새로 만들기. 이미 있으면 충돌. */
+  | { op: "put"; path: string; data: Uint8Array };
 
 /** 권한 계층이 연산 종류별로 검사할 수 있게 넘겨주는 동작 이름. */
 export type Action = "create" | "append" | "modify" | "delete";
@@ -67,6 +69,8 @@ interface Slot {
   original: Buffer | null;
   content: string | null;
   hash: string | null;
+  /** put 연산으로 새로 쓸 바이트(첨부 파일). */
+  bytes?: Uint8Array;
 }
 
 function appendText(current: string, addition: string): string {
@@ -83,6 +87,8 @@ export class Vault {
   private queue: Promise<unknown> = Promise.resolve();
   private realRoot = "";
   private listeners: ((paths: string[]) => Promise<void> | void)[] = [];
+  /** 서버가 만드는 파일(위키 index·log)처럼 API로 쓸 수 없는 경로인지. */
+  readOnly: (rel: string) => boolean = () => false;
 
   constructor(readonly root: string) {
     this.git = new GitHistory(root);
@@ -205,9 +211,11 @@ export class Vault {
     // 경로 검증은 잠금 밖에서 먼저 한다.
     const resolved = new Map<string, string>();
     const resolvedAbs = new Map<string, string>();
-    const want = async (p: string) => {
+    const want = async (p: string, binary = false) => {
       const { rel, abs } = await this.resolve(p);
-      if (!isMarkdown(rel)) throw new PathError(`마크다운 문서(.md)만 바꿀 수 있습니다: ${rel}`);
+      if (!binary && !isMarkdown(rel)) throw new PathError(`마크다운 문서(.md)만 바꿀 수 있습니다: ${rel}`);
+      if (binary && isMarkdown(rel)) throw new PathError(`마크다운 문서는 put으로 쓸 수 없습니다: ${rel}`);
+      if (this.readOnly(rel)) throw new PathError(`자동 생성 문서라 직접 고칠 수 없습니다: ${rel}`);
       resolved.set(p, rel);
       resolvedAbs.set(rel, abs);
     };
@@ -215,6 +223,9 @@ export class Vault {
       if (op.op === "move") {
         await want(op.from);
         await want(op.to);
+      } else if (op.op === "put") {
+        if (!(op.data instanceof Uint8Array)) throw new PathError("data가 필요합니다");
+        await want(op.path, true);
       } else {
         if (op.op !== "delete" && typeof op.content !== "string") throw new PathError("content가 필요합니다");
         await want(op.path);
@@ -264,6 +275,14 @@ export class Vault {
         }
         const rel = resolved.get(op.path)!;
         const s = await slot(rel);
+        if (op.op === "put") {
+          guard("create", rel);
+          if (s.content !== null || s.bytes) throw new ConflictError(s.hash, "이미 같은 이름의 파일이 있습니다", rel);
+          s.bytes = op.data;
+          s.hash = hashContent(Buffer.from(op.data));
+          verbs.push(`첨부: ${rel}`);
+          continue;
+        }
         if (op.op === "write") {
           const action: Action = s.content === null ? "create" : op.content.startsWith(s.content) ? "append" : "modify";
           guard(action, rel);
@@ -298,7 +317,10 @@ export class Vault {
       try {
         for (const [rel, s] of changed) {
           written.push([rel, s]);
-          if (s.content === null) {
+          if (s.bytes) {
+            await mkdir(path.dirname(s.abs), { recursive: true });
+            await writeFile(s.abs, s.bytes);
+          } else if (s.content === null) {
             await rm(s.abs, { force: true });
             await this.pruneEmptyDirs(path.dirname(s.abs));
           } else {

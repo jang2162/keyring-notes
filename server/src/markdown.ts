@@ -147,6 +147,8 @@ export interface TaskItem {
 
 export interface Analysis {
   title: string;
+  /** 한 줄 요약: 프런트매터 summary/description, 없으면 본문 첫 문단. */
+  summary: string;
   frontmatter: Record<string, unknown> | null;
   tags: string[];
   links: string[];
@@ -202,8 +204,22 @@ export function analyze(relPath: string, content: string): Analysis {
   const fmTitle = fm.data && typeof fm.data.title === "string" ? fm.data.title.trim() : "";
   const h1 = headings(content).find((h) => h.level === 1)?.text;
   const fileName = relPath.split("/").pop()!.replace(/\.md$/i, "");
+  const fmSummary = [fm.data?.summary, fm.data?.description].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+  let summary = fmSummary?.trim() ?? "";
+  if (!summary) {
+    // 제목·코드·목록·인용·표가 아닌 첫 문단
+    for (let i = 0; i < bodyLines.length; i++) {
+      const l = bodyLines[i].trim();
+      if (!l || fenced[i] || /^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||!\[\[|<)/.test(l)) continue;
+      summary = l;
+      break;
+    }
+  }
+  summary = summary.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[*_`]/g, "");
+  if ([...summary].length > 120) summary = [...summary].slice(0, 119).join("") + "…";
   return {
     title: fmTitle || h1 || fileName,
+    summary,
     frontmatter: fm.data,
     tags: collectTags(fm.data, bodyLines, fenced),
     links: wikilinkTargets(content),

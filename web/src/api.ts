@@ -9,7 +9,27 @@ export interface Doc {
   path: string;
   content: string;
   hash: string;
+  /** 서버가 만드는 문서(위키 index·log). 고칠 수 없다. */
+  generated?: boolean;
 }
+
+export interface Topic {
+  name: string;
+  wiki: boolean;
+  pages: number;
+  raw: number;
+}
+
+export interface IngestResult {
+  path: string;
+  title: string;
+  asset?: string;
+}
+
+export type IngestRequest =
+  | { kind: "url"; topic: string; url: string; title?: string }
+  | { kind: "html"; topic: string; html: string; url?: string; selectionHtml?: string; title?: string }
+  | { kind: "text"; topic: string; text: string; title: string; url?: string };
 
 export interface CommitInfo {
   rev: string;
@@ -101,5 +121,19 @@ export const api = {
   widget: (source: string) => request<WidgetResult>("POST", "/api/widget", { source }),
   setTask: (path: string, line: number, done: boolean, baseHash: string) =>
     request<Doc>("POST", "/api/task", { path, line, done, baseHash }),
+  topics: () => request<{ topics: Topic[] }>("GET", "/api/topics").then((r) => r.topics),
+  createTopic: (name: string) => request<{ topic: string; schema: string }>("POST", "/api/topics", { name }),
+  ingest: (req: IngestRequest) => request<IngestResult>("POST", "/api/ingest", req),
+  async uploadFile(topic: string, file: File): Promise<IngestResult> {
+    const res = await fetch(`/api/ingest/file?topic=${q(topic)}&name=${q(file.name)}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", "x-keyring-upload": "1" },
+      body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
+    if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText);
+    return data as IngestResult;
+  },
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
 };

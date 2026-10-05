@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import type { Ingestor } from "./ingest.js";
 import type { ScopedVault } from "./scoped.js";
 import { ConflictError, ForbiddenError, NotFoundError, type Op } from "./vault.js";
 import { PathError } from "./paths.js";
@@ -51,19 +52,29 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 const INSTRUCTIONS = `Keyring Notes 볼트(마크다운 노트)에 접근하는 도구입니다.
 - 이 토큰이 볼 수 있는 경로만 보입니다. whoami로 권한 표를 확인하세요.
 - 권한: read < append(새 문서·끝에 덧붙이기) < write(수정) < delete(삭제·이동).
+- LLM Wiki 토픽(list_topics의 wiki=true)에서는 먼저 <토픽>/SCHEMA.md를 읽고 그 절차를 따르세요. 시작점은 <토픽>/wiki/index.md(목차·미반영 원본)입니다.
 - 긴 문서는 read_outline으로 구조를 본 뒤 read_section으로 필요한 부분만 읽으세요.
 - 쓰기에는 마지막으로 읽은 hash를 base_hash로 넘깁니다. 다르면 conflict가 나며, 다시 읽고 재시도하세요.
 - search는 3글자 이상 단어를 색인으로 찾고, '#태그' 단어는 태그 조건이 됩니다.
 - 여러 문서를 함께 고칠 때는 batch_write로 한 커밋에 묶으세요. 하나라도 실패하면 전부 취소됩니다.`;
 
-export function createMcpServer(scoped: ScopedVault): McpServer {
-  const server = new McpServer({ name: "keyring-notes", version: "0.3.0" }, { instructions: INSTRUCTIONS });
+export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpServer {
+  const server = new McpServer({ name: "keyring-notes", version: "0.4.0" }, { instructions: INSTRUCTIONS });
   const ro = { readOnlyHint: true, openWorldHint: false };
 
   server.registerTool(
     "whoami",
     { description: "이 토큰의 에이전트 이름과 폴더별 권한 표", annotations: ro },
     () => run(async () => scoped.whoami()),
+  );
+
+  server.registerTool(
+    "list_topics",
+    {
+      description: "최상위 폴더(토픽) 목록. wiki=true면 LLM Wiki 토픽(raw/·wiki/·SCHEMA.md)이며 작업 전에 SCHEMA.md를 읽는다",
+      annotations: ro,
+    },
+    () => run(() => scoped.topics()),
   );
 
   server.registerTool(
@@ -159,6 +170,26 @@ export function createMcpServer(scoped: ScopedVault): McpServer {
   );
 
   server.registerTool(
+    "ingest_url",
+    {
+      description: "웹 페이지·PDF를 가져와 마크다운으로 바꿔 <topic>/raw/에 원본으로 저장한다(PDF는 raw/assets/에 원본도). raw에 append 권한 필요",
+      inputSchema: { topic: z.string(), url: z.string().url(), title: z.string().optional() },
+      annotations: { destructiveHint: false, openWorldHint: true },
+    },
+    ({ topic, url, title }) => run(() => ingestor.ingest(scoped, { kind: "url", topic, url, title })),
+  );
+
+  server.registerTool(
+    "ingest_text",
+    {
+      description: "이미 가진 텍스트(대화 기록, 메모, 다른 도구로 얻은 문서)를 <topic>/raw/에 원본으로 저장한다",
+      inputSchema: { topic: z.string(), title: z.string(), text: z.string(), source_url: z.string().optional() },
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    ({ topic, title, text, source_url }) => run(() => ingestor.ingest(scoped, { kind: "text", topic, title, text, url: source_url })),
+  );
+
+  server.registerTool(
     "write_document",
     {
       description: "문서 전체를 쓴다. 새 문서는 base_hash=null. 기존 문서는 마지막으로 읽은 hash가 필요하다.",
@@ -221,9 +252,9 @@ function stripContent<T extends { content: string }>(doc: T): Omit<T, "content">
 }
 
 /** 요청마다 서버를 새로 만드는 무상태 Streamable HTTP 처리. */
-export async function handleMcpRequest(req: Request, scoped: ScopedVault): Promise<Response> {
+export async function handleMcpRequest(req: Request, scoped: ScopedVault, ingestor: Ingestor): Promise<Response> {
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-  const server = createMcpServer(scoped);
+  const server = createMcpServer(scoped, ingestor);
   await server.connect(transport);
   try {
     return await transport.handleRequest(req);

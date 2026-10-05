@@ -70,7 +70,14 @@ describe("숨김", () => {
       expect(hits.map((x) => x.path).some((p) => p.startsWith("개인·재무"))).toBe(false);
     }
     expect((await personal.documents()).map((d) => d.path)).toEqual(["에이전트 작업함/메모.md"]);
-    expect((await wiki.documents()).map((d) => d.path).sort()).toEqual(["업무/SCHEMA.md", "업무/raw/기사.md", "업무/wiki/금리.md"]);
+    // 업무에 SCHEMA.md가 있어 위키 토픽이 되므로 서버가 만든 wiki/index.md·log.md도 보인다
+    expect((await wiki.documents()).map((d) => d.path).sort()).toEqual([
+      "업무/SCHEMA.md",
+      "업무/raw/기사.md",
+      "업무/wiki/index.md",
+      "업무/wiki/log.md",
+      "업무/wiki/금리.md",
+    ]);
   });
 
   it("읽기·이력·첨부는 '없는 문서'와 같은 오류를 낸다", async () => {
@@ -167,7 +174,7 @@ describe("추가 전용", () => {
 
 describe("소유자", () => {
   it("모든 경로에 접근한다", async () => {
-    expect((await owner.documents()).length).toBe(5);
+    expect((await owner.documents()).length).toBe(7); // 시드 5 + 위키 index·log
     await owner.write("개인·재무/가계부.md", "바꿈", h["개인·재무/가계부.md"]);
   });
 });

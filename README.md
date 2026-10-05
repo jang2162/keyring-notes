@@ -3,8 +3,8 @@
 마크다운 파일을 원본으로 셀프호스팅 서버에 두고, 사람은 웹에서 편집하고 에이전트는 토픽별 권한 토큰으로만 접근하는 개인용 노트 앱.
 전체 계획은 [docs/PLAN.md](docs/PLAN.md)에 있다.
 
-> 현재 상태: **3단계** — 파일 저장소·웹 에디터·Git 이력(1단계), 로그인·토큰 × 폴더 권한·MCP·일괄 쓰기(2단계),
-> SQLite 인덱스(검색·백링크·태그), 위키링크 자동완성, 위젯 3종(3단계).
+> 현재 상태: **4단계** — 파일 저장소·웹 에디터·Git 이력(1단계), 로그인·토큰 × 폴더 권한·MCP·일괄 쓰기(2단계),
+> SQLite 인덱스·자동완성·위젯(3단계), LLM Wiki 지원: 원본 수집·토픽 템플릿·index/log 자동 생성(4단계).
 > 서버는 기본적으로 `127.0.0.1`에만 열린다. 원격 접속(HTTPS·VPN)은 5단계에서 다룬다.
 
 ## 실행
@@ -29,6 +29,7 @@ npm run dev:web      # 웹: http://localhost:5173 (API는 프록시)
 | --- | --- | --- |
 | `KEYRING_VAULT` | `./vault` | 볼트 폴더 |
 | `KEYRING_CONFIG` | `./config/keyring.json` | 비밀번호 해시·에이전트 토큰 해시·권한 표. 볼트 밖에 둔다 |
+| `KEYRING_FETCH_ALLOW_PRIVATE` | (없음) | `1`이면 URL 수집에서 사설·루프백 주소(사내 위키 등)도 허용. 기본은 SSRF 방지로 막는다 |
 | `KEYRING_INDEX` | `<볼트>/.keyring/index.db` | 검색 인덱스(캐시). 지우면 다음 시작 때 다시 만든다 |
 | `KEYRING_HOST` | `127.0.0.1` | 바인드 주소 |
 | `KEYRING_PORT` | `8787` | 포트 |
@@ -75,6 +76,30 @@ limit: 50
 
 위젯도 권한 계층을 지나므로, 에이전트가 같은 쿼리를 돌려도(MCP `query`) 볼 수 있는 문서만 나온다.
 
+## LLM Wiki
+
+원본 자료 → 에이전트가 관리하는 위키 → 스키마의 세 층으로 운영하는 토픽이다. 최상위 폴더에 `SCHEMA.md`가 있으면 위키 토픽이 된다.
+
+```
+경제/
+├── SCHEMA.md            위키 구조와 작업 절차(수집·질의·정리). 사람만 고친다 — 에이전트는 규칙과 상관없이 읽기만
+├── raw/                 수집한 원본(마크다운 변환본). 에이전트 권장 권한: append
+│   └── assets/          원본 파일(PDF·이미지·HTML)
+└── wiki/                에이전트가 관리하는 페이지. 권장 권한: delete
+    ├── index.md         [자동] 페이지 목록(분류·요약·출처 수) + 미반영/반영된 원본
+    └── log.md           [자동] Git 이력으로 만든 작업 기록: ## [날짜 시각] 작성자 | 메시지
+```
+
+1. **토픽 만들기**: 웹의 📥(수집) → "새 위키 토픽". `SCHEMA.md` 템플릿이 생기니 목적과 규칙을 채운다.
+2. **에이전트 권한**: `agent grant <이름> 경제/raw append`, `경제/wiki delete`, `경제/SCHEMA.md read`.
+3. **원본 수집**(📥 또는 MCP):
+   - 파일: PDF(텍스트 추출, 쪽별), 이미지, HTML, 마크다운·텍스트. 파일당 50MB.
+   - URL: 서버가 가져와 본문만 마크다운으로(Readability + Turndown). PDF 링크면 PDF로 처리.
+   - 웹 클리퍼: URL 탭의 "📎 Keyring 클립"을 북마크바에 끌어다 놓고, 저장할 페이지에서 누른다. 로그인이 필요한 페이지도 브라우저가 가진 HTML을 보내므로 저장되고, 선택한 부분만 저장할 수도 있다.
+   - 붙여넣기: 텍스트·마크다운 그대로.
+   - 저장 위치: `<토픽>/raw/<날짜> <제목>.md`. 프런트매터에 `source_type`, `source_url`, `original`, `ingested_at`, `ingested_by`.
+4. **index·log**: 위키 토픽 안에서 무언가 바뀔 때마다 서버가 다시 만든다. 직접 고칠 수 없고 Git·검색 인덱스에도 넣지 않는다. 읽는 사람의 권한에 맞춰 만들므로, 원본을 볼 수 없는 에이전트에게는 원본 이름이 나오지 않는다. 원본은 위키 페이지가 본문 링크나 `sources`로 인용하면 "반영"으로 바뀐다.
+
 ## 에이전트 연결
 
 ### 1. 토큰 발급과 권한 지정
@@ -112,6 +137,9 @@ Streamable HTTP(무상태, JSON 응답) 방식이다.
 | 도구 | 설명 |
 | --- | --- |
 | `whoami` | 내 이름과 권한 표 |
+| `list_topics` | 토픽 목록. `wiki: true`면 LLM Wiki 토픽 |
+| `ingest_url` | URL(웹 페이지·PDF)을 가져와 `<토픽>/raw/`에 저장 |
+| `ingest_text` | 가진 텍스트를 `<토픽>/raw/`에 원본으로 저장 |
 | `list_documents` | 읽을 수 있는 문서와 각 권한 |
 | `read_outline` | 해시·줄 수·프런트매터·제목(줄 범위)·위키링크. 본문 없음 |
 | `read_section` | 제목(`상위 > 하위`) 또는 줄 범위로 일부만 읽기 |
@@ -161,6 +189,9 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 | GET | `/api/section?path=` | `&heading=` 또는 `&start=&end=` | 섹션 읽기 |
 | GET | `/api/frontmatter` | `?folder=&fields=a,b` | 프런트매터 목록 |
 | GET | `/api/search?q=` | `&folder=&limit=` | 검색 |
+| GET · POST | `/api/topics` | `{name}` | 토픽 목록 / 위키 토픽 만들기(소유자) |
+| POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | 원본 수집 |
+| POST | `/api/ingest/file?topic=&name=` | 파일 바이트, 헤더 `x-keyring-upload: 1` | 파일 업로드 수집 |
 | GET | `/api/backlinks?path=` | | 백링크 |
 | GET | `/api/tags` | | 태그와 문서 수 |
 | POST | `/api/widget` | `{source}` | 위젯 YAML 실행 |
@@ -181,6 +212,7 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 
 ```bash
 npm test         # 경로 검증, 충돌, 이력·롤백, 일괄 쓰기 원자성, 권한(숨김·읽기·추가 전용), 인증, MCP,
-                 # 한국어 검색, 태그, 백링크, 인덱스 동기화, 위젯, 할 일 체크
+                 # 한국어 검색, 태그, 백링크, 인덱스 동기화, 위젯, 할 일 체크,
+                 # 위키 토픽, 수집(URL·PDF·이미지·클립), SSRF 차단, index·log 생성과 권한별 내용
 npm run typecheck
 ```
