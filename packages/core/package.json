@@ -1,0 +1,25 @@
+{
+  "name": "@keyring-notes/core",
+  "private": true,
+  "type": "module",
+  "description": "서버와 앱이 같이 쓰는 마크다운 분석·위젯 쿼리·위키·로컬 볼트·동기화 코드(Node 전용 API 없음)",
+  "exports": {
+    ".": {
+      "keyring-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

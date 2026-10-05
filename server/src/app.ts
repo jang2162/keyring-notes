@@ -1,12 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { PLUGIN_NAME_RE } from "./query.js";
+import { PLUGIN_NAME_RE } from "@keyring-notes/core";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Principal } from "./access.js";
-import { SESSION_COOKIE, type ConfigStore } from "./config.js";
+import { SESSION_COOKIE, validDeviceName, type ConfigStore } from "./config.js";
 import { adminRoutes, type AdminDeps } from "./admin.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { Ingestor } from "./ingest.js";
@@ -16,6 +16,7 @@ import type { SemanticIndex } from "./embeddings.js";
 import type { Wiki } from "./wiki.js";
 import { PathError } from "./paths.js";
 import { ScopedVault } from "./scoped.js";
+import { SyncManifest } from "./sync.js";
 import { ConflictError, ForbiddenError, NotFoundError, type Op, type Vault } from "./vault.js";
 
 const MIME: Record<string, string> = {
@@ -138,6 +139,24 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (c.req.path.startsWith("/api/")) h.set("cache-control", h.get("cache-control") ?? "no-store");
   });
 
+  // 데스크톱·모바일 앱은 출처(origin)가 달라 CORS가 필요하다. 쿠키가 아니라 Authorization 헤더(기기 토큰)로
+  // 인증하는 요청과 기기 등록에만 응답을 열어 준다. 쿠키 로그인 응답은 다른 출처에서 읽을 수 없다.
+  app.use("/api/*", async (c, next) => {
+    const origin = c.req.header("origin");
+    if (origin && c.req.method === "OPTIONS") {
+      return c.body(null, 204, {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE",
+        "access-control-allow-headers": "authorization, content-type",
+        "access-control-max-age": "600",
+      });
+    }
+    await next();
+    if (origin && (bearer(c) !== undefined || c.req.path === "/api/auth/device" || c.req.path === "/api/health")) {
+      c.res.headers.set("access-control-allow-origin", "*");
+    }
+  });
+
   app.get("/api/health", (c) => c.json({ ok: true }));
 
   app.onError((err, c) => {
@@ -152,10 +171,10 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     return c.json({ error: "internal", message: "서버 오류" }, 500);
   });
 
-  /** 요청한 쪽: 에이전트 토큰(Authorization: Bearer) 또는 소유자 로그인 쿠키. */
+  /** 요청한 쪽: 에이전트·기기 토큰(Authorization: Bearer) 또는 소유자 로그인 쿠키. */
   const principalOf = (c: Context): Principal | null => {
     const token = bearer(c);
-    if (token !== undefined) return config.agentByToken(token);
+    if (token !== undefined) return config.deviceByToken(token) ?? config.agentByToken(token);
     if (config.verifySession(getCookie(c, SESSION_COOKIE))) return config.ownerPrincipal();
     return null;
   };
@@ -260,6 +279,26 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     return c.json({ ok: true });
   });
 
+  // 앱(데스크톱·모바일) 연결: 비밀번호로 이 기기용 토큰을 받는다. 관리 콘솔에서 기기별로 끊을 수 있다.
+  api.post("/auth/device", async (c) => {
+    const { password, name } = await c.req.json();
+    const wait = throttle.delayMs();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    if (typeof password !== "string" || !config.checkPassword(password)) {
+      throttle.fail();
+      return c.json({ error: "unauthorized", message: "비밀번호가 맞지 않습니다" }, 401);
+    }
+    throttle.reset();
+    let device: string;
+    try {
+      device = validDeviceName(name);
+    } catch (e) {
+      throw new PathError(e instanceof Error ? e.message : String(e));
+    }
+    const d = config.issueDeviceToken(device);
+    return c.json({ id: d.id, name: d.name, token: d.token });
+  });
+
   api.post("/auth/logout", (c) => {
     deleteCookie(c, SESSION_COOKIE, { path: "/" });
     return c.json({ ok: true });
@@ -274,6 +313,13 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   });
 
   api.get("/whoami", (c) => c.json(c.var.scoped.whoami()));
+
+  // ── 앱 동기화: 파일 목록과 해시(소유자만). 내용은 /file·/raw, 쓰기는 /file(baseHash)로 한다 ──
+  const manifest = new SyncManifest(vault, (rel) => wiki.isGenerated(rel));
+  api.get("/sync/manifest", async (c) => {
+    if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("동기화는 소유자(앱 기기)만 쓸 수 있습니다");
+    return c.json({ files: await manifest.files() });
+  });
 
   api.get("/tree", async (c) => c.json({ tree: await c.var.scoped.tree(c.req.query("folder")) }));
 

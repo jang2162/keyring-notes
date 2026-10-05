@@ -1,5 +1,5 @@
 import { parse as parseYaml } from "yaml";
-import type { DocMeta, TaskRow } from "./noteindex.js";
+import type { DocMeta, TaskRow } from "./types.js";
 import { PathError } from "./paths.js";
 
 /**

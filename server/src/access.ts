@@ -55,7 +55,8 @@ export class AccessPolicy {
 }
 
 export type Principal =
-  | { kind: "owner"; name: string; email: string }
+  /** device: 앱(기기 토큰)으로 들어온 소유자. 문서는 소유자 권한, 관리 콘솔은 못 쓴다 */
+  | { kind: "owner"; name: string; email: string; device?: string }
   | { kind: "agent"; name: string; email: string; policy: AccessPolicy };
 
 export function levelOf(principal: Principal, relPath: string): Level {

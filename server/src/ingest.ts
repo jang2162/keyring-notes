@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import { stringify as toYaml } from "yaml";
 import { decodeText, fetchUrl, htmlToMarkdown, pdfToMarkdown, type Converted, type FetchOptions } from "./convert.js";
-import { headings } from "./markdown.js";
+import { headings } from "@keyring-notes/core";
 import { normalizeVaultPath, PathError } from "./paths.js";
 import type { ScopedVault } from "./scoped.js";
 import type { Op, Vault } from "./vault.js";

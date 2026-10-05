@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { headings, parseFrontmatter } from "./markdown.js";
+import { headings, parseFrontmatter } from "@keyring-notes/core";
 import type { NoteIndex } from "./noteindex.js";
 import { PathError } from "./paths.js";
 import type { Vault } from "./vault.js";

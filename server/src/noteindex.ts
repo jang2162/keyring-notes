@@ -2,25 +2,12 @@ import { mkdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { analyze, resolveLink, type TaskItem } from "./markdown.js";
+import { analyze, resolveLink, type DocMeta, type TaskRow } from "@keyring-notes/core";
 import { hashContent } from "./vault.js";
 
 const SCHEMA_VERSION = 3;
 
-export interface DocMeta {
-  path: string;
-  title: string;
-  summary: string;
-  hash: string;
-  mtime: number;
-  size: number;
-  frontmatter: Record<string, unknown> | null;
-  tags: string[];
-}
-
-export interface TaskRow extends TaskItem {
-  path: string;
-}
+export type { DocMeta, TaskRow } from "@keyring-notes/core";
 
 export interface IndexSource {
   root: string;

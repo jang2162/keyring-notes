@@ -8,15 +8,18 @@
 ARG NODE_IMAGE=node:22-bookworm-slim
 ARG RUNTIME_IMAGE=${NODE_IMAGE}
 
-# ── 빌드: 웹(Vite)과 서버(TypeScript) ──
+# ── 빌드: 공유 코어·웹(Vite)·서버(TypeScript) ──
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/core/package.json packages/core/
 COPY server/package.json server/
 COPY web/package.json web/
+COPY app/package.json app/
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -f /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca npm_config_cafile=/run/secrets/extra_ca; fi; \
     npm ci --no-audit --no-fund
+COPY packages packages
 COPY server server
 COPY web web
 RUN npm run build
@@ -25,8 +28,10 @@ RUN npm run build
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY packages/core/package.json packages/core/
 COPY server/package.json server/
 COPY web/package.json web/
+COPY app/package.json app/
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -f /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca npm_config_cafile=/run/secrets/extra_ca; fi; \
     npm ci --omit=dev --workspace server --no-audit --no-fund
@@ -44,6 +49,8 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY package.json ./
+COPY packages/core/package.json packages/core/
+COPY --from=build /app/packages/core/dist packages/core/dist
 COPY server/package.json server/
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist

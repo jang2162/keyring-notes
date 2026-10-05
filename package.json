@@ -4,16 +4,20 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "packages/core",
     "server",
     "web"
   ],
   "scripts": {
     "dev:server": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
-    "build": "npm run build -w web && npm run build -w server",
+    "build": "npm run build -w packages/core && npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
-    "test": "npm test -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "test": "npm test -w packages/core && npm test -w server",
+    "typecheck": "npm run typecheck -w packages/core && npm run typecheck -w server && npm run typecheck -w web",
     "keyring": "npm run --silent keyring -w server --"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }

@@ -1,0 +1,197 @@
+import { describe, expect, it } from "vitest";
+import { ConflictError, LocalVault, MemoryStore, NotFoundError, sha256Hex, SyncEngine, type RemoteFile, type RemoteVault } from "../src/index.js";
+
+/** 서버와 같은 규칙(baseHash가 맞아야 씀)의 메모리 서버. */
+class FakeServer implements RemoteVault {
+  readonly id = "https://notes.example";
+  files = new Map<string, { content: string | Uint8Array; hash: string }>();
+  offline = false;
+
+  async put(path: string, content: string | Uint8Array) {
+    this.files.set(path, { content, hash: await sha256Hex(content) });
+  }
+  text(path: string) {
+    return this.files.get(path)?.content as string | undefined;
+  }
+  private check() {
+    if (this.offline) throw new TypeError("fetch failed");
+  }
+  async manifest(): Promise<RemoteFile[]> {
+    this.check();
+    return [...this.files].map(([path, f]) => ({ path, hash: f.hash, size: f.content.length }));
+  }
+  async read(path: string) {
+    this.check();
+    const f = this.files.get(path);
+    if (!f) throw new NotFoundError(path);
+    return { content: f.content as string, hash: f.hash };
+  }
+  async readRaw(path: string) {
+    this.check();
+    const f = this.files.get(path);
+    if (!f) throw new NotFoundError(path);
+    return typeof f.content === "string" ? new TextEncoder().encode(f.content) : f.content;
+  }
+  async write(path: string, content: string, baseHash: string | null) {
+    this.check();
+    const cur = this.files.get(path)?.hash ?? null;
+    if (cur !== baseHash) throw new ConflictError(cur);
+    await this.put(path, content);
+    return { hash: this.files.get(path)!.hash };
+  }
+  async remove(path: string, baseHash: string) {
+    this.check();
+    const cur = this.files.get(path)?.hash ?? null;
+    if (cur !== baseHash) throw new ConflictError(cur);
+    this.files.delete(path);
+  }
+}
+
+async function device(name = "폰") {
+  const store = new MemoryStore();
+  const v = new LocalVault(store, { author: name });
+  await v.open();
+  return { store, v };
+}
+
+async function content(v: LocalVault, p: string) {
+  return (await v.read(p)).content;
+}
+
+describe("동기화", () => {
+  it("처음 연결: 서버 문서는 받고 기기 문서는 보낸다", async () => {
+    const server = new FakeServer();
+    await server.put("서버.md", "서버에서 쓴 글");
+    await server.put("그림.png", new Uint8Array([1, 2, 3]));
+    const { v, store } = await device();
+    await v.write("기기.md", "오프라인에서 쓴 글", null);
+    const r = await new SyncEngine(v, server).run();
+    expect(r.pulled.sort()).toEqual(["그림.png", "서버.md"]);
+    expect(r.pushed).toEqual(["기기.md"]);
+    expect(await content(v, "서버.md")).toBe("서버에서 쓴 글");
+    expect([...(await store.read("그림.png"))!]).toEqual([1, 2, 3]);
+    expect(server.text("기기.md")).toBe("오프라인에서 쓴 글");
+    // 다시 돌리면 할 일이 없다
+    const again = await new SyncEngine(v, server).run();
+    expect([again.pulled, again.pushed, again.conflicts, again.errors].flat()).toEqual([]);
+  });
+
+  it("한쪽만 바뀌면 그쪽을 반영하고, 삭제도 전한다", async () => {
+    const server = new FakeServer();
+    await server.put("a.md", "1");
+    await server.put("b.md", "b");
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await server.put("a.md", "2 (서버)");
+    const b = await v.read("b.md");
+    await v.remove("b.md", b.hash);
+    const r = await sync.run();
+    expect(r.pulled).toEqual(["a.md"]);
+    expect(r.deletedRemote).toEqual(["b.md"]);
+    expect(await content(v, "a.md")).toBe("2 (서버)");
+    expect(server.files.has("b.md")).toBe(false);
+    server.files.delete("a.md");
+    expect((await sync.run()).deletedLocal).toEqual(["a.md"]);
+    await expect(v.read("a.md")).rejects.toBeInstanceOf(NotFoundError);
+    // 동기화로 받은 변경도 이력에 남는다
+    expect(v.history("a.md").map((h) => h.author)).toContain("동기화");
+  });
+
+  it("양쪽이 다르게 바뀌면 덮어쓰지 않고 충돌 사본을 만든다", async () => {
+    const server = new FakeServer();
+    await server.put("메모.md", "원래");
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    const d = await v.read("메모.md");
+    await v.write("메모.md", "기기에서 고침", d.hash);
+    await server.put("메모.md", "서버에서 고침");
+    const r = await sync.run();
+    expect(r.conflicts).toHaveLength(1);
+    const copy = r.conflicts[0].copy;
+    expect(copy).toMatch(/^메모 \(동기화 충돌 사본 \d{8}-\d{4}\)\.md$/);
+    expect(await content(v, "메모.md")).toBe("서버에서 고침");
+    expect(await content(v, copy)).toBe("기기에서 고침");
+    expect(server.text(copy)).toBe("기기에서 고침");
+    expect(server.text("메모.md")).toBe("서버에서 고침");
+    const again = await sync.run();
+    expect([again.pulled, again.pushed, again.conflicts].flat()).toEqual([]);
+  });
+
+  it("지운 쪽과 고친 쪽이 갈리면 고친 쪽을 살린다", async () => {
+    const server = new FakeServer();
+    await server.put("x.md", "x");
+    await server.put("y.md", "y");
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    // x: 기기에서 지우고 서버에서 고침 → 서버 것을 살림
+    await v.remove("x.md", (await v.read("x.md")).hash);
+    await server.put("x.md", "x 서버 수정");
+    // y: 서버에서 지우고 기기에서 고침 → 기기 것을 다시 올림
+    await v.write("y.md", "y 기기 수정", (await v.read("y.md")).hash);
+    server.files.delete("y.md");
+    const r = await sync.run();
+    expect(await content(v, "x.md")).toBe("x 서버 수정");
+    expect(server.text("y.md")).toBe("y 기기 수정");
+    expect(r.conflicts).toEqual([]);
+  });
+
+  it("보내는 순간 서버가 바뀌었으면(409) 충돌로 처리한다", async () => {
+    const server = new FakeServer();
+    await server.put("a.md", "1");
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await v.write("a.md", "기기", (await v.read("a.md")).hash);
+    // 목록을 받은 뒤 쓰기 직전에 다른 기기가 고친다
+    const orig = server.manifest.bind(server);
+    server.manifest = async () => {
+      const m = await orig();
+      await server.put("a.md", "다른 기기");
+      return m;
+    };
+    const r = await sync.run();
+    expect(r.conflicts.map((c) => c.path)).toEqual(["a.md"]);
+    expect(server.text("a.md")).toBe("다른 기기");
+    expect(await content(v, r.conflicts[0].copy)).toBe("기기");
+  });
+
+  it("오프라인이면 아무것도 잃지 않고 멈춘다", async () => {
+    const server = new FakeServer();
+    const { v } = await device();
+    await v.write("a.md", "글", null);
+    server.offline = true;
+    await expect(new SyncEngine(v, server).run()).rejects.toBeInstanceOf(TypeError);
+    server.offline = false;
+    expect((await new SyncEngine(v, server).run()).pushed).toEqual(["a.md"]);
+  });
+
+  it("두 기기가 서버를 거쳐 같은 내용이 된다", async () => {
+    const server = new FakeServer();
+    const a = await device("노트북");
+    const b = await device("폰");
+    const sa = new SyncEngine(a.v, server);
+    const sb = new SyncEngine(b.v, server);
+    await a.v.write("공유.md", "노트북에서 시작", null);
+    await sa.run();
+    await sb.run();
+    await b.v.write("공유.md", "폰에서 이어 씀", (await b.v.read("공유.md")).hash);
+    await sb.run();
+    await sa.run();
+    expect(await content(a.v, "공유.md")).toBe("폰에서 이어 씀");
+  });
+
+  it("기기에서 바뀐 첨부는 보내지 않고 알린다", async () => {
+    const server = new FakeServer();
+    await server.put("img.png", new Uint8Array([1]));
+    const { v, store } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    store.files.set("img.png", { data: new Uint8Array([9]), mtime: Date.now() });
+    const r = await sync.run();
+    expect(r.skipped.map((s) => s.path)).toEqual(["img.png"]);
+    expect([...(server.files.get("img.png")!.content as Uint8Array)]).toEqual([1]);
+  });
+});

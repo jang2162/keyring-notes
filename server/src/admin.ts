@@ -72,7 +72,9 @@ export function adminRoutes(deps: AdminDeps) {
   const admin = new Hono<{ Variables: { scoped: ScopedVault } }>();
 
   admin.use("*", async (c, next) => {
-    if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("관리 콘솔은 소유자만 쓸 수 있습니다");
+    const p = c.var.scoped.principal;
+    if (p.kind !== "owner") throw new ForbiddenError("관리 콘솔은 소유자만 쓸 수 있습니다");
+    if (p.device) throw new ForbiddenError("앱(기기 토큰)으로는 관리 콘솔을 쓸 수 없습니다. 웹에서 로그인하세요");
     await next();
   });
 
@@ -155,6 +157,24 @@ export function adminRoutes(deps: AdminDeps) {
   });
 
   // ── 에이전트 토큰·권한 ──
+  // ── 기기(데스크톱·모바일 앱) ──
+  admin.get("/devices", (c) =>
+    c.json({
+      devices: config.get().devices.map((d) => ({
+        id: d.id,
+        name: d.name,
+        createdAt: d.createdAt,
+        lastUsed: config.lastUsed.get(`device:${d.id}`)?.toISOString() ?? null,
+      })),
+    }),
+  );
+  admin.delete("/devices/:id", (c) => {
+    const id = c.req.param("id");
+    if (!config.get().devices.some((d) => d.id === id)) throw new NotFoundError(`기기가 없습니다: ${id}`);
+    config.removeDevice(id);
+    return c.json({ ok: true });
+  });
+
   admin.get("/agents", (c) => {
     const cfg = config.get();
     return c.json({

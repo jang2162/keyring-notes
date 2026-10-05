@@ -11,6 +11,14 @@ export interface AgentConfig {
   createdAt: string;
 }
 
+/** 데스크톱·모바일 앱(기기) 하나. 앱은 이 토큰으로 동기화한다. */
+export interface DeviceConfig {
+  id: string;
+  name: string;
+  tokenHash: string;
+  createdAt: string;
+}
+
 export interface BackupSettings {
   /** 자동 백업 사용 여부 */
   enabled: boolean;
@@ -111,6 +119,7 @@ export interface KeyringConfig {
   /** 로그인 쿠키 서명 키. 비밀번호를 바꾸면 새로 만들어 기존 세션을 모두 끊는다. */
   sessionSecret: string;
   agents: AgentConfig[];
+  devices: DeviceConfig[];
   backup: BackupSettings;
   /** 에이전트 변경을 승인 후 반영할 경로(접두 경로, "/"는 전체). 비어 있으면 모두 즉시 반영 */
   reviewPaths: string[];
@@ -131,6 +140,7 @@ export function validateBackupSettings(raw: unknown): BackupSettings {
 
 export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const TOKEN_PREFIX = "kn_";
+const DEVICE_TOKEN_PREFIX = "kd_";
 export const SESSION_COOKIE = "keyring_session";
 const SESSION_DAYS = 30;
 
@@ -138,11 +148,20 @@ function sha256(s: string) {
   return createHash("sha256").update(s).digest("hex");
 }
 
+/** 기기 이름: 1~40자, 제어 문자 없음(커밋 작성자에 들어간다). */
+export function validDeviceName(name: unknown): string {
+  const n = typeof name === "string" ? name.trim() : "";
+  // eslint-disable-next-line no-control-regex
+  if (!n || [...n].length > 40 || /[\u0000-\u001f\u007f<>]/.test(n)) throw new Error("기기 이름은 1~40자로, 제어 문자·<>는 쓸 수 없습니다");
+  return n;
+}
+
 function defaultConfig(): KeyringConfig {
   return {
     owner: { name: "me", passwordHash: null },
     sessionSecret: randomBytes(32).toString("hex"),
     agents: [],
+    devices: [],
     backup: { ...DEFAULT_BACKUP },
     reviewPaths: [],
     webhooks: [],
@@ -165,6 +184,10 @@ function validate(raw: unknown): KeyringConfig {
     owner: { name: c.owner?.name ?? base.owner.name, passwordHash: c.owner?.passwordHash ?? null },
     sessionSecret: typeof c.sessionSecret === "string" && c.sessionSecret.length >= 32 ? c.sessionSecret : base.sessionSecret,
     agents: agents.map((a) => ({ name: a.name, tokenHash: a.tokenHash, rules: a.rules ?? {}, createdAt: a.createdAt ?? "" })),
+    devices: (Array.isArray(c.devices) ? c.devices : []).map((d) => {
+      if (typeof d?.id !== "string" || typeof d.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(d.tokenHash)) throw new Error("설정 오류: devices 항목이 잘못되었습니다");
+      return { id: d.id, name: validDeviceName(d.name), tokenHash: d.tokenHash, createdAt: d.createdAt ?? "" };
+    }),
     backup: validateBackupSettings(c.backup),
     reviewPaths: (Array.isArray(c.reviewPaths) ? c.reviewPaths : []).map((p) => {
       if (typeof p !== "string") throw new Error("설정 오류: reviewPaths는 문자열 목록");
@@ -256,6 +279,42 @@ export class ConfigStore {
   ownerPrincipal(): Principal {
     const name = this.get().owner.name;
     return { kind: "owner", name, email: `${name}@keyring-notes.local` };
+  }
+
+  // ── 기기(앱) 토큰 ──
+
+  /** 앱 기기를 등록하고 토큰을 발급한다. 토큰 원문은 이때 한 번만 돌려준다. */
+  issueDeviceToken(name: string): { id: string; name: string; token: string } {
+    const n = validDeviceName(name);
+    const token = DEVICE_TOKEN_PREFIX + randomBytes(32).toString("base64url");
+    const id = randomBytes(6).toString("hex");
+    this.update((c) => {
+      c.devices.push({ id, name: n, tokenHash: sha256(token), createdAt: new Date().toISOString() });
+    });
+    return { id, name: n, token };
+  }
+
+  deviceByToken(token: string | undefined): Principal | null {
+    if (!token || !token.startsWith(DEVICE_TOKEN_PREFIX)) return null;
+    const h = Buffer.from(sha256(token), "hex");
+    for (const d of this.get().devices) {
+      const stored = Buffer.from(d.tokenHash, "hex");
+      if (stored.length === h.length && timingSafeEqual(stored, h)) {
+        this.lastUsed.set(`device:${d.id}`, new Date());
+        const owner = this.get().owner.name;
+        return { kind: "owner", name: `${owner} (${d.name})`, email: `${owner}@keyring-notes.local`, device: d.id };
+      }
+    }
+    return null;
+  }
+
+  removeDevice(id: string) {
+    this.update((c) => {
+      const before = c.devices.length;
+      c.devices = c.devices.filter((d) => d.id !== id);
+      if (c.devices.length === before) throw new Error(`기기가 없습니다: ${id}`);
+    });
+    this.lastUsed.delete(`device:${id}`);
   }
 
   // ── 에이전트 토큰 ──

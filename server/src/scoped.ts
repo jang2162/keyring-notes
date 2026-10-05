@@ -1,30 +1,33 @@
 import { atLeast, levelOf, type Level, type Principal } from "./access.js";
 import type { Author, CommitInfo } from "./git.js";
-import { headings, parseFrontmatter, resolveLink, section, setTaskState, sourceTargets, wikilinkTargets, type Heading, type Section } from "./markdown.js";
+import {
+  headings,
+  linkGraph,
+  lintVault,
+  normalizeFolder,
+  parseFrontmatter,
+  parseWidget,
+  resolveLink,
+  runWidget,
+  section,
+  setTaskState,
+  sourceTargets,
+  wikilinkTargets,
+  type GraphData,
+  type Heading,
+  type LinkRow,
+  type LintReport,
+  type Section,
+  type WidgetResult,
+} from "@keyring-notes/core";
 import type { DocMeta, NoteIndex } from "./noteindex.js";
 import type { ReviewQueue } from "./review.js";
 import type { SemanticIndex } from "./embeddings.js";
-import { parseWidget, runWidget, type WidgetResult } from "./query.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
 import { isSchemaPath, schemaTemplate, type Wiki } from "./wiki.js";
 import { ConflictError, ForbiddenError, hashContent, NotFoundError, type Action, type BatchResult, type Doc, type Op, type TreeNode, type Vault } from "./vault.js";
 
-export type LintKind = "broken_link" | "broken_source" | "orphan" | "no_sources" | "missing_frontmatter" | "stale" | "unprocessed_raw";
-
-export interface LintIssue {
-  kind: LintKind;
-  path: string;
-  /** 사람이 읽을 설명 */
-  detail: string;
-  target?: string;
-}
-
-export interface LintReport {
-  checkedAt: string;
-  folder: string | null;
-  counts: Partial<Record<LintKind, number>>;
-  issues: LintIssue[];
-}
+export type { LintIssue, LintKind, LintReport } from "@keyring-notes/core";
 
 export interface PendingInfo {
   proposal: string;
@@ -332,101 +335,29 @@ export class ScopedVault {
    * - 위키 원본(<토픽>/raw/): 어느 위키 페이지에서도 인용되지 않음
    */
   async lint(opts: { folder?: string; staleDays?: number; required?: string[] } = {}): Promise<LintReport> {
-    const f = normalizeFolder(opts.folder);
-    const staleDays = opts.staleDays ?? 180;
-    const required = opts.required ?? ["title", "summary"];
-    const files = await this.visibleFiles();
-    const docs = this.visibleDocs().filter((d) => !this.wiki?.isGenerated(d.path));
-    const inScope = (p: string) => !f || p === f || p.startsWith(f + "/");
-    const isWikiPage = (p: string) => {
-      const t = this.wiki?.topicOf(p);
-      return !!t && p.startsWith(`${t}/wiki/`);
-    };
-    const isRaw = (p: string) => {
-      const t = this.wiki?.topicOf(p);
-      return !!t && p.startsWith(`${t}/raw/`) && !p.startsWith(`${t}/raw/assets/`);
-    };
-
-    // 들어오는 링크·인용(볼 수 있는 문서에서, 자기 자신 제외)
-    const incoming = new Map<string, number>();
-    const citedByWiki = new Set<string>();
-    const issues: LintIssue[] = [];
-    const rows = this.index.db.prepare("SELECT src, target, kind FROM links").all() as { src: string; target: string; kind: string }[];
-    for (const r of rows) {
-      if (!this.canRead(r.src) || this.wiki?.isGenerated(r.src)) continue;
-      const to = resolveLink(r.target, files);
-      if (to && to !== r.src) {
-        incoming.set(to, (incoming.get(to) ?? 0) + 1);
-        if (isWikiPage(r.src)) citedByWiki.add(to);
-      }
-      if (!to && inScope(r.src)) {
-        issues.push(
-          r.kind === "source"
-            ? { kind: "broken_source", path: r.src, target: r.target, detail: `출처 "${r.target}"가 없거나 볼 수 없음` }
-            : { kind: "broken_link", path: r.src, target: r.target, detail: `링크 [[${r.target}]]의 대상이 없거나 볼 수 없음` },
-        );
-      }
-    }
-
-    const now = Date.now();
-    for (const d of docs) {
-      if (!inScope(d.path)) continue;
-      if (isWikiPage(d.path)) {
-        if (!incoming.get(d.path)) issues.push({ kind: "orphan", path: d.path, detail: "다른 문서에서 링크하거나 인용하지 않음" });
-        const src = d.frontmatter?.sources;
-        if (!src || (Array.isArray(src) && src.length === 0)) issues.push({ kind: "no_sources", path: d.path, detail: "프런트매터 sources(근거 원본)가 없음" });
-        const missing = required.filter((k) => {
-          const v = d.frontmatter?.[k];
-          return v === undefined || v === null || (typeof v === "string" && !v.trim());
-        });
-        if (missing.length) issues.push({ kind: "missing_frontmatter", path: d.path, detail: `프런트매터 누락: ${missing.join(", ")}` });
-        const updatedRaw = d.frontmatter?.updated;
-        const updated = typeof updatedRaw === "string" && !Number.isNaN(Date.parse(updatedRaw)) ? Date.parse(updatedRaw) : d.mtime;
-        const age = Math.floor((now - updated) / 86400_000);
-        if (age > staleDays) issues.push({ kind: "stale", path: d.path, detail: `${age}일 동안 갱신되지 않음(기준 ${staleDays}일)` });
-      } else if (isRaw(d.path) && !citedByWiki.has(d.path)) {
-        issues.push({ kind: "unprocessed_raw", path: d.path, detail: "어느 위키 페이지에서도 인용하지 않은 원본" });
-      }
-    }
-
-    const order: LintKind[] = ["broken_link", "broken_source", "missing_frontmatter", "no_sources", "orphan", "stale", "unprocessed_raw"];
-    issues.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.path.localeCompare(b.path, "ko"));
-    const counts: Partial<Record<LintKind, number>> = {};
-    for (const i of issues) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
-    return { checkedAt: new Date().toISOString(), folder: f || null, counts, issues };
+    return lintVault({
+      docs: this.visibleDocs(),
+      files: await this.visibleFiles(),
+      links: this.index.db.prepare("SELECT src, target, kind FROM links").all() as unknown as LinkRow[],
+      canRead: (p) => this.canRead(p),
+      wiki: this.wiki,
+      folder: normalizeFolder(opts.folder),
+      staleDays: opts.staleDays,
+      required: opts.required,
+    });
   }
 
   /**
    * 그래프 뷰(W9): 볼 수 있는 문서(자동 생성 문서 제외)와 그 사이의 링크(본문 링크·출처).
    * 숨김 문서로 가는 링크는 아예 빠진다.
    */
-  async graph(folder?: string): Promise<{
-    nodes: { id: string; title: string; topic: string; degree: number }[];
-    edges: { source: string; target: string; kind: "link" | "source" }[];
-  }> {
-    const f = normalizeFolder(folder);
-    const docs = this.visibleDocs().filter((d) => !this.wiki?.isGenerated(d.path) && (!f || d.path.startsWith(f + "/")));
-    const ids = new Set(docs.map((d) => d.path));
-    const paths = [...ids];
-    const seen = new Set<string>();
-    const edges: { source: string; target: string; kind: "link" | "source" }[] = [];
-    const degree = new Map<string, number>();
-    const rows = this.index.db.prepare("SELECT src, target, kind FROM links").all() as { src: string; target: string; kind: "link" | "source" }[];
-    for (const r of rows) {
-      if (!ids.has(r.src)) continue;
-      const to = resolveLink(r.target, paths);
-      if (!to || to === r.src) continue;
-      const key = `${r.src}\0${to}\0${r.kind}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      edges.push({ source: r.src, target: to, kind: r.kind });
-      degree.set(r.src, (degree.get(r.src) ?? 0) + 1);
-      degree.set(to, (degree.get(to) ?? 0) + 1);
-    }
-    return {
-      nodes: docs.map((d) => ({ id: d.path, title: d.title, topic: d.path.includes("/") ? d.path.split("/")[0] : "(최상위)", degree: degree.get(d.path) ?? 0 })),
-      edges,
-    };
+  async graph(folder?: string): Promise<GraphData> {
+    return linkGraph({
+      docs: this.visibleDocs(),
+      links: this.index.db.prepare("SELECT src, target, kind FROM links").all() as unknown as LinkRow[],
+      wiki: this.wiki,
+      folder: normalizeFolder(folder),
+    });
   }
 
   /** 의미 검색(임베딩). 설정하지 않았으면 오류. 볼 수 있는 문서만 대상으로 한다. */
@@ -584,9 +515,4 @@ export class ScopedVault {
       ? { name: this.principal.name, kind: "owner", rules: { "/": "delete" as Level } }
       : { name: this.principal.name, kind: "agent", rules: this.principal.policy.toJSON() };
   }
-}
-
-function normalizeFolder(folder?: string): string {
-  if (!folder || folder.trim() === "" || folder.trim() === "/") return "";
-  return normalizeVaultPath(folder.replace(/\/+$/, ""));
 }
