@@ -107,7 +107,9 @@ export function section(content: string, opts: { heading?: string; startLine?: n
 export function wikilinkTargets(content: string): string[] {
   const out = new Set<string>();
   let fence = false;
-  for (const line of content.split("\n")) {
+  // 프런트매터(sources 등)의 [[ ]]는 본문 링크로 세지 않는다. 출처는 sourceTargets로 따로 다룬다.
+  const lines = content.split("\n").slice(parseFrontmatter(content).lines);
+  for (const line of lines) {
     if (/^ {0,3}(`{3,}|~{3,})/.test(line)) {
       fence = !fence;
       continue;
@@ -145,7 +147,30 @@ export interface TaskItem {
   text: string;
 }
 
+/**
+ * 프런트매터 sources(출처) 목록의 링크 대상. "[[경로|이름]]", "[[경로#제목]]", "경로", "경로.md" 모두 받는다.
+ * URL(http…)은 볼트 문서가 아니므로 뺀다.
+ */
+export function sourceTargets(frontmatter: Record<string, unknown> | null): string[] {
+  const raw = frontmatter?.sources ?? frontmatter?.source;
+  const list = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
+  const out = new Set<string>();
+  for (const v of list) {
+    if (typeof v !== "string") continue;
+    const t = v
+      .trim()
+      .replace(/^\[\[|\]\]$/g, "")
+      .split("|")[0]
+      .split("#")[0]
+      .trim();
+    if (t && !/^[a-z]+:\/\//i.test(t)) out.add(t);
+  }
+  return [...out];
+}
+
 export interface Analysis {
+  /** 프런트매터 sources의 링크 대상 */
+  sources: string[];
   title: string;
   /** 한 줄 요약: 프런트매터 summary/description, 없으면 본문 첫 문단. */
   summary: string;
@@ -220,6 +245,7 @@ export function analyze(relPath: string, content: string): Analysis {
   return {
     title: fmTitle || h1 || fileName,
     summary,
+    sources: sourceTargets(fm.data),
     frontmatter: fm.data,
     tags: collectTags(fm.data, bodyLines, fenced),
     links: wikilinkTargets(content),

@@ -150,6 +150,103 @@ export interface UpdateInfo {
 
 const enc = encodeURIComponent;
 
+export interface FilePreview {
+  path: string;
+  before: string | null;
+  after: string | null;
+  beforeHash: string | null;
+  afterHash: string | null;
+  binary: boolean;
+}
+
+export interface ProposalSummary {
+  id: string;
+  agent: string;
+  message: string;
+  createdAt: string;
+  status: "pending" | "approved" | "rejected";
+  decidedAt?: string;
+  decidedBy?: string;
+  reason?: string;
+  rev?: string | null;
+  stale: boolean;
+  files: { path: string; change: "add" | "modify" | "delete"; binary: boolean }[];
+}
+
+export interface Proposal extends Omit<ProposalSummary, "stale" | "files"> {
+  preview: FilePreview[];
+}
+
+export const review = {
+  list: (status?: string) => request<{ proposals: ProposalSummary[] }>("GET", `/api/review${status ? `?status=${status}` : ""}`).then((r) => r.proposals),
+  get: (id: string) => request<Proposal>("GET", `/api/review/${enc(id)}`),
+  approve: (id: string) => request<ProposalSummary>("POST", `/api/review/${enc(id)}/approve`, {}),
+  reject: (id: string, reason: string) => request<ProposalSummary>("POST", `/api/review/${enc(id)}/reject`, { reason }),
+  settings: () => request<{ reviewPaths: string[] }>("GET", "/api/review/settings"),
+  saveSettings: (reviewPaths: string[]) => request<{ reviewPaths: string[] }>("PUT", "/api/review/settings", { reviewPaths }),
+};
+
+export type LintKind = "broken_link" | "broken_source" | "orphan" | "no_sources" | "missing_frontmatter" | "stale" | "unprocessed_raw";
+
+export interface LintReport {
+  checkedAt: string;
+  folder: string | null;
+  counts: Partial<Record<LintKind, number>>;
+  issues: { kind: LintKind; path: string; detail: string; target?: string }[];
+}
+
+export interface SourcesInfo {
+  path: string;
+  sources: { target: string; path: string | null }[];
+  citedBy: { path: string; title: string }[];
+  linkedBy: { path: string; title: string }[];
+}
+
+export interface WebhookInfo {
+  id: string;
+  name: string;
+  url: string;
+  secret: string;
+  events: string[];
+  topics: string[];
+  enabled: boolean;
+}
+
+export interface JobInfo {
+  id: string;
+  name: string;
+  cron: string;
+  webhook: string;
+  topic: string | null;
+  lint: boolean;
+  instructions: string | null;
+  enabled: boolean;
+  next?: string | null;
+  lastRun?: string | null;
+  lastResult?: string | null;
+  error?: string;
+}
+
+export interface DeliveryInfo {
+  id: string;
+  webhook: string;
+  event: string;
+  time: string;
+  attempts: number;
+  status: "pending" | "ok" | "failed";
+  httpStatus?: number;
+  error?: string;
+}
+
+export const automation = {
+  get: () => request<{ events: string[]; webhooks: WebhookInfo[]; jobs: JobInfo[]; deliveries: DeliveryInfo[] }>("GET", "/api/admin/automation"),
+  saveWebhooks: (webhooks: Partial<WebhookInfo>[]) =>
+    request<{ webhooks: WebhookInfo[]; newSecrets: Record<string, string> }>("PUT", "/api/admin/automation/webhooks", { webhooks }),
+  saveJobs: (jobs: Partial<JobInfo>[]) => request<{ jobs: JobInfo[] }>("PUT", "/api/admin/automation/jobs", { jobs }),
+  test: (id: string) => request<DeliveryInfo>("POST", `/api/admin/automation/webhooks/${enc(id)}/test`, {}),
+  run: (id: string) => request<{ delivery: DeliveryInfo | null; job: JobInfo }>("POST", `/api/admin/automation/jobs/${enc(id)}/run`, {}),
+};
+
 export const admin = {
   status: () => request<AdminStatus>("GET", "/api/admin/status"),
   update: (force = false) => request<UpdateInfo>("GET", `/api/admin/update${force ? "?force=1" : ""}`),
@@ -220,5 +317,7 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText);
     return data as IngestResult;
   },
+  lint: (folder?: string) => request<LintReport>("GET", `/api/lint${folder ? `?folder=${q(folder)}` : ""}`),
+  sources: (path: string) => request<SourcesInfo>("GET", `/api/sources?path=${q(path)}`),
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
 };

@@ -22,12 +22,100 @@ export interface BackupSettings {
   includeConfig: boolean;
 }
 
+export const WEBHOOK_EVENTS = ["raw.added", "doc.changed", "proposal.created", "schedule", "ping"] as const;
+
+export interface WebhookConfig {
+  id: string;
+  name: string;
+  url: string;
+  /** 서명(HMAC-SHA256) 키. 받는 쪽에서 X-Keyring-Signature를 검증한다 */
+  secret: string;
+  events: (typeof WEBHOOK_EVENTS)[number][];
+  /** 이 토픽(최상위 폴더) 이벤트만. 비면 전부 */
+  topics: string[];
+  enabled: boolean;
+}
+
+export interface JobConfig {
+  id: string;
+  name: string;
+  /** "분 시 일 월 요일" (서버 TZ) */
+  cron: string;
+  /** 보낼 웹훅 id */
+  webhook: string;
+  /** 대상 토픽(정리 점검 범위, 이벤트 data.topic). 없으면 전체 */
+  topic: string | null;
+  /** 정리 점검 결과를 함께 보낼지 */
+  lint: boolean;
+  /** 받는 에이전트에게 줄 지시문(예: "SCHEMA의 정리 절차대로 고쳐라") */
+  instructions: string | null;
+  enabled: boolean;
+}
+
+const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+export function validateWebhooks(raw: unknown): WebhookConfig[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set<string>();
+  return list.map((w: Partial<WebhookConfig>) => {
+    if (typeof w.id !== "string" || !ID_RE.test(w.id)) throw new Error(`설정 오류: 웹훅 id는 영문 소문자·숫자·-·_ 40자 이내: ${String(w.id)}`);
+    if (seen.has(w.id)) throw new Error(`설정 오류: 웹훅 id가 겹칩니다: ${w.id}`);
+    seen.add(w.id);
+    let url: URL;
+    try {
+      url = new URL(String(w.url));
+    } catch {
+      throw new Error(`설정 오류: 웹훅 주소가 잘못되었습니다: ${String(w.url)}`);
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("설정 오류: 웹훅은 http·https 주소만");
+    const events = Array.isArray(w.events) ? w.events : [];
+    for (const e of events) if (!(WEBHOOK_EVENTS as readonly string[]).includes(e)) throw new Error(`설정 오류: 알 수 없는 이벤트: ${e}`);
+    if (typeof w.secret !== "string" || w.secret.length < 16) throw new Error("설정 오류: 웹훅 secret은 16자 이상");
+    return {
+      id: w.id,
+      name: typeof w.name === "string" && w.name.trim() ? w.name.trim() : w.id,
+      url: url.href,
+      secret: w.secret,
+      events,
+      topics: Array.isArray(w.topics) ? w.topics.filter((t): t is string => typeof t === "string" && t.trim() !== "").map((t) => t.trim()) : [],
+      enabled: w.enabled !== false,
+    };
+  });
+}
+
+export function validateJobs(raw: unknown, cronCheck: (expr: string) => void = () => undefined): JobConfig[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set<string>();
+  return list.map((j: Partial<JobConfig>) => {
+    if (typeof j.id !== "string" || !ID_RE.test(j.id)) throw new Error(`설정 오류: 작업 id는 영문 소문자·숫자·-·_ 40자 이내: ${String(j.id)}`);
+    if (seen.has(j.id)) throw new Error(`설정 오류: 작업 id가 겹칩니다: ${j.id}`);
+    seen.add(j.id);
+    if (typeof j.cron !== "string") throw new Error(`설정 오류: ${j.id}의 cron이 없습니다`);
+    cronCheck(j.cron);
+    if (typeof j.webhook !== "string" || !j.webhook) throw new Error(`설정 오류: ${j.id}의 웹훅이 없습니다`);
+    return {
+      id: j.id,
+      name: typeof j.name === "string" && j.name.trim() ? j.name.trim() : j.id,
+      cron: j.cron.trim(),
+      webhook: j.webhook,
+      topic: typeof j.topic === "string" && j.topic.trim() ? j.topic.trim() : null,
+      lint: j.lint === true,
+      instructions: typeof j.instructions === "string" && j.instructions.trim() ? j.instructions.trim().slice(0, 4000) : null,
+      enabled: j.enabled !== false,
+    };
+  });
+}
+
 export interface KeyringConfig {
   owner: { name: string; passwordHash: string | null };
   /** 로그인 쿠키 서명 키. 비밀번호를 바꾸면 새로 만들어 기존 세션을 모두 끊는다. */
   sessionSecret: string;
   agents: AgentConfig[];
   backup: BackupSettings;
+  /** 에이전트 변경을 승인 후 반영할 경로(접두 경로, "/"는 전체). 비어 있으면 모두 즉시 반영 */
+  reviewPaths: string[];
+  webhooks: WebhookConfig[];
+  jobs: JobConfig[];
 }
 
 export const DEFAULT_BACKUP: BackupSettings = { enabled: true, intervalHours: 24, keep: 14, includeConfig: true };
@@ -56,6 +144,9 @@ function defaultConfig(): KeyringConfig {
     sessionSecret: randomBytes(32).toString("hex"),
     agents: [],
     backup: { ...DEFAULT_BACKUP },
+    reviewPaths: [],
+    webhooks: [],
+    jobs: [],
   };
 }
 
@@ -75,6 +166,12 @@ function validate(raw: unknown): KeyringConfig {
     sessionSecret: typeof c.sessionSecret === "string" && c.sessionSecret.length >= 32 ? c.sessionSecret : base.sessionSecret,
     agents: agents.map((a) => ({ name: a.name, tokenHash: a.tokenHash, rules: a.rules ?? {}, createdAt: a.createdAt ?? "" })),
     backup: validateBackupSettings(c.backup),
+    reviewPaths: (Array.isArray(c.reviewPaths) ? c.reviewPaths : []).map((p) => {
+      if (typeof p !== "string") throw new Error("설정 오류: reviewPaths는 문자열 목록");
+      return normalizeRulePath(p) || "/";
+    }),
+    webhooks: validateWebhooks(c.webhooks),
+    jobs: validateJobs(c.jobs),
   };
 }
 

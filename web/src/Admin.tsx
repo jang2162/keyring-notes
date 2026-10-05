@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { admin, type AdminStatus, type AgentInfo, type BackupInfo, type BackupSettings, type Level, type UpdateInfo } from "./api";
+import {
+  admin,
+  automation,
+  type AdminStatus,
+  type AgentInfo,
+  type BackupInfo,
+  type BackupSettings,
+  type DeliveryInfo,
+  type JobInfo,
+  type Level,
+  type UpdateInfo,
+  type WebhookInfo,
+} from "./api";
 
 const LEVELS: { value: Level; label: string }[] = [
   { value: "hidden", label: "숨김" },
@@ -39,7 +51,7 @@ function duration(sec: number): string {
   return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${m}분` : `${m}분`;
 }
 
-type Section = "status" | "agents" | "backups" | "update" | "security";
+type Section = "status" | "agents" | "backups" | "automation" | "update" | "security";
 
 export function AdminPanel({ folders, onClose }: { folders: string[]; onClose: () => void }) {
   const [section, setSection] = useState<Section>("status");
@@ -53,6 +65,7 @@ export function AdminPanel({ folders, onClose }: { folders: string[]; onClose: (
               ["status", "서버 상태"],
               ["agents", "에이전트·권한"],
               ["backups", "백업·복원"],
+              ["automation", "자동화"],
               ["update", "업데이트"],
               ["security", "보안"],
             ] as const
@@ -70,6 +83,7 @@ export function AdminPanel({ folders, onClose }: { folders: string[]; onClose: (
         {section === "status" && <StatusView />}
         {section === "agents" && <AgentsView folders={folders} />}
         {section === "backups" && <BackupsView />}
+        {section === "automation" && <AutomationView />}
         {section === "update" && <UpdateView />}
         {section === "security" && <SecurityView />}
       </div>
@@ -588,6 +602,237 @@ function SecurityView() {
         </li>
         <li>에이전트 토큰이 새었다고 의심되면 에이전트·권한 탭에서 바로 재발급하세요.</li>
       </ul>
+    </div>
+  );
+}
+
+const EVENT_LABEL: Record<string, string> = {
+  "raw.added": "새 원본 수집",
+  "doc.changed": "모든 변경(커밋)",
+  "proposal.created": "검토 대기열에 새 제안",
+  schedule: "정기 작업",
+  ping: "시험",
+};
+
+/** 웹훅·정기 작업(W8). */
+function AutomationView() {
+  const [events, setEvents] = useState<string[]>([]);
+  const [hooks, setHooks] = useState<WebhookInfo[]>([]);
+  const [jobs, setJobs] = useState<JobInfo[]>([]);
+  const [deliveries, setDeliveries] = useState<DeliveryInfo[]>([]);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const load = useCallback(async () => {
+    try {
+      const r = await automation.get();
+      setEvents(r.events);
+      setHooks(r.webhooks);
+      setJobs(r.jobs);
+      setDeliveries(r.deliveries);
+    } catch (e) {
+      setNote({ ok: false, text: msg(e) });
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const patchHook = (i: number, p: Partial<WebhookInfo>) => setHooks((hs) => hs.map((h, j) => (j === i ? { ...h, ...p } : h)));
+  const patchJob = (i: number, p: Partial<JobInfo>) => setJobs((js) => js.map((h, j) => (j === i ? { ...h, ...p } : h)));
+  const act = async (fn: () => Promise<string>) => {
+    try {
+      setNote({ ok: true, text: await fn() });
+    } catch (e) {
+      setNote({ ok: false, text: msg(e) });
+    }
+    await load();
+  };
+
+  return (
+    <div>
+      <p className="meta">
+        웹훅은 이벤트가 생기면 JSON을 POST합니다(헤더 <code>X-Keyring-Signature: sha256=…</code>, 웹훅 secret으로 HMAC-SHA256). 에이전트·n8n·OpenClaw 같은 곳에서 받아 "새 원본이 들어왔으니 수집 절차를 돌려라" 같은 일을 시킵니다. 실패하면 세 번까지 다시 보냅니다.
+      </p>
+      {note && (
+        <p className={note.ok ? "note-ok" : "form-error"} onClick={() => setNote(null)}>
+          {note.text}
+        </p>
+      )}
+      <h4>웹훅</h4>
+      {hooks.map((h, i) => (
+        <section key={i} className="agent-card">
+          <div className="hook-grid">
+            <label>
+              id <input value={h.id} disabled={!!h.secret} onChange={(e) => patchHook(i, { id: e.target.value })} placeholder="wiki-agent" />
+            </label>
+            <label>
+              이름 <input value={h.name} onChange={(e) => patchHook(i, { name: e.target.value })} />
+            </label>
+            <label className="wide">
+              주소 <input value={h.url} onChange={(e) => patchHook(i, { url: e.target.value })} placeholder="https://agent.example.com/hooks/keyring" />
+            </label>
+            <label className="wide">
+              토픽(쉼표, 비우면 전체) <input value={h.topics.join(", ")} onChange={(e) => patchHook(i, { topics: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })} />
+            </label>
+          </div>
+          <div className="event-checks">
+            {events
+              .filter((ev) => ev !== "ping")
+              .map((ev) => (
+                <label key={ev}>
+                  <input
+                    type="checkbox"
+                    checked={h.events.includes(ev)}
+                    onChange={(e) => patchHook(i, { events: e.target.checked ? [...h.events, ev] : h.events.filter((x) => x !== ev) })}
+                  />{" "}
+                  {EVENT_LABEL[ev] ?? ev}
+                </label>
+              ))}
+            <label>
+              <input type="checkbox" checked={h.enabled} onChange={(e) => patchHook(i, { enabled: e.target.checked })} /> 켜기
+            </label>
+          </div>
+          {secrets[h.id] && (
+            <div className="token-row">
+              <span className="meta">secret(지금만 보임)</span>
+              <code>{secrets[h.id]}</code>
+            </div>
+          )}
+          <div className="agent-actions">
+            <span className="meta">{h.secret ? `secret ${h.secret}` : "저장하면 secret을 만듭니다"}</span>
+            <span className="spacer" />
+            {h.secret && (
+              <button onClick={() => act(async () => {
+                const d = await automation.test(h.id);
+                return d.status === "ok" ? `시험 전송 성공(HTTP ${d.httpStatus})` : `시험 전송 실패: ${d.error}`;
+              })}>
+                시험 전송
+              </button>
+            )}
+            <button onClick={() => setHooks((hs) => hs.filter((_, j) => j !== i))}>삭제</button>
+          </div>
+        </section>
+      ))}
+      <div className="agent-actions">
+        <button onClick={() => setHooks((hs) => [...hs, { id: "", name: "", url: "", secret: "", events: ["raw.added"], topics: [], enabled: true }])}>웹훅 추가</button>
+        <button
+          className="on"
+          onClick={() =>
+            act(async () => {
+              const r = await automation.saveWebhooks(hooks);
+              setSecrets((s) => ({ ...s, ...r.newSecrets }));
+              return `웹훅 ${r.webhooks.length}개를 저장했습니다.${Object.keys(r.newSecrets).length ? " 새 secret을 받는 쪽에 넣으세요." : ""}`;
+            })
+          }
+        >
+          웹훅 저장
+        </button>
+      </div>
+
+      <h4>정기 작업</h4>
+      <p className="meta">
+        cron 형식 "분 시 일 월 요일"(서버 시간대). 예: <code>0 9 * * 1</code> 매주 월요일 9시, <code>*/30 * * * *</code> 30분마다. 실행하면 웹훅으로 <code>schedule</code> 이벤트를 보내고, "정리 점검 포함"이면 점검 결과도 함께 보냅니다.
+      </p>
+      {jobs.map((j, i) => (
+        <section key={i} className="agent-card">
+          <div className="hook-grid">
+            <label>
+              id <input value={j.id} onChange={(e) => patchJob(i, { id: e.target.value })} placeholder="weekly-lint" />
+            </label>
+            <label>
+              이름 <input value={j.name} onChange={(e) => patchJob(i, { name: e.target.value })} />
+            </label>
+            <label>
+              cron <input value={j.cron} onChange={(e) => patchJob(i, { cron: e.target.value })} placeholder="0 9 * * 1" />
+            </label>
+            <label>
+              웹훅{" "}
+              <select value={j.webhook} onChange={(e) => patchJob(i, { webhook: e.target.value })}>
+                <option value="">(고르기)</option>
+                {hooks
+                  .filter((h) => h.secret)
+                  .map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              토픽 <input value={j.topic ?? ""} onChange={(e) => patchJob(i, { topic: e.target.value || null })} placeholder="(전체)" />
+            </label>
+            <label className="wide">
+              지시문 <input value={j.instructions ?? ""} onChange={(e) => patchJob(i, { instructions: e.target.value || null })} placeholder="SCHEMA.md의 정리 절차대로 문제를 고쳐라" />
+            </label>
+          </div>
+          <div className="event-checks">
+            <label>
+              <input type="checkbox" checked={j.lint} onChange={(e) => patchJob(i, { lint: e.target.checked })} /> 정리 점검 포함
+            </label>
+            <label>
+              <input type="checkbox" checked={j.enabled} onChange={(e) => patchJob(i, { enabled: e.target.checked })} /> 켜기
+            </label>
+          </div>
+          <div className="agent-actions">
+            <span className="meta">
+              {j.error ? `⚠ ${j.error}` : `다음 ${when(j.next)} · 마지막 ${when(j.lastRun)}${j.lastResult ? ` (${j.lastResult})` : ""}`}
+            </span>
+            <span className="spacer" />
+            {j.next !== undefined && (
+              <button onClick={() => act(async () => {
+                const r = await automation.run(j.id);
+                return r.job.lastResult ?? "실행했습니다";
+              })}>
+                지금 실행
+              </button>
+            )}
+            <button onClick={() => setJobs((js) => js.filter((_, k) => k !== i))}>삭제</button>
+          </div>
+        </section>
+      ))}
+      <div className="agent-actions">
+        <button
+          onClick={() =>
+            setJobs((js) => [...js, { id: "", name: "", cron: "0 9 * * 1", webhook: hooks.find((h) => h.secret)?.id ?? "", topic: null, lint: true, instructions: null, enabled: true }])
+          }
+        >
+          작업 추가
+        </button>
+        <button className="on" onClick={() => act(async () => `작업 ${(await automation.saveJobs(jobs)).jobs.length}개를 저장했습니다.`)}>
+          작업 저장
+        </button>
+      </div>
+
+      <h4>최근 전송</h4>
+      <table className="widget-table">
+        <thead>
+          <tr>
+            <th>시각</th>
+            <th>웹훅</th>
+            <th>이벤트</th>
+            <th>결과</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deliveries.map((d) => (
+            <tr key={d.id}>
+              <td>{when(d.time)}</td>
+              <td>{d.webhook}</td>
+              <td>{EVENT_LABEL[d.event] ?? d.event}</td>
+              <td className={d.status === "failed" ? "form-error" : undefined}>
+                {d.status === "ok" ? `성공 ${d.httpStatus}` : d.status === "pending" ? "보내는 중" : `실패: ${d.error}`} {d.attempts > 1 && <span className="meta">({d.attempts}번 시도)</span>}
+              </td>
+            </tr>
+          ))}
+          {deliveries.length === 0 && (
+            <tr>
+              <td colSpan={4} className="widget-empty">
+                아직 보낸 것이 없습니다(서버가 켜진 뒤 기준).
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

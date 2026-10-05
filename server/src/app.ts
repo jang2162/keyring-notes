@@ -8,6 +8,7 @@ import { adminRoutes, type AdminDeps } from "./admin.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { Ingestor } from "./ingest.js";
 import type { NoteIndex } from "./noteindex.js";
+import type { ReviewQueue } from "./review.js";
 import type { Wiki } from "./wiki.js";
 import { PathError } from "./paths.js";
 import { ScopedVault } from "./scoped.js";
@@ -33,6 +34,8 @@ export interface AppOptions {
   ingestor: Ingestor;
   /** 관리 콘솔(백업·업데이트·보안 설정). vault·index·wiki·config는 위와 같은 것을 쓴다. */
   admin: Omit<AdminDeps, "vault" | "index" | "wiki" | "config">;
+  /** 변경 검토 대기열(없으면 모든 변경을 바로 반영) */
+  review?: ReviewQueue;
   /** 비밀번호가 없을 때 웹에서 처음 설정하는 데 쓰는 일회용 코드(서버 로그에만 나온다). */
   setupCode?: () => string | null;
 }
@@ -99,7 +102,7 @@ class LoginThrottle {
   }
 }
 
-export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode }: AppOptions) {
+export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
   const secureCookies = (c: Context) => isHttps(c) || (admin.publicUrl ?? "").startsWith("https:");
@@ -154,7 +157,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
         "www-authenticate": 'Bearer realm="keyring-notes"',
       });
     }
-    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal, index, wiki), ingestor);
+    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal, index, wiki, review), ingestor);
   });
 
   const api = new Hono<Env>();
@@ -242,7 +245,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.use("*", async (c, next) => {
     const p = principalOf(c);
     if (!p) return c.json({ error: "unauthorized", message: "로그인이 필요합니다" }, 401);
-    c.set("scoped", new ScopedVault(vault, p, index, wiki));
+    c.set("scoped", new ScopedVault(vault, p, index, wiki, review));
     await next();
   });
 
@@ -327,6 +330,13 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   });
 
   api.get("/backlinks", async (c) => c.json({ backlinks: await c.var.scoped.backlinks(requirePath(c.req.query("path"))) }));
+
+  api.get("/lint", async (c) => {
+    const days = Number.parseInt(c.req.query("staleDays") ?? "", 10);
+    return c.json(await c.var.scoped.lint({ folder: c.req.query("folder"), staleDays: Number.isFinite(days) && days > 0 ? days : undefined }));
+  });
+
+  api.get("/sources", async (c) => c.json(await c.var.scoped.sources(requirePath(c.req.query("path")))));
 
   api.get("/tags", async (c) => c.json({ tags: await c.var.scoped.tags() }));
 
@@ -418,6 +428,45 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     const body = await c.req.json();
     if (typeof body.rev !== "string") throw new PathError("rev가 필요합니다");
     return c.json(await c.var.scoped.rollback(requirePath(body.path), body.rev, optionalHash(body.baseHash)));
+  });
+
+  // ── 변경 검토 대기열(소유자만) ──
+  const ownerOnly = (c: Context<Env>) => {
+    if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("검토는 소유자만 할 수 있습니다");
+    if (!review) throw new PathError("검토 대기열이 꺼져 있습니다");
+    return review;
+  };
+  api.get("/review/settings", (c) => {
+    ownerOnly(c);
+    return c.json({ reviewPaths: config.get().reviewPaths });
+  });
+  api.put("/review/settings", async (c) => {
+    ownerOnly(c);
+    const { reviewPaths } = await c.req.json();
+    if (!Array.isArray(reviewPaths) || reviewPaths.some((p) => typeof p !== "string")) throw new PathError("reviewPaths는 경로 문자열 목록입니다");
+    try {
+      config.update((cfg) => {
+        cfg.reviewPaths = reviewPaths;
+      });
+    } catch (e) {
+      throw new PathError(e instanceof Error ? e.message : String(e));
+    }
+    return c.json({ reviewPaths: config.get().reviewPaths });
+  });
+  api.get("/review", async (c) => {
+    const q = ownerOnly(c);
+    const status = c.req.query("status");
+    return c.json({ proposals: await q.list(status === "pending" || status === "approved" || status === "rejected" ? { status } : {}) });
+  });
+  api.get("/review/:id", async (c) => c.json(await ownerOnly(c).get(c.req.param("id"))));
+  api.post("/review/:id/approve", async (c) => {
+    const q = ownerOnly(c);
+    return c.json(await q.summarize(await q.approve(c.req.param("id"), c.var.scoped.principal.name)));
+  });
+  api.post("/review/:id/reject", async (c) => {
+    const q = ownerOnly(c);
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await q.summarize(await q.reject(c.req.param("id"), c.var.scoped.principal.name, typeof body.reason === "string" ? body.reason : undefined)));
   });
 
   api.route("/admin", adminRoutes({ vault, index, wiki, config, ...admin }));

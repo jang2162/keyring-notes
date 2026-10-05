@@ -58,10 +58,22 @@ export type Op =
 export type Action = "create" | "append" | "modify" | "delete";
 export type Guard = (action: Action, relPath: string) => void;
 
+export interface FilePreview {
+  path: string;
+  /** 바꾸기 전 내용(없던 파일이면 null). 첨부 파일은 내용 대신 null */
+  before: string | null;
+  after: string | null;
+  beforeHash: string | null;
+  afterHash: string | null;
+  binary: boolean;
+}
+
 export interface BatchResult {
   rev: string | null;
   /** 바뀐 문서의 새 해시. 삭제된 문서는 null. */
   files: { path: string; hash: string | null }[];
+  /** dryRun일 때: 실제로 바뀔 파일별 전후 내용 */
+  preview?: FilePreview[];
 }
 
 interface Slot {
@@ -213,7 +225,7 @@ export class Vault {
    * 여러 연산을 하나의 커밋으로 적용한다. 하나라도 실패하면(충돌, 권한, 파일 오류, 커밋 오류)
    * 아무것도 바뀌지 않는다. 연산은 앞 연산의 결과 위에서 차례로 검사된다.
    */
-  async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard } = {}): Promise<BatchResult> {
+  async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard; dryRun?: boolean } = {}): Promise<BatchResult> {
     if (ops.length === 0) throw new PathError("연산이 비어 있습니다");
     if (ops.length > 500) throw new PathError("한 번에 500개까지 처리할 수 있습니다");
     const guard = opts.guard ?? (() => undefined);
@@ -320,6 +332,21 @@ export class Vault {
         return before !== s.hash;
       });
       const files = [...slots.entries()].map(([p, s]) => ({ path: p, hash: s.hash }));
+      if (opts.dryRun) {
+        // 검사만 하고 디스크는 그대로 둔다(변경 검토 대기열용)
+        const preview = changed.map(([rel, s]) => {
+          const binary = s.bytes !== undefined || !isMarkdown(rel);
+          return {
+            path: rel,
+            before: binary || s.original === null ? null : s.original.toString("utf8"),
+            after: binary ? null : s.content,
+            beforeHash: s.original === null ? null : hashContent(s.original),
+            afterHash: s.hash,
+            binary,
+          };
+        });
+        return { rev: null, files, preview };
+      }
       if (changed.length === 0) return { rev: null, files };
 
       // 2) 적용: 실패하면 원래 바이트로 되돌린다.

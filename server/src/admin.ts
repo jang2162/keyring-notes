@@ -7,8 +7,10 @@ import { pipeline } from "node:stream/promises";
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { isLevel, type Level } from "./access.js";
+import { parseCron, type Automation } from "./automation.js";
 import type { BackupService } from "./backup.js";
-import { AGENT_NAME_RE, SESSION_COOKIE, validateBackupSettings, type ConfigStore } from "./config.js";
+import { randomBytes } from "node:crypto";
+import { AGENT_NAME_RE, SESSION_COOKIE, validateBackupSettings, validateJobs, validateWebhooks, WEBHOOK_EVENTS, type ConfigStore, type WebhookConfig } from "./config.js";
 import type { NoteIndex } from "./noteindex.js";
 import { PathError } from "./paths.js";
 import type { ScopedVault } from "./scoped.js";
@@ -29,6 +31,8 @@ export interface AdminDeps {
   updateUrl?: string;
   /** 업로드로 복원할 백업 파일 최대 크기(바이트) */
   maxBackupUpload?: number;
+  /** 웹훅·정기 작업 */
+  automation?: Automation;
 }
 
 const startedAt = new Date();
@@ -216,6 +220,82 @@ export function adminRoutes(deps: AdminDeps) {
       maxAge: s.maxAge,
     });
     return c.json({ ok: true });
+  });
+
+  // ── 자동화: 웹훅·정기 작업 ──
+  const automation = () => {
+    if (!deps.automation) throw new PathError("자동화가 꺼져 있습니다");
+    return deps.automation;
+  };
+  const maskSecret = (w: WebhookConfig) => ({ ...w, secret: `${w.secret.slice(0, 4)}…` });
+
+  admin.get("/automation", (c) => {
+    const a = automation();
+    const cfg = config.get();
+    return c.json({
+      events: WEBHOOK_EVENTS,
+      webhooks: cfg.webhooks.map(maskSecret),
+      jobs: cfg.jobs.map((j) => a.jobStatus(j)),
+      deliveries: a.deliveries.slice(0, 50),
+    });
+  });
+
+  // 웹훅 목록 통째로 저장. secret을 비워 보내면 같은 id의 기존 값을 쓰고, 새 웹훅이면 만들어 준다(응답에 한 번만 원문).
+  admin.put("/automation/webhooks", async (c) => {
+    const { webhooks } = await c.req.json();
+    if (!Array.isArray(webhooks)) throw new PathError("webhooks 목록이 필요합니다");
+    const prev = new Map(config.get().webhooks.map((w) => [w.id, w]));
+    const created: Record<string, string> = {};
+    const merged = webhooks.map((w: Partial<WebhookConfig>) => {
+      let secret = typeof w.secret === "string" && w.secret && !w.secret.endsWith("…") ? w.secret : prev.get(String(w.id))?.secret;
+      if (!secret) {
+        secret = randomBytes(24).toString("base64url");
+        created[String(w.id)] = secret;
+      }
+      return { ...w, secret };
+    });
+    let valid;
+    try {
+      valid = validateWebhooks(merged);
+    } catch (e) {
+      throw new PathError(e instanceof Error ? e.message : String(e));
+    }
+    config.update((cfg) => {
+      cfg.webhooks = valid;
+    });
+    return c.json({ webhooks: valid.map(maskSecret), newSecrets: created });
+  });
+
+  admin.put("/automation/jobs", async (c) => {
+    const { jobs } = await c.req.json();
+    let valid;
+    try {
+      valid = validateJobs(jobs, (expr) => void parseCron(expr));
+      const hooks = new Set(config.get().webhooks.map((w) => w.id));
+      for (const j of valid) if (!hooks.has(j.webhook)) throw new Error(`${j.id}: 없는 웹훅입니다(${j.webhook})`);
+    } catch (e) {
+      throw new PathError(e instanceof Error ? e.message : String(e));
+    }
+    config.update((cfg) => {
+      cfg.jobs = valid;
+    });
+    return c.json({ jobs: valid.map((j) => automation().jobStatus(j)) });
+  });
+
+  admin.post("/automation/webhooks/:id/test", async (c) => {
+    const w = config.get().webhooks.find((x) => x.id === c.req.param("id"));
+    if (!w) throw new NotFoundError("웹훅이 없습니다");
+    const a = automation();
+    a.emit("ping", { message: "Keyring Notes 웹훅 시험" }, [w]);
+    await a.idle();
+    return c.json(a.deliveries.find((d) => d.webhook === w.id && d.event === "ping"));
+  });
+
+  admin.post("/automation/jobs/:id/run", async (c) => {
+    const job = config.get().jobs.find((x) => x.id === c.req.param("id"));
+    if (!job) throw new NotFoundError("작업이 없습니다");
+    const d = await automation().runJob(job);
+    return c.json({ delivery: d, job: automation().jobStatus(job) });
   });
 
   // ── 백업·복원 ──

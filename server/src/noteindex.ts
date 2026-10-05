@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { analyze, resolveLink, type TaskItem } from "./markdown.js";
 import { hashContent } from "./vault.js";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export interface DocMeta {
   path: string;
@@ -66,7 +66,7 @@ export class NoteIndex {
         hash TEXT NOT NULL, mtime REAL NOT NULL, size INTEGER NOT NULL, fm TEXT);
       CREATE TABLE tags (path TEXT NOT NULL, tag TEXT NOT NULL);
       CREATE INDEX tags_tag ON tags(tag); CREATE INDEX tags_path ON tags(path);
-      CREATE TABLE links (src TEXT NOT NULL, target TEXT NOT NULL, name TEXT NOT NULL);
+      CREATE TABLE links (src TEXT NOT NULL, target TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'link');
       CREATE INDEX links_name ON links(name); CREATE INDEX links_src ON links(src);
       CREATE TABLE tasks (path TEXT NOT NULL, line INTEGER NOT NULL, done INTEGER NOT NULL, text TEXT NOT NULL);
       CREATE INDEX tasks_path ON tasks(path);
@@ -109,8 +109,9 @@ export class NoteIndex {
     this.db.prepare("INSERT INTO fts (rowid, path, title, body) VALUES (?, ?, ?, ?)").run(res.lastInsertRowid, rel, a.title, content);
     const tag = this.db.prepare("INSERT INTO tags (path, tag) VALUES (?, ?)");
     for (const t of a.tags) tag.run(rel, t);
-    const link = this.db.prepare("INSERT INTO links (src, target, name) VALUES (?, ?, ?)");
-    for (const t of a.links) link.run(rel, t, linkName(t));
+    const link = this.db.prepare("INSERT INTO links (src, target, name, kind) VALUES (?, ?, ?, ?)");
+    for (const t of a.links) link.run(rel, t, linkName(t), "link");
+    for (const t of a.sources) link.run(rel, t, linkName(t), "source");
     const task = this.db.prepare("INSERT INTO tasks (path, line, done, text) VALUES (?, ?, ?, ?)");
     for (const t of a.tasks) task.run(rel, t.line, t.done ? 1 : 0, t.text);
   }
@@ -190,9 +191,12 @@ export class NoteIndex {
   }
 
   /** target 문서를 가리키는 링크가 있는 문서들. 링크 해석은 볼트 전체 기준(Obsidian 최단 경로 규칙). */
-  backlinks(target: string): string[] {
+  /** kind를 주면 그 종류만: "link"(본문 위키링크), "source"(프런트매터 출처). 없으면 둘 다. */
+  backlinks(target: string, kind?: "link" | "source"): string[] {
     const name = linkName(target);
-    const rows = this.db.prepare("SELECT DISTINCT src, target FROM links WHERE name = ?").all(name) as { src: string; target: string }[];
+    const rows = (kind
+      ? this.db.prepare("SELECT DISTINCT src, target FROM links WHERE name = ? AND kind = ?").all(name, kind)
+      : this.db.prepare("SELECT DISTINCT src, target FROM links WHERE name = ?").all(name)) as { src: string; target: string }[];
     if (rows.length === 0) return [];
     const all = this.allPaths();
     const out = new Set<string>();

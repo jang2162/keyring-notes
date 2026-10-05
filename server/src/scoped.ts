@@ -1,11 +1,34 @@
 import { atLeast, levelOf, type Level, type Principal } from "./access.js";
 import type { Author, CommitInfo } from "./git.js";
-import { headings, parseFrontmatter, resolveLink, section, setTaskState, wikilinkTargets, type Heading, type Section } from "./markdown.js";
+import { headings, parseFrontmatter, resolveLink, section, setTaskState, sourceTargets, wikilinkTargets, type Heading, type Section } from "./markdown.js";
 import type { DocMeta, NoteIndex } from "./noteindex.js";
+import type { ReviewQueue } from "./review.js";
 import { parseWidget, runWidget, type WidgetResult } from "./query.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
 import { isSchemaPath, schemaTemplate, type Wiki } from "./wiki.js";
 import { ConflictError, ForbiddenError, hashContent, NotFoundError, type Action, type BatchResult, type Doc, type Op, type TreeNode, type Vault } from "./vault.js";
+
+export type LintKind = "broken_link" | "broken_source" | "orphan" | "no_sources" | "missing_frontmatter" | "stale" | "unprocessed_raw";
+
+export interface LintIssue {
+  kind: LintKind;
+  path: string;
+  /** 사람이 읽을 설명 */
+  detail: string;
+  target?: string;
+}
+
+export interface LintReport {
+  checkedAt: string;
+  folder: string | null;
+  counts: Partial<Record<LintKind, number>>;
+  issues: LintIssue[];
+}
+
+export interface PendingInfo {
+  proposal: string;
+  message: string;
+}
 
 const ACTION_LEVEL: Record<Action, Level> = {
   create: "append",
@@ -43,6 +66,7 @@ export class ScopedVault {
     readonly principal: Principal,
     private index: NoteIndex,
     private wiki?: Wiki,
+    private review?: ReviewQueue,
   ) {}
 
   get author(): Author {
@@ -263,6 +287,113 @@ export class ScopedVault {
       .map((p) => ({ path: p, title: titles.get(p) ?? p }));
   }
 
+  /** 읽을 수 있는 모든 파일 경로(첨부 포함). */
+  private async visibleFiles(): Promise<string[]> {
+    const out: string[] = [];
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.type === "dir") walk(n.children ?? []);
+        else out.push(n.path);
+      }
+    };
+    walk(await this.tree());
+    return out;
+  }
+
+  /**
+   * 출처 연결(W6): 이 문서의 프런트매터 sources가 가리키는 문서(볼 수 없거나 없으면 path=null),
+   * 이 문서를 출처로 인용한 문서, 본문에서 링크한 문서.
+   */
+  async sources(input: string): Promise<{
+    path: string;
+    sources: { target: string; path: string | null }[];
+    citedBy: { path: string; title: string }[];
+    linkedBy: { path: string; title: string }[];
+  }> {
+    const doc = await this.read(input);
+    const fm = parseFrontmatter(doc.content).data;
+    const files = await this.visibleFiles();
+    const titles = new Map(this.index.docs().map((d) => [d.path, d.title]));
+    const withTitle = (paths: string[]) => paths.filter((p) => this.canRead(p)).map((p) => ({ path: p, title: titles.get(p) ?? p }));
+    return {
+      path: doc.path,
+      sources: sourceTargets(fm).map((target) => ({ target, path: resolveLink(target, files) })),
+      citedBy: withTitle(this.index.backlinks(doc.path, "source")),
+      linkedBy: withTitle(this.index.backlinks(doc.path, "link")),
+    };
+  }
+
+  /**
+   * 구조적 정리(W7). 볼 수 있는 문서만 대상으로 한다.
+   * - 모든 문서: 깨진 위키링크, 깨진 출처(볼 수 없는 대상도 "없거나 볼 수 없음"으로 같이 센다)
+   * - 위키 페이지(<토픽>/wiki/): 고아(아무 데서도 링크·인용 안 됨), 출처 없음, 필수 프런트매터 누락, 오래됨
+   * - 위키 원본(<토픽>/raw/): 어느 위키 페이지에서도 인용되지 않음
+   */
+  async lint(opts: { folder?: string; staleDays?: number; required?: string[] } = {}): Promise<LintReport> {
+    const f = normalizeFolder(opts.folder);
+    const staleDays = opts.staleDays ?? 180;
+    const required = opts.required ?? ["title", "summary"];
+    const files = await this.visibleFiles();
+    const docs = this.visibleDocs().filter((d) => !this.wiki?.isGenerated(d.path));
+    const inScope = (p: string) => !f || p === f || p.startsWith(f + "/");
+    const isWikiPage = (p: string) => {
+      const t = this.wiki?.topicOf(p);
+      return !!t && p.startsWith(`${t}/wiki/`);
+    };
+    const isRaw = (p: string) => {
+      const t = this.wiki?.topicOf(p);
+      return !!t && p.startsWith(`${t}/raw/`) && !p.startsWith(`${t}/raw/assets/`);
+    };
+
+    // 들어오는 링크·인용(볼 수 있는 문서에서, 자기 자신 제외)
+    const incoming = new Map<string, number>();
+    const citedByWiki = new Set<string>();
+    const issues: LintIssue[] = [];
+    const rows = this.index.db.prepare("SELECT src, target, kind FROM links").all() as { src: string; target: string; kind: string }[];
+    for (const r of rows) {
+      if (!this.canRead(r.src) || this.wiki?.isGenerated(r.src)) continue;
+      const to = resolveLink(r.target, files);
+      if (to && to !== r.src) {
+        incoming.set(to, (incoming.get(to) ?? 0) + 1);
+        if (isWikiPage(r.src)) citedByWiki.add(to);
+      }
+      if (!to && inScope(r.src)) {
+        issues.push(
+          r.kind === "source"
+            ? { kind: "broken_source", path: r.src, target: r.target, detail: `출처 "${r.target}"가 없거나 볼 수 없음` }
+            : { kind: "broken_link", path: r.src, target: r.target, detail: `링크 [[${r.target}]]의 대상이 없거나 볼 수 없음` },
+        );
+      }
+    }
+
+    const now = Date.now();
+    for (const d of docs) {
+      if (!inScope(d.path)) continue;
+      if (isWikiPage(d.path)) {
+        if (!incoming.get(d.path)) issues.push({ kind: "orphan", path: d.path, detail: "다른 문서에서 링크하거나 인용하지 않음" });
+        const src = d.frontmatter?.sources;
+        if (!src || (Array.isArray(src) && src.length === 0)) issues.push({ kind: "no_sources", path: d.path, detail: "프런트매터 sources(근거 원본)가 없음" });
+        const missing = required.filter((k) => {
+          const v = d.frontmatter?.[k];
+          return v === undefined || v === null || (typeof v === "string" && !v.trim());
+        });
+        if (missing.length) issues.push({ kind: "missing_frontmatter", path: d.path, detail: `프런트매터 누락: ${missing.join(", ")}` });
+        const updatedRaw = d.frontmatter?.updated;
+        const updated = typeof updatedRaw === "string" && !Number.isNaN(Date.parse(updatedRaw)) ? Date.parse(updatedRaw) : d.mtime;
+        const age = Math.floor((now - updated) / 86400_000);
+        if (age > staleDays) issues.push({ kind: "stale", path: d.path, detail: `${age}일 동안 갱신되지 않음(기준 ${staleDays}일)` });
+      } else if (isRaw(d.path) && !citedByWiki.has(d.path)) {
+        issues.push({ kind: "unprocessed_raw", path: d.path, detail: "어느 위키 페이지에서도 인용하지 않은 원본" });
+      }
+    }
+
+    const order: LintKind[] = ["broken_link", "broken_source", "missing_frontmatter", "no_sources", "orphan", "stale", "unprocessed_raw"];
+    issues.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.path.localeCompare(b.path, "ko"));
+    const counts: Partial<Record<LintKind, number>> = {};
+    for (const i of issues) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
+    return { checkedAt: new Date().toISOString(), folder: f || null, counts, issues };
+  }
+
   /** 읽을 수 있는 문서에 쓰인 태그와 개수. */
   async tags(): Promise<{ tag: string; count: number }[]> {
     const counts = new Map<string, number>();
@@ -293,7 +424,7 @@ export class ScopedVault {
   }
 
   /** 모든 변경의 입구. 경로마다 최소 권한을 먼저 확인한 뒤, 연산 종류별 권한은 계획 단계에서 검사한다. */
-  async batch(ops: Op[], message?: string): Promise<BatchResult> {
+  async batch(ops: Op[], message?: string): Promise<BatchResult & { pending?: PendingInfo }> {
     if (!Array.isArray(ops)) throw new PathError("operations가 필요합니다");
     for (const op of ops) {
       if (!op || typeof op !== "object") throw new PathError("연산 형식이 잘못되었습니다");
@@ -308,23 +439,50 @@ export class ScopedVault {
         throw new PathError(`알 수 없는 연산입니다: ${(op as { op: unknown }).op}`);
       }
     }
-    return this.vault.batch(ops, this.author, {
-      message,
-      guard: (action, rel) => {
-        const need = ACTION_LEVEL[action];
-        if (!atLeast(this.level(rel), need)) {
-          const hint = action === "modify" && this.level(rel) === "append" ? " — 추가 전용: 기존 내용은 바꿀 수 없고 끝에 덧붙이기만 됩니다" : "";
-          throw new ForbiddenError(`권한이 없습니다(${need} 필요): ${rel}${hint}`);
-        }
-      },
-    });
+    const guard = (action: Action, rel: string) => {
+      const need = ACTION_LEVEL[action];
+      if (!atLeast(this.level(rel), need)) {
+        const hint = action === "modify" && this.level(rel) === "append" ? " — 추가 전용: 기존 내용은 바꿀 수 없고 끝에 덧붙이기만 됩니다" : "";
+        throw new ForbiddenError(`권한이 없습니다(${need} 필요): ${rel}${hint}`);
+      }
+    };
+    // 검토 대상 경로에 에이전트가 쓰면: 권한·충돌만 지금 검사하고, 적용은 사람이 승인할 때.
+    if (this.principal.kind === "agent" && this.review) {
+      const touched = ops.flatMap((op) => (op.op === "move" ? [op.from, op.to] : [op.path])).map((p) => normalizeVaultPath(p));
+      if (this.review.needsReview(touched)) {
+        const dry = await this.vault.batch(ops, this.author, { message, guard, dryRun: true });
+        if (!dry.preview || dry.preview.length === 0) return { rev: null, files: dry.files };
+        const proposal = await this.review.create(this.author, ops, message, dry.preview);
+        return {
+          rev: null,
+          files: dry.files,
+          preview: dry.preview,
+          pending: { proposal: proposal.id, message: "검토 대기열에 올렸습니다. 사람이 승인하면 반영됩니다(그 전까지 볼트는 그대로)." },
+        };
+      }
+    }
+    return this.vault.batch(ops, this.author, { message, guard });
   }
 
-  private async single(op: Op): Promise<Doc & { rev: string | null }> {
-    const res = await this.batch([op]);
+  /** 에이전트가 자기 제안의 처리 결과를 확인할 때. */
+  async myProposals() {
+    if (!this.review) return [];
+    return this.review.list(this.principal.kind === "agent" ? { agent: this.principal.name } : {});
+  }
+
+  /**
+   * 문서 하나를 바꾼다. 검토 대기열에 올라가면(pending) 볼트는 그대로이고,
+   * content·hash는 승인 뒤의 내용·해시를 돌려준다.
+   */
+  private async single(op: Op): Promise<Doc & { rev: string | null; pending?: PendingInfo }> {
     if (op.op === "put") throw new PathError("put은 batch로만 쓸 수 있습니다");
-    const target = op.op === "move" ? op.to : op.path;
-    const doc = await this.vault.read(normalizeVaultPath(target));
+    const res = await this.batch([op]);
+    const target = normalizeVaultPath(op.op === "move" ? op.to : op.path);
+    if (res.pending) {
+      const p = res.preview?.find((f) => f.path === target);
+      return { path: target, content: p?.after ?? "", hash: p?.afterHash ?? "", rev: null, pending: res.pending };
+    }
+    const doc = await this.vault.read(target);
     return { ...doc, rev: res.rev };
   }
 
@@ -340,9 +498,9 @@ export class ScopedVault {
     return this.single({ op: "move", from, to, baseHash });
   }
 
-  async delete(path: string, baseHash: string): Promise<{ rev: string | null }> {
+  async delete(path: string, baseHash: string): Promise<{ rev: string | null; pending?: PendingInfo }> {
     const res = await this.batch([{ op: "delete", path, baseHash }]);
-    return { rev: res.rev };
+    return res.pending ? { rev: null, pending: res.pending } : { rev: res.rev };
   }
 
   async history(input: string): Promise<CommitInfo[]> {

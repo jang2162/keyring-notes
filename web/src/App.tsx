@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { api, ApiError, type CommitInfo, type SearchHit, type TreeNode } from "./api";
+import { api, ApiError, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
 import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
 import { AdminPanel } from "./Admin";
+import { LintPanel, ReviewPanel } from "./Curation";
 import { ClipPage, IngestDialog } from "./Ingest";
 import { invalidateWidgets, Widget } from "./Widget";
 import { Login } from "./Login";
@@ -34,6 +35,63 @@ interface RevisionView {
 function pathFromLocation(): string | null {
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
   return h || null;
+}
+
+/** 미리보기 아래: 출처(프런트매터 sources), 이 문서를 출처로 인용한 문서, 본문 백링크. */
+function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: string) => void }) {
+  const link = (p: string, label: string) => (
+    <a
+      href={`#/${encodeURIComponent(p)}`}
+      onClick={(e) => {
+        e.preventDefault();
+        if (p.toLowerCase().endsWith(".md")) onOpen(p);
+        else window.open(api.rawUrl(p), "_blank", "noreferrer");
+      }}
+    >
+      {label}
+    </a>
+  );
+  return (
+    <section className="backlinks">
+      {refs.sources.length > 0 && (
+        <>
+          <h4>출처 {refs.sources.length}</h4>
+          <ul>
+            {refs.sources.map((s) => (
+              <li key={s.target}>
+                {s.path ? link(s.path, s.path.split("/").pop()!.replace(/\.md$/i, "")) : <span className="broken">{s.target}</span>}{" "}
+                <span className="meta">{s.path ?? "없거나 볼 수 없는 출처"}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {refs.citedBy.length > 0 && (
+        <>
+          <h4>이 문서를 출처로 인용한 페이지 {refs.citedBy.length}</h4>
+          <ul>
+            {refs.citedBy.map((b) => (
+              <li key={b.path}>
+                {link(b.path, b.title)} <span className="meta">{b.path}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <h4>백링크 {refs.linkedBy.length}</h4>
+      {refs.linkedBy.length === 0 ? (
+        <p className="meta">이 문서를 본문에서 링크한 문서가 없습니다.</p>
+      ) : (
+        <ul>
+          {refs.linkedBy.map((b) => (
+            <li key={b.path}>
+              {link(b.path, b.title)} <span className="meta">{b.path}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 function folderPaths(nodes: TreeNode[]): string[] {
@@ -154,7 +212,10 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
-  const [backlinks, setBacklinks] = useState<{ path: string; title: string }[]>([]);
+  const [refs, setRefs] = useState<SourcesInfo | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [lintOpen, setLintOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   /** 볼트 내용이 바뀔 때마다 올려 태그·백링크·위젯을 다시 불러온다. */
   const [vaultVersion, setVaultVersion] = useState(0);
   const editorHandle = useRef<EditorHandle | null>(null);
@@ -202,9 +263,21 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     api.tags().then(setTags).catch(() => undefined);
   }, [vaultVersion]);
 
+  // 검토 대기 수: 볼트가 바뀔 때와 1분마다
   useEffect(() => {
-    if (!doc?.path) return setBacklinks([]);
-    api.backlinks(doc.path).then(setBacklinks).catch(() => setBacklinks([]));
+    const load = () =>
+      review
+        .list("pending")
+        .then((l) => setPendingCount(l.length))
+        .catch(() => undefined);
+    void load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, [vaultVersion]);
+
+  useEffect(() => {
+    if (!doc?.path) return setRefs(null);
+    api.sources(doc.path).then(setRefs).catch(() => setRefs(null));
   }, [doc?.path, vaultVersion]);
 
   useEffect(() => {
@@ -444,6 +517,12 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             <button onClick={() => setIngestOpen(true)} title="원본 수집(파일·URL·붙여넣기)">
               📥
             </button>{" "}
+            <button onClick={() => setReviewOpen(true)} title="변경 검토(에이전트 제안)" className={pendingCount ? "has-badge" : ""}>
+              ✔{pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
+            </button>{" "}
+            <button onClick={() => setLintOpen(true)} title="정리 점검(깨진 링크·고아·출처 없음…)">
+              🧹
+            </button>{" "}
             <button onClick={() => setAdminOpen(true)} title="관리 콘솔(상태·에이전트·백업·업데이트)">
               ⚙
             </button>{" "}
@@ -586,31 +665,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                         `${i}:${rendered.widgets[i]}`,
                       ),
                 )}
-                {!revision && (
-                  <section className="backlinks">
-                    <h4>백링크 {backlinks.length}</h4>
-                    {backlinks.length === 0 ? (
-                      <p className="meta">이 문서를 링크한 문서가 없습니다.</p>
-                    ) : (
-                      <ul>
-                        {backlinks.map((b) => (
-                          <li key={b.path}>
-                            <a
-                              href={`#/${encodeURIComponent(b.path)}`}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                open(b.path);
-                              }}
-                            >
-                              {b.title}
-                            </a>{" "}
-                            <span className="meta">{b.path}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                )}
+                {!revision && refs && <References refs={refs} onOpen={open} />}
               </div>
             </div>
           </>
@@ -621,6 +676,31 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           </div>
         )}
       </main>
+
+      {reviewOpen && (
+        <ReviewPanel
+          onClose={() => setReviewOpen(false)}
+          onChanged={() => {
+            vaultChanged();
+            void refreshTree();
+            if (doc && doc.draft === doc.saved) void load(doc.path);
+          }}
+          onOpen={(p) => {
+            setReviewOpen(false);
+            open(p);
+          }}
+        />
+      )}
+      {lintOpen && (
+        <LintPanel
+          folders={folderPaths(tree)}
+          onClose={() => setLintOpen(false)}
+          onOpen={(p) => {
+            setLintOpen(false);
+            open(p);
+          }}
+        />
+      )}
 
       {adminOpen && (
         <AdminPanel

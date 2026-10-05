@@ -10,6 +10,9 @@ import { BackupService } from "./backup.js";
 import { ConfigStore } from "./config.js";
 import { Ingestor } from "./ingest.js";
 import { NoteIndex } from "./noteindex.js";
+import { ReviewQueue } from "./review.js";
+import { Automation } from "./automation.js";
+import { ScopedVault } from "./scoped.js";
 import { Wiki } from "./wiki.js";
 import { Vault } from "./vault.js";
 
@@ -61,13 +64,35 @@ if (config.get().owner.passwordHash === null) {
   setupCode = randomBytes(6).toString("hex").toUpperCase().replace(/(.{4})(?=.)/g, "$1-");
 }
 
+const review = new ReviewQueue(vault, config);
+const ownerPrincipal = () => config.ownerPrincipal();
+const automation = new Automation({
+  vault,
+  wiki,
+  config,
+  lint: (folder) => new ScopedVault(vault, ownerPrincipal(), index, wiki, review).lint({ folder }),
+});
+// 인덱스·위키 갱신 뒤에 이벤트를 보낸다
+vault.onChange(() => automation.onCommit());
+review.onCreate((p) =>
+  automation.emit("proposal.created", {
+    id: p.id,
+    agent: p.agent,
+    message: p.message,
+    topic: p.preview[0]?.path.split("/")[0] ?? null,
+    files: p.preview.map((f) => ({ path: f.path })),
+  }),
+);
+if (process.env.KEYRING_SCHEDULER !== "0") automation.start();
+
 const app = createApp({
+  review,
   vault,
   index,
   config,
   wiki,
   ingestor,
-  admin: { backups, publicUrl, allowedHosts, updateUrl },
+  admin: { backups, publicUrl, allowedHosts, updateUrl, automation },
   setupCode: () => (config.get().owner.passwordHash === null ? setupCode : null),
 });
 
@@ -96,6 +121,7 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
     stopping = true;
     console.log(`${sig}: 종료하는 중…`);
     backups.stop();
+    automation.stop();
     server.close();
     void vault
       .maintenance(async () => index.close())

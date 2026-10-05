@@ -56,10 +56,11 @@ const INSTRUCTIONS = `Keyring Notes 볼트(마크다운 노트)에 접근하는 
 - 긴 문서는 read_outline으로 구조를 본 뒤 read_section으로 필요한 부분만 읽으세요.
 - 쓰기에는 마지막으로 읽은 hash를 base_hash로 넘깁니다. 다르면 conflict가 나며, 다시 읽고 재시도하세요.
 - search는 3글자 이상 단어를 색인으로 찾고, '#태그' 단어는 태그 조건이 됩니다.
+- 검토 대상 폴더에 쓰면 결과에 pending이 붙고 사람이 승인할 때까지 반영되지 않습니다. my_proposals로 결과를 확인하세요.
 - 여러 문서를 함께 고칠 때는 batch_write로 한 커밋에 묶으세요. 하나라도 실패하면 전부 취소됩니다.`;
 
 export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpServer {
-  const server = new McpServer({ name: "keyring-notes", version: "0.4.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "keyring-notes", version: "0.6.0" }, { instructions: INSTRUCTIONS });
   const ro = { readOnlyHint: true, openWorldHint: false };
 
   server.registerTool(
@@ -153,6 +154,30 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
   );
 
   server.registerTool(
+    "lint",
+    {
+      description:
+        "구조적 정리 점검: 깨진 링크·출처, 고아 위키 페이지, 출처(sources) 없는 페이지, 프런트매터 누락(title·summary), 오래된 페이지, 인용되지 않은 원본",
+      inputSchema: {
+        folder: z.string().optional().describe("이 폴더만 (예: 경제)"),
+        stale_days: z.number().int().min(1).max(3650).optional().describe("이 일수보다 오래 갱신 안 된 위키 페이지(기본 180)"),
+      },
+      annotations: ro,
+    },
+    ({ folder, stale_days }) => run(() => scoped.lint({ folder, staleDays: stale_days })),
+  );
+
+  server.registerTool(
+    "sources",
+    {
+      description: "출처 연결: 이 문서의 프런트매터 sources가 가리키는 원본(없거나 볼 수 없으면 path=null), 이 문서를 출처로 인용한 페이지, 본문에서 링크한 페이지",
+      inputSchema: { path: z.string() },
+      annotations: ro,
+    },
+    ({ path }) => run(() => scoped.sources(path)),
+  );
+
+  server.registerTool(
     "list_tags",
     { description: "태그(프런트매터 tags + 본문 #태그)와 문서 수", annotations: ro },
     () => run(() => scoped.tags()),
@@ -187,6 +212,15 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
       annotations: { destructiveHint: false, openWorldHint: false },
     },
     ({ topic, title, text, source_url }) => run(() => ingestor.ingest(scoped, { kind: "text", topic, title, text, url: source_url })),
+  );
+
+  server.registerTool(
+    "my_proposals",
+    {
+      description: "내가 올린 변경 제안(검토 대기열)과 처리 결과(pending/approved/rejected, 거절 사유)",
+      annotations: ro,
+    },
+    () => run(() => scoped.myProposals()),
   );
 
   server.registerTool(
@@ -246,9 +280,9 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
   return server;
 }
 
-function stripContent<T extends { content: string }>(doc: T): Omit<T, "content"> {
-  const { content: _content, ...rest } = doc;
-  return rest;
+function stripContent<T extends object>(doc: T): Omit<T, "content"> {
+  const { content: _content, ...rest } = doc as T & { content?: unknown };
+  return rest as Omit<T, "content">;
 }
 
 /** 요청마다 서버를 새로 만드는 무상태 Streamable HTTP 처리. */
