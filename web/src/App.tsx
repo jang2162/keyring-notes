@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
-import { api, ApiError, type CommitInfo, type TreeNode } from "./api";
-import { Editor } from "./Editor";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
+import { api, ApiError, type CommitInfo, type SearchHit, type TreeNode } from "./api";
+import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
+import { invalidateWidgets, Widget } from "./Widget";
 import { Login } from "./Login";
 import { LinkResolver, renderMarkdown } from "./markdown";
 
@@ -128,13 +130,65 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [revision, setRevision] = useState<RevisionView | null>(null);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
+  const [backlinks, setBacklinks] = useState<{ path: string; title: string }[]>([]);
+  /** 볼트 내용이 바뀔 때마다 올려 태그·백링크·위젯을 다시 불러온다. */
+  const [vaultVersion, setVaultVersion] = useState(0);
+  const editorHandle = useRef<EditorHandle | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
 
   const resolver = useMemo(() => new LinkResolver(tree), [tree]);
+
+  const linkCandidates = useMemo<LinkCandidate[]>(() => {
+    const paths = resolver.paths;
+    const nameCount = new Map<string, number>();
+    for (const p of paths) {
+      const n = p.split("/").pop()!.replace(/\.md$/i, "").toLowerCase();
+      nameCount.set(n, (nameCount.get(n) ?? 0) + 1);
+    }
+    return paths.map((p) => {
+      const isMd = /\.md$/i.test(p);
+      const name = p.split("/").pop()!;
+      const base = isMd ? name.replace(/\.md$/i, "") : name;
+      // 같은 이름이 여러 개면 경로로 구분한다
+      const label = (nameCount.get(base.toLowerCase()) ?? 0) > 1 ? (isMd ? p.replace(/\.md$/i, "") : p) : base;
+      return { label, detail: p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : undefined, attachment: !isMd };
+    });
+  }, [resolver]);
   const dirty = doc !== null && doc.draft !== doc.saved;
 
   const refreshTree = useCallback(() => api.tree().then(setTree).catch((e) => setError(String(e.message ?? e))), []);
 
   const report = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
+
+  const vaultChanged = useCallback(() => {
+    invalidateWidgets();
+    setVaultVersion((v) => v + 1);
+  }, []);
+
+  useEffect(() => {
+    api.tags().then(setTags).catch(() => undefined);
+  }, [vaultVersion]);
+
+  useEffect(() => {
+    if (!doc?.path) return setBacklinks([]);
+    api.backlinks(doc.path).then(setBacklinks).catch(() => setBacklinks([]));
+  }, [doc?.path, vaultVersion]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) return setHits(null);
+    const t = setTimeout(() => {
+      api.search(q).then(setHits).catch((e) => {
+        setHits([]);
+        report(e);
+      });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [query, vaultVersion]);
 
   const load = useCallback(async (path: string) => {
     try {
@@ -194,13 +248,14 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       setDoc((prev) => (prev && prev.path === d.path ? { ...prev, saved: content, hash: d.hash } : prev));
       setConflict(null);
       setError(null);
+      vaultChanged();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) setConflict({ currentHash: e.currentHash ?? null });
       else report(e);
     } finally {
       setSaving(false);
     }
-  }, [doc, saving]);
+  }, [doc, saving, vaultChanged]);
 
   // 에디터 밖(로그인 직후 등)에서도 Ctrl/Cmd+S로 저장한다. 에디터 안에서는 에디터 키맵이 먼저 처리한다.
   useEffect(() => {
@@ -219,6 +274,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     const copy = conflictCopyPath(doc.path);
     try {
       await api.write(copy, doc.draft, null);
+      vaultChanged();
       await refreshTree();
       await load(doc.path);
       setError(`내 변경은 "${copy}"에 저장했습니다.`);
@@ -235,6 +291,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     const title = path.split("/").pop()!.replace(/\.md$/i, "");
     try {
       await api.write(path, `# ${title}\n`, null);
+      vaultChanged();
       await refreshTree();
       open(path);
     } catch (e) {
@@ -250,6 +307,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     const to = /\.md$/i.test(input) ? input : `${input}.md`;
     try {
       const d = await api.move(doc.path, to, doc.hash);
+      vaultChanged();
       await refreshTree();
       await load(d.path);
     } catch (e) {
@@ -261,6 +319,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     if (!doc || !confirm(`"${doc.path}" 문서를 삭제할까요? (이력에서 되돌릴 수 있습니다)`)) return;
     try {
       await api.remove(doc.path, doc.hash);
+      vaultChanged();
       setDoc(null);
       history.replaceState(null, "", "#");
       await refreshTree();
@@ -283,6 +342,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     if (dirty && !confirm("저장하지 않은 변경을 버리고 이 버전으로 되돌릴까요?")) return;
     try {
       await api.rollback(doc.path, revision.commit.rev, doc.hash);
+      vaultChanged();
       await load(doc.path);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) setError("그 사이 문서가 바뀌었습니다. 다시 불러온 뒤 시도하세요.");
@@ -290,7 +350,26 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  /** 위젯에서 문서를 바꿨을 때: 지금 연 문서면(저장 안 한 변경이 없을 때) 다시 불러온다. */
+  const onWidgetChanged = (path: string) => {
+    setVaultVersion((v) => v + 1);
+    if (doc?.path === path) {
+      if (doc.draft === doc.saved) void load(path);
+      else setError("위젯에서 이 문서를 바꿨습니다. 지금 저장하면 충돌이 납니다. 사본으로 저장하거나 서버 버전을 불러오세요.");
+    }
+  };
+
   const onPreviewClick = (e: MouseEvent<HTMLDivElement>) => {
+    const box = (e.target as HTMLElement).closest<HTMLInputElement>("input.task[data-task-line]");
+    if (box) {
+      // 체크박스는 편집 중인 초안을 바꾼다(저장해야 반영). 과거 버전 보기에서는 바꾸지 않는다.
+      if (revision || !editorHandle.current) {
+        e.preventDefault();
+        return;
+      }
+      editorHandle.current.toggleTask(Number(box.dataset.taskLine), box.checked);
+      return;
+    }
     const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-wikilink]");
     if (!a) return;
     e.preventDefault();
@@ -309,10 +388,15 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   const previewSource = revision ? (revision.content ?? "") : (doc?.draft ?? "");
-  const previewHtml = useMemo(
-    () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path }) : ""),
+  const rendered = useMemo(
+    () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path }) : { html: "", widgets: [] }),
     [previewSource, resolver, doc?.path],
   );
+
+  // innerHTML이 바뀐 뒤 위젯 자리를 찾아 React 포털로 위젯을 그린다.
+  useLayoutEffect(() => {
+    setWidgetSlots(Array.from(previewRef.current?.querySelectorAll<HTMLElement>(".widget-slot") ?? []));
+  }, [rendered.html]);
 
   return (
     <div className="app">
@@ -326,7 +410,52 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             </button>
           </span>
         </div>
-        <TreeView nodes={tree} current={doc?.path ?? null} onOpen={open} />
+        <div className="search-box">
+          <input
+            type="search"
+            placeholder="검색 (#태그)"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+          />
+        </div>
+        {hits !== null ? (
+          <ul className="search-results">
+            {hits.map((h) => (
+              <li key={h.path}>
+                <a
+                  href={`#/${encodeURIComponent(h.path)}`}
+                  className={h.path === doc?.path ? "active" : ""}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    open(h.path);
+                  }}
+                >
+                  <span className="hit-title">{h.title}</span>
+                  <span className="hit-path">{h.path}</span>
+                  {h.snippet && <span className="hit-snippet">{h.snippet}</span>}
+                </a>
+              </li>
+            ))}
+            {hits.length === 0 && <li className="meta">결과가 없습니다.</li>}
+          </ul>
+        ) : (
+          <>
+            <TreeView nodes={tree} current={doc?.path ?? null} onOpen={open} />
+            {tags.length > 0 && (
+              <details className="tag-list">
+                <summary>태그 {tags.length}</summary>
+                <div>
+                  {tags.map((t) => (
+                    <button key={t.tag} className="tag" onClick={() => setQuery(`#${t.tag}`)}>
+                      #{t.tag} <span className="count">{t.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </details>
+            )}
+          </>
+        )}
       </aside>
 
       <main className="main">
@@ -390,13 +519,47 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                   initial={doc.draft}
                   onChange={(draft) => setDoc((prev) => (prev ? { ...prev, draft } : prev))}
                   onSave={save}
+                  linkCandidates={() => linkCandidates}
+                  handle={editorHandle}
                 />
               </div>
-              <div
-                className="pane preview-pane markdown-body"
-                onClick={onPreviewClick}
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
+              <div className="pane preview-pane" onClick={onPreviewClick}>
+                <div className="markdown-body" ref={previewRef} dangerouslySetInnerHTML={{ __html: rendered.html }} />
+                {widgetSlots.map((el, i) =>
+                  rendered.widgets[i] === undefined
+                    ? null
+                    : createPortal(
+                        <Widget source={rendered.widgets[i]} onOpen={open} onChanged={onWidgetChanged} />,
+                        el,
+                        `${i}:${rendered.widgets[i]}`,
+                      ),
+                )}
+                {!revision && (
+                  <section className="backlinks">
+                    <h4>백링크 {backlinks.length}</h4>
+                    {backlinks.length === 0 ? (
+                      <p className="meta">이 문서를 링크한 문서가 없습니다.</p>
+                    ) : (
+                      <ul>
+                        {backlinks.map((b) => (
+                          <li key={b.path}>
+                            <a
+                              href={`#/${encodeURIComponent(b.path)}`}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                open(b.path);
+                              }}
+                            >
+                              {b.title}
+                            </a>{" "}
+                            <span className="meta">{b.path}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )}
+              </div>
             </div>
           </>
         ) : (

@@ -3,19 +3,21 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ScopedVault } from "../src/scoped.js";
-import { hashContent, Vault } from "../src/vault.js";
-import { agentPrincipal, ownerPrincipal } from "./helpers.js";
+import type { NoteIndex } from "../src/noteindex.js";
+import { hashContent, type Vault } from "../src/vault.js";
+import { agentPrincipal, openVault, ownerPrincipal } from "./helpers.js";
 
 let dir: string;
 let vault: Vault;
+let index: NoteIndex;
 let me: ScopedVault;
 let agent: ScopedVault;
 
 beforeEach(async () => {
   dir = await mkdtemp(path.join(os.tmpdir(), "keyring-vault-"));
-  vault = new Vault(dir);
-  me = new ScopedVault(vault, ownerPrincipal);
-  agent = new ScopedVault(vault, agentPrincipal("openclaw-work", { "/": "delete" }));
+  ({ vault, index } = await openVault(dir, { init: false }));
+  me = new ScopedVault(vault, ownerPrincipal, index);
+  agent = new ScopedVault(vault, agentPrincipal("openclaw-work", { "/": "delete" }), index);
 });
 
 afterEach(async () => {

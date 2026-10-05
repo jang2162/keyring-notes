@@ -137,3 +137,85 @@ export function resolveLink(target: string, paths: string[]): string | null {
   }
   return null;
 }
+
+export interface TaskItem {
+  /** 1부터 시작하는 문서 전체 기준 줄 번호. */
+  line: number;
+  done: boolean;
+  text: string;
+}
+
+export interface Analysis {
+  title: string;
+  frontmatter: Record<string, unknown> | null;
+  tags: string[];
+  links: string[];
+  tasks: TaskItem[];
+}
+
+const TASK_RE = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.*)$/;
+// Obsidian 태그: 글자·숫자·_·-·/ 로 이루어지고 숫자만으로 된 것은 제외
+const TAG_RE = /(?:^|[\s(])#([\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*)/gu;
+
+function normalizeTag(t: string): string {
+  return t.replace(/^#/, "").replace(/\/+$/, "").trim().toLowerCase();
+}
+
+/** 프런트매터 tags(배열·쉼표 문자열)와 본문 #태그. */
+function collectTags(fm: Record<string, unknown> | null, bodyLines: string[], fenced: boolean[]): string[] {
+  const out = new Set<string>();
+  const raw = fm?.tags ?? fm?.tag;
+  const list = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/[,\s]+/) : [];
+  for (const t of list) if (typeof t === "string" || typeof t === "number") out.add(normalizeTag(String(t)));
+  bodyLines.forEach((line, i) => {
+    if (fenced[i] || /^ {0,3}#{1,6}\s/.test(line)) return; // 코드 블록·제목 줄의 # 는 태그가 아님
+    for (const m of line.replace(/`[^`]*`/g, "").matchAll(TAG_RE)) out.add(normalizeTag(m[1]));
+  });
+  out.delete("");
+  return [...out].sort();
+}
+
+/** 인덱스에 넣을 문서 정보를 한 번에 뽑는다. */
+export function analyze(relPath: string, content: string): Analysis {
+  const fm = parseFrontmatter(content);
+  const lines = content.split("\n");
+  const bodyLines = lines.slice(fm.lines);
+  // 각 줄이 코드 블록 안인지
+  const fenced: boolean[] = [];
+  let fence: string | null = null;
+  for (const line of bodyLines) {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (f) {
+      fenced.push(true);
+      if (fence === null) fence = f[1][0].repeat(f[1].length);
+      else if (f[1].startsWith(fence)) fence = null;
+      continue;
+    }
+    fenced.push(fence !== null);
+  }
+  const tasks: TaskItem[] = [];
+  bodyLines.forEach((line, i) => {
+    if (fenced[i]) return;
+    const m = TASK_RE.exec(line.replace(/\r$/, ""));
+    if (m) tasks.push({ line: fm.lines + i + 1, done: m[1] !== " ", text: m[2].trim() });
+  });
+  const fmTitle = fm.data && typeof fm.data.title === "string" ? fm.data.title.trim() : "";
+  const h1 = headings(content).find((h) => h.level === 1)?.text;
+  const fileName = relPath.split("/").pop()!.replace(/\.md$/i, "");
+  return {
+    title: fmTitle || h1 || fileName,
+    frontmatter: fm.data,
+    tags: collectTags(fm.data, bodyLines, fenced),
+    links: wikilinkTargets(content),
+    tasks,
+  };
+}
+
+/** 줄 하나의 할 일 체크 상태를 바꾼다. 할 일 줄이 아니면 null. */
+export function setTaskState(content: string, line: number, done: boolean): string | null {
+  const lines = content.split("\n");
+  const cur = lines[line - 1];
+  if (cur === undefined || !TASK_RE.test(cur.replace(/\r$/, ""))) return null;
+  lines[line - 1] = cur.replace(/\[([ xX])\]/, done ? "[x]" : "[ ]");
+  return lines.join("\n");
+}

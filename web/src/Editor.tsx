@@ -1,3 +1,4 @@
+import { autocompletion, completionKeymap, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -5,7 +6,21 @@ import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language"
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
+
+export interface LinkCandidate {
+  /** [[ ]] 안에 넣을 이름 */
+  label: string;
+  /** 폴더 등 보조 정보 */
+  detail?: string;
+  /** 마크다운 문서가 아니면(첨부) true */
+  attachment?: boolean;
+}
+
+export interface EditorHandle {
+  /** 줄(1부터)의 할 일 체크 상태를 바꾼다. 에디터 실행 취소 기록에 남는다. */
+  toggleTask(line: number, done: boolean): void;
+}
 
 interface Props {
   /** 문서가 바뀔 때마다 달라지는 키. 같은 키 동안에는 에디터 내용을 밖에서 덮어쓰지 않는다. */
@@ -13,12 +28,43 @@ interface Props {
   initial: string;
   onChange: (value: string) => void;
   onSave: () => void;
+  /** 위키링크 자동완성 후보. 호출 시점의 최신 목록을 돌려준다. */
+  linkCandidates: () => LinkCandidate[];
+  handle?: MutableRefObject<EditorHandle | null>;
 }
 
-export function Editor({ docKey, initial, onChange, onSave }: Props) {
+/** `[[` 또는 `![[` 뒤에서 문서·첨부 이름을 제안하고, 고르면 `]]`까지 닫아 준다. */
+function wikilinkSource(get: () => LinkCandidate[]) {
+  return (ctx: CompletionContext): CompletionResult | null => {
+    const m = ctx.matchBefore(/!?\[\[[^\]\n|#[]*$/);
+    if (!m) return null;
+    const open = m.text.indexOf("[[");
+    const embed = m.text.startsWith("!");
+    const from = m.from + open + 2;
+    // 링크는 문서를, 임베드(![[)는 첨부를 먼저 보여 준다.
+    const rank = (c: LinkCandidate) => Number(embed ? !c.attachment : !!c.attachment);
+    const items = [...get()].sort((a, b) => rank(a) - rank(b));
+    return {
+      from,
+      validFor: /^[^\]\n|#[]*$/,
+      options: items.map((c) => ({
+        label: c.label,
+        detail: c.detail,
+        type: c.attachment ? "file" : "text",
+        apply: (view: EditorView, _c: unknown, f: number, to: number) => {
+          const closed = view.state.sliceDoc(to, to + 2) === "]]";
+          const insert = c.label + (closed ? "" : "]]");
+          view.dispatch({ changes: { from: f, to, insert }, selection: { anchor: f + insert.length + (closed ? 2 : 0) } });
+        },
+      })),
+    };
+  };
+}
+
+export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle }: Props) {
   const host = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onChange, onSave });
-  callbacks.current = { onChange, onSave };
+  const callbacks = useRef({ onChange, onSave, linkCandidates });
+  callbacks.current = { onChange, onSave, linkCandidates };
 
   useEffect(() => {
     const view = new EditorView({
@@ -33,9 +79,11 @@ export function Editor({ docKey, initial, onChange, onSave }: Props) {
           highlightSelectionMatches(),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           markdown({ base: markdownLanguage, codeLanguages: languages }),
+          autocompletion({ override: [wikilinkSource(() => callbacks.current.linkCandidates())], icons: false }),
           EditorView.lineWrapping,
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
+            ...completionKeymap,
             indentWithTab,
             ...defaultKeymap,
             ...historyKeymap,
@@ -47,8 +95,23 @@ export function Editor({ docKey, initial, onChange, onSave }: Props) {
         ],
       }),
     });
+    if (handle) {
+      handle.current = {
+        toggleTask(lineNo, done) {
+          if (lineNo < 1 || lineNo > view.state.doc.lines) return;
+          const line = view.state.doc.line(lineNo);
+          const m = /\[([ xX])\]/.exec(line.text);
+          if (!m) return;
+          const at = line.from + m.index + 1;
+          view.dispatch({ changes: { from: at, to: at + 1, insert: done ? "x" : " " } });
+        },
+      };
+    }
     view.focus();
-    return () => view.destroy();
+    return () => {
+      if (handle) handle.current = null;
+      view.destroy();
+    };
     // initial은 docKey가 바뀔 때만 반영한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey]);

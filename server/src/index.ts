@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
 import { ConfigStore } from "./config.js";
+import { NoteIndex } from "./noteindex.js";
 import { Vault } from "./vault.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -18,7 +19,14 @@ const config = new ConfigStore(configFile);
 const vault = new Vault(vaultDir);
 await vault.init();
 
-const app = createApp({ vault, config });
+// 인덱스는 지워도 되는 캐시다. 볼트 안 숨김 폴더에 두고 Git 추적에서는 뺀다.
+const index = new NoteIndex(path.resolve(process.env.KEYRING_INDEX ?? path.join(vaultDir, ".keyring", "index.db")));
+const started = Date.now();
+const synced = await index.sync(vault);
+console.log(`인덱스 동기화: ${synced.updated}개 갱신, ${synced.removed}개 제거 (${Date.now() - started}ms)`);
+vault.onChange((paths) => index.refresh(vault.root, paths));
+
+const app = createApp({ vault, index, config });
 
 if (existsSync(path.join(webDist, "index.html"))) {
   const root = path.relative(process.cwd(), webDist);

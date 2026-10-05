@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AccessPolicy } from "../src/access.js";
 import { ScopedVault } from "../src/scoped.js";
-import { Vault } from "../src/vault.js";
-import { agentPrincipal, ownerPrincipal, tempDir } from "./helpers.js";
+import type { NoteIndex } from "../src/noteindex.js";
+import type { Vault } from "../src/vault.js";
+import { agentPrincipal, openVault, ownerPrincipal, tempDir } from "./helpers.js";
 
 // 계획서의 "폴더별 에이전트 권한 (예시)" 표
 const WIKI_WORK = {
@@ -29,12 +30,12 @@ const h: Record<string, string> = {};
 beforeEach(async () => {
   const t = await tempDir("keyring-acl-");
   cleanup = t.cleanup;
-  vault = new Vault(t.dir);
-  await vault.init();
-  owner = new ScopedVault(vault, ownerPrincipal);
-  wiki = new ScopedVault(vault, agentPrincipal("wiki-work", { ...WIKI_WORK }));
-  work = new ScopedVault(vault, agentPrincipal("openclaw-work", { ...OPENCLAW_WORK }));
-  personal = new ScopedVault(vault, agentPrincipal("openclaw-personal", { ...OPENCLAW_PERSONAL }));
+  let index: NoteIndex;
+  ({ vault, index } = await openVault(t.dir));
+  owner = new ScopedVault(vault, ownerPrincipal, index);
+  wiki = new ScopedVault(vault, agentPrincipal("wiki-work", { ...WIKI_WORK }), index);
+  work = new ScopedVault(vault, agentPrincipal("openclaw-work", { ...OPENCLAW_WORK }), index);
+  personal = new ScopedVault(vault, agentPrincipal("openclaw-personal", { ...OPENCLAW_PERSONAL }), index);
   const seed: Record<string, string> = {
     "업무/raw/기사.md": "# 기사\n원문 내용 금리\n",
     "업무/wiki/금리.md": "# 금리\n[[가계부]] 와 [[기사]] 참고\n",

@@ -98,7 +98,12 @@ export interface RenderContext {
   docPath: string;
 }
 
-const ctxOf = (env: unknown) => env as RenderContext;
+interface RenderEnv extends RenderContext {
+  widgets: string[];
+  lineOffset: number;
+}
+
+const ctxOf = (env: unknown) => env as RenderEnv;
 
 const md = new MarkdownIt({ html: true, linkify: true, breaks: false });
 md.inline.ruler.before("link", "wikilink", wikilinkRule);
@@ -144,14 +149,35 @@ md.renderer.rules.image = (tokens, idx, opts, env, self) => {
   return defaultImage(tokens, idx, opts, env, self);
 };
 
-// 위젯 블록은 3단계에서 렌더링한다. 지금은 일반 코드 블록과 구분만 해 둔다.
+// ```widget 블록은 자리만 만들고, 실제 위젯은 React가 그 자리에 그린다.
 const defaultFence = md.renderer.rules.fence!;
 md.renderer.rules.fence = (tokens, idx, opts, env, self) => {
   if (tokens[idx].info.trim() === "widget") {
-    return `<div class="widget-placeholder"><div class="widget-label">위젯 (3단계에서 렌더링)</div><pre>${escapeHtml(tokens[idx].content)}</pre></div>`;
+    const ctx = ctxOf(env);
+    ctx.widgets.push(tokens[idx].content);
+    return `<div class="widget-slot" data-widget="${ctx.widgets.length - 1}"></div>`;
   }
   return defaultFence(tokens, idx, opts, env, self);
 };
+
+// "- [ ] 할 일" 목록을 체크박스로. data-task-line은 문서 전체 기준 줄 번호(1부터).
+md.core.ruler.push("tasks", (state) => {
+  const offset = ctxOf(state.env).lineOffset;
+  const tokens = state.tokens;
+  for (let i = 2; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.type !== "inline" || tokens[i - 1].type !== "paragraph_open" || tokens[i - 2].type !== "list_item_open") continue;
+    const m = /^\[([ xX])\]\s+/.exec(t.content);
+    const first = t.children?.[0];
+    if (!m || !first || first.type !== "text" || !first.content.startsWith(m[0].trimEnd()) || !t.map) continue;
+    first.content = first.content.slice(m[0].trimEnd().length).replace(/^\s+/, "");
+    const box = new state.Token("html_inline", "", 0);
+    const checked = m[1] !== " ";
+    box.content = `<input type="checkbox" class="task" data-task-line="${offset + t.map[0] + 1}"${checked ? " checked" : ""}> `;
+    t.children!.unshift(box);
+    tokens[i - 2].attrJoin("class", "task-item");
+  }
+});
 
 /** 맨 앞 YAML 프런트매터를 본문과 분리한다. */
 export function splitFrontmatter(content: string): { frontmatter: string | null; body: string } {
@@ -160,12 +186,20 @@ export function splitFrontmatter(content: string): { frontmatter: string | null;
   return { frontmatter: m[1], body: content.slice(m[0].length) };
 }
 
-export function renderMarkdown(content: string, ctx: RenderContext): string {
+export interface Rendered {
+  html: string;
+  /** 위젯 블록 원문. html 안의 .widget-slot[data-widget=i] 자리와 순서가 같다. */
+  widgets: string[];
+}
+
+export function renderMarkdown(content: string, ctx: RenderContext): Rendered {
   const { frontmatter, body } = splitFrontmatter(content);
   let html = "";
   if (frontmatter !== null) {
     html += `<pre class="frontmatter">${escapeHtml(frontmatter)}</pre>`;
   }
-  html += md.render(body, { ...ctx });
-  return DOMPurify.sanitize(html, { ADD_ATTR: ["target"] });
+  const lineOffset = content.slice(0, content.length - body.length).split("\n").length - 1;
+  const env: RenderEnv = { ...ctx, widgets: [], lineOffset };
+  html += md.render(body, env as unknown as Record<string, unknown>);
+  return { html: DOMPurify.sanitize(html, { ADD_ATTR: ["target"] }), widgets: env.widgets };
 }

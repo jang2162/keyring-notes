@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Principal } from "./access.js";
 import { SESSION_COOKIE, type ConfigStore } from "./config.js";
 import { handleMcpRequest } from "./mcp.js";
+import type { NoteIndex } from "./noteindex.js";
 import { PathError } from "./paths.js";
 import { ScopedVault } from "./scoped.js";
 import { ConflictError, ForbiddenError, NotFoundError, type Op, type Vault } from "./vault.js";
@@ -22,6 +23,7 @@ const MIME: Record<string, string> = {
 
 export interface AppOptions {
   vault: Vault;
+  index: NoteIndex;
   config: ConfigStore;
 }
 
@@ -71,7 +73,7 @@ class LoginThrottle {
   }
 }
 
-export function createApp({ vault, config }: AppOptions) {
+export function createApp({ vault, index, config }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
 
@@ -103,7 +105,7 @@ export function createApp({ vault, config }: AppOptions) {
         "www-authenticate": 'Bearer realm="keyring-notes"',
       });
     }
-    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal));
+    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal, index));
   });
 
   const api = new Hono<Env>();
@@ -159,7 +161,7 @@ export function createApp({ vault, config }: AppOptions) {
   api.use("*", async (c, next) => {
     const p = principalOf(c);
     if (!p) return c.json({ error: "unauthorized", message: "로그인이 필요합니다" }, 401);
-    c.set("scoped", new ScopedVault(vault, p));
+    c.set("scoped", new ScopedVault(vault, p, index));
     await next();
   });
 
@@ -196,6 +198,23 @@ export function createApp({ vault, config }: AppOptions) {
       limit: Number.isFinite(limit) ? limit : undefined,
     });
     return c.json({ hits });
+  });
+
+  api.get("/backlinks", async (c) => c.json({ backlinks: await c.var.scoped.backlinks(requirePath(c.req.query("path"))) }));
+
+  api.get("/tags", async (c) => c.json({ tags: await c.var.scoped.tags() }));
+
+  // 위젯은 읽기 전용이지만 YAML 본문이 길 수 있어 POST로 받는다.
+  api.post("/widget", async (c) => {
+    const body = await c.req.json();
+    if (typeof body.source !== "string") throw new PathError("source가 필요합니다");
+    return c.json(await c.var.scoped.widget(body.source));
+  });
+
+  api.post("/task", async (c) => {
+    const body = await c.req.json();
+    if (!Number.isInteger(body.line) || typeof body.done !== "boolean") throw new PathError("line, done이 필요합니다");
+    return c.json(await c.var.scoped.setTask(requirePath(body.path), body.line, body.done, requireHash(body.baseHash)));
   });
 
   api.put("/file", async (c) => {

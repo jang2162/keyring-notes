@@ -48,6 +48,31 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 
 const q = (path: string) => encodeURIComponent(path);
 
+export interface SearchHit {
+  path: string;
+  title: string;
+  line: number;
+  snippet: string;
+}
+
+export interface TaskRow {
+  path: string;
+  line: number;
+  done: boolean;
+  text: string;
+}
+
+export type WidgetResult =
+  | {
+      type: "query" | "table";
+      title?: string;
+      columns: string[];
+      rows: { path: string; title: string; values: Record<string, unknown> }[];
+      total: number;
+    }
+  | { type: "tasks"; title?: string; groups: { path: string; title: string; hash: string; tasks: TaskRow[] }[]; total: number }
+  | { type: "chart"; title?: string; chart: "bar" | "line"; x: string; y: string; series: { label: string; value: number }[] };
+
 export interface AuthStatus {
   authenticated: boolean;
   principal: { name: string; kind: "owner" | "agent" } | null;
@@ -69,5 +94,12 @@ export const api = {
     request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),
   rollback: (path: string, rev: string, baseHash: string | null) =>
     request<Doc>("POST", "/api/rollback", { path, rev, baseHash }),
+  search: (q: string) => request<{ hits: SearchHit[] }>("GET", `/api/search?q=${encodeURIComponent(q)}&limit=50`).then((r) => r.hits),
+  backlinks: (path: string) =>
+    request<{ backlinks: { path: string; title: string }[] }>("GET", `/api/backlinks?path=${q(path)}`).then((r) => r.backlinks),
+  tags: () => request<{ tags: { tag: string; count: number }[] }>("GET", "/api/tags").then((r) => r.tags),
+  widget: (source: string) => request<WidgetResult>("POST", "/api/widget", { source }),
+  setTask: (path: string, line: number, done: boolean, baseHash: string) =>
+    request<Doc>("POST", "/api/task", { path, line, done, baseHash }),
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
 };

@@ -53,10 +53,11 @@ const INSTRUCTIONS = `Keyring Notes 볼트(마크다운 노트)에 접근하는 
 - 권한: read < append(새 문서·끝에 덧붙이기) < write(수정) < delete(삭제·이동).
 - 긴 문서는 read_outline으로 구조를 본 뒤 read_section으로 필요한 부분만 읽으세요.
 - 쓰기에는 마지막으로 읽은 hash를 base_hash로 넘깁니다. 다르면 conflict가 나며, 다시 읽고 재시도하세요.
+- search는 3글자 이상 단어를 색인으로 찾고, '#태그' 단어는 태그 조건이 됩니다.
 - 여러 문서를 함께 고칠 때는 batch_write로 한 커밋에 묶으세요. 하나라도 실패하면 전부 취소됩니다.`;
 
 export function createMcpServer(scoped: ScopedVault): McpServer {
-  const server = new McpServer({ name: "keyring-notes", version: "0.2.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "keyring-notes", version: "0.3.0" }, { instructions: INSTRUCTIONS });
   const ro = { readOnlyHint: true, openWorldHint: false };
 
   server.registerTool(
@@ -132,6 +133,29 @@ export function createMcpServer(scoped: ScopedVault): McpServer {
       annotations: ro,
     },
     ({ query, folder, limit }) => run(() => scoped.search(query, { folder, limit })),
+  );
+
+  server.registerTool(
+    "backlinks",
+    { description: "이 문서를 위키링크로 가리키는 문서 목록", inputSchema: { path: z.string() }, annotations: ro },
+    ({ path }) => run(() => scoped.backlinks(path)),
+  );
+
+  server.registerTool(
+    "list_tags",
+    { description: "태그(프런트매터 tags + 본문 #태그)와 문서 수", annotations: ro },
+    () => run(() => scoped.tags()),
+  );
+
+  server.registerTool(
+    "query",
+    {
+      description:
+        "위젯과 같은 YAML 쿼리로 문서를 고른다. 예: \"type: table\\nfrom: 업무\\nwhere: status != done\\nshow: [title, due]\\nsort: due\". type: query|table|tasks|chart",
+      inputSchema: { spec: z.string().describe("YAML") },
+      annotations: ro,
+    },
+    ({ spec }) => run(() => scoped.widget(spec)),
   );
 
   server.registerTool(

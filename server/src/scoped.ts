@@ -1,8 +1,10 @@
 import { atLeast, levelOf, type Level, type Principal } from "./access.js";
 import type { Author, CommitInfo } from "./git.js";
-import { headings, parseFrontmatter, resolveLink, section, wikilinkTargets, type Heading, type Section } from "./markdown.js";
+import { headings, parseFrontmatter, resolveLink, section, setTaskState, wikilinkTargets, type Heading, type Section } from "./markdown.js";
+import type { DocMeta, NoteIndex } from "./noteindex.js";
+import { parseWidget, runWidget, type WidgetResult } from "./query.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
-import { ForbiddenError, hashContent, NotFoundError, type Action, type BatchResult, type Doc, type Op, type TreeNode, type Vault } from "./vault.js";
+import { ConflictError, ForbiddenError, hashContent, NotFoundError, type Action, type BatchResult, type Doc, type Op, type TreeNode, type Vault } from "./vault.js";
 
 const ACTION_LEVEL: Record<Action, Level> = {
   create: "append",
@@ -13,6 +15,7 @@ const ACTION_LEVEL: Record<Action, Level> = {
 
 export interface SearchHit {
   path: string;
+  title: string;
   line: number;
   snippet: string;
 }
@@ -37,6 +40,7 @@ export class ScopedVault {
   constructor(
     private vault: Vault,
     readonly principal: Principal,
+    private index: NoteIndex,
   ) {}
 
   get author(): Author {
@@ -160,26 +164,85 @@ export class ScopedVault {
   }
 
   /**
-   * 단순 전체 텍스트 검색(공백으로 나눈 모든 단어가 들어 있는 문서).
-   * 3단계에서 SQLite FTS 인덱스로 바뀌어도 권한 필터는 이 계층에 남는다.
+   * 전체 텍스트 검색(공백으로 나눈 모든 단어가 본문·제목·경로 어딘가에 있는 문서).
+   * 인덱스는 권한을 모르므로, 결과를 여기서 권한으로 거른 뒤 자른다.
+   * `#태그`로 시작하는 단어는 태그 조건으로 쓴다.
    */
   async search(query: string, opts: { folder?: string; limit?: number } = {}): Promise<SearchHit[]> {
-    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-    if (terms.length === 0) throw new PathError("검색어가 필요합니다");
+    const words = query.split(/\s+/).filter(Boolean);
+    const tagTerms = words.filter((w) => w.startsWith("#") && w.length > 1).map((w) => w.slice(1).toLowerCase());
+    const textTerms = words.filter((w) => !(w.startsWith("#") && w.length > 1));
+    if (tagTerms.length === 0 && textTerms.length === 0) throw new PathError("검색어가 필요합니다");
     const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+    const f = normalizeFolder(opts.folder);
+    const inScope = (p: string) => this.canRead(p) && (!f || p.startsWith(f + "/"));
+
+    let candidates: { path: string; title: string; body: string }[];
+    if (textTerms.length > 0) {
+      candidates = this.index.search(textTerms.join(" "));
+    } else {
+      const docs = this.index.docs();
+      candidates = docs.map((d) => ({ path: d.path, title: d.title, body: "" }));
+    }
+    let tagged: Set<string> | null = null;
+    if (tagTerms.length > 0) {
+      const byPath = new Map<string, string[]>();
+      for (const r of this.index.tagRows()) byPath.set(r.path, [...(byPath.get(r.path) ?? []), r.tag]);
+      tagged = new Set(
+        [...byPath.entries()]
+          .filter(([, tags]) => tagTerms.every((t) => tags.some((x) => x === t || x.startsWith(t + "/"))))
+          .map(([p]) => p),
+      );
+    }
+    const lowered = textTerms.map((t) => t.toLowerCase());
     const hits: SearchHit[] = [];
-    for (const d of await this.documents(opts.folder)) {
-      const { content } = await this.vault.read(d.path);
-      const lower = content.toLowerCase();
-      if (!terms.every((t) => lower.includes(t) || d.path.toLowerCase().includes(t))) continue;
-      const lines = content.split("\n");
-      const idx = lines.findIndex((l) => terms.some((t) => l.toLowerCase().includes(t)));
-      const line = idx < 0 ? 1 : idx + 1;
-      const snippet = (lines[line - 1] ?? "").trim().slice(0, 200);
-      hits.push({ path: d.path, line, snippet });
+    for (const c of candidates) {
+      if (!inScope(c.path) || (tagged && !tagged.has(c.path))) continue;
+      const lines = c.body.split("\n");
+      const idx = lowered.length ? lines.findIndex((l) => lowered.some((t) => l.toLowerCase().includes(t))) : -1;
+      hits.push({ path: c.path, title: c.title, line: idx < 0 ? 1 : idx + 1, snippet: idx < 0 ? "" : lines[idx].trim().slice(0, 200) });
       if (hits.length >= limit) break;
     }
     return hits;
+  }
+
+  /** 이 문서를 링크한 문서들 중 읽을 수 있는 것만. */
+  async backlinks(input: string): Promise<{ path: string; title: string }[]> {
+    const rel = this.requireRead(input);
+    const titles = new Map(this.index.docs().map((d) => [d.path, d.title]));
+    return this.index
+      .backlinks(rel)
+      .filter((p) => this.canRead(p))
+      .map((p) => ({ path: p, title: titles.get(p) ?? p }));
+  }
+
+  /** 읽을 수 있는 문서에 쓰인 태그와 개수. */
+  async tags(): Promise<{ tag: string; count: number }[]> {
+    const counts = new Map<string, number>();
+    for (const r of this.index.tagRows()) if (this.canRead(r.path)) counts.set(r.tag, (counts.get(r.tag) ?? 0) + 1);
+    return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, "ko"));
+  }
+
+  private visibleDocs(): DocMeta[] {
+    return this.index.docs().filter((d) => this.canRead(d.path));
+  }
+
+  /** 문서 안 ```widget 블록(YAML)을 실행한다. 보이는 문서만 대상으로 한다. */
+  async widget(source: string): Promise<WidgetResult> {
+    const spec = parseWidget(source);
+    const visible = this.visibleDocs();
+    const paths = new Set(visible.map((d) => d.path));
+    return runWidget(spec, visible, this.index.tasks().filter((t) => paths.has(t.path)));
+  }
+
+  /** 할 일 체크 상태를 바꾼다. baseHash가 현재 버전과 같아야 한다. */
+  async setTask(input: string, line: number, done: boolean, baseHash: string) {
+    const rel = this.requireRead(input);
+    const doc = await this.vault.read(rel);
+    if (doc.hash !== baseHash) throw new ConflictError(doc.hash, undefined, rel);
+    const next = setTaskState(doc.content, line, done);
+    if (next === null) throw new PathError(`${line}번째 줄은 할 일이 아닙니다`);
+    return this.write(rel, next, baseHash);
   }
 
   /** 모든 변경의 입구. 경로마다 최소 권한을 먼저 확인한 뒤, 연산 종류별 권한은 계획 단계에서 검사한다. */

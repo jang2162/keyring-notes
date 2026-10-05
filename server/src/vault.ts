@@ -82,6 +82,7 @@ export class Vault {
   readonly git: GitHistory;
   private queue: Promise<unknown> = Promise.resolve();
   private realRoot = "";
+  private listeners: ((paths: string[]) => Promise<void> | void)[] = [];
 
   constructor(readonly root: string) {
     this.git = new GitHistory(root);
@@ -93,6 +94,11 @@ export class Vault {
     this.realRoot = await realpath(this.root);
     await this.git.init();
     await this.exclusive(() => this.git.commit("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
+  }
+
+  /** 변경이 커밋된 직후(다음 쓰기보다 먼저) 바뀐 경로 목록으로 호출된다. 인덱스 갱신용. */
+  onChange(fn: (paths: string[]) => Promise<void> | void): void {
+    this.listeners.push(fn);
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -303,6 +309,13 @@ export class Vault {
         const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0] : `일괄 변경 ${verbs.length}건`);
         const body = verbs.length > 1 || opts.message ? `${message}\n\n${verbs.join("\n")}` : message;
         const rev = await this.git.commit(body, author, changed.map(([rel]) => rel));
+        for (const fn of this.listeners) {
+          try {
+            await fn(changed.map(([rel]) => rel));
+          } catch (err) {
+            console.error("변경 알림 처리 실패", err);
+          }
+        }
         return { rev, files };
       } catch (e) {
         for (const [, s] of written.reverse()) {

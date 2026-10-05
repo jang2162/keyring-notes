@@ -70,7 +70,7 @@ export class GitHistory {
     await mkdir(path.join(this.gitDir, "info"), { recursive: true });
     await writeFile(
       path.join(this.gitDir, "info", "exclude"),
-      ["/.history/", "/.trash/", ".DS_Store", ""].join("\n"),
+      ["/.history/", "/.keyring/", "/.trash/", ".DS_Store", ""].join("\n"),
     );
     await this.run(["config", "core.autocrlf", "false"]);
   }

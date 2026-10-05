@@ -4,8 +4,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { ConfigStore } from "../src/config.js";
-import { Vault } from "../src/vault.js";
-import { tempDir } from "./helpers.js";
+import type { NoteIndex } from "../src/noteindex.js";
+import type { Vault } from "../src/vault.js";
+import { openVault, tempDir } from "./helpers.js";
 
 const json = { "content-type": "application/json" };
 
@@ -13,6 +14,7 @@ let cleanup: () => Promise<void>;
 let app: ReturnType<typeof createApp>;
 let config: ConfigStore;
 let vault: Vault;
+let index: NoteIndex;
 let cookie = "";
 let wikiToken = "";
 let workToken = "";
@@ -26,8 +28,7 @@ async function login(password = "correct horse") {
 beforeEach(async () => {
   const t = await tempDir("keyring-api-");
   cleanup = t.cleanup;
-  vault = new Vault(path.join(t.dir, "vault"));
-  await vault.init();
+  ({ vault, index } = await openVault(path.join(t.dir, "vault")));
   config = new ConfigStore(path.join(t.dir, "config", "keyring.json"));
   config.setPassword("correct horse");
   wikiToken = config.issueToken("wiki-work");
@@ -35,7 +36,7 @@ beforeEach(async () => {
   config.setRule("wiki-work", "업무/wiki", "delete");
   workToken = config.issueToken("openclaw-work");
   config.setRule("openclaw-work", "업무", "read");
-  app = createApp({ vault, config });
+  app = createApp({ vault, index, config });
   cookie = (await login()).cookie;
   for (const [p, c] of Object.entries({
     "업무/raw/기사.md": "# 기사\n원문\n",
@@ -171,6 +172,9 @@ describe("MCP", () => {
         "read_outline",
         "read_section",
         "search",
+        "backlinks",
+        "list_tags",
+        "query",
         "whoami",
         "write_document",
       ].sort(),
@@ -209,6 +213,29 @@ describe("MCP", () => {
     const del = await call(wiki, "delete_document", { path: "업무/raw/기사.md", base_hash: appended.data.hash });
     expect(del).toMatchObject({ error: true, data: { error: "forbidden" } });
     await wiki.close();
+  });
+
+  it("query·backlinks·list_tags도 권한 표를 따른다", async () => {
+    const r = await app.request("/api/file", {
+      method: "PUT",
+      headers: { ...json, cookie },
+      body: JSON.stringify({ path: "개인/일기2.md", content: "---\nstatus: todo\n---\n[[금리]] #비밀\n- [ ] 비밀 할 일\n", baseHash: null }),
+    });
+    expect(r.status).toBe(200);
+    const work = await connect(workToken);
+    const q = await call(work, "query", { spec: "type: table\nwhere: status\nshow: [title, status]" });
+    expect(q.error).toBe(false);
+    expect(q.data.rows.map((x: { path: string }) => x.path)).not.toContain("개인/일기2.md");
+    const tasks = await call(work, "query", { spec: "type: tasks\nstatus: all" });
+    expect(JSON.stringify(tasks.data)).not.toContain("비밀");
+    const bl = await call(work, "backlinks", { path: "업무/wiki/금리.md" });
+    expect(bl.data).toEqual([]);
+    const tags = await call(work, "list_tags");
+    expect(JSON.stringify(tags.data)).not.toContain("비밀");
+    // 소유자 REST로는 보인다
+    const owner = await (await app.request(`/api/backlinks?path=${encodeURIComponent("업무/wiki/금리.md")}`, { headers: { cookie } })).json();
+    expect(owner.backlinks.map((x: { path: string }) => x.path)).toEqual(["개인/일기2.md"]);
+    await work.close();
   });
 
   it("batch_write는 한 커밋, 실패 시 전체 취소", async () => {
