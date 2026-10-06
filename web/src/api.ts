@@ -129,6 +129,28 @@ export interface AuthStatus {
   authenticated: boolean;
   principal: { name: string; kind: "owner" | "agent" } | null;
   passwordSet: boolean;
+  /** 이 주소로 등록한 패스키가 있다 */
+  passkey?: boolean;
+}
+
+export interface PasskeyInfo {
+  id: string;
+  name: string;
+  rpID: string;
+  transports: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+/** 이 브라우저가 패스키를 쓸 수 있는지(https 또는 localhost) */
+export const passkeySupported = () => typeof window !== "undefined" && window.isSecureContext && typeof window.PublicKeyCredential === "function";
+
+/** 패스키 로그인(서버 모드). 브라우저 쪽 WebAuthn 도우미는 쓸 때만 불러온다 */
+export async function passkeyLogin(): Promise<void> {
+  const { startAuthentication } = await import("@simplewebauthn/browser");
+  const { id, options } = await request<{ id: string; options: Parameters<typeof startAuthentication>[0]["optionsJSON"] }>("POST", "/api/auth/passkey/options", {});
+  const response = await startAuthentication({ optionsJSON: options });
+  await request<{ ok: true }>("POST", "/api/auth/passkey/login", { id, response });
 }
 
 export type Level = "hidden" | "read" | "append" | "write" | "delete";
@@ -327,6 +349,14 @@ export const admin = {
   devices: () => request<{ devices: DeviceInfo[] }>("GET", "/api/admin/devices").then((r) => r.devices),
   removeDevice: (id: string) => request<unknown>("DELETE", `/api/admin/devices/${enc(id)}`, {}),
   password: (current: string, next: string) => request<unknown>("POST", "/api/admin/password", { current, next }),
+  passkeys: () => request<{ passkeys: PasskeyInfo[]; here: string | null }>("GET", "/api/admin/passkeys"),
+  async registerPasskey(name: string): Promise<PasskeyInfo> {
+    const { startRegistration } = await import("@simplewebauthn/browser");
+    const { id, options } = await request<{ id: string; options: Parameters<typeof startRegistration>[0]["optionsJSON"] }>("POST", "/api/admin/passkeys/options", {});
+    const response = await startRegistration({ optionsJSON: options });
+    return request<PasskeyInfo>("POST", "/api/admin/passkeys", { id, response, name });
+  },
+  removePasskey: (id: string) => request<unknown>("DELETE", `/api/admin/passkeys/${enc(id)}`, {}),
   backups: () => request<{ backups: BackupInfo[]; settings: BackupSettings }>("GET", "/api/admin/backups"),
   createBackup: (includeConfig?: boolean) => request<BackupInfo>("POST", "/api/admin/backups", { includeConfig }),
   backupSettings: (s: Partial<BackupSettings>) => request<{ settings: BackupSettings }>("PUT", "/api/admin/backups/settings", s),

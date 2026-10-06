@@ -338,14 +338,14 @@ export function App() {
 }
 
 function ServerApp() {
-  const [auth, setAuth] = useState({ ready: false, ok: false, wasIn: false, passwordSet: true });
+  const [auth, setAuth] = useState({ ready: false, ok: false, wasIn: false, passwordSet: true, passkey: false });
 
   const checkAuth = useCallback(async () => {
     try {
       const s = await api.status();
       const ok = s.authenticated && s.principal?.kind === "owner";
       authMemo.set(ok);
-      setAuth((a) => ({ ready: true, ok, wasIn: a.wasIn || ok, passwordSet: s.passwordSet }));
+      setAuth((a) => ({ ready: true, ok, wasIn: a.wasIn || ok, passwordSet: s.passwordSet, passkey: s.passkey === true }));
     } catch (e) {
       // 연결이 없을 때: 이 기기에서 로그인했었다면 오프라인으로 연다
       const offlineOk = isNetworkError(e) && authMemo.get();
@@ -363,7 +363,7 @@ function ServerApp() {
   if (!auth.ready) return null;
   // 북마클릿이 연 클리퍼 창
   if (location.hash.startsWith("#/clip")) {
-    return auth.ok ? <ClipPage /> : <Login passwordSet={auth.passwordSet} onDone={checkAuth} />;
+    return auth.ok ? <ClipPage /> : <Login passwordSet={auth.passwordSet} passkey={auth.passkey} onDone={checkAuth} />;
   }
   // 세션이 끊겨도 작업 화면은 남겨 두어 저장하지 않은 내용을 잃지 않게 한다.
   return (
@@ -380,7 +380,7 @@ function ServerApp() {
           }
         />
       )}
-      {!auth.ok && <Login passwordSet={auth.passwordSet} onDone={checkAuth} />}
+      {!auth.ok && <Login passwordSet={auth.passwordSet} passkey={auth.passkey} onDone={checkAuth} />}
     </>
   );
 }

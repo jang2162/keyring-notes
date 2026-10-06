@@ -108,7 +108,10 @@ KEYRING_VAULT=/tmp/vault-copy npm start
 - **에이전트·권한**: 에이전트 만들기(토큰과 MCP 설정 예를 한 번만 보여 줌), 폴더별 권한 표 편집, 토큰 재발급, 삭제.
 - **백업·복원**: 지금 백업, 내려받기, 다른 서버의 백업 파일 올리기, 복원, 자동 백업 설정(간격·남길 개수·설정 포함 여부).
 - **업데이트**: 지금·최신 버전 확인과 업데이트 방법.
-- **보안**: 비밀번호 변경(다른 기기의 로그인은 모두 끊김), 원격 접속 안내.
+- **보안**: 비밀번호 변경(다른 기기의 로그인은 모두 끊김), 패스키 등록·삭제, 원격 접속 안내.
+  - **패스키**: 지문·얼굴 인식·기기 잠금·보안 키로 비밀번호 없이 로그인한다(WebAuthn). 보안 탭에서 "이 주소로 패스키 등록"을 누르면 그 뒤 로그인 화면에 "패스키로 로그인"이 보인다. 비밀번호 로그인은 그대로 남는다(잃었을 때의 길).
+  - 패스키는 등록한 주소(호스트 이름)에 묶인다. `notes.example.com`으로 등록한 패스키는 IP 주소나 다른 이름으로 접속하면 쓸 수 없다. 브라우저는 https 주소(또는 `localhost`)에서만 패스키를 쓴다.
+  - 서버는 공개 키만 저장하고(`config/keyring.json`), 로그인마다 일회용 도전값(5분)에 서명을 받아 확인한다. 요청의 Origin이 받은 호스트(또는 `KEYRING_PUBLIC_URL`)와 다르면 받지 않는다. 서명 횟수가 뒤로 가면(복제된 인증기 의심) 거부한다. 실패가 이어지면 비밀번호와 같이 응답을 늦춘다.
 
 ### S3 저장소(선택)
 
@@ -368,7 +371,7 @@ Streamable HTTP(무상태, JSON 응답) 방식이다.
 - `vault/.history/` — Git 저장소(`--git-dir`). 작업 트리는 볼트 자체라서 다른 에디터에서 열어도 `.git`이 보이지 않는다.
 - 점으로 시작하는 폴더(`.obsidian`, `.trash`, `.history`)는 트리에서 숨기고 API로 접근할 수 없다.
 - `vault/.keyring/index.db` — SQLite 인덱스(본문 FTS5 trigram, 태그, 링크, 할 일, 프런트매터). 서버 시작 때 바뀐 파일만 다시 읽어 맞추고, 서버를 통한 변경은 커밋 직후 반영한다. Git 추적에서 빠진다.
-- `config/keyring.json` — 권한 0600. 비밀번호는 scrypt 해시, 토큰은 sha256 해시만 저장한다.
+- `config/keyring.json` — 권한 0600. 비밀번호는 scrypt 해시, 토큰은 sha256 해시, 패스키는 공개 키만 저장한다.
 
 ## 구조
 
@@ -401,6 +404,8 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 | GET | `/api/search?q=` | `&folder=&limit=` | 검색 |
 | GET | `/api/health` | | 헬스체크(인증 없음) |
 | POST | `/api/auth/device` | `{password, name}` | 앱 기기 등록 → `{id, name, token}`(토큰은 한 번만) |
+| POST | `/api/auth/passkey/options` · `/api/auth/passkey/login` | `{}` · `{id, response}` | 패스키 로그인(도전값 받기 → 서명 보내기, 맞으면 로그인 쿠키) |
+| GET·POST·DELETE | `/api/admin/passkeys` · `/api/admin/passkeys/options` · `/api/admin/passkeys/:id` | | 패스키 목록·등록(`{id, response, name}`)·삭제(소유자 웹 로그인만) |
 | GET | `/api/sync/manifest` | | 동기화용 파일 목록 `{files: [{path, hash, size}]}`(소유자·기기, 서버가 만드는 위키 index·log 제외) |
 | POST | `/api/auth/setup` | `{code, password}` | 처음 설치(비밀번호가 없을 때만, 로그의 설정 코드) |
 | * | `/api/admin/…` | | 관리 콘솔 API(소유자만): `status`, `update`, `devices`(·`DELETE devices/:id`), `agents`, `agents/:name/rules`·`rotate`, `password`, `backups`, `backups/settings`, `backups/upload`, `backups/:name/restore`, `automation`, `automation/webhooks`·`jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |

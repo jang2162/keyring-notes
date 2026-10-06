@@ -8,6 +8,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Principal } from "./access.js";
 import { SESSION_COOKIE, validDeviceName, type ConfigStore } from "./config.js";
 import { adminRoutes, type AdminDeps } from "./admin.js";
+import { PasskeyError, PasskeyService } from "./passkeys.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { Ingestor } from "./ingest.js";
 import type { NoteIndex } from "./noteindex.js";
@@ -124,6 +125,7 @@ class LoginThrottle {
 export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review, semantic, pluginsDir }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
+  const passkeys = new PasskeyService(config, admin.publicUrl);
   const secureCookies = (c: Context) => isHttps(c) || (admin.publicUrl ?? "").startsWith("https:");
   const allowedHosts = admin.allowedHosts?.map((h) => h.toLowerCase());
 
@@ -173,6 +175,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (err instanceof NotFoundError) return c.json({ error: "not_found", message: err.message }, 404);
     if (err instanceof ForbiddenError) return c.json({ error: "forbidden", message: err.message }, 403);
     if (err instanceof PathError) return c.json({ error: "bad_request", message: err.message }, 400);
+    if (err instanceof PasskeyError) return c.json({ error: "passkey", message: err.message }, 400);
     if (err instanceof SyntaxError) return c.json({ error: "bad_request", message: "JSON 본문이 잘못되었습니다" }, 400);
     console.error(err);
     return c.json({ error: "internal", message: "서버 오류" }, 500);
@@ -240,6 +243,14 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       authenticated: p !== null,
       principal: p ? { name: p.name, kind: p.kind } : null,
       passwordSet: config.get().owner.passwordHash !== null,
+      // 이 주소로 등록한 패스키가 있으면 로그인 화면에 "패스키로 로그인"을 보인다
+      passkey: (() => {
+        try {
+          return passkeys.available((c.req.header("x-forwarded-host") ? new URL(`http://${c.req.header("x-forwarded-host")}`) : new URL(c.req.url)).hostname);
+        } catch {
+          return false;
+        }
+      })(),
     });
   });
 
@@ -260,6 +271,26 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       path: "/",
       maxAge: s.maxAge,
     });
+    return c.json({ ok: true });
+  });
+
+  // 패스키 로그인: 서버가 낸 일회용 도전값에 인증기가 서명하면 비밀번호와 같은 세션을 준다
+  api.post("/auth/passkey/options", async (c) => {
+    const wait = throttle.delayMs();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    return c.json(await passkeys.authenticationOptions(passkeys.origin(c.req.header("origin"), new URL(c.req.url).host, c.req.header("x-forwarded-host"))));
+  });
+  api.post("/auth/passkey/login", async (c) => {
+    const { id, response } = await c.req.json();
+    const wait = throttle.delayMs();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    if (!(await passkeys.verifyAuthentication(id, response))) {
+      throttle.fail();
+      return c.json({ error: "unauthorized", message: "패스키를 확인하지 못했습니다" }, 401);
+    }
+    throttle.reset();
+    const s = config.issueSession();
+    setCookie(c, SESSION_COOKIE, s.value, { httpOnly: true, sameSite: "Strict", secure: secureCookies(c), path: "/", maxAge: s.maxAge });
     return c.json({ ok: true });
   });
 
@@ -571,7 +602,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     return c.json(await q.summarize(await q.reject(c.req.param("id"), c.var.scoped.principal.name, typeof body.reason === "string" ? body.reason : undefined)));
   });
 
-  api.route("/admin", adminRoutes({ vault, index, wiki, config, ...admin }));
+  api.route("/admin", adminRoutes({ vault, index, wiki, config, ...admin, passkeys }));
 
   app.route("/api", api);
   return app;

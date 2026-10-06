@@ -604,3 +604,11 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
   .pdf-notes { width: auto; max-height: 34vh; border-left: none; border-top: 1px solid var(--border); }
   .pdf-pages { padding: 8px; }
 }
+
+/* 패스키 */
+.login .passkey-login { margin-top: 8px; background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.passkeys { margin: 16px 0; }
+.passkey-table { border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+.passkey-table td { padding: 4px 10px 4px 0; }
+.passkey-add { display: flex; gap: 6px; flex-wrap: wrap; max-width: 480px; }
+.passkey-add input { flex: 1; min-width: 160px; }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import {
   admin,
   automation,
+  passkeySupported,
   type AdminStatus,
   type AgentInfo,
   type BackupInfo,
@@ -10,6 +11,7 @@ import {
   type DeviceInfo,
   type JobInfo,
   type Level,
+  type PasskeyInfo,
   type RemoteBackupInfo,
   type UpdateInfo,
   type WebhookInfo,
@@ -725,6 +727,78 @@ function UpdateView() {
   );
 }
 
+/** 소유자 패스키: 등록한 주소(rpID)에서만 쓸 수 있다 */
+function PasskeysView() {
+  const [list, setList] = useState<{ passkeys: PasskeyInfo[]; here: string | null } | null>(null);
+  const [name, setName] = useState("");
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => admin.passkeys().then(setList).catch((e) => setNote({ ok: false, text: msg(e) })), []);
+  useEffect(() => void load(), [load]);
+
+  const register = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const k = await admin.registerPasskey(name.trim() || navigator.platform || "패스키");
+      setName("");
+      setNote({ ok: true, text: `"${k.name}" 패스키를 등록했습니다. 다음부터 로그인 화면에서 "패스키로 로그인"을 쓸 수 있습니다.` });
+      await load();
+    } catch (e) {
+      if (!(e instanceof Error && e.name === "NotAllowedError")) setNote({ ok: false, text: msg(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async (k: PasskeyInfo) => {
+    if (!confirm(`"${k.name}" 패스키를 지울까요? 그 인증기로는 더 로그인할 수 없습니다(인증기 쪽 항목은 따로 지우세요).`)) return;
+    try {
+      await admin.removePasskey(k.id);
+      await load();
+    } catch (e) {
+      setNote({ ok: false, text: msg(e) });
+    }
+  };
+
+  return (
+    <div className="passkeys">
+      <h4>패스키</h4>
+      <p className="meta">
+        지문·얼굴 인식·기기 잠금이나 보안 키로 비밀번호 없이 로그인합니다. 비밀번호 로그인은 그대로 남습니다. 패스키는 등록한 주소에 묶입니다
+        {list?.here ? ` (지금: ${list.here})` : ""}.
+      </p>
+      {list && list.passkeys.length > 0 && (
+        <table className="passkey-table">
+          <tbody>
+            {list.passkeys.map((k) => (
+              <tr key={k.id}>
+                <td>{k.name}</td>
+                <td className="meta">{k.rpID}</td>
+                <td className="meta">등록 {when(k.createdAt)}</td>
+                <td className="meta">{k.lastUsedAt ? `마지막 사용 ${when(k.lastUsedAt)}` : "아직 안 씀"}</td>
+                <td>
+                  <button onClick={() => void remove(k)}>지우기</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {passkeySupported() ? (
+        <div className="passkey-add">
+          <input placeholder="이름(예: 노트북, 휴대폰)" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} aria-label="패스키 이름" />
+          <button disabled={busy} onClick={() => void register()}>
+            {busy ? "기다리는 중…" : "이 주소로 패스키 등록"}
+          </button>
+        </div>
+      ) : (
+        <p className="meta">이 브라우저·주소에서는 패스키를 쓸 수 없습니다. 패스키는 https 주소(또는 localhost)에서만 됩니다.</p>
+      )}
+      {note && <p className={note.ok ? "note-ok" : "form-error"}>{note.text}</p>}
+    </div>
+  );
+}
+
 function SecurityView() {
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const submit = async (e: FormEvent<HTMLFormElement>) => {
@@ -750,6 +824,7 @@ function SecurityView() {
         <button type="submit">바꾸기</button>
         {note && <p className={note.ok ? "note-ok" : "form-error"}>{note.text}</p>}
       </form>
+      <PasskeysView />
       <h4>원격 접속</h4>
       <ul className="meta">
         <li>인터넷에 직접 열지 말고 HTTPS 리버스 프록시(docker compose의 https 프로필, Caddy) 또는 VPN(Tailscale 등) 뒤에서 쓰세요.</li>
