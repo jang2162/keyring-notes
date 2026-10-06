@@ -23,6 +23,8 @@ export interface EditorHandle {
   toggleTask(line: number, done: boolean): void;
   /** 그 줄(1부터)로 커서를 옮기고 보이게 한다 */
   gotoLine(line: number): void;
+  /** 커서 자리에 글을 넣는다(템플릿 넣기) */
+  insertText(text: string): void;
 }
 
 interface Props {
@@ -149,6 +151,11 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           if (!m) return;
           const at = line.from + m.index + 1;
           view.dispatch({ changes: { from: at, to: at + 1, insert: done ? "x" : " " } });
+        },
+        insertText(text) {
+          const r = view.state.selection.main;
+          view.dispatch({ changes: { from: r.from, to: r.to, insert: text }, selection: { anchor: r.from + text.length }, scrollIntoView: true });
+          view.focus();
         },
         gotoLine(lineNo) {
           const n = Math.min(Math.max(lineNo, 1), view.state.doc.lines);

@@ -8,6 +8,7 @@ export * from "./memory.js";
 export * from "./merge.js";
 export * from "./paths.js";
 export * from "./sync.js";
+export * from "./templates.js";
 export * from "./types.js";
 export * from "./widget.js";
 export * from "./wiki.js";

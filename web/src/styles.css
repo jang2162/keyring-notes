@@ -500,3 +500,5 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .palette-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-detail { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 .palette-hint { margin: 0; font-size: 11px; }
+.note-settings label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.note-settings input { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }

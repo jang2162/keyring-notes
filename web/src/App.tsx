@@ -12,7 +12,9 @@ import { authMemo, isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
 import { enhance, invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
-import { headings } from "@keyring-notes/core";
+import { applyTemplate, dailyNotePath, headings } from "@keyring-notes/core";
+import { loadNoteSettings, saveNoteSettings, type NoteSettings } from "./noteSettings";
+import { NoteSettingsDialog } from "./NoteSettingsDialog";
 import { localContext } from "./local/boot";
 import { SyncPanel, useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
@@ -290,7 +292,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       /* 저장소를 못 쓰는 환경 */
     }
   }, [tabs]);
-  const [palette, setPalette] = useState<"files" | "commands" | null>(null);
+  const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | null>(null);
+  const [noteSettings, setNoteSettings] = useState<NoteSettings>(loadNoteSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   // 편집 중 렌더링(이 기기에 기억)
   const [live, setLive] = useState(() => {
@@ -757,6 +761,66 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  /** 템플릿 문서 원문(없으면 null) */
+  const readTemplate = async (path: string): Promise<string | null> => {
+    try {
+      return (await api.read(path)).content;
+    } catch {
+      return null;
+    }
+  };
+
+  /** 데일리 노트 열기(없으면 템플릿으로 만든다). offset: 0 오늘, -1 어제, 1 내일 */
+  const openDaily = async (offset = 0) => {
+    const day = new Date();
+    day.setDate(day.getDate() + offset);
+    const path = dailyNotePath(noteSettings.dailyFolder, noteSettings.dailyFormat, day);
+    if (!resolver.paths.includes(path)) {
+      const title = path.split("/").pop()!.replace(/\.md$/i, "");
+      const tpl = noteSettings.dailyTemplate ? await readTemplate(noteSettings.dailyTemplate) : null;
+      try {
+        await api.write(path, applyTemplate(tpl ?? "# {{date:YYYY년 M월 D일 dddd}}\n\n", { title, date: day }), null);
+        vaultChanged();
+        await refreshTree();
+      } catch (e) {
+        // 그 사이 다른 곳에서 만들었으면 그것을 연다
+        if (!(e instanceof ApiError && e.status === 409)) return report(e);
+      }
+    }
+    void open(path);
+  };
+
+  /** 템플릿 폴더의 문서들 */
+  const templatePaths = resolver.paths.filter((p) => {
+    const f = noteSettings.templateFolder.replace(/^\/+|\/+$/g, "");
+    return /\.md$/i.test(p) && !!f && p.startsWith(f + "/");
+  });
+
+  const insertTemplate = async (path: string) => {
+    const tpl = await readTemplate(path);
+    if (tpl === null || !doc) return;
+    const title = doc.path.split("/").pop()!.replace(/\.md$/i, "");
+    editorHandle.current?.insertText(applyTemplate(tpl, { title, date: new Date() }));
+  };
+
+  const createFromTemplate = async (tplPath: string) => {
+    const tpl = await readTemplate(tplPath);
+    if (tpl === null) return;
+    const dir = doc?.path.includes("/") ? doc.path.slice(0, doc.path.lastIndexOf("/") + 1) : "";
+    const input = await promptDialog("새 문서 경로 (.md 생략 가능)", dir, "만들기");
+    if (!input) return;
+    const path = /\.md$/i.test(input) ? input : `${input}.md`;
+    const title = path.split("/").pop()!.replace(/\.md$/i, "");
+    try {
+      await api.write(path, applyTemplate(tpl, { title, date: new Date() }), null);
+      vaultChanged();
+      await refreshTree();
+      void open(path);
+    } catch (e) {
+      report(e);
+    }
+  };
+
   const moveDoc = async () => {
     if (!doc) return;
     if (dirty) return setError("먼저 저장한 뒤 이동하세요.");
@@ -906,6 +970,12 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const commandItems: PaletteItem[] = [
     { id: "quick", label: "문서 빠르게 열기", detail: "Ctrl+O", run: () => setPalette("files") },
     { id: "new", label: "새 문서", run: () => void createDoc() },
+    { id: "daily", label: "오늘 노트", detail: dailyNotePath(noteSettings.dailyFolder, noteSettings.dailyFormat, new Date()), run: () => void openDaily(0) },
+    { id: "daily-prev", label: "어제 노트", run: () => void openDaily(-1) },
+    { id: "daily-next", label: "내일 노트", run: () => void openDaily(1) },
+    { id: "tpl-new", label: "템플릿으로 새 문서", detail: noteSettings.templateFolder, run: () => setPalette("new-from-template") },
+    ...(doc && !doc.generated ? [{ id: "tpl-insert", label: "템플릿 넣기", detail: noteSettings.templateFolder, run: () => setPalette("templates") }] : []),
+    { id: "note-settings", label: "데일리 노트·템플릿 설정", run: () => setSettingsOpen(true) },
     ...(doc
       ? [
           { id: "save", label: "저장", detail: "Ctrl+S", run: () => void save() },
@@ -963,6 +1033,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           <strong>Keyring Notes</strong>
           <span>
             <button onClick={createDoc} title="새 문서">＋</button>{" "}
+            <button onClick={() => void openDaily(0)} title="오늘 노트(데일리 노트)">
+              📅
+            </button>{" "}
             {local ? (
               <>
                 <button
@@ -1309,10 +1382,34 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
       {palette && (
         <Palette
-          placeholder={palette === "files" ? "문서 이름으로 열기 (Ctrl+Enter: 새 탭)" : "명령"}
-          items={palette === "files" ? fileItems : commandItems}
+          key={palette}
+          placeholder={
+            palette === "files" ? "문서 이름으로 열기 (Ctrl+Enter: 새 탭)" : palette === "commands" ? "명령" : `템플릿 (${noteSettings.templateFolder} 폴더)`
+          }
+          items={
+            palette === "files"
+              ? fileItems
+              : palette === "commands"
+                ? commandItems
+                : templatePaths.map((p) => ({
+                    id: p,
+                    label: p.split("/").pop()!.replace(/\.md$/i, ""),
+                    detail: p,
+                    run: () => void (palette === "templates" ? insertTemplate(p) : createFromTemplate(p)),
+                  }))
+          }
           hint={palette === "files" ? "↑↓ 고르기 · Enter 열기 · Ctrl+Enter 새 탭 · Esc 닫기" : "↑↓ 고르기 · Enter 실행 · Esc 닫기"}
           onClose={() => setPalette(null)}
+        />
+      )}
+      {settingsOpen && (
+        <NoteSettingsDialog
+          value={noteSettings}
+          onSave={(v) => {
+            setNoteSettings(v);
+            saveNoteSettings(v);
+          }}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
 
