@@ -146,6 +146,7 @@ function StatusView() {
             value={s.storage.blobs ? `첨부 ${s.storage.blobs.count.toLocaleString()}개` : "원격 백업"}
             sub={[
               s.storage.s3,
+              s.storage.remoteBackups?.encrypted ? "올리기 전 암호화" : "암호화 안 함",
               s.storage.blobs ? `${bytes(s.storage.blobs.bytes)} · ${Math.round(s.storage.blobs.minBytes / 1024)}KB 이상${s.storage.blobs.pending ? ` · 올리기 대기 ${s.storage.blobs.pending}` : ""}` : null,
               s.storage.remoteBackups?.lastUpload ? `마지막 백업 업로드 ${when(s.storage.remoteBackups.lastUpload)}` : null,
             ]

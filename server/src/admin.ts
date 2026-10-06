@@ -120,7 +120,7 @@ export function adminRoutes(deps: AdminDeps) {
       agents: cfg.agents.map((a) => ({ name: a.name, lastUsed: config.lastUsed.get(a.name)?.toISOString() ?? null })),
       storage: {
         s3: deps.s3 ? deps.s3.describe() : null,
-        remoteBackups: deps.s3 ? { enabled: cfg.backup.remote, lastUpload: backups.lastRemoteUpload, lastError: backups.lastRemoteError } : null,
+        remoteBackups: deps.s3 ? { enabled: cfg.backup.remote, encrypted: backups.crypto !== null, lastUpload: backups.lastRemoteUpload, lastError: backups.lastRemoteError } : null,
         blobs: deps.blobs ? deps.blobs.status() : null,
       },
       security: {

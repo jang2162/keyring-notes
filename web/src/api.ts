@@ -187,7 +187,7 @@ export interface AdminStatus {
   security: { https: boolean; publicUrl: string | null; allowedHosts: string[] | null };
   storage?: {
     s3: string | null;
-    remoteBackups: { enabled: boolean; lastUpload: string | null; lastError: string | null } | null;
+    remoteBackups: { enabled: boolean; encrypted?: boolean; lastUpload: string | null; lastError: string | null } | null;
     blobs: { count: number; bytes: number; pending: number; minBytes: number; lastError: string | null } | null;
   };
 }
