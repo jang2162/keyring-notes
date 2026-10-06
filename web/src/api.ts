@@ -88,14 +88,30 @@ export interface TaskRow {
   text: string;
 }
 
+export interface WidgetRow {
+  path: string;
+  title: string;
+  values: Record<string, unknown>;
+  /** 문서 해시(위젯에서 프런트매터를 고칠 때 baseHash) */
+  hash: string;
+  summary?: string;
+}
+
+/** 문서 목록 위젯(query·table·cards·kanban) */
+export interface ListWidgetResult {
+  type: "query" | "table" | "cards" | "kanban";
+  title?: string;
+  columns: string[];
+  rows: WidgetRow[];
+  total: number;
+  /** 묶을 필드(kanban은 칸) */
+  group?: string;
+  /** kanban 칸 순서 */
+  lanes?: string[];
+}
+
 export type WidgetResult =
-  | {
-      type: "query" | "table";
-      title?: string;
-      columns: string[];
-      rows: { path: string; title: string; values: Record<string, unknown> }[];
-      total: number;
-    }
+  | ListWidgetResult
   | { type: "tasks"; title?: string; groups: { path: string; title: string; hash: string; tasks: TaskRow[] }[]; total: number }
   | { type: "chart"; title?: string; chart: "bar" | "line"; x: string; y: string; series: { label: string; value: number }[] }
   | {
@@ -104,7 +120,7 @@ export type WidgetResult =
       options: Record<string, unknown>;
       title?: string;
       columns: string[];
-      rows: { path: string; title: string; values: Record<string, unknown> }[];
+      rows: WidgetRow[];
       total: number;
     };
 

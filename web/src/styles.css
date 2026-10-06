@@ -502,3 +502,23 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .palette-hint { margin: 0; font-size: 11px; }
 .note-settings label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .note-settings input { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+
+/* 편집 가능한 위젯 뷰: 칸 고치기·묶음·카드·칸반 */
+.field-cell { border: none; background: transparent; padding: 0 2px; font: inherit; color: inherit; text-align: inherit; cursor: text; border-radius: 3px; min-width: 2em; }
+.field-cell:hover { background: var(--bg-soft); outline: 1px dashed var(--border); }
+.field-cell.busy { opacity: 0.5; }
+.field-empty { color: var(--muted); }
+.field-input { font: inherit; width: 100%; min-width: 6em; padding: 1px 4px; border: 1px solid var(--accent); border-radius: 3px; background: var(--bg); color: var(--fg); }
+.widget-group, .widget-group-row th { font-weight: 600; font-size: 13px; color: var(--muted); text-align: left; padding-top: 8px; list-style: none; }
+.widget-group-row th { background: var(--bg-soft); }
+.widget-group .count, .widget-group-row .count, .kanban-lane h5 .count { font-weight: normal; color: var(--muted); }
+.widget-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 6px 0; }
+.widget-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.widget-card[draggable="true"] { cursor: grab; }
+.widget-card-title { font-weight: 600; font-size: 14px; }
+.widget-card-summary { color: var(--muted); font-size: 12px; }
+.widget-kanban { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; align-items: flex-start; }
+.kanban-lane { flex: 0 0 220px; background: var(--bg-soft); border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 6px; min-height: 60px; }
+.kanban-lane.over { outline: 2px dashed var(--accent); }
+.kanban-lane h5 { margin: 2px 4px; font-size: 13px; }
+.kanban-move { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--muted); align-self: flex-start; }

@@ -168,7 +168,7 @@ describe("위젯", () => {
     const r = await w(owner, "type: query\nfrom: 업무/프로젝트A\nwhere: status != done\nshow: [title, due]\nsort: due");
     expect(r).toMatchObject({ type: "query", columns: ["title", "due"], total: 1 });
     if (r.type !== "query") throw new Error();
-    expect(r.rows).toEqual([{ path: "업무/프로젝트A/계획.md", title: "프로젝트A 계획", values: { title: "프로젝트A 계획", due: "2026-10-20" } }]);
+    expect(r.rows.map(({ hash: _h, ...rest }) => rest)).toEqual([{ path: "업무/프로젝트A/계획.md", title: "프로젝트A 계획", values: { title: "프로젝트A 계획", due: "2026-10-20" } }]);
   });
 
   it("table: 여러 조건, 역순 정렬, 태그 from", async () => {

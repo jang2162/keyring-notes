@@ -1,5 +1,6 @@
 export * from "./analysis.js";
 export * from "./errors.js";
+export * from "./frontmatter.js";
 export * from "./hash.js";
 export * from "./links.js";
 export * from "./local.js";

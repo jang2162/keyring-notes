@@ -202,7 +202,7 @@ npm run ios:init -w app && npm run ios:build -w app           # macOS + Xcode �
 
 ````markdown
 ```widget
-type: query          # query(목록) | table(표) | tasks(할 일) | chart(차트)
+type: query          # query(목록) | table(표) | cards(카드) | kanban(칸반) | tasks(할 일) | chart(차트)
 from: 업무/프로젝트A  # 폴더, "#태그", 또는 목록. 생략하면 볼트 전체
 where: status != done # 조건 하나 또는 목록(모두 만족)
 show: [title, due]
@@ -217,6 +217,10 @@ limit: 50
 | 조건 | `=` `!=` `>` `>=` `<` `<=` `contains` `!contains`, `필드`(값 있음), `!필드`(값 없음). 값 `today`는 오늘 날짜(YYYY-MM-DD) |
 | `tasks` | `status: open`(기본) / `done` / `all`. 위젯에서 체크하면 원본 문서에 바로 저장된다 |
 | `chart` | `chart: bar`(기본) / `line`, `x: 묶을 필드`, `y: 숫자 필드`, `agg: sum`(y가 있으면 기본) / `count` / `avg`. 또는 `data: [{label, value}]`로 직접 입력. "표로 보기" 제공 |
+| `group` | `group: status` — query·table·cards를 그 필드 값으로 묶는다 |
+| `cards` | 문서마다 카드(제목·요약·`show` 필드) |
+| `kanban` | `group`(기본 `status`) 값이 칸. `lanes: [할 일, 진행, 완료]`로 칸 순서. 카드를 다른 칸으로 끌거나 카드의 고르기 상자로 옮기면 그 필드가 바뀐다 |
+| 고치기 | table·cards·kanban에서 프런트매터 필드 칸을 눌러 바로 고친다(Enter 저장, Esc 취소, 빈 칸은 필드 삭제). 위젯을 그린 뒤 문서가 바뀌었으면 덮어쓰지 않고 다시 시도하라고 알린다. 다른 필드·주석·본문은 그대로. 내장 필드(title·tags 등)는 고칠 수 없다 |
 | `plugin` | `plugin: <이름>` + 위와 같은 `from`·`where`·`show`·`sort`, `options:`는 플러그인에 그대로. 플러그인 만드는 법은 [examples/plugins](examples/plugins/README.md)(예: 칸반) |
 
 위젯도 권한 계층을 지나므로, 에이전트가 같은 쿼리를 돌려도(MCP `query`) 볼 수 있는 문서만 나온다.
