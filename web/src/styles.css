@@ -565,3 +565,42 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
   .properties .prop-type { width: 64px; }
   .properties .prop-type select { padding: 3px 0; font-size: 12px; }
 }
+
+/* PDF 보기·주석 */
+.pdf-viewer { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); }
+.pdf-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.pdf-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.pdf-nav { display: flex; align-items: center; gap: 4px; }
+.pdf-nav input { width: 44px; text-align: center; font: inherit; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: inherit; }
+.pdf-raw { font-size: 13px; color: var(--accent); }
+.pdf-body { flex: 1; display: flex; min-height: 0; }
+.pdf-pages { flex: 1; overflow: auto; background: var(--bg-soft); padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.pdf-page { position: relative; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); flex: none; }
+.pdf-page-inner { position: relative; --total-scale-factor: var(--scale-factor); }
+.pdf-page-inner canvas { display: block; }
+.pdf-notes { width: 300px; flex: none; overflow: auto; border-left: 1px solid var(--border); padding: 10px 12px; font-size: 13px; }
+.pdf-notes h4 { margin: 0 0 4px; font-size: 13px; color: var(--muted); }
+.pdf-notes ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.pdf-notes li { padding: 6px 0; border-top: 1px solid var(--border); }
+.pdf-quote { white-space: pre-wrap; }
+.pdf-note { color: var(--muted); margin-top: 2px; }
+.pdf-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.pdf-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--bg-soft); }
+.pdf-pick-quote { flex: 1 1 260px; min-width: 0; font-size: 13px; }
+.pdf-pick input { flex: 1 1 160px; font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: inherit; }
+/* pdf.js 글자 층(pdf_viewer.css에서 필요한 것만) */
+.textLayer { position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-align: initial; -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; z-index: 0;
+  --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size)); }
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height)); --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
+.textLayer .markedContent { display: contents; }
+.textLayer ::selection { background: rgba(0, 0, 255, 0.25); }
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; }
+.textLayer .pdf-hl { background: rgba(255, 210, 0, 0.4); border-radius: 2px; }
+@media (max-width: 800px) {
+  .pdf-body { flex-direction: column; }
+  .pdf-notes { width: auto; max-height: 34vh; border-left: none; border-top: 1px solid var(--border); }
+  .pdf-pages { padding: 8px; }
+}

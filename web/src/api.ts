@@ -445,6 +445,13 @@ const remoteApi = {
   semantic: (query: string) =>
     request<{ hits: { path: string; title: string; score: number; heading: string; snippet: string }[] }>("GET", `/api/semantic?q=${encodeURIComponent(query)}&limit=20`).then((r) => r.hits),
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
+  /** 첨부 파일 내용(PDF 보기) */
+  readBytes: async (path: string): Promise<Uint8Array> => {
+    const res = await fetch(`/api/raw?path=${q(path)}`, { credentials: "same-origin" });
+    if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
+    if (!res.ok) throw new ApiError(res.status, "error", res.status === 404 ? `파일이 없습니다: ${path}` : res.statusText);
+    return new Uint8Array(await res.arrayBuffer());
+  },
 };
 
 /** 화면이 쓰는 볼트 API. 서버(REST)와 기기 로컬 볼트가 같은 모양으로 구현한다. */

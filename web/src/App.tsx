@@ -12,10 +12,11 @@ import { authMemo, isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
 import { enhance, invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
-import { applyTemplate, blockText, dailyNotePath, headings, linkMentions, section, type Mention, type PropertyStat } from "@keyring-notes/core";
+import { applyTemplate, blockText, dailyNotePath, headings, linkMentions, pdfAnnotations, section, type Mention, type PropertyStat } from "@keyring-notes/core";
 import { loadNoteSettings, saveNoteSettings, type NoteSettings } from "./noteSettings";
 import { NoteSettingsDialog } from "./NoteSettingsDialog";
 import { Properties } from "./Properties";
+import { PdfViewer } from "./PdfViewer";
 import { localContext } from "./local/boot";
 import { SyncPanel, useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
@@ -66,7 +67,10 @@ function SourceQuote({ path, anchor }: { path: string; anchor: string }) {
       .read(path)
       .then((d) => {
         if (!alive) return;
-        if (anchor.startsWith("^")) setText(blockText(d.content, anchor.slice(1)));
+        // PDF 주석 줄은 "3쪽 “인용” — 메모"로 보인다(링크 문법 없이)
+        const pdfNote = anchor.startsWith("^pdf-") ? pdfAnnotations(d.content).find((a) => a.id === anchor.slice(1)) : undefined;
+        if (pdfNote) setText(`${pdfNote.page}쪽 “${pdfNote.quote}”${pdfNote.note ? ` — ${pdfNote.note}` : ""}`);
+        else if (anchor.startsWith("^")) setText(blockText(d.content, anchor.slice(1)));
         else {
           try {
             setText(section(d.content, { heading: anchor }).content);
@@ -184,7 +188,7 @@ function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: string, a
       href={`#/${encodeURIComponent(p)}`}
       onClick={(e) => {
         e.preventDefault();
-        if (p.toLowerCase().endsWith(".md")) onOpen(p, anchor);
+        if (/\.(md|pdf)$/i.test(p)) onOpen(p, anchor);
         else window.open(api.rawUrl(p), "_blank", "noreferrer");
       }}
     >
@@ -307,7 +311,18 @@ function TreeView({
           </li>
         ) : (
           <li key={n.path}>
-            <a href={api.rawUrl(n.path)} className="file attachment" target="_blank" rel="noreferrer">
+            <a
+              href={api.rawUrl(n.path)}
+              className="file attachment"
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                // PDF는 앱 안에서 연다(주석 달기). 새 탭으로 원본을 보려면 가운데 단추·Ctrl+클릭
+                if (!/\.pdf$/i.test(n.path) || e.ctrlKey || e.metaKey) return;
+                e.preventDefault();
+                onOpen(n.path);
+              }}
+            >
               {n.name}
             </a>
           </li>
@@ -460,6 +475,8 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     api.properties().then(setPropStats).catch(() => undefined);
   }, [propsOpen, vaultVersion]);
   const [pendingAnchor, setPendingAnchor] = useState<{ path: string; heading?: string; block?: string } | null>(null);
+  // 앱 안 PDF 보기(주석 달기)
+  const [pdfView, setPdfView] = useState<{ path: string; page?: number } | null>(null);
   /** 브라우저 로컬 볼트의 첨부(blob URL)가 준비되면 올려 미리보기를 다시 그린다 */
   const [assetVersion, setAssetVersion] = useState(0);
   const local = appMode.local;
@@ -578,6 +595,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
    */
   const open = useCallback(
     async (path: string, opts: { newTab?: boolean } = {}) => {
+      if (/\.pdf$/i.test(path)) return setPdfView({ path });
       const cur = docRef.current;
       if (cur?.path === path) return;
       const keep = tabsRef.current.includes(path) || opts.newTab;
@@ -1066,6 +1084,10 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           if (anchor) setPendingAnchor({ path: target, ...anchor });
           void open(target);
         }
+      } else if (/\.pdf$/i.test(target)) {
+        // [[x.pdf#page=3]] → 앱 안 PDF 보기의 그 쪽
+        const page = /^page=(\d+)$/.exec(a.dataset.heading ?? "")?.[1];
+        setPdfView({ path: target, ...(page ? { page: Number(page) } : {}) });
       } else window.open(api.rawUrl(target), "_blank", "noreferrer");
     } else {
       void confirmDialog(`"${target}" 문서가 없습니다. 새로 만들까요?`, "만들기").then((yes) => {
@@ -1554,6 +1576,26 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
         </aside>
       )}
 
+      {pdfView && (
+        <PdfViewer
+          key={pdfView.path}
+          path={pdfView.path}
+          page={pdfView.page}
+          from={doc && !doc.generated && !revision ? { path: doc.path, draft: doc.draft } : null}
+          resolver={resolver}
+          onClose={() => setPdfView(null)}
+          onEditOpenDoc={(next) => editorHandle.current?.setContent(next)}
+          onSaved={() => {
+            vaultChanged();
+            void refreshTree();
+          }}
+          onOpenDoc={(p, block) => {
+            setPdfView(null);
+            if (block) setPendingAnchor({ path: p, block });
+            void open(p);
+          }}
+        />
+      )}
       {palette && (
         <Palette
           key={palette}

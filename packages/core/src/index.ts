@@ -9,6 +9,7 @@ export * from "./memory.js";
 export * from "./mentions.js";
 export * from "./merge.js";
 export * from "./paths.js";
+export * from "./pdfnotes.js";
 export * from "./sync.js";
 export * from "./templates.js";
 export * from "./types.js";

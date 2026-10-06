@@ -89,6 +89,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     semanticStatus: async () => ({ enabled: false }),
     semantic: serverOnly("의미 검색"),
     rawUrl,
+    readBytes: (path) => wrap(() => vault.readBytes(path)),
   };
   return local;
 }
