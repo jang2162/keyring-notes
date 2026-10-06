@@ -264,6 +264,21 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const [ingestOpen, setIngestOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
+  // 편집 중 렌더링(이 기기에 기억)
+  const [live, setLive] = useState(() => {
+    try {
+      return localStorage.getItem("keyring:live") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("keyring:live", live ? "1" : "0");
+    } catch {
+      /* 저장소를 못 쓰는 환경 */
+    }
+  }, [live]);
   const [pendingAnchor, setPendingAnchor] = useState<{ path: string; heading?: string; block?: string } | null>(null);
   /** 브라우저 로컬 볼트의 첨부(blob URL)가 준비되면 올려 미리보기를 다시 그린다 */
   const [assetVersion, setAssetVersion] = useState(0);
@@ -920,6 +935,14 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                     {{ edit: "편집", split: "나란히", preview: "미리보기" }[m]}
                   </button>
                 ))}
+                <button
+                  className={live ? "on" : ""}
+                  aria-pressed={live}
+                  title="편집 중 렌더링: 커서가 없는 줄은 # · ** · [[ ]] 같은 기호를 숨기고 모양만 보입니다"
+                  onClick={() => setLive((v) => !v)}
+                >
+                  Aa
+                </button>
               </div>
               <button onClick={save} disabled={!dirty || saving || doc.generated}>
                 {saving ? "저장 중…" : "저장"}
@@ -989,6 +1012,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                   linkCandidates={() => linkCandidates}
                   handle={editorHandle}
                   onFiles={uploadFiles}
+                  live={live}
                   readOnly={doc.generated}
                 />
               </div>
