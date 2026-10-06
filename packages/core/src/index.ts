@@ -4,6 +4,7 @@ export * from "./hash.js";
 export * from "./local.js";
 export * from "./markdown.js";
 export * from "./memory.js";
+export * from "./merge.js";
 export * from "./paths.js";
 export * from "./sync.js";
 export * from "./types.js";

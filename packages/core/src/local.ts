@@ -668,6 +668,22 @@ export class LocalVault {
     });
   }
 
+  /** 내용 해시로 예전 내용을 찾는다(지금 파일 또는 이력 스냅샷). 3방향 병합의 기준 내용에 쓴다. */
+  async contentByHash(hash: string): Promise<string | null> {
+    for (const e of this.files.values()) if (e.hash === hash && e.content !== undefined) return e.content;
+    return this.store.readMeta(objectName(hash));
+  }
+
+  /** 지금 내용을 스냅샷으로 남긴다(동기화 기준점이 된 문서: 나중에 3방향 병합의 기준으로 쓴다). */
+  preserve(paths: string[]): Promise<void> {
+    return this.exclusive(async () => {
+      for (const p of paths) {
+        const e = this.files.get(p);
+        if (e?.md && e.hash && e.content !== undefined) await this.saveObject(e.hash, e.content);
+      }
+    });
+  }
+
   fileUrl(path: string): string | null {
     return this.store.fileUrl?.(path) ?? null;
   }

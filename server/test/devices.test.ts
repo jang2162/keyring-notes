@@ -129,5 +129,20 @@ describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
     // 이제 같다
     r = await sync.run();
     expect([r.pulled, r.pushed, r.conflicts, r.errors].flat()).toEqual([]);
+
+    // 서로 다른 줄을 고치면 자동으로 합쳐 양쪽이 같아진다(서버 이력에 기기 이름으로 남는다)
+    const doc = "# 할 일\n\n- 장보기\n\n- 운동\n";
+    await local.write("할일.md", doc, null);
+    await sync.run();
+    const s1 = await owner.read("할일.md");
+    await owner.write("할일.md", doc.replace("- 운동", "- 운동 30분"), s1.hash);
+    const l1 = await local.read("할일.md");
+    await local.write("할일.md", doc.replace("- 장보기", "- 장보기(우유)"), l1.hash);
+    r = await sync.run();
+    expect(r.merged).toEqual(["할일.md"]);
+    const both = doc.replace("- 운동", "- 운동 30분").replace("- 장보기", "- 장보기(우유)");
+    expect((await owner.read("할일.md")).content).toBe(both);
+    expect((await local.read("할일.md")).content).toBe(both);
+    expect((await vault.history("할일.md"))[0].author).toBe("me (노트북)");
   });
 });

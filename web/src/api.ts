@@ -353,8 +353,9 @@ const remoteApi = {
     }
   },
   /** 오프라인 저장 대기 내용이 있으면 그것을, 연결이 없으면 이 기기의 사본을 돌려준다. */
-  async read(path: string): Promise<Doc> {
-    const pending = await offline.pendingFor(path).catch(() => undefined);
+  /** fresh: 오프라인 대기분을 건너뛰고 서버 것을 읽는다(병합할 때) */
+  async read(path: string, opts: { fresh?: boolean } = {}): Promise<Doc> {
+    const pending = opts.fresh ? undefined : await offline.pendingFor(path).catch(() => undefined);
     if (pending) return { path, content: pending.content, hash: pending.baseHash ?? "", pendingOffline: true };
     try {
       const d = await request<Doc>("GET", `/api/file?path=${q(path)}`);
