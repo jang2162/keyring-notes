@@ -414,6 +414,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   });
 
   api.get("/backlinks", async (c) => c.json({ backlinks: await c.var.scoped.backlinks(requirePath(c.req.query("path"))) }));
+  api.get("/properties", (c) => c.json({ properties: c.var.scoped.properties() }));
   api.get("/mentions", async (c) => c.json(await c.var.scoped.mentions(requirePath(c.req.query("path")))));
 
   api.get("/plugins", async (c) => {

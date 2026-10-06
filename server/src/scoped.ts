@@ -14,6 +14,8 @@ import {
   sourceRefs,
   anchorExists,
   mentionNames,
+  propertyStats,
+  type PropertyStat,
   unlinkedMentions,
   type Mention,
   wikilinkTargets,
@@ -332,6 +334,11 @@ export class ScopedVault {
       if (out.length >= 100) break;
     }
     return { path: doc.path, names, docs: out };
+  }
+
+  /** 볼 수 있는 문서들의 속성(프런트매터) 이름·종류·자주 쓴 값. 속성 입력 화면의 자동완성용 */
+  properties(): PropertyStat[] {
+    return propertyStats(this.visibleDocs().filter((d) => !this.wiki?.isGenerated(d.path)));
   }
 
   /** 읽을 수 있는 모든 파일 경로(첨부 포함). */

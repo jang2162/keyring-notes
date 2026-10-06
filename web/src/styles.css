@@ -537,3 +537,31 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .backlinks .mention-context { color: var(--muted); font-size: 13px; }
 .backlinks .link-btn { font-size: 12px; padding: 1px 6px; }
 .backlinks .mention-error { color: var(--co-red); font-size: 13px; }
+
+/* 속성(프런트매터) 입력 화면 */
+.properties { padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg-soft); font-size: 13px; max-height: 40vh; overflow: auto; }
+.properties table { border-collapse: collapse; width: 100%; max-width: 760px; }
+.properties th, .properties td { padding: 2px 4px; vertical-align: middle; text-align: left; font-weight: normal; }
+.properties th { width: 160px; }
+.properties .prop-type { width: 92px; }
+.properties input[type="text"], .properties input[type="number"], .properties input[type="date"], .properties input[type="datetime-local"], .properties .prop-key, .properties select {
+  width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit;
+}
+.properties input:hover, .properties select:hover { border-color: var(--border); }
+.properties input:focus, .properties select:focus { border-color: var(--accent); outline: none; background: var(--bg); }
+.properties .prop-key { color: var(--muted); }
+.properties input, .properties select { color-scheme: light dark; }
+.properties .prop-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.properties .prop-list input { flex: 1; min-width: 80px; font: inherit; padding: 2px 6px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; }
+.properties .prop-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 8px; border-radius: 10px; background: var(--chip-bg, rgba(127, 127, 127, 0.15)); }
+.properties .prop-chip button { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 3px; font-size: 13px; }
+.properties .prop-object { font-size: 12px; color: var(--muted); }
+.properties .prop-add { display: flex; gap: 6px; margin-top: 4px; max-width: 360px; }
+.properties .prop-add input { flex: 1; font: inherit; padding: 3px 6px; border: 1px dashed var(--border); border-radius: 4px; background: transparent; color: inherit; }
+.properties .prop-error { color: var(--co-red); margin: 4px 0; }
+@media (max-width: 800px) {
+  .properties { padding: 6px 8px; }
+  .properties th { width: 84px; }
+  .properties .prop-type { width: 64px; }
+  .properties .prop-type select { padding: 3px 0; font-size: 12px; }
+}

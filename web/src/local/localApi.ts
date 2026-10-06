@@ -83,6 +83,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     uploadAttachment: async (path, file) => wrap(async () => vault.putFile(path, new Uint8Array(await file.arrayBuffer()))),
     lint: (folder) => wrap(() => vault.lint({ folder })),
     sources: (path) => wrap(() => vault.sources(path)),
+    properties: () => wrap(async () => vault.properties()),
     mentions: (path) => wrap(() => vault.mentions(path)),
     graph: (folder) => wrap(() => vault.graph(folder)),
     semanticStatus: async () => ({ enabled: false }),

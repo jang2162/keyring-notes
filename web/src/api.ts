@@ -5,7 +5,7 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
-import type { Mention } from "@keyring-notes/core";
+import type { Mention, PropertyStat } from "@keyring-notes/core";
 import { isNetworkError, offline } from "./offline";
 
 export interface Doc {
@@ -438,6 +438,7 @@ const remoteApi = {
   },
   lint: (folder?: string) => request<LintReport>("GET", `/api/lint${folder ? `?folder=${q(folder)}` : ""}`),
   sources: (path: string) => request<SourcesInfo>("GET", `/api/sources?path=${q(path)}`),
+  properties: () => request<{ properties: PropertyStat[] }>("GET", "/api/properties").then((r) => r.properties),
   mentions: (path: string) => request<MentionsInfo>("GET", `/api/mentions?path=${q(path)}`),
   graph: (folder?: string) => request<GraphData>("GET", `/api/graph${folder ? `?folder=${q(folder)}` : ""}`),
   semanticStatus: () => request<{ enabled: boolean; model?: string; pending?: number; chunks?: number; lastError?: string | null }>("GET", "/api/semantic/status"),

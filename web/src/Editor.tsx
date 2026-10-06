@@ -25,6 +25,8 @@ export interface EditorHandle {
   gotoLine(line: number): void;
   /** 커서 자리에 글을 넣는다(템플릿 넣기) */
   insertText(text: string): void;
+  /** 내용을 바꾼다(속성 입력 화면). 달라진 부분만 바꿔 커서·실행 취소 기록을 지킨다 */
+  setContent(next: string): void;
 }
 
 interface Props {
@@ -156,6 +158,15 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           const r = view.state.selection.main;
           view.dispatch({ changes: { from: r.from, to: r.to, insert: text }, selection: { anchor: r.from + text.length }, scrollIntoView: true });
           view.focus();
+        },
+        setContent(next) {
+          const cur = view.state.doc.toString();
+          if (cur === next) return;
+          let a = 0;
+          while (a < cur.length && a < next.length && cur[a] === next[a]) a++;
+          let b = 0;
+          while (b < cur.length - a && b < next.length - a && cur[cur.length - 1 - b] === next[next.length - 1 - b]) b++;
+          view.dispatch({ changes: { from: a, to: cur.length - b, insert: next.slice(a, next.length - b) } });
         },
         gotoLine(lineNo) {
           const n = Math.min(Math.max(lineNo, 1), view.state.doc.lines);

@@ -1,3 +1,4 @@
+import { propertyStats, type PropertyStat } from "./frontmatter.js";
 import { mentionNames, unlinkedMentions, type Mention } from "./mentions.js";
 import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysis.js";
 import { rewriteLinks, type LinkRewriteContext } from "./links.js";
@@ -409,6 +410,11 @@ export class LocalVault {
 
   backlinks(input: string): { path: string; title: string }[] {
     return this.withTitles(this.incoming(normalizeVaultPath(input)));
+  }
+
+  /** 속성(프런트매터) 이름·종류·자주 쓴 값 */
+  properties(): PropertyStat[] {
+    return propertyStats(this.docs());
   }
 
   /** 연결되지 않은 언급: 이 문서의 이름이 링크 없이 나오는 다른 문서와 그 자리 */

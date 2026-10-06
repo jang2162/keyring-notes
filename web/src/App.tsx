@@ -12,9 +12,10 @@ import { authMemo, isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
 import { enhance, invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
-import { applyTemplate, blockText, dailyNotePath, headings, linkMentions, section, type Mention } from "@keyring-notes/core";
+import { applyTemplate, blockText, dailyNotePath, headings, linkMentions, section, type Mention, type PropertyStat } from "@keyring-notes/core";
 import { loadNoteSettings, saveNoteSettings, type NoteSettings } from "./noteSettings";
 import { NoteSettingsDialog } from "./NoteSettingsDialog";
+import { Properties } from "./Properties";
 import { localContext } from "./local/boot";
 import { SyncPanel, useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
@@ -438,6 +439,26 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       /* 저장소를 못 쓰는 환경 */
     }
   }, [live]);
+  // 속성 입력 화면(이 기기에 기억, 처음에는 켬)
+  const [propsOpen, setPropsOpen] = useState(() => {
+    try {
+      return localStorage.getItem("keyring:props") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("keyring:props", propsOpen ? "1" : "0");
+    } catch {
+      /* 저장소를 못 쓰는 환경 */
+    }
+  }, [propsOpen]);
+  const [propStats, setPropStats] = useState<PropertyStat[]>([]);
+  useEffect(() => {
+    if (!propsOpen) return;
+    api.properties().then(setPropStats).catch(() => undefined);
+  }, [propsOpen, vaultVersion]);
   const [pendingAnchor, setPendingAnchor] = useState<{ path: string; heading?: string; block?: string } | null>(null);
   /** 브라우저 로컬 볼트의 첨부(blob URL)가 준비되면 올려 미리보기를 다시 그린다 */
   const [assetVersion, setAssetVersion] = useState(0);
@@ -1074,9 +1095,10 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
   const previewSource = revision ? (revision.content ?? "") : (doc?.draft ?? "");
   const rendered = useMemo(
-    () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path }) : { html: "", widgets: [] }),
+    // 속성 화면이 열려 있으면 미리보기에서는 프런트매터 상자를 빼고 본다(같은 내용을 두 번 보이지 않게)
+    () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: propsOpen && !revision }) : { html: "", widgets: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [previewSource, resolver, doc?.path, assetVersion],
+    [previewSource, resolver, doc?.path, assetVersion, propsOpen, revision],
   );
 
   // 빠른 전환: 열린 탭을 먼저, 나머지 문서
@@ -1117,6 +1139,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
         ]
       : []),
     { id: "live", label: live ? "편집 중 렌더링 끄기" : "편집 중 렌더링 켜기", run: () => setLive((v) => !v) },
+    { id: "props", label: propsOpen ? "속성 화면 닫기" : "속성 화면 열기", run: () => setPropsOpen((v) => !v) },
     { id: "graph", label: "그래프 뷰", run: () => setGraphOpen(true) },
     { id: "lint", label: "정리 점검", run: () => setLintOpen(true) },
     ...(local
@@ -1307,6 +1330,14 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                 >
                   Aa
                 </button>
+                <button
+                  className={propsOpen ? "on" : ""}
+                  aria-pressed={propsOpen}
+                  title="속성(프런트매터)을 입력칸으로 보고 고칩니다"
+                  onClick={() => setPropsOpen((v) => !v)}
+                >
+                  속성
+                </button>
               </div>
               <button onClick={save} disabled={!dirty || saving || doc.generated}>
                 {saving ? "저장 중…" : "저장"}
@@ -1369,6 +1400,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
               </div>
             )}
 
+            {propsOpen && !revision && (
+              <Properties content={doc.draft} stats={propStats} readOnly={doc.generated} onChange={(next) => editorHandle.current?.setContent(next)} />
+            )}
             <div className={`panes mode-${revision ? "preview" : mode}`}>
               <div className="pane edit-pane">
                 <Editor
