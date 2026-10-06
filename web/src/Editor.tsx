@@ -21,6 +21,8 @@ export interface LinkCandidate {
 export interface EditorHandle {
   /** 줄(1부터)의 할 일 체크 상태를 바꾼다. 에디터 실행 취소 기록에 남는다. */
   toggleTask(line: number, done: boolean): void;
+  /** 그 줄(1부터)로 커서를 옮기고 보이게 한다 */
+  gotoLine(line: number): void;
 }
 
 interface Props {
@@ -147,6 +149,12 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           if (!m) return;
           const at = line.from + m.index + 1;
           view.dispatch({ changes: { from: at, to: at + 1, insert: done ? "x" : " " } });
+        },
+        gotoLine(lineNo) {
+          const n = Math.min(Math.max(lineNo, 1), view.state.doc.lines);
+          const line = view.state.doc.line(n);
+          view.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 40 }) });
+          view.focus();
         },
       };
     }

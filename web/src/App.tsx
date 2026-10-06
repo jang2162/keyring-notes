@@ -11,6 +11,8 @@ import { Login } from "./Login";
 import { authMemo, isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
 import { enhance, invalidateEmbeds } from "./enhance";
+import { Palette, type PaletteItem } from "./Palette";
+import { headings } from "@keyring-notes/core";
 import { localContext } from "./local/boot";
 import { SyncPanel, useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
@@ -142,7 +144,8 @@ function TreeView({
 }: {
   nodes: TreeNode[];
   current: string | null;
-  onOpen: (path: string) => void;
+  /** newTab: Ctrl/Cmd+클릭·가운데 클릭 */
+  onOpen: (path: string, opts?: { newTab?: boolean }) => void;
 }) {
   return (
     <ul className="tree">
@@ -161,7 +164,12 @@ function TreeView({
               className={n.path === current ? "file active" : "file"}
               onClick={(e) => {
                 e.preventDefault();
-                onOpen(n.path);
+                onOpen(n.path, { newTab: e.ctrlKey || e.metaKey });
+              }}
+              onAuxClick={(e) => {
+                if (e.button !== 1) return;
+                e.preventDefault();
+                onOpen(n.path, { newTab: true });
               }}
             >
               {n.name.replace(/\.md$/i, "")}
@@ -264,6 +272,26 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const [ingestOpen, setIngestOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
+  // 탭: 열린 문서 경로(이 기기에 기억)와, 뒤에 있는 탭의 초안
+  const [tabs, setTabs] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("keyring:tabs") ?? "[]") as string[];
+    } catch {
+      return [];
+    }
+  });
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const tabCache = useRef(new Map<string, OpenDoc>());
+  useEffect(() => {
+    try {
+      localStorage.setItem("keyring:tabs", JSON.stringify(tabs.slice(0, 30)));
+    } catch {
+      /* 저장소를 못 쓰는 환경 */
+    }
+  }, [tabs]);
+  const [palette, setPalette] = useState<"files" | "commands" | null>(null);
+  const [outlineOpen, setOutlineOpen] = useState(false);
   // 편집 중 렌더링(이 기기에 기억)
   const [live, setLive] = useState(() => {
     try {
@@ -392,19 +420,70 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   }, []);
 
+  /**
+   * 문서 열기. 탭: 이미 열린 탭이면 그 탭으로(저장 안 한 초안은 탭마다 그대로), newTab이면 새 탭에,
+   * 아니면 지금 탭을 바꾼다(저장 안 한 변경이 있으면 묻는다).
+   */
   const open = useCallback(
-    async (path: string) => {
-      if (dirty && !(await confirmDialog("저장하지 않은 변경이 있습니다. 버리고 이동할까요?", "버리고 이동"))) return;
+    async (path: string, opts: { newTab?: boolean } = {}) => {
+      const cur = docRef.current;
+      if (cur?.path === path) return;
+      const keep = tabsRef.current.includes(path) || opts.newTab;
+      if (cur) {
+        if (keep) tabCache.current.set(cur.path, cur);
+        else if (cur.draft !== cur.saved && !(await confirmDialog("저장하지 않은 변경이 있습니다. 버리고 이동할까요?", "버리고 이동"))) return;
+      }
+      setTabs((t) => {
+        if (t.includes(path)) return t;
+        if (!cur || keep || !t.includes(cur.path)) return [...t, path];
+        return t.map((x) => (x === cur.path ? path : x));
+      });
       setNavOpen(false);
-      void load(path);
+      const cached = tabCache.current.get(path);
+      if (cached) {
+        tabCache.current.delete(path);
+        setDoc({ ...cached, seq: cached.seq + 1 });
+        setConflict(null);
+        setRevision(null);
+        if (pathFromLocation() !== path) history.replaceState(null, "", `#/${encodeURIComponent(path)}`);
+      } else void load(path);
     },
-    [dirty, load],
+    [load],
   );
+
+  /** 탭 닫기. 닫는 탭에 저장 안 한 변경이 있으면 묻는다 */
+  const closeTab = async (path: string) => {
+    const cur = docRef.current;
+    const target = cur?.path === path ? cur : tabCache.current.get(path);
+    if (target && target.draft !== target.saved && !(await confirmDialog(`"${path}"에 저장하지 않은 변경이 있습니다. 버리고 닫을까요?`, "버리고 닫기"))) return;
+    tabCache.current.delete(path);
+    const list = tabsRef.current;
+    const i = list.indexOf(path);
+    const rest = list.filter((p) => p !== path);
+    setTabs(rest);
+    if (cur?.path === path) {
+      const next = rest[Math.min(i, rest.length - 1)];
+      if (next) {
+        const cached = tabCache.current.get(next);
+        if (cached) {
+          tabCache.current.delete(next);
+          setDoc({ ...cached, seq: cached.seq + 1 });
+          history.replaceState(null, "", `#/${encodeURIComponent(next)}`);
+        } else void load(next);
+      } else {
+        setDoc(null);
+        history.replaceState(null, "", "#");
+      }
+    }
+  };
 
   useEffect(() => {
     void refreshTree();
     const initial = pathFromLocation();
-    if (initial) void load(initial);
+    if (initial) {
+      setTabs((t) => (t.includes(initial) ? t : [...t, initial]));
+      void load(initial);
+    }
   }, [refreshTree, load]);
 
   useEffect(() => {
@@ -416,12 +495,16 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     return () => window.removeEventListener("hashchange", onHash);
   }, [doc?.path, open]);
 
+  // 저장 안 한 변경(지금 문서 또는 뒤에 있는 탭)이 있으면 창을 닫기 전에 묻는다
   useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    const warn = (e: BeforeUnloadEvent) => {
+      const cur = docRef.current;
+      const any = (cur && cur.draft !== cur.saved) || [...tabCache.current.values()].some((d) => d.draft !== d.saved);
+      if (any) e.preventDefault();
+    };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  }, []);
 
   useEffect(() => {
     if (!historyOpen || !doc) return;
@@ -572,6 +655,23 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       window.removeEventListener("keyring:asset-loaded", onAsset);
     };
   }, [vaultChanged, refreshTree, load]);
+
+  // 빠른 전환(Ctrl/Cmd+O)·명령 팔레트(Ctrl/Cmd+P, Ctrl/Cmd+Shift+P). 에디터보다 먼저 받는다.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "o" && !e.shiftKey) {
+        e.preventDefault();
+        setPalette("files");
+      } else if (k === "p") {
+        e.preventDefault();
+        setPalette("commands");
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   // 에디터 밖(로그인 직후 등)에서도 Ctrl/Cmd+S로 저장한다. 에디터 안에서는 에디터 키맵이 먼저 처리한다.
   useEffect(() => {
@@ -788,6 +888,51 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     [previewSource, resolver, doc?.path, assetVersion],
   );
 
+  // 빠른 전환: 열린 탭을 먼저, 나머지 문서
+  const fileItems = useMemo<PaletteItem[]>(() => {
+    const docs = resolver.paths.filter((p) => /\.md$/i.test(p));
+    const order = (p: string) => (tabs.includes(p) ? 0 : 1);
+    return docs
+      .sort((a, b) => order(a) - order(b) || a.localeCompare(b, "ko"))
+      .map((p) => ({
+        id: p,
+        label: p.split("/").pop()!.replace(/\.md$/i, ""),
+        detail: p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : undefined,
+        run: (alt: boolean) => void open(p, { newTab: alt }),
+      }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolver, tabs]);
+
+  const commandItems: PaletteItem[] = [
+    { id: "quick", label: "문서 빠르게 열기", detail: "Ctrl+O", run: () => setPalette("files") },
+    { id: "new", label: "새 문서", run: () => void createDoc() },
+    ...(doc
+      ? [
+          { id: "save", label: "저장", detail: "Ctrl+S", run: () => void save() },
+          { id: "move", label: "이동·이름 바꾸기", run: () => void moveDoc() },
+          { id: "delete", label: "삭제", run: () => void deleteDoc() },
+          { id: "history", label: historyOpen ? "이력 닫기" : "이력 보기", run: () => setHistoryOpen((v) => !v) },
+          { id: "outline", label: outlineOpen ? "개요 닫기" : "개요 보기", run: () => setOutlineOpen((v) => !v) },
+          { id: "close-tab", label: "탭 닫기", run: () => void closeTab(doc.path) },
+          { id: "mode-edit", label: "보기: 편집", run: () => setMode("edit") },
+          { id: "mode-split", label: "보기: 나란히", run: () => setMode("split") },
+          { id: "mode-preview", label: "보기: 미리보기", run: () => setMode("preview") },
+        ]
+      : []),
+    { id: "live", label: live ? "편집 중 렌더링 끄기" : "편집 중 렌더링 켜기", run: () => setLive((v) => !v) },
+    { id: "graph", label: "그래프 뷰", run: () => setGraphOpen(true) },
+    { id: "lint", label: "정리 점검", run: () => setLintOpen(true) },
+    ...(local
+      ? [{ id: "sync", label: "이 기기·동기화", run: () => setSyncOpen(true) }]
+      : [
+          { id: "ingest", label: "원본 수집", run: () => setIngestOpen(true) },
+          { id: "review", label: "변경 검토", run: () => setReviewOpen(true) },
+          { id: "admin", label: "관리 콘솔", run: () => setAdminOpen(true) },
+        ]),
+  ];
+
+  const outline = useMemo(() => (outlineOpen && doc ? headings(doc.draft) : []), [outlineOpen, doc?.draft]);
+
   // 수식·다이어그램·문서 임베드는 그린 뒤에 채운다(enhance.ts)
   useEffect(() => {
     if (!previewRef.current || !doc) return;
@@ -921,6 +1066,25 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       <main className="main">
         {doc ? (
           <>
+            {tabs.length > 1 && (
+              <nav className="tabs" aria-label="열린 문서">
+                {tabs.map((t) => {
+                  const cached = t === doc.path ? doc : tabCache.current.get(t);
+                  const isDirty = !!cached && cached.draft !== cached.saved;
+                  return (
+                    <span key={t} className={`tab${t === doc.path ? " on" : ""}`} title={t}>
+                      <button className="tab-name" onClick={() => void open(t)} onAuxClick={(e) => e.button === 1 && void closeTab(t)}>
+                        {t.split("/").pop()!.replace(/\.md$/i, "")}
+                        {isDirty && <span className="dirty"> ●</span>}
+                      </button>
+                      <button className="tab-close" aria-label={`${t} 닫기`} onClick={() => void closeTab(t)}>
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </nav>
+            )}
             <header className="toolbar">
               <button className="nav-toggle" aria-label="문서 목록" onClick={() => setNavOpen((v) => !v)}>
                 ☰
@@ -955,6 +1119,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
               </button>
               <button className={historyOpen ? "on" : ""} onClick={() => setHistoryOpen((v) => !v)}>
                 이력
+              </button>
+              <button className={outlineOpen ? "on" : ""} onClick={() => setOutlineOpen((v) => !v)} title="개요: 제목 목록">
+                개요
               </button>
             </header>
 
@@ -1114,6 +1281,38 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
               open(openPath);
             }
           }}
+        />
+      )}
+
+      {outlineOpen && doc && (
+        <aside className="history outline">
+          <div className="sidebar-head">
+            <strong>개요</strong>
+          </div>
+          <ol>
+            {outline.map((h) => (
+              <li key={h.line} style={{ paddingLeft: `${(h.level - 1) * 12}px` }}>
+                <button
+                  onClick={() => {
+                    editorHandle.current?.gotoLine(h.line);
+                    scrollToAnchor({ heading: h.text.toLowerCase() });
+                  }}
+                >
+                  <span className="msg">{h.text}</span>
+                </button>
+              </li>
+            ))}
+            {outline.length === 0 && <li className="meta">제목이 없습니다.</li>}
+          </ol>
+        </aside>
+      )}
+
+      {palette && (
+        <Palette
+          placeholder={palette === "files" ? "문서 이름으로 열기 (Ctrl+Enter: 새 탭)" : "명령"}
+          items={palette === "files" ? fileItems : commandItems}
+          hint={palette === "files" ? "↑↓ 고르기 · Enter 열기 · Ctrl+Enter 새 탭 · Esc 닫기" : "↑↓ 고르기 · Enter 실행 · Esc 닫기"}
+          onClose={() => setPalette(null)}
         />
       )}
 
