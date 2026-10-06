@@ -28,6 +28,10 @@ export interface BackupSettings {
   keep: number;
   /** 백업에 설정 파일(비밀번호·토큰 해시, 권한 표)을 넣을지 */
   includeConfig: boolean;
+  /** 백업을 만들 때마다 S3에도 올릴지(KEYRING_S3_BUCKET을 설정했을 때) */
+  remote: boolean;
+  /** S3에 남길 자동 백업 수 */
+  remoteKeep: number;
 }
 
 export const WEBHOOK_EVENTS = ["raw.added", "doc.changed", "proposal.created", "schedule", "ping"] as const;
@@ -127,7 +131,7 @@ export interface KeyringConfig {
   jobs: JobConfig[];
 }
 
-export const DEFAULT_BACKUP: BackupSettings = { enabled: true, intervalHours: 24, keep: 14, includeConfig: true };
+export const DEFAULT_BACKUP: BackupSettings = { enabled: true, intervalHours: 24, keep: 14, includeConfig: true, remote: true, remoteKeep: 30 };
 
 export function validateBackupSettings(raw: unknown): BackupSettings {
   const b = (raw ?? {}) as Partial<BackupSettings>;
@@ -135,7 +139,9 @@ export function validateBackupSettings(raw: unknown): BackupSettings {
   if (typeof out.enabled !== "boolean" || typeof out.includeConfig !== "boolean") throw new Error("설정 오류: backup.enabled·includeConfig는 true/false");
   if (!Number.isFinite(out.intervalHours) || out.intervalHours < 1 || out.intervalHours > 24 * 30) throw new Error("설정 오류: backup.intervalHours는 1~720");
   if (!Number.isInteger(out.keep) || out.keep < 1 || out.keep > 365) throw new Error("설정 오류: backup.keep은 1~365 정수");
-  return { enabled: out.enabled, intervalHours: out.intervalHours, keep: out.keep, includeConfig: out.includeConfig };
+  if (typeof out.remote !== "boolean") throw new Error("설정 오류: backup.remote는 true/false");
+  if (!Number.isInteger(out.remoteKeep) || out.remoteKeep < 1 || out.remoteKeep > 3650) throw new Error("설정 오류: backup.remoteKeep은 1~3650 정수");
+  return { enabled: out.enabled, intervalHours: out.intervalHours, keep: out.keep, includeConfig: out.includeConfig, remote: out.remote, remoteKeep: out.remoteKeep };
 }
 
 export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;

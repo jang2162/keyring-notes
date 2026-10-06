@@ -79,6 +79,12 @@ npm run dev:web      # 웹: http://localhost:5173 (API는 프록시)
 | `KEYRING_EMBED_KEY` | (없음) | 임베딩 API 키(`Authorization: Bearer`) |
 | `KEYRING_PLUGINS_DIR` | `./plugins`(도커 `/data/plugins`) | 위젯 플러그인 폴더 |
 | `KEYRING_SCHEDULER` | `1` | `0`이면 정기 작업(웹훅) 스케줄러를 끈다 |
+| `KEYRING_S3_BUCKET` | (없음) | S3 호환 저장소 버킷. 주면 원격 백업이 켜진다(아래 "S3 저장소") |
+| `KEYRING_S3_ACCESS_KEY_ID` · `KEYRING_S3_SECRET_ACCESS_KEY` | (없음) | 접근 키(`AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY`도 읽는다) |
+| `KEYRING_S3_REGION` | `us-east-1` | 리전(R2는 `auto`) |
+| `KEYRING_S3_ENDPOINT` | AWS S3 | R2·MinIO 등 다른 저장소 주소. 주면 경로 방식(`KEYRING_S3_PATH_STYLE`로 바꿀 수 있음) |
+| `KEYRING_S3_PREFIX` | `keyring/` | 버킷 안 키 앞부분 |
+| `KEYRING_S3_BLOBS` · `KEYRING_S3_BLOB_MIN_KB` | `0` · `256` | `1`이면 이 크기 이상 첨부를 Git 대신 S3에 둔다 |
 | `KEYRING_HOST` | `127.0.0.1` | 바인드 주소 |
 | `KEYRING_PORT` | `8787` | 포트 |
 
@@ -102,6 +108,19 @@ KEYRING_VAULT=/tmp/vault-copy npm start
 - **백업·복원**: 지금 백업, 내려받기, 다른 서버의 백업 파일 올리기, 복원, 자동 백업 설정(간격·남길 개수·설정 포함 여부).
 - **업데이트**: 지금·최신 버전 확인과 업데이트 방법.
 - **보안**: 비밀번호 변경(다른 기기의 로그인은 모두 끊김), 원격 접속 안내.
+
+### S3 저장소(선택)
+
+원본은 계속 서버 디스크(볼트 폴더 + Git)에 두고, S3 호환 저장소(AWS S3·Cloudflare R2·MinIO·Backblaze B2 …)는 두 가지에 쓴다. SDK 없이 SigV4로 직접 붙는다.
+
+- **원격 백업**: `KEYRING_S3_BUCKET`과 키만 주면 켜진다. 백업을 만들 때마다(자동·수동) `<접두사>backups/`에 올리고, 자동 백업은 설정한 개수만 남긴다. 업로드가 실패해도 로컬 백업은 만들어지고 관리 콘솔에 경고가 뜬다. 서버를 잃었을 때: 새 서버에 같은 S3 설정으로 띄운 뒤 관리 콘솔 → 백업·복원 → S3 원격 백업에서 "가져오기" → "복원".
+- **큰 첨부 보관**(`KEYRING_S3_BLOBS=1`): 기준 크기 이상의 첨부(마크다운이 아닌 파일)를 `<접두사>blobs/<sha256>`에 내용 해시로 올리고 Git에서는 뺀다. Git에는 경로 → 해시 목록(`.keyring-blobs.json`)만 남는다(Git LFS와 같은 방식). 볼트 폴더에는 파일이 그대로 있어 화면·API·앱 동기화·다른 편집기는 달라지지 않고, Git 이력과 백업 파일이 작아진다.
+  - 켜는 순간 이미 Git에 있던 큰 첨부도 이력에서 빠진다(과거 커밋 안의 사본은 그대로 남는다).
+  - S3에 못 올리면 쓰기는 그대로 되고 "올리기 대기"로 남아 5분마다 다시 올린다. 대기 중인 첨부는 백업에 들어가지 않는다(관리 콘솔 경고).
+  - 복원하면 그 백업의 목록대로 첨부를 S3에서 받아 오고, 그 뒤에 생긴 첨부는 지운다.
+  - S3 객체는 내용 해시가 이름이라 덮어쓰지 않고, 지우지도 않는다(과거 백업이 가리킬 수 있어서). 버킷에 버전 관리·수명 주기 규칙을 걸려면 `blobs/`는 빼는 것이 안전하다.
+  - 첨부 파일의 이력(어떤 버전이 언제)은 문서 이력 화면이 아니라 `.keyring-blobs.json`의 Git 이력에 있다.
+- 버킷은 공개하지 않는다. 첨부는 지금처럼 서버가 권한을 확인한 뒤 내준다(서명 URL로 직접 내주지 않는다).
 
 ### 백업 형식
 

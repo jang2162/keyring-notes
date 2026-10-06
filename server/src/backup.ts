@@ -3,7 +3,9 @@ import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile
 import os from "node:os";
 import path from "node:path";
 import * as tar from "tar";
+import type { BlobStore } from "./blobs.js";
 import type { ConfigStore } from "./config.js";
+import type { S3Client } from "./s3.js";
 import { PathError } from "./paths.js";
 import { NotFoundError, type Vault } from "./vault.js";
 import { APP_VERSION } from "./version.js";
@@ -11,7 +13,8 @@ import { APP_VERSION } from "./version.js";
 /**
  * 백업 = 하나의 .tar.gz:
  *   manifest.json   형식·앱 버전·만든 시각·HEAD·커밋 수
- *   vault.bundle    `git bundle --all`: 볼트의 모든 파일(첨부 포함)과 전체 이력
+ *   vault.bundle    `git bundle --all`: 볼트의 모든 파일(첨부 포함)과 전체 이력.
+ *                   S3 첨부 보관을 켜면 큰 첨부는 번들 대신 S3(blobs/)에 있고, 번들에는 그 목록(.keyring-blobs.json)이 들어 있다.
  *   config.json     (선택) 비밀번호 해시·세션 키·에이전트 토큰 해시·권한 표·백업 설정
  *
  * 볼트의 원본은 Git에 모두 커밋되어 있으므로(서버 밖 변경도 백업 직전에 커밋) 번들 하나로 충분하다.
@@ -55,12 +58,29 @@ export interface RestoreResult {
   previousRef: string | null;
   preRestoreBackup: string | null;
   configRestored: boolean;
+  /** S3 첨부 보관을 쓸 때: 복원한 목록대로 받은 첨부, 복원 전에만 있어 지운 첨부, S3에도 없어 받지 못한 첨부 */
+  attachments?: { downloaded: string[]; removed: string[]; missing: string[] };
+}
+
+export interface RemoteBackupInfo {
+  name: string;
+  kind: BackupKind;
+  size: number;
+  uploadedAt: string;
+  /** 이 서버의 백업 폴더에도 있는지 */
+  local: boolean;
 }
 
 export class BackupService {
   private timer: NodeJS.Timeout | null = null;
   private running: Promise<unknown> = Promise.resolve();
   lastError: string | null = null;
+  /** S3 원격 백업(설정했을 때). 백업을 만들 때마다 올린다(설정 backup.remote) */
+  remote: S3Client | null = null;
+  /** S3 첨부 보관(설정했을 때). 복원 뒤 첨부를 S3에서 받아 맞춘다 */
+  blobs: BlobStore | null = null;
+  lastRemoteError: string | null = null;
+  lastRemoteUpload: string | null = null;
 
   constructor(
     private vault: Vault,
@@ -161,7 +181,9 @@ export class BackupService {
       await tar.create({ gzip: true, file: target, cwd: stage, portable: true }, entries);
       await chmod(target, 0o600);
       const st = await stat(target);
-      return { name, kind, size: st.size, createdAt: manifest.createdAt, head, commits, includesConfig, appVersion: APP_VERSION };
+      const info: BackupInfo = { name, kind, size: st.size, createdAt: manifest.createdAt, head, commits, includesConfig, appVersion: APP_VERSION };
+      if (this.remote && this.config.get().backup.remote) await this.pushRemote(name).catch(() => undefined);
+      return info;
     } finally {
       await rm(stage, { recursive: true, force: true });
     }
@@ -227,6 +249,7 @@ export class BackupService {
           await this.vault.git.raw(["clean", "-fdq"]);
           return { previousHead, previousRef };
         });
+        const attachments = this.blobs ? await this.blobs.afterRestore() : undefined;
         let configRestored = false;
         if (opts.restoreConfig && manifest.includesConfig) {
           this.config.replaceAll(JSON.parse(await readFile(path.join(stage, "config.json"), "utf8")));
@@ -239,11 +262,57 @@ export class BackupService {
           previousRef: result.previousRef,
           preRestoreBackup: pre?.name ?? null,
           configRestored,
+          attachments,
         };
       } finally {
         await rm(stage, { recursive: true, force: true });
       }
     });
+  }
+
+  // ── S3 원격 백업 ──
+
+  private remoteKey(name: string) {
+    return this.remote!.key(`backups/${name}`);
+  }
+
+  /** 백업 하나를 S3에 올린다(실패는 lastRemoteError에 남기고 던진다). */
+  async pushRemote(name: string): Promise<void> {
+    if (!this.remote) throw new PathError("S3가 설정되지 않았습니다(KEYRING_S3_BUCKET)");
+    try {
+      await this.remote.put(this.remoteKey(name), { file: await this.file(name) }, { contentType: "application/gzip" });
+      this.lastRemoteUpload = new Date().toISOString();
+      this.lastRemoteError = null;
+    } catch (e) {
+      this.lastRemoteError = e instanceof Error ? e.message : String(e);
+      console.error("원격 백업 업로드 실패:", this.lastRemoteError);
+      throw e;
+    }
+  }
+
+  async listRemote(): Promise<RemoteBackupInfo[]> {
+    if (!this.remote) return [];
+    const prefix = this.remote.key("backups/");
+    const local = new Set((await this.list()).map((b) => b.name));
+    return (await this.remote.list(prefix))
+      .map((o) => ({ o, name: o.key.slice(prefix.length) }))
+      .filter(({ name }) => NAME_RE.test(name))
+      .map(({ o, name }) => ({ name, kind: NAME_RE.exec(name)![2] as BackupKind, size: o.size, uploadedAt: o.lastModified, local: local.has(name) }))
+      .sort((a, b) => b.name.localeCompare(a.name));
+  }
+
+  /** S3의 백업을 이 서버 백업 폴더로 받아 온다(그 뒤 평소처럼 복원). */
+  async fetchRemote(name: string): Promise<BackupInfo> {
+    if (!this.remote) throw new PathError("S3가 설정되지 않았습니다(KEYRING_S3_BUCKET)");
+    if (!NAME_RE.test(name)) throw new PathError("백업 이름이 잘못되었습니다");
+    const stage = await mkdtemp(path.join(os.tmpdir(), "keyring-remote-"));
+    try {
+      const tmp = path.join(stage, name);
+      if (!(await this.remote.download(this.remoteKey(name), tmp))) throw new NotFoundError(`S3에 백업이 없습니다: ${name}`);
+      return await this.importFile(tmp);
+    } finally {
+      await rm(stage, { recursive: true, force: true });
+    }
   }
 
   /** 오래된 자동 백업 정리(수동·복원 전 백업은 남긴다). */
@@ -254,6 +323,17 @@ export class BackupService {
     for (const b of autos.slice(keep)) {
       await rm(path.join(this.dir, b.name), { force: true });
       removed.push(b.name);
+    }
+    if (this.remote && this.config.get().backup.remote) {
+      try {
+        const remoteKeep = this.config.get().backup.remoteKeep;
+        for (const b of (await this.listRemote()).filter((r) => r.kind === "auto").slice(remoteKeep)) {
+          await this.remote.delete(this.remoteKey(b.name));
+          removed.push(`s3:${b.name}`);
+        }
+      } catch (e) {
+        this.lastRemoteError = e instanceof Error ? e.message : String(e);
+      }
     }
     return removed;
   }

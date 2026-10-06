@@ -146,6 +146,17 @@ export interface BackupSettings {
   intervalHours: number;
   keep: number;
   includeConfig: boolean;
+  /** 백업을 S3에도 올리기 */
+  remote: boolean;
+  remoteKeep: number;
+}
+
+export interface RemoteBackupInfo {
+  name: string;
+  kind: "auto" | "manual" | "pre-restore";
+  size: number;
+  uploadedAt: string;
+  local: boolean;
 }
 
 export interface AdminStatus {
@@ -157,6 +168,11 @@ export interface AdminStatus {
   backups: { dir: string; count: number; last: BackupInfo | null; next: string | null; settings: BackupSettings; lastError: string | null };
   agents: { name: string; lastUsed: string | null }[];
   security: { https: boolean; publicUrl: string | null; allowedHosts: string[] | null };
+  storage?: {
+    s3: string | null;
+    remoteBackups: { enabled: boolean; lastUpload: string | null; lastError: string | null } | null;
+    blobs: { count: number; bytes: number; pending: number; minBytes: number; lastError: string | null } | null;
+  };
 }
 
 export interface UpdateInfo {
@@ -290,8 +306,18 @@ export const admin = {
   createBackup: (includeConfig?: boolean) => request<BackupInfo>("POST", "/api/admin/backups", { includeConfig }),
   backupSettings: (s: Partial<BackupSettings>) => request<{ settings: BackupSettings }>("PUT", "/api/admin/backups/settings", s),
   removeBackup: (name: string) => request<unknown>("DELETE", `/api/admin/backups/${enc(name)}`, {}),
+  remoteBackups: () =>
+    request<{ configured: boolean; location?: string; backups: RemoteBackupInfo[]; lastError?: string | null }>("GET", "/api/admin/backups/remote"),
+  fetchRemote: (name: string) => request<BackupInfo>("POST", `/api/admin/backups/remote/${enc(name)}/fetch`, {}),
+  pushRemote: (name: string) => request<unknown>("POST", `/api/admin/backups/${enc(name)}/push`, {}),
   restore: (name: string, restoreConfig: boolean) =>
-    request<{ restoredHead: string; previousRef: string | null; preRestoreBackup: string | null; configRestored: boolean }>(
+    request<{
+      restoredHead: string;
+      previousRef: string | null;
+      preRestoreBackup: string | null;
+      configRestored: boolean;
+      attachments?: { downloaded: string[]; removed: string[]; missing: string[] };
+    }>(
       "POST",
       `/api/admin/backups/${enc(name)}/restore`,
       { restoreConfig },

@@ -17,6 +17,8 @@ import type { ScopedVault } from "./scoped.js";
 import { ForbiddenError, NotFoundError, type Vault } from "./vault.js";
 import { APP_VERSION } from "./version.js";
 import type { Wiki } from "./wiki.js";
+import type { BlobStore } from "./blobs.js";
+import type { S3Client } from "./s3.js";
 
 export interface AdminDeps {
   vault: Vault;
@@ -33,6 +35,10 @@ export interface AdminDeps {
   maxBackupUpload?: number;
   /** 웹훅·정기 작업 */
   automation?: Automation;
+  /** S3(설정했을 때): 원격 백업 */
+  s3?: S3Client | null;
+  /** S3 첨부 보관(KEYRING_S3_BLOBS=1) */
+  blobs?: BlobStore | null;
 }
 
 const startedAt = new Date();
@@ -112,6 +118,11 @@ export function adminRoutes(deps: AdminDeps) {
         lastError: backups.lastError,
       },
       agents: cfg.agents.map((a) => ({ name: a.name, lastUsed: config.lastUsed.get(a.name)?.toISOString() ?? null })),
+      storage: {
+        s3: deps.s3 ? deps.s3.describe() : null,
+        remoteBackups: deps.s3 ? { enabled: cfg.backup.remote, lastUpload: backups.lastRemoteUpload, lastError: backups.lastRemoteError } : null,
+        blobs: deps.blobs ? deps.blobs.status() : null,
+      },
       security: {
         https: new URL(c.req.url).protocol === "https:" || c.req.header("x-forwarded-proto") === "https",
         publicUrl: deps.publicUrl ?? null,
@@ -340,6 +351,21 @@ export function adminRoutes(deps: AdminDeps) {
     });
     void backups.prune();
     return c.json({ settings });
+  });
+
+  // ── S3 원격 백업 ──
+  admin.get("/backups/remote", async (c) => {
+    if (!deps.s3) return c.json({ configured: false, backups: [] });
+    try {
+      return c.json({ configured: true, location: deps.s3.describe(), backups: await backups.listRemote(), lastError: backups.lastRemoteError });
+    } catch (e) {
+      return c.json({ configured: true, location: deps.s3.describe(), backups: [], lastError: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  admin.post("/backups/remote/:name/fetch", async (c) => c.json(await backups.fetchRemote(c.req.param("name"))));
+  admin.post("/backups/:name/push", async (c) => {
+    await backups.pushRemote(c.req.param("name"));
+    return c.json({ ok: true });
   });
 
   admin.get("/backups/:name", async (c) => {

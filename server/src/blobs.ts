@@ -1,0 +1,188 @@
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { isMarkdown } from "./paths.js";
+import { fileSha256, type S3Client } from "./s3.js";
+import type { Vault } from "./vault.js";
+
+/** Git으로 추적하는 첨부 목록(경로 → 내용 해시). 점 파일이라 트리·API에는 보이지 않는다. */
+export const BLOB_INDEX = ".keyring-blobs.json";
+
+export interface BlobEntry {
+  sha256: string;
+  size: number;
+  /** 아직 S3에 올리지 못함(로컬 파일만 있음). 다음 커밋·주기 재시도 때 올린다 */
+  pending?: true;
+}
+
+type Index = Record<string, BlobEntry>;
+
+/**
+ * 큰 첨부(이미지·PDF 등)를 S3에 내용 해시 키로 두고, Git에는 위 목록 파일만 남긴다(Git LFS와 같은 방식).
+ * 볼트 폴더에는 파일이 그대로 있어 화면·API·다른 편집기는 달라지는 것이 없고, Git 이력과 백업이 가벼워진다.
+ * S3 객체는 내용 해시가 이름이라 덮어쓰지 않고, 예전 목록이 가리키는 과거 버전도 남는다(지우지 않는다).
+ */
+export class BlobStore {
+  private index: Index = {};
+  private timer: NodeJS.Timeout | null = null;
+  lastError: string | null = null;
+
+  constructor(
+    private vault: Vault,
+    private s3: S3Client,
+    readonly minBytes: number,
+  ) {}
+
+  private key(sha: string) {
+    return this.s3.key(`blobs/${sha.slice(0, 2)}/${sha}`);
+  }
+
+  private abs(rel: string) {
+    return path.join(this.vault.root, rel);
+  }
+
+  private async readIndex(): Promise<Index> {
+    try {
+      const raw = JSON.parse(await readFile(this.abs(BLOB_INDEX), "utf8")) as { files?: Index };
+      return raw.files && typeof raw.files === "object" ? raw.files : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private async writeIndex() {
+    const files = Object.fromEntries(Object.keys(this.index).sort().map((k) => [k, this.index[k]]));
+    const tmp = this.abs(`${BLOB_INDEX}.tmp`);
+    await writeFile(tmp, JSON.stringify({ version: 1, files }, null, 1) + "\n");
+    await rename(tmp, this.abs(BLOB_INDEX));
+  }
+
+  /** vault.init() 전에 부른다: 목록을 읽고 Git 제외와 커밋 전 처리를 건다. */
+  async attach(): Promise<void> {
+    this.index = await this.readIndex();
+    this.vault.git.presetExcludes("blobs", Object.keys(this.index));
+    this.vault.beforeCommit = (paths) => this.prepareCommit(paths);
+  }
+
+  private qualifies(rel: string, size: number) {
+    return !isMarkdown(rel) && size >= this.minBytes;
+  }
+
+  /** 볼트의 모든 파일(점 폴더 제외) */
+  private async allFiles(): Promise<string[]> {
+    const out: string[] = [];
+    const walk = (nodes: Awaited<ReturnType<Vault["tree"]>>) => {
+      for (const n of nodes) {
+        if (n.type === "dir") walk(n.children ?? []);
+        else out.push(n.path);
+      }
+    };
+    walk(await this.vault.tree());
+    return out;
+  }
+
+  private async upload(rel: string, sha: string): Promise<boolean> {
+    try {
+      const k = this.key(sha);
+      if (!(await this.s3.head(k))) await this.s3.put(k, { file: this.abs(rel) }, { sha256: sha });
+      return true;
+    } catch (e) {
+      this.lastError = e instanceof Error ? e.message : String(e);
+      console.error("첨부 S3 업로드 실패(나중에 다시 시도):", this.lastError);
+      return false;
+    }
+  }
+
+  /**
+   * 커밋 직전: 바뀐 첨부를 S3에 올리고 목록을 고친 뒤, git에 넣을 경로를 돌려준다
+   * (S3로 간 첨부는 빼고 목록 파일을 더한다). paths가 없으면 볼트 전체를 훑는다.
+   */
+  async prepareCommit(paths: string[] | undefined): Promise<string[] | undefined> {
+    const candidates = paths ?? [...new Set([...(await this.allFiles()), ...Object.keys(this.index)])];
+    const before = JSON.stringify(this.index);
+    const managed = new Set(Object.keys(this.index));
+    for (const rel of candidates) {
+      if (rel === BLOB_INDEX) continue;
+      const st = await stat(this.abs(rel)).catch(() => null);
+      if (!st?.isFile() || !this.qualifies(rel, st.size)) {
+        delete this.index[rel];
+        continue;
+      }
+      const cur = this.index[rel];
+      if (cur && cur.size === st.size && !cur.pending && !paths) continue; // 전체 훑기에서는 크기가 같으면 해시를 건너뛴다
+      const sha = await fileSha256(this.abs(rel));
+      if (cur && cur.sha256 === sha && !cur.pending) continue;
+      this.index[rel] = (await this.upload(rel, sha)) ? { sha256: sha, size: st.size } : { sha256: sha, size: st.size, pending: true };
+    }
+    const changed = JSON.stringify(this.index) !== before;
+    if (changed) {
+      await this.writeIndex();
+      await this.vault.git.setExcludes("blobs", Object.keys(this.index));
+    }
+    if (!paths) return undefined;
+    for (const k of Object.keys(this.index)) managed.add(k);
+    const out = paths.filter((p) => !managed.has(p));
+    if (changed) out.push(BLOB_INDEX);
+    return out;
+  }
+
+  /** 아직 못 올린 첨부를 다시 올린다. 목록이 바뀌면 커밋한다. */
+  async retryPending(): Promise<number> {
+    const pending = Object.entries(this.index).filter(([, e]) => e.pending);
+    if (pending.length === 0) return 0;
+    await this.vault.absorbOutsideChanges();
+    return Object.values(this.index).filter((e) => e.pending).length;
+  }
+
+  start(everyMs = 5 * 60_000) {
+    this.stop();
+    this.timer = setInterval(() => void this.retryPending().catch(() => undefined), everyMs);
+    this.timer.unref();
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /**
+   * 백업 복원 뒤: 복원된 목록대로 첨부를 S3에서 받아 맞추고, 복원 전에만 있던 첨부는 지운다.
+   * 받지 못한 것은 경로 목록으로 돌려준다.
+   */
+  async afterRestore(): Promise<{ downloaded: string[]; removed: string[]; missing: string[] }> {
+    const previous = this.index;
+    this.index = await this.readIndex();
+    const downloaded: string[] = [];
+    const removed: string[] = [];
+    const missing: string[] = [];
+    for (const [rel, e] of Object.entries(this.index)) {
+      const st = await stat(this.abs(rel)).catch(() => null);
+      if (st?.isFile() && st.size === e.size && (await fileSha256(this.abs(rel))) === e.sha256) continue;
+      const data = e.pending ? null : await this.s3.get(this.key(e.sha256)).catch(() => null);
+      if (!data) {
+        missing.push(rel);
+        continue;
+      }
+      await mkdir(path.dirname(this.abs(rel)), { recursive: true });
+      await writeFile(this.abs(rel), data);
+      downloaded.push(rel);
+    }
+    for (const rel of Object.keys(previous)) {
+      if (this.index[rel]) continue;
+      await rm(this.abs(rel), { force: true });
+      removed.push(rel);
+    }
+    await this.vault.git.setExcludes("blobs", Object.keys(this.index));
+    return { downloaded, removed, missing };
+  }
+
+  status() {
+    const entries = Object.values(this.index);
+    return {
+      count: entries.length,
+      bytes: entries.reduce((n, e) => n + e.size, 0),
+      pending: entries.filter((e) => e.pending).length,
+      minBytes: this.minBytes,
+      lastError: this.lastError,
+    };
+  }
+}
