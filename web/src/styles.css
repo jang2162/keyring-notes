@@ -411,3 +411,72 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .ask-message { white-space: pre-line; }
 .ask-dialog input { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ── 여러 마크다운 형식(8단계): 콜아웃·하이라이트·각주·수식·Mermaid·문서 임베드·블록 위치 ── */
+:root {
+  /* 콜아웃 색 묶음: 제목 글자색(밝은 면에서 4.5:1 이상)과 옅은 바탕 */
+  --co-blue: #2f63c4; --co-blue-bg: #eef4ff;
+  --co-teal: #0d7377; --co-teal-bg: #e7f5f5;
+  --co-green: #1d7438; --co-green-bg: #eaf6ed;
+  --co-yellow: #845c00; --co-yellow-bg: #fff6d9;
+  --co-orange: #9c4700; --co-orange-bg: #fff0e1;
+  --co-red: #b42318; --co-red-bg: #fdeceb;
+  --co-purple: #6a3ec0; --co-purple-bg: #f3eefe;
+  --co-gray: #565d69; --co-gray-bg: #f3f4f6;
+  --mark-bg: #fff0a0;
+  --mark-fg: #1f2328;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --co-blue: #8eb6ff; --co-blue-bg: #1a2436;
+    --co-teal: #74d2d5; --co-teal-bg: #142728;
+    --co-green: #84d39f; --co-green-bg: #16281c;
+    --co-yellow: #efcb6c; --co-yellow-bg: #2b2512;
+    --co-orange: #f4b07c; --co-orange-bg: #31220f;
+    --co-red: #ff9c93; --co-red-bg: #331919;
+    --co-purple: #c6aaff; --co-purple-bg: #241c36;
+    --co-gray: #b5bbc5; --co-gray-bg: #22252a;
+    --mark-bg: #5c4d00;
+    --mark-fg: #fff4c4;
+  }
+}
+.markdown-body mark { background: var(--mark-bg); color: var(--mark-fg); padding: 0 2px; border-radius: 3px; }
+
+.markdown-body .callout { --co: var(--co-blue); --co-bg: var(--co-blue-bg); margin: 12px 0; border-left: 4px solid var(--co); background: var(--co-bg); border-radius: 6px; padding: 8px 12px; }
+.markdown-body .callout-title { color: var(--co); font-weight: 600; }
+.markdown-body summary.callout-title { cursor: pointer; }
+.markdown-body .callout-body > :first-child { margin-top: 6px; }
+.markdown-body .callout-body > :last-child { margin-bottom: 0; }
+.markdown-body .callout-teal { --co: var(--co-teal); --co-bg: var(--co-teal-bg); }
+.markdown-body .callout-green { --co: var(--co-green); --co-bg: var(--co-green-bg); }
+.markdown-body .callout-yellow { --co: var(--co-yellow); --co-bg: var(--co-yellow-bg); }
+.markdown-body .callout-orange { --co: var(--co-orange); --co-bg: var(--co-orange-bg); }
+.markdown-body .callout-red { --co: var(--co-red); --co-bg: var(--co-red-bg); }
+.markdown-body .callout-purple { --co: var(--co-purple); --co-bg: var(--co-purple-bg); }
+.markdown-body .callout-gray { --co: var(--co-gray); --co-bg: var(--co-gray-bg); }
+
+.markdown-body .footnotes { font-size: 13px; color: var(--muted); }
+.markdown-body .footnotes-sep { border: 0; border-top: 1px solid var(--border); margin-top: 24px; }
+.markdown-body .footnote-ref a, .markdown-body .footnote-backref { text-decoration: none; }
+
+/* 수식: 넓은 수식은 가로로 넘치지 않게 그 안에서만 스크롤 */
+.markdown-body .math-display { display: block; overflow-x: auto; overflow-y: hidden; max-width: 100%; margin: 10px 0; }
+.markdown-body .math:not([data-done]) { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; color: var(--muted); }
+.markdown-body .katex { font-size: 1.05em; }
+
+.markdown-body .mermaid-slot { margin: 12px 0; }
+.markdown-body .mermaid-svg { overflow-x: auto; }
+.markdown-body .mermaid-svg svg { max-width: 100%; height: auto; }
+.markdown-body .mermaid-error { color: var(--co-red); background: var(--co-red-bg); white-space: pre-wrap; }
+
+/* 문서 임베드 */
+.markdown-body .note-embed { border-left: 3px solid var(--accent); background: var(--bg-soft); border-radius: 0 6px 6px 0; padding: 6px 12px; margin: 12px 0; }
+.markdown-body .note-embed-head { font-size: 12px; }
+.markdown-body .note-embed-body { padding: 0; font-size: 14px; }
+.markdown-body .note-embed-body > :last-child { margin-bottom: 4px; }
+.markdown-body .note-embed-stop { background: transparent; border-left-style: dashed; }
+.markdown-body .widget-embedded-note { font-size: 12px; }
+
+/* [[문서#^블록]]·[[문서#제목]]으로 왔을 때 잠깐 표시 */
+.markdown-body .anchor-flash { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; transition: outline-color 1.2s; }
+@media (prefers-reduced-motion: reduce) { .markdown-body .anchor-flash { transition: none; } }

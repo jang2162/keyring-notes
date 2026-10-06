@@ -101,3 +101,22 @@ describe("링크 자동 갱신", () => {
     expect(rewriteLinks("[[계획]] [[계획]] [x](업무/계획.md)", "노트.md", "노트.md", c)?.count).toBe(3);
   });
 });
+
+import { analyze, stripComments, wikilinkTargets } from "../src/index.js";
+
+describe("주석 %%…%%", () => {
+  it("한 줄·여러 줄 주석을 지우고 줄 수는 그대로, 코드 안은 그대로", () => {
+    const doc = "앞 %%숨김 [[a]]%% 뒤\n%%\n여러 줄 #태그\n- [ ] 숨은 할 일\n%%\n`%%코드%%`\n```\n%%펜스%%\n```\n보임 [[b]] #보임";
+    const out = stripComments(doc);
+    expect(out.split("\n").length).toBe(doc.split("\n").length);
+    expect(out).toContain("앞  뒤");
+    expect(out).toContain("`%%코드%%`");
+    expect(out).toContain("%%펜스%%");
+    expect(out).not.toContain("숨김");
+    expect(wikilinkTargets(doc)).toEqual(["b"]);
+    const a = analyze("x.md", doc);
+    expect(a.tags).toEqual(["보임"]);
+    expect(a.tasks).toEqual([]);
+    expect(a.links).toEqual(["b"]);
+  });
+});

@@ -10,6 +10,7 @@ import { invalidateWidgets, Widget } from "./Widget";
 import { Login } from "./Login";
 import { authMemo, isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
+import { enhance, invalidateEmbeds } from "./enhance";
 import { localContext } from "./local/boot";
 import { SyncPanel, useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
@@ -263,6 +264,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
   const [ingestOpen, setIngestOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [pendingAnchor, setPendingAnchor] = useState<{ path: string; heading?: string; block?: string } | null>(null);
   /** 브라우저 로컬 볼트의 첨부(blob URL)가 준비되면 올려 미리보기를 다시 그린다 */
   const [assetVersion, setAssetVersion] = useState(0);
   const local = appMode.local;
@@ -296,6 +298,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
   const vaultChanged = useCallback(() => {
     invalidateWidgets();
+    invalidateEmbeds();
     setVaultVersion((v) => v + 1);
     // 위키 index·log를 열어 두었다면 서버가 새로 만든 내용으로 바꾼다.
     const cur = docRef.current;
@@ -675,13 +678,30 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       editorHandle.current.toggleTask(Number(box.dataset.taskLine), box.checked);
       return;
     }
+    // 각주 등 문서 안 앵커(#fn1): 주소의 #/문서 경로를 건드리지 않고 그 위치로 스크롤
+    const local = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]:not([data-wikilink])');
+    if (local) {
+      const id = decodeURIComponent(local.getAttribute("href")!.slice(1));
+      if (!id.startsWith("/")) {
+        e.preventDefault();
+        const el = id ? previewRef.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`) : null;
+        el?.scrollIntoView({ block: "center" });
+        return;
+      }
+    }
     const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-wikilink]");
     if (!a) return;
     e.preventDefault();
     const target = a.dataset.wikilink!;
+    const anchor = a.dataset.block ? { block: a.dataset.block } : a.dataset.heading ? { heading: a.dataset.heading } : null;
     if (a.dataset.resolved === "1") {
-      if (target.toLowerCase().endsWith(".md")) open(target);
-      else window.open(api.rawUrl(target), "_blank", "noreferrer");
+      if (target.toLowerCase().endsWith(".md")) {
+        if (anchor && target === doc?.path) scrollToAnchor(anchor);
+        else {
+          if (anchor) setPendingAnchor({ path: target, ...anchor });
+          void open(target);
+        }
+      } else window.open(api.rawUrl(target), "_blank", "noreferrer");
     } else {
       void confirmDialog(`"${target}" 문서가 없습니다. 새로 만들까요?`, "만들기").then((yes) => {
         if (!yes) return;
@@ -695,12 +715,42 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  /** [[문서#제목]]·[[문서#^블록]]: 그 위치로 스크롤하고 잠깐 표시한다 */
+  const scrollToAnchor = (anchor: { heading?: string; block?: string }) => {
+    const root = previewRef.current;
+    if (!root) return;
+    const el = anchor.block
+      ? root.querySelector<HTMLElement>(`[data-block="${CSS.escape(anchor.block)}"]`)
+      : root.querySelector<HTMLElement>(`[data-heading="${CSS.escape(anchor.heading ?? "")}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    el.classList.add("anchor-flash");
+    setTimeout(() => el.classList.remove("anchor-flash"), 1600);
+  };
+
   const previewSource = revision ? (revision.content ?? "") : (doc?.draft ?? "");
   const rendered = useMemo(
     () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path }) : { html: "", widgets: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [previewSource, resolver, doc?.path, assetVersion],
   );
+
+  // 수식·다이어그램·문서 임베드는 그린 뒤에 채운다(enhance.ts)
+  useEffect(() => {
+    if (!previewRef.current || !doc) return;
+    return enhance(previewRef.current, { resolver, docPath: doc.path });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rendered.html]);
+
+  // 다른 문서의 제목·블록 링크로 왔으면 그 위치로
+  useEffect(() => {
+    if (!pendingAnchor || doc?.path !== pendingAnchor.path) return;
+    const anchor = pendingAnchor;
+    setPendingAnchor(null);
+    // 그린 직후(임베드·다이어그램이 자리를 잡을 틈을 조금 두고)
+    setTimeout(() => scrollToAnchor(anchor), 80);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rendered.html, doc?.path, pendingAnchor]);
 
   // innerHTML이 바뀐 뒤 위젯 자리를 찾아 React 포털로 위젯을 그린다.
   useLayoutEffect(() => {

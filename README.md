@@ -175,6 +175,17 @@ npm run ios:init -w app && npm run ios:build -w app           # macOS + Xcode �
 
 - **위키링크**: `[[문서]]`, `[[폴더/문서]]`, `[[문서#제목|별칭]]`, `![[이미지.png|300]]`. `[[`를 치면 문서·첨부 이름이 자동완성된다(같은 이름이 여럿이면 경로로 구분).
 - **할 일**: `- [ ] 할 일`. 미리보기의 체크박스를 누르면 원문이 바뀐다(저장해야 반영).
+- **이동·이름 바꾸기**: 이 문서를 가리키던 링크를 같은 커밋에서 함께 고치고 "링크 N곳을 고쳤습니다"로 알린다. 고치는 곳은 본문 위키링크(`[[…]]`·`![[…]]`), 프런트매터 `sources`/`source`의 `[[…]]`와 경로 값, 상대 경로 마크다운 링크·이미지(`[x](../a.md)`, 이동한 문서 자신의 상대 링크도 새 위치 기준으로)다. `#제목`·`#^블록`·`|별칭`은 그대로 두고, 원래 경로를 썼으면 전체 경로, 이름만 썼으면 해석이 맞는 가장 짧은 이름으로 쓴다. 이동한 문서가 더 얕은 같은 이름이 되어 다른 링크를 가로채는 경우도 원래 대상으로 고친다. 코드 블록·인라인 코드 안은 건드리지 않는다. 에이전트가 옮기면 그 에이전트가 볼 수 있는 경로로만 해석하고 쓸 권한이 있는 문서만 고치며, 고친 링크는 늘 전체 경로로 쓴다(검토 대상 경로에 닿으면 제안 미리보기에 함께 들어간다).
+- **여러 형식**(Obsidian과 같은 문법, 미리보기 전용):
+  - 콜아웃 `> [!note] 제목` — 종류별 색(note·tip·warning·danger·question·example·quote 등), `[!tip]-`는 접힘·`[!tip]+`는 펼침
+  - `==하이라이트==`, 각주 `본문[^1]` … `[^1]: 내용`
+  - 수식 `$E=mc^2$`, `$$ … $$`(KaTeX). `$5와 $6`처럼 `$` 바로 뒤가 공백이면 수식이 아니다
+  - 다이어그램 ` ```mermaid ` 코드 블록
+  - 문서 임베드 `![[문서]]`, `![[문서#제목]]`, `![[문서#^블록]]` — 내용을 끼워 넣는다(문단에 임베드만 있을 때). 깊이 3단계까지, 자기 자신을 다시 넣으면 링크로만. 없거나 볼 수 없는 문서는 끊어진 링크
+  - 블록 ID: 문단·목록 항목 끝에 ` ^id`(표 등은 다음 줄에 `^id`만). 표시는 숨기고 `[[문서#^id]]`로 그 위치에 간다
+  - 주석 `%%…%%`(여러 줄 가능) — 미리보기에서 숨기고, 주석 안의 링크·태그·할 일은 색인에서도 세지 않는다
+  - 상대 경로 마크다운 링크 `[x](폴더/문서.md#제목)`도 문서로 열린다
+  - KaTeX·Mermaid는 쓸 때만 불러오고(같은 출처의 번들, CDN 아님), 설치된 앱(PWA)은 처음 연 뒤 뒤에서 받아 두어 오프라인에서도 보인다
 - **검색**: 사이드바 검색창. 공백으로 나눈 단어를 모두 포함한 문서를 찾고, `#태그` 단어는 태그 조건이 된다(하위 태그 포함). 본문·제목·경로·프런트매터를 모두 찾는다.
 - **출처·인용·백링크**: 미리보기 아래에 프런트매터 `sources`가 가리키는 출처(없거나 볼 수 없으면 빨간 줄), 이 문서를 출처로 인용한 페이지, 본문에서 링크한 문서(백링크).
 - **의미 검색**: 임베딩을 설정하면 검색창 옆 "의미"로 단어가 달라도 뜻이 가까운 문서를 찾는다.
@@ -326,8 +337,8 @@ Streamable HTTP(무상태, JSON 응답) 방식이다.
 | `semantic_search` | 의미 검색(설정했을 때) |
 | `my_proposals` | 내가 올린 변경 제안의 처리 결과 |
 | `write_document` / `append_document` | 쓰기 / 끝에 덧붙이기 |
-| `move_document` / `delete_document` | 이동 / 삭제 |
-| `batch_write` | write·append·delete·move 여러 개를 한 커밋으로. 하나라도 실패하면 전부 취소 |
+| `move_document` / `delete_document` | 이동 / 삭제. 이동은 기본으로 이 문서를 가리키던 링크를 같은 커밋에서 고친다(`update_links: false`로 끔, 결과 `linksUpdated`·`linkCount`) |
+| `batch_write` | write·append·delete·move 여러 개를 한 커밋으로. 하나라도 실패하면 전부 취소. move가 있으면 링크도 고친다(`update_links`) |
 
 쓰기에는 마지막으로 읽은 `hash`를 `base_hash`로 넘긴다(새 문서는 `null`). 서버 버전과 다르면 `conflict`와 `current_hash`를 돌려주고 아무것도 쓰지 않는다. 검토 대상 폴더에 쓰면 결과에 `pending`이 붙고(볼트는 그대로), 돌려준 `content`·`hash`는 승인 뒤의 모습이다.
 
@@ -391,8 +402,8 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 | PUT | `/api/file` | `{path, content, baseHash}` | 쓰기. 새 문서면 `baseHash: null` |
 | POST | `/api/append` | `{path, content, baseHash?}` | 끝에 덧붙이기 |
 | DELETE | `/api/file` | `{path, baseHash}` | 삭제 |
-| POST | `/api/move` | `{from, to, baseHash}` | 이동·이름 변경 |
-| POST | `/api/batch` | `{message?, operations: [{op, ...}]}` | 일괄 쓰기 |
+| POST | `/api/move` | `{from, to, baseHash, updateLinks?}` | 이동·이름 변경. 링크 자동 갱신(기본 켬) → `linksUpdated`(고친 문서)·`linkCount` |
+| POST | `/api/batch` | `{message?, operations: [{op, ...}], updateLinks?}` | 일괄 쓰기. 같은 일괄 쓰기의 연쇄 이동(A→B→C)은 합쳐서 링크를 고친다. `files`에는 실제로 바뀐 파일만 |
 | GET | `/api/raw?path=` | | 첨부 파일(이미지 등) 원본 |
 | GET | `/api/history?path=` | | 문서의 커밋 목록(작성자 포함) |
 | GET | `/api/revision?path=&rev=` | | 특정 리비전의 내용 |
