@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { AccessPolicy, atLeast } from "./access.js";
 import type { ConfigStore } from "./config.js";
 import { PathError } from "./paths.js";
 import { hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
@@ -28,6 +29,8 @@ export interface Proposal {
   /** 저장 형식의 연산(put의 data는 파일로 따로) */
   ops: StoredOp[];
   preview: FilePreview[];
+  /** 이동 때 링크 자동 갱신: 켰는지와 미리보기에서 고친 문서. 승인 때는 이 문서로만 제한해 다시 계산한다 */
+  links?: { enabled: boolean; paths: string[] };
 }
 
 type StoredOp = Exclude<Op, { op: "put" }> | { op: "put"; path: string; dataFile: string };
@@ -65,12 +68,23 @@ export class ReviewQueue {
     this.listeners.push(fn);
   }
 
+  /** 검토 대상 경로가 하나라도 설정되어 있는지 */
+  enabled(): boolean {
+    return this.config.get().reviewPaths.length > 0;
+  }
+
   needsReview(paths: string[]): boolean {
     const reviewPaths = this.config.get().reviewPaths;
     return reviewPaths.length > 0 && paths.some((p) => underReview(p, reviewPaths));
   }
 
-  async create(agent: { name: string; email: string }, ops: Op[], message: string | undefined, preview: FilePreview[]): Promise<Proposal> {
+  async create(
+    agent: { name: string; email: string },
+    ops: Op[],
+    message: string | undefined,
+    preview: FilePreview[],
+    links?: { enabled: boolean; paths: string[] },
+  ): Promise<Proposal> {
     const id = randomBytes(8).toString("hex");
     const pdir = path.join(this.dir, id);
     await mkdir(pdir, { recursive: true });
@@ -92,6 +106,7 @@ export class ReviewQueue {
       status: "pending",
       ops: stored,
       preview,
+      links,
     };
     await this.save(proposal);
     for (const fn of this.listeners) {
@@ -179,7 +194,13 @@ export class ReviewQueue {
       if (op.op === "put") ops.push({ op: "put", path: op.path, data: new Uint8Array(await readFile(path.join(this.dir, id, op.dataFile))) });
       else ops.push(op);
     }
-    const res = await this.vault.batch(ops, { name: p.agent, email: p.agentEmail }, { message: `${p.message}\n\n승인: ${approver} (제안 ${p.id})` });
+    // 링크 갱신은 승인 시점의 내용으로 다시 계산하되, 제안 때와 같은 범위(그 에이전트가 볼 수 있는 경로, 미리보기에 보인 문서)로만
+    const agentRules = this.config.get().agents.find((a) => a.name === p.agent)?.rules;
+    const policy = agentRules ? new AccessPolicy(agentRules) : null;
+    const links = p.links?.enabled
+      ? { enabled: true, fullPaths: true, only: new Set(p.links.paths), canSee: (rel: string) => (policy ? atLeast(policy.level(rel), "read") : false) }
+      : { enabled: false };
+    const res = await this.vault.batch(ops, { name: p.agent, email: p.agentEmail }, { message: `${p.message}\n\n승인: ${approver} (제안 ${p.id})`, links });
     p.status = "approved";
     p.decidedAt = new Date().toISOString();
     p.decidedBy = approver;

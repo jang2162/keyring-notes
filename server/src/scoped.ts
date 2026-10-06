@@ -25,7 +25,19 @@ import type { ReviewQueue } from "./review.js";
 import type { SemanticIndex } from "./embeddings.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
 import { isSchemaPath, schemaTemplate, type Wiki } from "./wiki.js";
-import { ConflictError, ForbiddenError, hashContent, NotFoundError, type Action, type BatchResult, type Doc, type Op, type TreeNode, type Vault } from "./vault.js";
+import {
+  ConflictError,
+  ForbiddenError,
+  hashContent,
+  NotFoundError,
+  type Action,
+  type BatchResult,
+  type Doc,
+  type LinkUpdateOptions,
+  type Op,
+  type TreeNode,
+  type Vault,
+} from "./vault.js";
 
 export type { LintIssue, LintKind, LintReport } from "@keyring-notes/core";
 
@@ -398,7 +410,17 @@ export class ScopedVault {
   }
 
   /** 모든 변경의 입구. 경로마다 최소 권한을 먼저 확인한 뒤, 연산 종류별 권한은 계획 단계에서 검사한다. */
-  async batch(ops: Op[], message?: string): Promise<BatchResult & { pending?: PendingInfo }> {
+  /**
+   * 이동 때 링크 자동 갱신 설정: 에이전트는 자기가 볼 수 있는 경로만으로 해석하고 늘 전체 경로로 쓴다
+   * (짧은 이름이 되는지 여부로 숨김 문서가 드러나지 않게). 고칠 문서는 guard(modify)를 지나야 한다.
+   */
+  private linkOptions(updateLinks: boolean): LinkUpdateOptions {
+    if (!updateLinks) return { enabled: false };
+    if (this.principal.kind === "owner") return { enabled: true };
+    return { enabled: true, canSee: (p) => this.canRead(p), fullPaths: true };
+  }
+
+  async batch(ops: Op[], message?: string, opts: { updateLinks?: boolean } = {}): Promise<BatchResult & { pending?: PendingInfo }> {
     if (!Array.isArray(ops)) throw new PathError("operations가 필요합니다");
     for (const op of ops) {
       if (!op || typeof op !== "object") throw new PathError("연산 형식이 잘못되었습니다");
@@ -420,22 +442,31 @@ export class ScopedVault {
         throw new ForbiddenError(`권한이 없습니다(${need} 필요): ${rel}${hint}`);
       }
     };
+    const links = this.linkOptions(opts.updateLinks !== false);
     // 검토 대상 경로에 에이전트가 쓰면: 권한·충돌만 지금 검사하고, 적용은 사람이 승인할 때.
     if (this.principal.kind === "agent" && this.review) {
       const touched = ops.flatMap((op) => (op.op === "move" ? [op.from, op.to] : [op.path])).map((p) => normalizeVaultPath(p));
-      if (this.review.needsReview(touched)) {
-        const dry = await this.vault.batch(ops, this.author, { message, guard, dryRun: true });
-        if (!dry.preview || dry.preview.length === 0) return { rev: null, files: dry.files };
-        const proposal = await this.review.create(this.author, ops, message, dry.preview);
-        return {
-          rev: null,
-          files: dry.files,
-          preview: dry.preview,
-          pending: { proposal: proposal.id, message: "검토 대기열에 올렸습니다. 사람이 승인하면 반영됩니다(그 전까지 볼트는 그대로)." },
-        };
+      const hasMove = ops.some((op) => op.op === "move");
+      if (this.review.needsReview(touched) || (hasMove && this.review.enabled())) {
+        // 이동이면 링크 갱신으로 바뀌는 문서까지 보고 검토 대상인지 정한다(그래서 이동은 늘 먼저 dry run)
+        const dry = await this.vault.batch(ops, this.author, { message, guard, dryRun: true, links });
+        if (this.review.needsReview([...touched, ...dry.files.map((f) => f.path)])) {
+          if (!dry.preview || dry.preview.length === 0) return { rev: null, files: dry.files, linksUpdated: [], linkCount: 0 };
+          const proposal = await this.review.create(this.author, ops, message, dry.preview, { enabled: links.enabled !== false, paths: dry.linksUpdated });
+          return {
+            rev: null,
+            files: dry.files,
+            linksUpdated: dry.linksUpdated,
+            linkCount: dry.linkCount,
+            preview: dry.preview,
+            pending: { proposal: proposal.id, message: "검토 대기열에 올렸습니다. 사람이 승인하면 반영됩니다(그 전까지 볼트는 그대로)." },
+          };
+        }
+        // 검토 대상이 아니면 바로 적용하되, 링크 갱신은 방금 본 문서로만(그 사이 검토 대상 문서가 끼어들지 않게)
+        return this.vault.batch(ops, this.author, { message, guard, links: { ...links, only: new Set(dry.linksUpdated) } });
       }
     }
-    return this.vault.batch(ops, this.author, { message, guard });
+    return this.vault.batch(ops, this.author, { message, guard, links });
   }
 
   /** 에이전트가 자기 제안의 처리 결과를 확인할 때. */
@@ -448,16 +479,16 @@ export class ScopedVault {
    * 문서 하나를 바꾼다. 검토 대기열에 올라가면(pending) 볼트는 그대로이고,
    * content·hash는 승인 뒤의 내용·해시를 돌려준다.
    */
-  private async single(op: Op): Promise<Doc & { rev: string | null; pending?: PendingInfo }> {
+  private async single(op: Op, opts: { updateLinks?: boolean } = {}): Promise<Doc & { rev: string | null; pending?: PendingInfo; linksUpdated: string[]; linkCount: number }> {
     if (op.op === "put") throw new PathError("put은 batch로만 쓸 수 있습니다");
-    const res = await this.batch([op]);
+    const res = await this.batch([op], undefined, opts);
     const target = normalizeVaultPath(op.op === "move" ? op.to : op.path);
     if (res.pending) {
       const p = res.preview?.find((f) => f.path === target);
-      return { path: target, content: p?.after ?? "", hash: p?.afterHash ?? "", rev: null, pending: res.pending };
+      return { path: target, content: p?.after ?? "", hash: p?.afterHash ?? "", rev: null, pending: res.pending, linksUpdated: res.linksUpdated, linkCount: res.linkCount };
     }
     const doc = await this.vault.read(target);
-    return { ...doc, rev: res.rev };
+    return { ...doc, rev: res.rev, linksUpdated: res.linksUpdated, linkCount: res.linkCount };
   }
 
   write(path: string, content: string, baseHash: string | null) {
@@ -468,8 +499,9 @@ export class ScopedVault {
     return this.single({ op: "append", path, content, baseHash });
   }
 
-  move(from: string, to: string, baseHash: string) {
-    return this.single({ op: "move", from, to, baseHash });
+  /** 이동·이름 바꾸기. updateLinks(기본 켬)면 이 문서를 가리키던 링크를 같은 커밋에서 고친다(linksUpdated). */
+  move(from: string, to: string, baseHash: string, opts: { updateLinks?: boolean } = {}) {
+    return this.single({ op: "move", from, to, baseHash }, opts);
   }
 
   async delete(path: string, baseHash: string): Promise<{ rev: string | null; pending?: PendingInfo }> {

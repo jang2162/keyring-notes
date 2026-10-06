@@ -1,6 +1,7 @@
 export * from "./analysis.js";
 export * from "./errors.js";
 export * from "./hash.js";
+export * from "./links.js";
 export * from "./local.js";
 export * from "./markdown.js";
 export * from "./memory.js";

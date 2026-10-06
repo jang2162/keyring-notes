@@ -370,7 +370,9 @@ const remoteApi = {
   write: (path: string, content: string, baseHash: string | null) =>
     request<Doc>("PUT", "/api/file", { path, content, baseHash }),
   remove: (path: string, baseHash: string) => request<unknown>("DELETE", "/api/file", { path, baseHash }),
-  move: (from: string, to: string, baseHash: string) => request<Doc>("POST", "/api/move", { from, to, baseHash }),
+  /** 이동·이름 바꾸기. 기본으로 이 문서를 가리키던 링크도 같이 고친다(linksUpdated: 고친 문서, linkCount: 고친 링크 수) */
+  move: (from: string, to: string, baseHash: string, opts: { updateLinks?: boolean } = {}) =>
+    request<Doc & { linksUpdated?: string[]; linkCount?: number }>("POST", "/api/move", { from, to, baseHash, updateLinks: opts.updateLinks }),
   history: (path: string) => request<{ commits: CommitInfo[] }>("GET", `/api/history?path=${q(path)}`).then((r) => r.commits),
   revision: (path: string, rev: string) =>
     request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),

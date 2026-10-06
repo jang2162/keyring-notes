@@ -1,4 +1,5 @@
 import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysis.js";
+import { rewriteLinks, type LinkRewriteContext } from "./links.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "./errors.js";
 import { fromUtf8, sha256Hex, utf8 } from "./hash.js";
 import { analyze, parseFrontmatter, resolveLink, setTaskState, sourceTargets } from "./markdown.js";
@@ -577,16 +578,42 @@ export class LocalVault {
     });
   }
 
-  move(fromInput: string, toInput: string, baseHash: string): Promise<LocalDoc> {
+  /**
+   * 이동·이름 바꾸기. updateLinks(기본 켬)면 이 문서를 가리키던 링크(다른 문서와 이 문서 자신의 상대 링크)를
+   * 같은 기록 안에서 함께 고친다. linksUpdated: 링크를 고친 문서(이동한 문서 포함), linkCount: 고친 링크 수.
+   */
+  move(fromInput: string, toInput: string, baseHash: string, opts: { updateLinks?: boolean } = {}): Promise<LocalDoc & { linksUpdated: string[]; linkCount: number }> {
     return this.exclusive(async () => {
       const from = this.requireWritable(fromInput);
       const to = this.requireWritable(toInput);
       if (from === to) throw new PathError("같은 경로입니다");
       this.check(from, baseHash);
       if (this.files.has(to)) throw new ConflictError(this.files.get(to)!.hash, `이미 있는 문서입니다: ${to}`);
-      const content = this.files.get(from)!.content!;
-      await this.apply([{ path: to, content, from }], this.author, `이동: ${from} → ${to}`, "local");
-      return { path: to, content, hash: this.files.get(to)!.hash! };
+      let content = this.files.get(from)!.content!;
+      const changes: { path: string; content: string | null; from?: string }[] = [];
+      const linksUpdated: string[] = [];
+      let linkCount = 0;
+      if (opts.updateLinks !== false) {
+        const generated = [...this.topicSet].flatMap(generatedPaths);
+        const before = [...this.files.keys(), ...generated];
+        const ctx: LinkRewriteContext = { moves: new Map([[from, to]]), before, after: [...before.filter((p) => p !== from), to] };
+        const own = rewriteLinks(content, from, to, ctx);
+        if (own) {
+          content = own.content;
+          linksUpdated.push(to);
+          linkCount += own.count;
+        }
+        for (const e of this.mdEntries()) {
+          if (e.path === from) continue;
+          const r = rewriteLinks(e.content!, e.path, e.path, ctx);
+          if (!r) continue;
+          changes.push({ path: e.path, content: r.content });
+          linksUpdated.push(e.path);
+          linkCount += r.count;
+        }
+      }
+      await this.apply([{ path: to, content, from }, ...changes], this.author, `이동: ${from} → ${to}`, "local");
+      return { path: to, content, hash: this.files.get(to)!.hash!, linksUpdated, linkCount };
     });
   }
 

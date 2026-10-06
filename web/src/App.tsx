@@ -612,6 +612,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       vaultChanged();
       await refreshTree();
       await load(d.path);
+      // 이 문서를 가리키던 링크(다른 문서, 이 문서 자신의 상대 링크)를 같이 고쳤다
+      const others = (d.linksUpdated ?? []).filter((p) => p !== d.path).length;
+      if (d.linkCount) setError(`이동했습니다. 링크 ${d.linkCount}곳을 고쳤습니다(다른 문서 ${others}개${d.linksUpdated?.includes(d.path) ? ", 이 문서의 상대 링크 포함" : ""}).`);
     } catch (e) {
       report(e);
     }

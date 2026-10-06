@@ -62,14 +62,35 @@ describe("로컬 볼트", () => {
     expect(await v.revision("a.md", v.history("a.md")[0].rev)).toBeNull();
   });
 
-  it("이동하면 링크 대상이 바뀌고 이력이 이어진다", async () => {
+  it("이동하면 이력이 이어지고, 링크 갱신을 끄면 링크가 깨진다", async () => {
     const { v } = await vault({ "a.md": "내용", "b.md": "[[a]]" });
     const a = await v.read("a.md");
-    await v.move("a.md", "폴더/a2.md", a.hash);
+    const r = await v.move("a.md", "폴더/a2.md", a.hash, { updateLinks: false });
+    expect(r.linksUpdated).toEqual([]);
     await expect(v.read("a.md")).rejects.toBeInstanceOf(NotFoundError);
     expect((await v.read("폴더/a2.md")).content).toBe("내용");
     expect(v.history("폴더/a2.md")[0].message).toContain("이동");
     expect(v.lint().issues.map((i) => i.kind)).toContain("broken_link");
+  });
+
+  it("이동하면 링크를 같은 기록 안에서 함께 고친다", async () => {
+    const { v } = await vault({
+      "업무/계획.md": "# 계획\n[회의](회의록.md)",
+      "업무/회의록.md": "# 회의록",
+      "노트.md": "---\nsources: ['[[계획]]']\n---\n[[계획#일정|일정]] 그리고 [본문](업무/계획.md)",
+      "무관.md": "[[회의록]]",
+    });
+    const a = await v.read("업무/계획.md");
+    const r = await v.move("업무/계획.md", "보관/2026 계획.md", a.hash);
+    expect(r.linksUpdated.sort()).toEqual(["노트.md", "보관/2026 계획.md"]);
+    expect(r.linkCount).toBe(4);
+    expect(r.content).toBe("# 계획\n[회의](../업무/회의록.md)");
+    expect((await v.read("노트.md")).content).toBe("---\nsources: ['[[2026 계획]]']\n---\n[[2026 계획#일정|일정]] 그리고 [본문](보관/2026%20계획.md)");
+    expect(v.lint().issues.filter((i) => i.kind === "broken_link")).toEqual([]);
+    // 한 기록으로 남는다
+    const entry = v.entries().at(-1)!;
+    expect(entry.message).toBe("이동: 업무/계획.md → 보관/2026 계획.md");
+    expect(entry.files.map((f) => f.path).sort()).toEqual(["노트.md", "보관/2026 계획.md"]);
   });
 
   it("앱 밖에서 바뀐 파일을 다시 읽고 기록한다", async () => {

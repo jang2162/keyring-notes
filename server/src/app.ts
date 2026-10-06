@@ -81,6 +81,13 @@ function optionalHash(value: unknown): string | null {
   return value;
 }
 
+/** 켜고 끄는 옵션(없으면 기본값) */
+function optionalBool(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "boolean") throw new PathError("true/false 값이어야 합니다");
+  return value;
+}
+
 function requireHash(value: unknown): string {
   const h = optionalHash(value);
   if (h === null) throw new PathError("baseHash가 필요합니다");
@@ -457,7 +464,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.post("/move", async (c) => {
     const body = await c.req.json();
-    return c.json(await c.var.scoped.move(requirePath(body.from), requirePath(body.to), requireHash(body.baseHash)));
+    return c.json(
+      await c.var.scoped.move(requirePath(body.from), requirePath(body.to), requireHash(body.baseHash), { updateLinks: optionalBool(body.updateLinks) }),
+    );
   });
 
   api.post("/batch", async (c) => {
@@ -485,7 +494,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       }
     });
     const message = typeof body.message === "string" ? body.message : undefined;
-    return c.json(await c.var.scoped.batch(ops, message));
+    return c.json(await c.var.scoped.batch(ops, message, { updateLinks: optionalBool(body.updateLinks) }));
   });
 
   api.get("/raw", async (c) => {
