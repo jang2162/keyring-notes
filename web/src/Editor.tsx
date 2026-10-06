@@ -4,9 +4,10 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
+import { livePreview } from "./livePreview";
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -20,6 +21,12 @@ export interface LinkCandidate {
 export interface EditorHandle {
   /** 줄(1부터)의 할 일 체크 상태를 바꾼다. 에디터 실행 취소 기록에 남는다. */
   toggleTask(line: number, done: boolean): void;
+  /** 그 줄(1부터)로 커서를 옮기고 보이게 한다 */
+  gotoLine(line: number): void;
+  /** 커서 자리에 글을 넣는다(템플릿 넣기) */
+  insertText(text: string): void;
+  /** 내용을 바꾼다(속성 입력 화면). 달라진 부분만 바꿔 커서·실행 취소 기록을 지킨다 */
+  setContent(next: string): void;
 }
 
 interface Props {
@@ -32,6 +39,10 @@ interface Props {
   linkCandidates: () => LinkCandidate[];
   handle?: MutableRefObject<EditorHandle | null>;
   readOnly?: boolean;
+  /** 붙여넣거나 끌어 놓은 파일을 첨부로 올리고, 그 자리에 넣을 마크다운(링크)을 돌려준다 */
+  onFiles?: (files: File[]) => Promise<string[]>;
+  /** 편집 중 렌더링: 커서 없는 줄의 마크업 기호를 숨긴다 */
+  live?: boolean;
 }
 
 /** `[[` 또는 `![[` 뒤에서 문서·첨부 이름을 제안하고, 고르면 `]]`까지 닫아 준다. */
@@ -62,10 +73,27 @@ function wikilinkSource(get: () => LinkCandidate[]) {
   };
 }
 
-export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle, readOnly = false }: Props) {
+export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle, readOnly = false, onFiles, live = false }: Props) {
   const host = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onChange, onSave, linkCandidates });
-  callbacks.current = { onChange, onSave, linkCandidates };
+  const viewRef = useRef<EditorView | null>(null);
+  const liveSlot = useRef(new Compartment());
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const callbacks = useRef({ onChange, onSave, linkCandidates, onFiles });
+  callbacks.current = { onChange, onSave, linkCandidates, onFiles };
+
+  /** 올리는 동안 자리 표시를 넣었다가 링크로 바꾼다(실패하면 지운다) */
+  const insertFiles = async (view: EditorView, files: File[], from: number, to: number) => {
+    const placeholder = `<!-- 첨부 올리는 중… -->`;
+    view.dispatch({ changes: { from, to, insert: placeholder } });
+    let text = "";
+    try {
+      text = (await callbacks.current.onFiles!(files)).join("\n");
+    } finally {
+      const at = view.state.doc.toString().indexOf(placeholder);
+      if (at >= 0) view.dispatch({ changes: { from: at, to: at + placeholder.length, insert: text }, selection: { anchor: at + text.length } });
+    }
+  };
 
   useEffect(() => {
     const view = new EditorView({
@@ -82,6 +110,7 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           markdown({ base: markdownLanguage, codeLanguages: languages }),
           autocompletion({ override: [wikilinkSource(() => callbacks.current.linkCandidates())], icons: false }),
           EditorView.lineWrapping,
+          liveSlot.current.of(liveRef.current ? livePreview() : []),
           EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
@@ -91,6 +120,24 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
             ...historyKeymap,
             ...searchKeymap,
           ]),
+          // 파일 붙여넣기·끌어놓기: 첨부로 올린 뒤 그 자리(놓은 곳)에 링크를 넣는다
+          EditorView.domEventHandlers({
+            paste(e, view) {
+              const files = [...(e.clipboardData?.files ?? [])];
+              if (!files.length || !callbacks.current.onFiles || readOnly) return false;
+              e.preventDefault();
+              void insertFiles(view, files, view.state.selection.main.from, view.state.selection.main.to);
+              return true;
+            },
+            drop(e, view) {
+              const files = [...(e.dataTransfer?.files ?? [])];
+              if (!files.length || !callbacks.current.onFiles || readOnly) return false;
+              e.preventDefault();
+              const at = view.posAtCoords({ x: e.clientX, y: e.clientY }) ?? view.state.selection.main.head;
+              void insertFiles(view, files, at, at);
+              return true;
+            },
+          }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) callbacks.current.onChange(u.state.doc.toString());
           }),
@@ -107,10 +154,32 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           const at = line.from + m.index + 1;
           view.dispatch({ changes: { from: at, to: at + 1, insert: done ? "x" : " " } });
         },
+        insertText(text) {
+          const r = view.state.selection.main;
+          view.dispatch({ changes: { from: r.from, to: r.to, insert: text }, selection: { anchor: r.from + text.length }, scrollIntoView: true });
+          view.focus();
+        },
+        setContent(next) {
+          const cur = view.state.doc.toString();
+          if (cur === next) return;
+          let a = 0;
+          while (a < cur.length && a < next.length && cur[a] === next[a]) a++;
+          let b = 0;
+          while (b < cur.length - a && b < next.length - a && cur[cur.length - 1 - b] === next[next.length - 1 - b]) b++;
+          view.dispatch({ changes: { from: a, to: cur.length - b, insert: next.slice(a, next.length - b) } });
+        },
+        gotoLine(lineNo) {
+          const n = Math.min(Math.max(lineNo, 1), view.state.doc.lines);
+          const line = view.state.doc.line(n);
+          view.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 40 }) });
+          view.focus();
+        },
       };
     }
+    viewRef.current = view;
     if (!readOnly) view.focus();
     return () => {
+      viewRef.current = null;
       if (handle) handle.current = null;
       view.destroy();
     };
@@ -118,5 +187,10 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey, readOnly]);
 
-  return <div className="editor" ref={host} />;
+  // 편집 중 렌더링 켜고 끄기(에디터를 다시 만들지 않는다)
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview() : []) });
+  }, [live]);
+
+  return <div className={`editor${live ? " live" : ""}`} ref={host} />;
 }

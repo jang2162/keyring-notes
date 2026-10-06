@@ -89,6 +89,32 @@ describe("기기 토큰", () => {
   });
 });
 
+describe("첨부 올리기 API", () => {
+  it("새 파일만 만들고, 이미 있으면 409, 숨김 경로·권한 없는 에이전트는 막는다", async () => {
+    const { app, config, owner } = env;
+    const { token } = config.issueDeviceToken("폰");
+    const up = (path: string, body: Uint8Array, auth = token, origin?: string) =>
+      app.request(`/api/attachment?path=${encodeURIComponent(path)}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${auth}`, "content-type": "application/octet-stream", "x-keyring-upload": "1", ...(origin ? { origin } : {}) },
+        body: body as Uint8Array<ArrayBuffer>,
+      });
+    let res = await up("노트/attachments/그림.png", new Uint8Array([1, 2, 3]), token, "tauri://localhost");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect((await owner.readRaw("노트/attachments/그림.png")).data.length).toBe(3);
+    expect((await up("노트/attachments/그림.png", new Uint8Array([9]))).status).toBe(409);
+    expect((await up("노트/.숨김/a.png", new Uint8Array([9]))).status).toBe(400);
+    expect((await up("노트/글.md", new Uint8Array([9]))).status).toBe(400);
+    const agent = config.issueToken("bot");
+    config.setRules("bot", { 공개: "read" });
+    expect((await up("공개/a.png", new Uint8Array([1]), agent)).status).toBe(403);
+    // 헤더 없이 보내면(다른 사이트의 폼 전송) 받지 않는다
+    const plain = await app.request(`/api/attachment?path=x.png`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/octet-stream" }, body: new Uint8Array([1]) as Uint8Array<ArrayBuffer> });
+    expect(plain.status).toBe(415);
+  });
+});
+
 describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
   it("기기 등록 → 양방향 동기화 → 충돌 사본", async () => {
     const { owner, fetchFn, vault } = env;

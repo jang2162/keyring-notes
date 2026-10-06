@@ -19,6 +19,22 @@ export interface DeviceConfig {
   createdAt: string;
 }
 
+/** 소유자 패스키(WebAuthn). 공개 키만 저장한다(비밀이 아니다). */
+export interface PasskeyConfig {
+  /** 자격 증명 ID(base64url) */
+  id: string;
+  /** COSE 공개 키(base64url) */
+  publicKey: string;
+  /** 서명 횟수(복제된 인증기 감지용, 0이면 세지 않는 인증기) */
+  counter: number;
+  transports: string[];
+  name: string;
+  /** 등록한 주소의 호스트 이름(rpID). 다른 주소로 접속하면 이 패스키는 쓸 수 없다 */
+  rpID: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
 export interface BackupSettings {
   /** 자동 백업 사용 여부 */
   enabled: boolean;
@@ -129,6 +145,9 @@ export interface KeyringConfig {
   reviewPaths: string[];
   webhooks: WebhookConfig[];
   jobs: JobConfig[];
+  passkeys: PasskeyConfig[];
+  /** 패스키에 넣는 사용자 ID(무작위, base64url). 인증기가 같은 사용자의 패스키를 하나로 묶는다 */
+  passkeyUserId: string;
 }
 
 export const DEFAULT_BACKUP: BackupSettings = { enabled: true, intervalHours: 24, keep: 14, includeConfig: true, remote: true, remoteKeep: 30 };
@@ -172,7 +191,29 @@ function defaultConfig(): KeyringConfig {
     reviewPaths: [],
     webhooks: [],
     jobs: [],
+    passkeys: [],
+    passkeyUserId: randomBytes(16).toString("base64url"),
   };
+}
+
+const B64URL = /^[A-Za-z0-9_-]+$/;
+
+function validatePasskeys(raw: unknown): PasskeyConfig[] {
+  return (Array.isArray(raw) ? raw : []).map((k: Partial<PasskeyConfig>) => {
+    if (typeof k?.id !== "string" || !B64URL.test(k.id) || typeof k.publicKey !== "string" || !B64URL.test(k.publicKey) || typeof k.rpID !== "string" || !k.rpID) {
+      throw new Error("설정 오류: passkeys 항목이 잘못되었습니다");
+    }
+    return {
+      id: k.id,
+      publicKey: k.publicKey,
+      counter: Number.isInteger(k.counter) && k.counter! >= 0 ? k.counter! : 0,
+      transports: Array.isArray(k.transports) ? k.transports.filter((t): t is string => typeof t === "string") : [],
+      name: typeof k.name === "string" && k.name.trim() ? k.name.trim().slice(0, 40) : "패스키",
+      rpID: k.rpID,
+      createdAt: k.createdAt ?? "",
+      lastUsedAt: k.lastUsedAt ?? null,
+    };
+  });
 }
 
 function validate(raw: unknown): KeyringConfig {
@@ -201,6 +242,8 @@ function validate(raw: unknown): KeyringConfig {
     }),
     webhooks: validateWebhooks(c.webhooks),
     jobs: validateJobs(c.jobs),
+    passkeys: validatePasskeys(c.passkeys),
+    passkeyUserId: typeof c.passkeyUserId === "string" && B64URL.test(c.passkeyUserId) ? c.passkeyUserId : base.passkeyUserId,
   };
 }
 
@@ -321,6 +364,36 @@ export class ConfigStore {
       if (c.devices.length === before) throw new Error(`기기가 없습니다: ${id}`);
     });
     this.lastUsed.delete(`device:${id}`);
+  }
+
+  // ── 패스키 ──
+
+  addPasskey(k: Omit<PasskeyConfig, "createdAt" | "lastUsedAt">): PasskeyConfig {
+    const entry: PasskeyConfig = { ...k, name: validDeviceName(k.name), createdAt: new Date().toISOString(), lastUsedAt: null };
+    this.update((c) => {
+      if (c.passkeys.some((p) => p.id === k.id)) throw new Error("이미 등록한 패스키입니다");
+      c.passkeys.push(entry);
+    });
+    return entry;
+  }
+
+  /** 로그인에 썼을 때: 서명 횟수와 마지막 사용 시각 */
+  touchPasskey(id: string, counter: number) {
+    this.update((c) => {
+      const k = c.passkeys.find((p) => p.id === id);
+      if (k) {
+        k.counter = counter;
+        k.lastUsedAt = new Date().toISOString();
+      }
+    });
+  }
+
+  removePasskey(id: string) {
+    this.update((c) => {
+      const before = c.passkeys.length;
+      c.passkeys = c.passkeys.filter((p) => p.id !== id);
+      if (c.passkeys.length === before) throw new Error(`패스키가 없습니다: ${id}`);
+    });
   }
 
   // ── 에이전트 토큰 ──

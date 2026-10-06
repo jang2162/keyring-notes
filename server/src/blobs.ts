@@ -1,8 +1,13 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { isMarkdown } from "./paths.js";
 import { fileSha256, type S3Client } from "./s3.js";
+import { isSealed, type CryptoProvider, type S3Crypto } from "./s3crypto.js";
 import type { Vault } from "./vault.js";
+
+const hashContentHex = (data: Uint8Array) => createHash("sha256").update(data).digest("hex");
 
 /** Git으로 추적하는 첨부 목록(경로 → 내용 해시). 점 파일이라 트리·API에는 보이지 않는다. */
 export const BLOB_INDEX = ".keyring-blobs.json";
@@ -25,6 +30,8 @@ export class BlobStore {
   private index: Index = {};
   private timer: NodeJS.Timeout | null = null;
   lastError: string | null = null;
+  /** 올리기 전 암호화(KEYRING_S3_ENCRYPTION_KEY). 켜면 이름도 내용 해시 대신 HMAC으로 */
+  crypto: CryptoProvider | null = null;
 
   constructor(
     private vault: Vault,
@@ -34,6 +41,12 @@ export class BlobStore {
 
   private key(sha: string) {
     return this.s3.key(`blobs/${sha.slice(0, 2)}/${sha}`);
+  }
+
+  /** 암호화한 첨부의 키(이름은 HMAC이라 내용 해시가 드러나지 않는다) */
+  private sealedKey(c: S3Crypto, sha: string) {
+    const name = c.blobName(sha);
+    return this.s3.key(`blobs-enc/${name.slice(0, 2)}/${name}`);
   }
 
   private abs(rel: string) {
@@ -82,6 +95,20 @@ export class BlobStore {
 
   private async upload(rel: string, sha: string): Promise<boolean> {
     try {
+      if (this.crypto) {
+        const c = await this.crypto();
+        const k = this.sealedKey(c, sha);
+        if (await this.s3.head(k)) return true;
+        const stage = await mkdtemp(path.join(os.tmpdir(), "keyring-blob-"));
+        try {
+          const sealed = path.join(stage, "blob");
+          await c.sealFile(this.abs(rel), sealed);
+          await this.s3.put(k, { file: sealed }, { metadata: { "keyring-encrypted": "1" } });
+        } finally {
+          await rm(stage, { recursive: true, force: true });
+        }
+        return true;
+      }
       const k = this.key(sha);
       if (!(await this.s3.head(k))) await this.s3.put(k, { file: this.abs(rel) }, { sha256: sha });
       return true;
@@ -157,7 +184,7 @@ export class BlobStore {
     for (const [rel, e] of Object.entries(this.index)) {
       const st = await stat(this.abs(rel)).catch(() => null);
       if (st?.isFile() && st.size === e.size && (await fileSha256(this.abs(rel))) === e.sha256) continue;
-      const data = e.pending ? null : await this.s3.get(this.key(e.sha256)).catch(() => null);
+      const data = e.pending ? null : await this.fetch(e.sha256).catch(() => null);
       if (!data) {
         missing.push(rel);
         continue;
@@ -175,6 +202,22 @@ export class BlobStore {
     return { downloaded, removed, missing };
   }
 
+  /**
+   * S3에서 첨부를 받는다: 암호화를 켰으면 암호화한 이름을 먼저, 없으면 예전(암호화 전) 이름으로.
+   * 받은 것이 암호화 형식이면 풀고, 내용 해시가 목록과 다르면 받지 않은 것으로 친다.
+   */
+  private async fetch(sha: string): Promise<Uint8Array | null> {
+    const c = this.crypto ? await this.crypto() : null;
+    let data = c ? await this.s3.get(this.sealedKey(c, sha)) : null;
+    data ??= await this.s3.get(this.key(sha));
+    if (!data) return null;
+    if (isSealed(data)) {
+      if (!c) throw new Error("암호화된 첨부입니다(KEYRING_S3_ENCRYPTION_KEY 필요)");
+      data = c.openBytes(data);
+    }
+    return hashContentHex(data) === sha ? data : null;
+  }
+
   status() {
     const entries = Object.values(this.index);
     return {
@@ -182,6 +225,7 @@ export class BlobStore {
       bytes: entries.reduce((n, e) => n + e.size, 0),
       pending: entries.filter((e) => e.pending).length,
       minBytes: this.minBytes,
+      encrypted: this.crypto !== null,
       lastError: this.lastError,
     };
   }

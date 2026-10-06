@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { setCookie } from "hono/cookie";
 import { isLevel, type Level } from "./access.js";
 import { parseCron, type Automation } from "./automation.js";
@@ -18,6 +18,7 @@ import { ForbiddenError, NotFoundError, type Vault } from "./vault.js";
 import { APP_VERSION } from "./version.js";
 import type { Wiki } from "./wiki.js";
 import type { BlobStore } from "./blobs.js";
+import type { PasskeyService } from "./passkeys.js";
 import type { S3Client } from "./s3.js";
 
 export interface AdminDeps {
@@ -39,6 +40,8 @@ export interface AdminDeps {
   s3?: S3Client | null;
   /** S3 첨부 보관(KEYRING_S3_BLOBS=1) */
   blobs?: BlobStore | null;
+  /** 소유자 패스키(로그인은 /api/auth/passkey/*, 등록·삭제는 여기) */
+  passkeys?: PasskeyService;
 }
 
 const startedAt = new Date();
@@ -120,7 +123,7 @@ export function adminRoutes(deps: AdminDeps) {
       agents: cfg.agents.map((a) => ({ name: a.name, lastUsed: config.lastUsed.get(a.name)?.toISOString() ?? null })),
       storage: {
         s3: deps.s3 ? deps.s3.describe() : null,
-        remoteBackups: deps.s3 ? { enabled: cfg.backup.remote, lastUpload: backups.lastRemoteUpload, lastError: backups.lastRemoteError } : null,
+        remoteBackups: deps.s3 ? { enabled: cfg.backup.remote, encrypted: backups.crypto !== null, lastUpload: backups.lastRemoteUpload, lastError: backups.lastRemoteError } : null,
         blobs: deps.blobs ? deps.blobs.status() : null,
       },
       security: {
@@ -250,6 +253,36 @@ export function adminRoutes(deps: AdminDeps) {
       path: "/",
       maxAge: s.maxAge,
     });
+    return c.json({ ok: true });
+  });
+
+  // ── 패스키 ──
+  const passkeyAt = (c: Context) => deps.passkeys!.origin(c.req.header("origin"), new URL(c.req.url).host, c.req.header("x-forwarded-host"));
+  admin.get("/passkeys", (c) => {
+    if (!deps.passkeys) return c.json({ passkeys: [], here: null });
+    let here: string | null = null;
+    try {
+      here = (c.req.header("x-forwarded-host") ? new URL(`http://${c.req.header("x-forwarded-host")}`) : new URL(c.req.url)).hostname;
+    } catch {
+      /* 호스트를 모르면 표시만 뺀다 */
+    }
+    return c.json({ passkeys: deps.passkeys.list(), here });
+  });
+  admin.post("/passkeys/options", async (c) => {
+    if (!deps.passkeys) throw new NotFoundError("패스키를 쓸 수 없습니다");
+    return c.json(await deps.passkeys.registrationOptions(passkeyAt(c)));
+  });
+  admin.post("/passkeys", async (c) => {
+    if (!deps.passkeys) throw new NotFoundError("패스키를 쓸 수 없습니다");
+    const { id, response, name } = await c.req.json();
+    return c.json(await deps.passkeys.verifyRegistration(id, response, name));
+  });
+  admin.delete("/passkeys/:id", (c) => {
+    try {
+      config.removePasskey(c.req.param("id"));
+    } catch (e) {
+      throw new NotFoundError(e instanceof Error ? e.message : String(e));
+    }
     return c.json({ ok: true });
   });
 

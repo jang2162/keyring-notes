@@ -66,8 +66,56 @@ export interface Section {
 }
 
 /**
+ * 블록 ID(`^id`)가 붙은 블록의 줄 범위(1부터, 포함). 문단 끝에 ` ^id`면 그 문단, 목록 항목이면 그 줄,
+ * `^id`만 있는 줄이면 바로 앞 블록(표·인용 등). 없으면 null.
+ */
+export function blockRange(content: string, id: string): { start: number; end: number } | null {
+  const lines = content.split("\n");
+  const esc = id.replace(/^\^/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const own = new RegExp(`^\\s*\\^${esc}\\s*$`);
+  const tail = new RegExp(`\\s\\^${esc}\\s*$`);
+  let at = lines.findIndex((l) => tail.test(l) || own.test(l));
+  if (at < 0) return null;
+  if (own.test(lines[at])) {
+    at--;
+    while (at >= 0 && !lines[at].trim()) at--;
+    if (at < 0) return null;
+  } else if (/^\s*(?:[-*+]|\d+[.)])\s/.test(lines[at])) {
+    return { start: at + 1, end: at + 1 };
+  }
+  let start = at;
+  let end = at;
+  while (start > 0 && lines[start - 1].trim()) start--;
+  while (end < lines.length - 1 && lines[end + 1].trim() && !own.test(lines[end + 1])) end++;
+  return { start: start + 1, end: end + 1 };
+}
+
+/** 블록 ID가 붙은 블록의 원문(` ^id` 표시는 뺀다). 없으면 null. */
+export function blockText(content: string, id: string): string | null {
+  const r = blockRange(content, id);
+  if (!r) return null;
+  const tail = new RegExp(`\\s\\^${id.replace(/^\^/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`);
+  return content
+    .split("\n")
+    .slice(r.start - 1, r.end)
+    .map((l) => l.replace(tail, ""))
+    .join("\n");
+}
+
+/** `#제목` 또는 `#^블록`이 문서에 있는지(출처 점검용) */
+export function anchorExists(content: string, anchor: string): boolean {
+  if (anchor.startsWith("^")) return blockRange(content, anchor.slice(1)) !== null;
+  try {
+    section(content, { heading: anchor });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 제목 이름(대소문자 무시) 또는 줄 범위로 문서 일부를 자른다.
- * 제목은 "상위 > 하위"처럼 경로로 좁힐 수 있다.
+ * 제목은 "상위 > 하위"처럼 경로로 좁힐 수 있고, `^id`면 그 블록(블록 ID)이다.
  */
 export function section(content: string, opts: { heading?: string; startLine?: number; endLine?: number }): Section {
   const lines = content.split("\n");
@@ -75,6 +123,12 @@ export function section(content: string, opts: { heading?: string; startLine?: n
   let start: number;
   let end: number;
   let headingText: string | null = null;
+  if (opts.heading?.trim().startsWith("^")) {
+    const id = opts.heading.trim().slice(1);
+    const r = blockRange(content, id);
+    if (!r) throw new RangeError(`블록을 찾을 수 없습니다: ^${id}`);
+    return { heading: `^${id}`, startLine: r.start, endLine: r.end, totalLines: total, content: lines.slice(r.start - 1, r.end).join("\n") };
+  }
   if (opts.heading) {
     const want = opts.heading.split(">").map((s) => s.trim().replace(/^#+\s*/, "").toLowerCase()).filter(Boolean);
     const hs = headings(content);
@@ -103,8 +157,67 @@ export function section(content: string, opts: { heading?: string; startLine?: n
   return { heading: headingText, startLine: start, endLine: end, totalLines: total, content: lines.slice(start - 1, end).join("\n") };
 }
 
-/** `[[대상#제목|별칭]]` 위키링크 대상 이름들(코드 블록 밖, 중복 제거). */
+/**
+ * Obsidian 주석 `%%…%%`(여러 줄 가능)을 지운다. 줄바꿈은 남겨 줄 번호(할 일 체크 등)가 그대로다.
+ * 펜스 코드 블록과 인라인 코드 안의 %%는 주석이 아니다.
+ * 주석 안의 링크·태그·할 일은 Obsidian처럼 세지 않는다(미리보기에서도 보이지 않는 내용이라).
+ */
+export function stripComments(content: string): string {
+  if (!content.includes("%%")) return content;
+  const lines = content.split("\n");
+  let fence: string | null = null;
+  let inComment = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!inComment) {
+      const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+      if (f) {
+        if (fence === null) fence = f[1][0].repeat(f[1].length);
+        else if (f[1].startsWith(fence)) fence = null;
+        continue;
+      }
+      if (fence !== null) continue;
+    }
+    let out = "";
+    let pos = 0;
+    while (pos < line.length) {
+      if (inComment) {
+        const end = line.indexOf("%%", pos);
+        if (end < 0) {
+          pos = line.length;
+          break;
+        }
+        inComment = false;
+        pos = end + 2;
+        continue;
+      }
+      const tick = line.indexOf("`", pos);
+      const pct = line.indexOf("%%", pos);
+      if (pct < 0 && tick < 0) {
+        out += line.slice(pos);
+        break;
+      }
+      if (tick >= 0 && (pct < 0 || tick < pct)) {
+        // 인라인 코드: 같은 길이의 백틱까지 그대로
+        const run = /^`+/.exec(line.slice(tick))![0];
+        const close = line.indexOf(run, tick + run.length);
+        const stop = close < 0 ? tick + run.length : close + run.length;
+        out += line.slice(pos, stop);
+        pos = stop;
+        continue;
+      }
+      out += line.slice(pos, pct);
+      inComment = true;
+      pos = pct + 2;
+    }
+    lines[i] = out;
+  }
+  return lines.join("\n");
+}
+
+/** `[[대상#제목|별칭]]` 위키링크 대상 이름들(코드 블록·주석 밖, 중복 제거). */
 export function wikilinkTargets(content: string): string[] {
+  content = stripComments(content);
   const out = new Set<string>();
   let fence = false;
   // 프런트매터(sources 등)의 [[ ]]는 본문 링크로 세지 않는다. 출처는 sourceTargets로 따로 다룬다.
@@ -152,20 +265,33 @@ export interface TaskItem {
  * URL(http…)은 볼트 문서가 아니므로 뺀다.
  */
 export function sourceTargets(frontmatter: Record<string, unknown> | null): string[] {
+  return [...new Set(sourceRefs(frontmatter).map((r) => r.target))];
+}
+
+/**
+ * sources 항목마다 대상과 위치(`#제목`·`#^블록`). "[[원본#^p3|문단]]"처럼 원본의 문단을 가리키는 인용.
+ */
+export function sourceRefs(frontmatter: Record<string, unknown> | null): { target: string; anchor?: string }[] {
   const raw = frontmatter?.sources ?? frontmatter?.source;
   const list = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
-  const out = new Set<string>();
+  const out: { target: string; anchor?: string }[] = [];
+  const seen = new Set<string>();
   for (const v of list) {
     if (typeof v !== "string") continue;
-    const t = v
+    const ref = v
       .trim()
       .replace(/^\[\[|\]\]$/g, "")
-      .split("|")[0]
-      .split("#")[0]
-      .trim();
-    if (t && !/^[a-z]+:\/\//i.test(t)) out.add(t);
+      .split("|")[0];
+    const hash = ref.indexOf("#");
+    const t = (hash < 0 ? ref : ref.slice(0, hash)).trim();
+    const anchor = hash < 0 ? undefined : ref.slice(hash + 1).trim() || undefined;
+    if (!t || /^[a-z]+:\/\//i.test(t)) continue;
+    const key = `${t}#${anchor ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(anchor ? { target: t, anchor } : { target: t });
   }
-  return [...out];
+  return out;
 }
 
 export interface Analysis {
@@ -204,6 +330,8 @@ function collectTags(fm: Record<string, unknown> | null, bodyLines: string[], fe
 
 /** 인덱스에 넣을 문서 정보를 한 번에 뽑는다. */
 export function analyze(relPath: string, content: string): Analysis {
+  // 주석(%%…%%) 안의 링크·태그·할 일·요약은 세지 않는다(줄 번호는 그대로)
+  content = stripComments(content);
   const fm = parseFrontmatter(content);
   const lines = content.split("\n");
   const bodyLines = lines.slice(fm.lines);

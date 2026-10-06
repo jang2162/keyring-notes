@@ -5,7 +5,7 @@ import { PathError } from "./paths.js";
 /**
  * 위젯 블록(```widget) 안의 YAML.
  *
- *   type: query | table | tasks | chart
+ *   type: query | table | tasks | chart | cards | kanban
  *   from: 업무/프로젝트A | "#태그" | [여러 개]     (생략하면 볼트 전체)
  *   where: "status != done" | [조건 여러 개]       (모두 만족)
  *   show: [title, due]
@@ -14,9 +14,11 @@ import { PathError } from "./paths.js";
  *   status: open | done | all                       (tasks)
  *   chart: bar | line, x: 필드, y: 필드, agg: sum | count | avg   (chart)
  *   data: [{label, value}]                          (chart, 직접 입력)
+ *   group: status                                   (query·table·cards: 이 필드 값으로 묶음, kanban: 칸)
+ *   lanes: [할 일, 진행, 완료]                       (kanban 칸 순서. 없으면 나온 값 순)
  */
 export interface WidgetSpec {
-  type: "query" | "table" | "tasks" | "chart" | "plugin";
+  type: "query" | "table" | "tasks" | "chart" | "plugin" | "cards" | "kanban";
   /** type: plugin일 때 플러그인 이름(plugins/<이름>.js) */
   plugin?: string;
   /** type: plugin일 때 플러그인에 그대로 넘길 설정 */
@@ -33,6 +35,10 @@ export interface WidgetSpec {
   agg: "sum" | "count" | "avg";
   data?: { label: string; value: number }[];
   title?: string;
+  /** 묶을 필드(kanban은 칸을 정하는 필드, 기본 status) */
+  group?: string;
+  /** kanban 칸 순서 */
+  lanes?: string[];
 }
 
 type Op = "=" | "!=" | ">" | ">=" | "<" | "<=" | "contains" | "!contains" | "exists" | "!exists";
@@ -47,10 +53,14 @@ export interface QueryRow {
   path: string;
   title: string;
   values: Record<string, unknown>;
+  /** 문서 해시(표·칸반에서 프런트매터를 고칠 때 baseHash) */
+  hash: string;
+  /** 한 줄 요약(cards) */
+  summary?: string;
 }
 
 export type WidgetResult =
-  | { type: "query" | "table"; title?: string; columns: string[]; rows: QueryRow[]; total: number }
+  | { type: "query" | "table" | "cards" | "kanban"; title?: string; columns: string[]; rows: QueryRow[]; total: number; group?: string; lanes?: string[] }
   | { type: "tasks"; title?: string; groups: { path: string; title: string; hash: string; tasks: TaskRow[] }[]; total: number }
   | { type: "chart"; title?: string; chart: "bar" | "line"; x: string; y: string; series: { label: string; value: number }[] }
   | { type: "plugin"; plugin: string; options: Record<string, unknown>; title?: string; columns: string[]; rows: QueryRow[]; total: number };
@@ -98,7 +108,7 @@ export function parseWidget(source: string): WidgetSpec {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new PathError("위젯 내용은 YAML 객체여야 합니다");
   const r = raw as Record<string, unknown>;
   const type = (r.type ?? "query") as WidgetSpec["type"];
-  if (!["query", "table", "tasks", "chart", "plugin"].includes(type)) throw new PathError(`알 수 없는 위젯 종류입니다: ${String(r.type)}`);
+  if (!["query", "table", "tasks", "chart", "plugin", "cards", "kanban"].includes(type)) throw new PathError(`알 수 없는 위젯 종류입니다: ${String(r.type)}`);
   if (type === "plugin" && (typeof r.plugin !== "string" || !PLUGIN_NAME_RE.test(r.plugin))) {
     throw new PathError("plugin 위젯에는 plugin: <이름>(영문 소문자·숫자·-)이 필요합니다");
   }
@@ -140,6 +150,8 @@ export function parseWidget(source: string): WidgetSpec {
     agg: agg as WidgetSpec["agg"],
     data,
     title: typeof r.title === "string" ? r.title : undefined,
+    group: r.group !== undefined ? String(r.group) : type === "kanban" ? "status" : undefined,
+    lanes: r.lanes === undefined ? undefined : asList(r.lanes).map(String),
     plugin: type === "plugin" ? (r.plugin as string) : undefined,
     options: type === "plugin" ? ((r.options as Record<string, unknown> | undefined) ?? {}) : undefined,
   };
@@ -301,13 +313,25 @@ export function runWidget(spec: WidgetSpec, docs: DocMeta[], tasks: TaskRow[]): 
   }
 
   const columns = spec.show.length > 0 ? spec.show : spec.type === "table" ? ["title", "modified"] : [];
-  const rows = selected.slice(0, spec.limit).map((d) => ({
+  // 묶을 필드 값도 values에 넣는다(보이는 열이 아니어도)
+  const fields = spec.group && !columns.includes(spec.group) ? [...columns, spec.group] : columns;
+  const rows: QueryRow[] = selected.slice(0, spec.limit).map((d) => ({
     path: d.path,
     title: d.title,
-    values: Object.fromEntries(columns.map((c) => [c, fieldOf(d, c) ?? null])),
+    hash: d.hash,
+    ...(spec.type === "cards" || spec.type === "kanban" ? { summary: d.summary } : {}),
+    values: Object.fromEntries(fields.map((c) => [c, fieldOf(d, c) ?? null])),
   }));
   if (spec.type === "plugin") {
     return { type: "plugin", plugin: spec.plugin!, options: spec.options ?? {}, title: spec.title, columns, rows, total: selected.length };
   }
-  return { type: spec.type as "query" | "table", title: spec.title, columns, rows, total: selected.length };
+  return {
+    type: spec.type as "query" | "table" | "cards" | "kanban",
+    title: spec.title,
+    columns,
+    rows,
+    total: selected.length,
+    ...(spec.group ? { group: spec.group } : {}),
+    ...(spec.lanes ? { lanes: spec.lanes } : {}),
+  };
 }

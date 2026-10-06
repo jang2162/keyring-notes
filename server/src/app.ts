@@ -8,6 +8,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Principal } from "./access.js";
 import { SESSION_COOKIE, validDeviceName, type ConfigStore } from "./config.js";
 import { adminRoutes, type AdminDeps } from "./admin.js";
+import { PasskeyError, PasskeyService } from "./passkeys.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { Ingestor } from "./ingest.js";
 import type { NoteIndex } from "./noteindex.js";
@@ -81,6 +82,13 @@ function optionalHash(value: unknown): string | null {
   return value;
 }
 
+/** 켜고 끄는 옵션(없으면 기본값) */
+function optionalBool(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "boolean") throw new PathError("true/false 값이어야 합니다");
+  return value;
+}
+
 function requireHash(value: unknown): string {
   const h = optionalHash(value);
   if (h === null) throw new PathError("baseHash가 필요합니다");
@@ -117,6 +125,7 @@ class LoginThrottle {
 export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review, semantic, pluginsDir }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
+  const passkeys = new PasskeyService(config, admin.publicUrl);
   const secureCookies = (c: Context) => isHttps(c) || (admin.publicUrl ?? "").startsWith("https:");
   const allowedHosts = admin.allowedHosts?.map((h) => h.toLowerCase());
 
@@ -147,7 +156,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       return c.body(null, 204, {
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "GET, POST, PUT, DELETE",
-        "access-control-allow-headers": "authorization, content-type",
+        "access-control-allow-headers": "authorization, content-type, x-keyring-upload",
         "access-control-max-age": "600",
       });
     }
@@ -166,6 +175,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (err instanceof NotFoundError) return c.json({ error: "not_found", message: err.message }, 404);
     if (err instanceof ForbiddenError) return c.json({ error: "forbidden", message: err.message }, 403);
     if (err instanceof PathError) return c.json({ error: "bad_request", message: err.message }, 400);
+    if (err instanceof PasskeyError) return c.json({ error: "passkey", message: err.message }, 400);
     if (err instanceof SyntaxError) return c.json({ error: "bad_request", message: "JSON 본문이 잘못되었습니다" }, 400);
     console.error(err);
     return c.json({ error: "internal", message: "서버 오류" }, 500);
@@ -210,7 +220,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.use("*", async (c, next) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
       const ct = c.req.header("content-type") ?? "";
-      const rawBody = c.req.path === "/api/ingest/file" || c.req.path === "/api/admin/backups/upload";
+      const rawBody = c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" || c.req.path === "/api/admin/backups/upload";
       const upload = rawBody && c.req.header("x-keyring-upload") === "1";
       if (!upload && !ct.toLowerCase().startsWith("application/json")) {
         return c.json({ error: "bad_request", message: "Content-Type: application/json 이 필요합니다" }, 415);
@@ -222,7 +232,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     // 백업 업로드는 디스크로 바로 흘려 쓰며 크기를 따로 센다
     if (c.req.path === "/api/admin/backups/upload") return next();
     // 업로드·웹 클립(페이지 HTML 전체)은 크게, 나머지는 10MB까지
-    const max = c.req.path === "/api/ingest/file" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
+    const max = c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
     return bodyLimit({ maxSize: max * 1024 * 1024 })(c, next);
   });
 
@@ -233,6 +243,14 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       authenticated: p !== null,
       principal: p ? { name: p.name, kind: p.kind } : null,
       passwordSet: config.get().owner.passwordHash !== null,
+      // 이 주소로 등록한 패스키가 있으면 로그인 화면에 "패스키로 로그인"을 보인다
+      passkey: (() => {
+        try {
+          return passkeys.available((c.req.header("x-forwarded-host") ? new URL(`http://${c.req.header("x-forwarded-host")}`) : new URL(c.req.url)).hostname);
+        } catch {
+          return false;
+        }
+      })(),
     });
   });
 
@@ -253,6 +271,26 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       path: "/",
       maxAge: s.maxAge,
     });
+    return c.json({ ok: true });
+  });
+
+  // 패스키 로그인: 서버가 낸 일회용 도전값에 인증기가 서명하면 비밀번호와 같은 세션을 준다
+  api.post("/auth/passkey/options", async (c) => {
+    const wait = throttle.delayMs();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    return c.json(await passkeys.authenticationOptions(passkeys.origin(c.req.header("origin"), new URL(c.req.url).host, c.req.header("x-forwarded-host"))));
+  });
+  api.post("/auth/passkey/login", async (c) => {
+    const { id, response } = await c.req.json();
+    const wait = throttle.delayMs();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    if (!(await passkeys.verifyAuthentication(id, response))) {
+      throttle.fail();
+      return c.json({ error: "unauthorized", message: "패스키를 확인하지 못했습니다" }, 401);
+    }
+    throttle.reset();
+    const s = config.issueSession();
+    setCookie(c, SESSION_COOKIE, s.value, { httpOnly: true, sameSite: "Strict", secure: secureCookies(c), path: "/", maxAge: s.maxAge });
     return c.json({ ok: true });
   });
 
@@ -390,6 +428,13 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     }
   });
 
+  // 첨부 파일 올리기(붙여넣기·끌어놓기, 앱 동기화): 새 파일만(이미 있으면 409). 원본 바이트, 헤더 x-keyring-upload: 1
+  api.post("/attachment", async (c) => {
+    const data = new Uint8Array(await c.req.arrayBuffer());
+    if (data.byteLength === 0) throw new PathError("빈 파일입니다");
+    return c.json(await c.var.scoped.putAttachment(requirePath(c.req.query("path")), data));
+  });
+
   api.post("/ingest/file", async (c) => {
     const topic = c.req.query("topic");
     const name = c.req.query("name");
@@ -400,6 +445,8 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   });
 
   api.get("/backlinks", async (c) => c.json({ backlinks: await c.var.scoped.backlinks(requirePath(c.req.query("path"))) }));
+  api.get("/properties", (c) => c.json({ properties: c.var.scoped.properties() }));
+  api.get("/mentions", async (c) => c.json(await c.var.scoped.mentions(requirePath(c.req.query("path")))));
 
   api.get("/plugins", async (c) => {
     const files = pluginsDir ? await readdir(pluginsDir).catch(() => [] as string[]) : [];
@@ -457,7 +504,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.post("/move", async (c) => {
     const body = await c.req.json();
-    return c.json(await c.var.scoped.move(requirePath(body.from), requirePath(body.to), requireHash(body.baseHash)));
+    return c.json(
+      await c.var.scoped.move(requirePath(body.from), requirePath(body.to), requireHash(body.baseHash), { updateLinks: optionalBool(body.updateLinks) }),
+    );
   });
 
   api.post("/batch", async (c) => {
@@ -485,7 +534,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       }
     });
     const message = typeof body.message === "string" ? body.message : undefined;
-    return c.json(await c.var.scoped.batch(ops, message));
+    return c.json(await c.var.scoped.batch(ops, message, { updateLinks: optionalBool(body.updateLinks) }));
   });
 
   api.get("/raw", async (c) => {
@@ -553,7 +602,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     return c.json(await q.summarize(await q.reject(c.req.param("id"), c.var.scoped.principal.name, typeof body.reason === "string" ? body.reason : undefined)));
   });
 
-  api.route("/admin", adminRoutes({ vault, index, wiki, config, ...admin }));
+  api.route("/admin", adminRoutes({ vault, index, wiki, config, ...admin, passkeys }));
 
   app.route("/api", api);
   return app;

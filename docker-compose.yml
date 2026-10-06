@@ -27,6 +27,7 @@ services:
       KEYRING_S3_PATH_STYLE: ${KEYRING_S3_PATH_STYLE:-}
       KEYRING_S3_BLOBS: ${KEYRING_S3_BLOBS:-0}
       KEYRING_S3_BLOB_MIN_KB: ${KEYRING_S3_BLOB_MIN_KB:-}
+      KEYRING_S3_ENCRYPTION_KEY: ${KEYRING_S3_ENCRYPTION_KEY:-}
       TZ: ${TZ:-Asia/Seoul}
     volumes:
       - keyring-data:/data

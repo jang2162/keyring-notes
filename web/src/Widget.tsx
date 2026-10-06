@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import { api, ApiError, appMode, type WidgetResult } from "./api";
+import { BUILTIN_FIELDS, parseFieldInput, setFrontmatterField } from "@keyring-notes/core";
+import { api, ApiError, appMode, type ListWidgetResult, type WidgetResult, type WidgetRow } from "./api";
 
 // 미리보기는 타이핑할 때마다 다시 그려지므로, 같은 위젯 원문의 결과를 저장 전까지 재사용한다.
 const cache = new Map<string, Promise<WidgetResult>>();
@@ -31,6 +32,21 @@ function formatValue(v: unknown): string {
   return String(v);
 }
 
+/**
+ * 위젯에서 문서의 프런트매터 필드 하나를 고친다. 위젯을 그린 때의 해시와 같을 때만(덮어쓰기 금지),
+ * 다른 필드·본문은 그대로 둔다. value가 null이면 필드를 지운다.
+ */
+async function setField(row: WidgetRow, field: string, value: unknown): Promise<void> {
+  const doc = await api.read(row.path, { fresh: true });
+  if (doc.hash !== row.hash) throw new ApiError(409, "conflict", "그 사이 문서가 바뀌었습니다. 다시 시도하세요.", doc.hash);
+  await api.write(row.path, setFrontmatterField(doc.content, field, value), row.hash);
+}
+
+/** 내장 필드(title·path·tags 등)가 아니면 고칠 수 있다 */
+const editable = (field: string) => !BUILTIN_FIELDS.has(field);
+
+const groupKey = (v: unknown) => formatValue(v) || "(없음)";
+
 interface Props {
   source: string;
   onOpen: (path: string) => void;
@@ -41,6 +57,7 @@ interface Props {
 export function Widget({ source, onOpen, onChanged }: Props) {
   const [, setTick] = useState(0);
   const [state, setState] = useState<{ result?: WidgetResult; error?: string }>({});
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
@@ -76,15 +93,45 @@ export function Widget({ source, onOpen, onChanged }: Props) {
   const r = state.result;
   if (!r) return <div className="widget widget-loading">불러오는 중…</div>;
 
+  const edit = async (row: WidgetRow, field: string, value: unknown) => {
+    try {
+      await setField(row, field, value);
+      setEditError(null);
+      onChanged(row.path);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : String(e));
+    } finally {
+      invalidateWidgets();
+    }
+  };
+
+  /** 묶음: group 필드 값별 행(나온 순서) */
+  const grouped = (rows: WidgetRow[], field?: string): [string, WidgetRow[]][] => {
+    if (!field) return [["", rows]];
+    const m = new Map<string, WidgetRow[]>();
+    for (const row of rows) {
+      const k = groupKey(row.values[field]);
+      m.set(k, [...(m.get(k) ?? []), row]);
+    }
+    return [...m.entries()];
+  };
+
   return (
     <div className="widget" onClick={(e) => e.stopPropagation()}>
       {r.title && <div className="widget-title">{r.title}</div>}
+      {editError && (
+        <div className="widget-error" onClick={() => setEditError(null)}>
+          {editError}
+        </div>
+      )}
       {r.type === "query" &&
         (r.rows.length === 0 ? (
           <div className="widget-empty">조건에 맞는 문서가 없습니다.</div>
         ) : (
-          <ul className="widget-list">
-            {r.rows.map((row) => (
+          grouped(r.rows, r.group).map(([key, rows]) => (
+          <ul className="widget-list" key={key}>
+            {r.group && <li className="widget-group">{key}</li>}
+            {rows.map((row) => (
               <li key={row.path}>
                 {link(row.path, row.title)}
                 {r.columns
@@ -99,6 +146,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
               </li>
             ))}
           </ul>
+          ))
         ))}
       {r.type === "table" && (
         <div className="widget-table-wrap">
@@ -111,17 +159,32 @@ export function Widget({ source, onOpen, onChanged }: Props) {
               </tr>
             </thead>
             <tbody>
-              {r.rows.map((row) => (
-                <tr key={row.path}>
-                  {r.columns.map((c, i) => (
-                    <td key={c} className={typeof row.values[c] === "number" ? "num" : undefined}>
-                      {c === "title" || (i === 0 && !r.columns.includes("title"))
-                        ? link(row.path, formatValue(row.values[c]) || row.title)
-                        : formatValue(row.values[c])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {grouped(r.rows, r.group).flatMap(([key, rows]) => [
+                ...(r.group
+                  ? [
+                      <tr key={`g:${key}`} className="widget-group-row">
+                        <th colSpan={r.columns.length}>
+                          {key} <span className="count">{rows.length}</span>
+                        </th>
+                      </tr>,
+                    ]
+                  : []),
+                ...rows.map((row) => (
+                  <tr key={row.path}>
+                    {r.columns.map((c, i) => (
+                      <td key={c} className={typeof row.values[c] === "number" ? "num" : undefined}>
+                        {c === "title" || (i === 0 && !r.columns.includes("title")) ? (
+                          link(row.path, formatValue(row.values[c]) || row.title)
+                        ) : editable(c) ? (
+                          <FieldCell value={row.values[c]} label={`${row.title} · ${c}`} onSave={(v) => edit(row, c, v)} />
+                        ) : (
+                          formatValue(row.values[c])
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                )),
+              ])}
               {r.rows.length === 0 && (
                 <tr>
                   <td colSpan={r.columns.length} className="widget-empty">
@@ -133,14 +196,175 @@ export function Widget({ source, onOpen, onChanged }: Props) {
           </table>
         </div>
       )}
+      {r.type === "cards" &&
+        (r.rows.length === 0 ? (
+          <div className="widget-empty">조건에 맞는 문서가 없습니다.</div>
+        ) : (
+          grouped(r.rows, r.group).map(([key, rows]) => (
+            <div key={key}>
+              {r.group && <div className="widget-group">{key}</div>}
+              <div className="widget-cards">
+                {rows.map((row) => (
+                  <Card key={row.path} row={row} columns={r.columns} link={link} edit={edit} />
+                ))}
+              </div>
+            </div>
+          ))
+        ))}
+      {r.type === "kanban" && <Kanban result={r} link={link} edit={edit} />}
       {r.type === "tasks" && <TaskList result={r} link={link} onChanged={onChanged} />}
       {r.type === "chart" && <Chart result={r} />}
       {r.type === "plugin" && <PluginWidget result={r} onOpen={onOpen} />}
-      {(r.type === "query" || r.type === "table") && r.total > r.rows.length && (
+      {(r.type === "query" || r.type === "table" || r.type === "cards" || r.type === "kanban") && r.total > r.rows.length && (
         <div className="widget-more">
           {r.total}개 중 {r.rows.length}개 표시
         </div>
       )}
+    </div>
+  );
+}
+
+/** 눌러서 고치는 칸: Enter·바깥 누르기로 저장, Esc로 취소. 빈 칸으로 저장하면 필드를 지운다 */
+function FieldCell({ value, label, onSave }: { value: unknown; label: string; onSave: (v: unknown) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const start = () => {
+    setText(Array.isArray(value) ? value.join(", ") : value === null || value === undefined ? "" : String(value));
+    setEditing(true);
+  };
+  const commit = async () => {
+    const next = parseFieldInput(text, value);
+    setEditing(false);
+    if (JSON.stringify(next ?? null) === JSON.stringify(value ?? null)) return;
+    setBusy(true);
+    await onSave(next);
+    setBusy(false);
+  };
+  if (editing) {
+    return (
+      <input
+        className="field-input"
+        autoFocus
+        aria-label={label}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          else if (e.key === "Escape") setEditing(false);
+        }}
+      />
+    );
+  }
+  return (
+    <button className={`field-cell${busy ? " busy" : ""}`} title={`${label} — 눌러서 고치기`} onClick={start} disabled={busy}>
+      {formatValue(value) || <span className="field-empty">—</span>}
+    </button>
+  );
+}
+
+function Card({
+  row,
+  columns,
+  link,
+  edit,
+  draggable,
+  extra,
+}: {
+  row: WidgetRow;
+  columns: string[];
+  link: (path: string, label: string) => ReactElement;
+  edit: (row: WidgetRow, field: string, value: unknown) => Promise<void>;
+  draggable?: boolean;
+  extra?: ReactElement;
+}) {
+  return (
+    <div
+      className="widget-card"
+      draggable={draggable}
+      onDragStart={draggable ? (e) => e.dataTransfer.setData("text/x-keyring-path", row.path) : undefined}
+    >
+      <div className="widget-card-title">{link(row.path, row.title)}</div>
+      {row.summary && <div className="widget-card-summary">{row.summary}</div>}
+      {columns
+        .filter((c) => c !== "title")
+        .map((c) => (
+          <div key={c} className="widget-card-field">
+            <span className="meta">{c}</span>{" "}
+            {editable(c) ? <FieldCell value={row.values[c]} label={`${row.title} · ${c}`} onSave={(v) => edit(row, c, v)} /> : formatValue(row.values[c])}
+          </div>
+        ))}
+      {extra}
+    </div>
+  );
+}
+
+/** 칸반: group 필드 값이 칸. 카드를 다른 칸으로 끌거나(또는 고르기 상자로) 옮기면 그 필드가 바뀐다 */
+function Kanban({
+  result,
+  link,
+  edit,
+}: {
+  result: ListWidgetResult;
+  link: (path: string, label: string) => ReactElement;
+  edit: (row: WidgetRow, field: string, value: unknown) => Promise<void>;
+}) {
+  const field = result.group ?? "status";
+  const [over, setOver] = useState<string | null>(null);
+  const seen = result.rows.map((r) => groupKey(r.values[field]));
+  const lanes = [...new Set([...(result.lanes ?? []), ...seen.filter((k) => k !== "(없음)"), ...(seen.includes("(없음)") ? ["(없음)"] : [])])];
+  const move = (path: string, lane: string) => {
+    const row = result.rows.find((r) => r.path === path);
+    if (!row || groupKey(row.values[field]) === lane) return;
+    void edit(row, field, lane === "(없음)" ? null : lane);
+  };
+  return (
+    <div className="widget-kanban">
+      {lanes.map((lane) => {
+        const rows = result.rows.filter((r) => groupKey(r.values[field]) === lane);
+        return (
+          <section
+            key={lane}
+            className={`kanban-lane${over === lane ? " over" : ""}`}
+            aria-label={`${field}: ${lane}`}
+            onDragOver={(e) => {
+              if (!e.dataTransfer.types.includes("text/x-keyring-path")) return;
+              e.preventDefault();
+              setOver(lane);
+            }}
+            onDragLeave={() => setOver(null)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setOver(null);
+              move(e.dataTransfer.getData("text/x-keyring-path"), lane);
+            }}
+          >
+            <h5>
+              {lane} <span className="count">{rows.length}</span>
+            </h5>
+            {rows.map((row) => (
+              <Card
+                key={row.path}
+                row={row}
+                columns={result.columns.filter((c) => c !== field)}
+                link={link}
+                edit={edit}
+                draggable
+                extra={
+                  <select className="kanban-move" aria-label={`${row.title} 옮기기`} value={lane} onChange={(e) => move(row.path, e.target.value)}>
+                    {lanes.map((l) => (
+                      <option key={l} value={l}>
+                        → {l}
+                      </option>
+                    ))}
+                  </select>
+                }
+              />
+            ))}
+          </section>
+        );
+      })}
     </div>
   );
 }

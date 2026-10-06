@@ -17,6 +17,7 @@ import { SemanticIndex } from "./embeddings.js";
 import { Wiki } from "./wiki.js";
 import { BlobStore } from "./blobs.js";
 import { S3Client, s3ConfigFromEnv } from "./s3.js";
+import { encryptionSecretFromEnv, S3Crypto } from "./s3crypto.js";
 import { Vault } from "./vault.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +53,11 @@ const s3Config = s3ConfigFromEnv();
 const s3 = s3Config ? new S3Client(s3Config) : null;
 const blobs =
   s3 && process.env.KEYRING_S3_BLOBS === "1" ? new BlobStore(vault, s3, Math.max(0, Number(env("KEYRING_S3_BLOB_MIN_KB") ?? 256)) * 1024) : null;
+// S3에 올리기 전 암호화(선택). 키를 주면 백업·첨부 모두 암호화해 올린다.
+const s3Secret = await encryptionSecretFromEnv();
+if (s3Secret && !s3) throw new Error("KEYRING_S3_ENCRYPTION_KEY는 S3 설정(KEYRING_S3_BUCKET)과 같이 씁니다");
+const s3Crypto = s3 && s3Secret ? S3Crypto.lazy(s3, s3Secret) : null;
+if (blobs) blobs.crypto = s3Crypto;
 
 // 순서: 위키 토픽을 먼저 찾아 자동 생성 문서를 Git·인덱스 제외 목록에 올린 뒤 볼트를 연다.
 // S3 첨부 목록도 먼저 읽어, 시작 커밋에 큰 첨부가 섞이지 않게 한다.
@@ -70,9 +76,12 @@ const ingestor = new Ingestor(vault, wiki, { allowPrivate: process.env.KEYRING_F
 const backups = new BackupService(vault, config, backupDir, () => wiki.resync());
 backups.remote = s3;
 backups.blobs = blobs;
+backups.crypto = s3Crypto;
+// 키가 맞는지 시작할 때 한 번 확인한다(S3가 안 되면 처음 올릴 때 다시)
+if (s3Crypto) void s3Crypto().catch((e) => console.error(`S3 암호화: ${e instanceof Error ? e.message : String(e)}`));
 if (process.env.KEYRING_BACKUP_SCHEDULER !== "0") backups.start();
 if (blobs) blobs.start();
-if (s3) console.log(`S3: ${s3.describe()} (원격 백업${blobs ? `, ${blobs.minBytes / 1024}KB 이상 첨부 보관` : ""})`);
+if (s3) console.log(`S3: ${s3.describe()} (원격 백업${blobs ? `, ${blobs.minBytes / 1024}KB 이상 첨부 보관` : ""}${s3Crypto ? ", 올리기 전 암호화" : ""})`);
 
 // 처음 설치: 비밀번호가 없으면 일회용 설정 코드를 만들어 로그에만 보여 준다(웹에서 비밀번호 설정).
 let setupCode: string | null = null;

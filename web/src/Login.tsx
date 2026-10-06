@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { api } from "./api";
+import { api, passkeyLogin, passkeySupported } from "./api";
 
-export function Login({ passwordSet, onDone }: { passwordSet: boolean; onDone: () => void }) {
+export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; passkey?: boolean; onDone: () => void }) {
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
   const [code, setCode] = useState("");
@@ -19,6 +19,20 @@ export function Login({ passwordSet, onDone }: { passwordSet: boolean; onDone: (
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const withPasskey = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await passkeyLogin();
+      onDone();
+    } catch (err) {
+      // 사람이 창을 닫은 것(NotAllowedError)은 조용히
+      if (!(err instanceof Error && err.name === "NotAllowedError")) setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -52,6 +66,11 @@ export function Login({ passwordSet, onDone }: { passwordSet: boolean; onDone: (
         <button type="submit" disabled={busy || !password || (!passwordSet && !code)}>
           {busy ? "확인 중…" : passwordSet ? "로그인" : "비밀번호 정하고 시작"}
         </button>
+        {passwordSet && passkey && passkeySupported() && (
+          <button type="button" className="passkey-login" disabled={busy} onClick={() => void withPasskey()}>
+            패스키로 로그인
+          </button>
+        )}
         {error && <p className="login-error">{error}</p>}
       </form>
     </div>

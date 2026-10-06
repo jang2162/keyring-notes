@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { chainMoves, rewriteLinks } from "@keyring-notes/core";
 import { GitHistory, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
 import { isHiddenSegment, isMarkdown, normalizeVaultPath, PathError, resolveInVault } from "./paths.js";
 
@@ -68,10 +69,26 @@ export interface FilePreview {
   binary: boolean;
 }
 
+/**
+ * 이동 때 링크 자동 갱신 설정. 기본은 켬(소유자 기준: 모든 경로로 해석, 가장 짧은 이름).
+ * - canSee: 링크 해석에 쓸 경로(에이전트는 볼 수 있는 경로만). 고칠 문서도 이 안에서만 찾는다
+ * - fullPaths: 고친 링크를 늘 전체 경로로(에이전트: 짧은 이름이 되는지로 숨김 문서가 드러나지 않게)
+ * - only: 이 경로만 고친다(검토 승인 때 제안 미리보기에 보였던 문서로 제한)
+ */
+export interface LinkUpdateOptions {
+  enabled?: boolean;
+  canSee?: (rel: string) => boolean;
+  fullPaths?: boolean;
+  only?: Set<string>;
+}
+
 export interface BatchResult {
   rev: string | null;
-  /** 바뀐 문서의 새 해시. 삭제된 문서는 null. */
+  /** 실제로 바뀐 파일과 새 해시. 삭제된 문서는 null. 찾느라 읽기만 한 문서는 넣지 않는다(숨김 경로가 새지 않게). */
   files: { path: string; hash: string | null }[];
+  /** 이동 때 링크를 고친 문서(이동한 문서 자신 포함)와 고친 링크 수 */
+  linksUpdated: string[];
+  linkCount: number;
   /** dryRun일 때: 실제로 바뀔 파일별 전후 내용 */
   preview?: FilePreview[];
 }
@@ -190,6 +207,19 @@ export class Vault {
     return walk(this.root, "");
   }
 
+  /** 볼트의 모든 파일 경로(점 폴더 제외, 첨부 포함). */
+  private async allFiles(): Promise<string[]> {
+    const out: string[] = [];
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.type === "dir") walk(n.children ?? []);
+        else out.push(n.path);
+      }
+    };
+    walk(await this.tree());
+    return out;
+  }
+
   /** 볼트의 모든 마크다운 문서 경로. */
   async markdownPaths(): Promise<string[]> {
     const out: string[] = [];
@@ -238,7 +268,7 @@ export class Vault {
    * 여러 연산을 하나의 커밋으로 적용한다. 하나라도 실패하면(충돌, 권한, 파일 오류, 커밋 오류)
    * 아무것도 바뀌지 않는다. 연산은 앞 연산의 결과 위에서 차례로 검사된다.
    */
-  async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard; dryRun?: boolean } = {}): Promise<BatchResult> {
+  async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard; dryRun?: boolean; links?: LinkUpdateOptions } = {}): Promise<BatchResult> {
     if (ops.length === 0) throw new PathError("연산이 비어 있습니다");
     if (ops.length > 500) throw new PathError("한 번에 500개까지 처리할 수 있습니다");
     const guard = opts.guard ?? (() => undefined);
@@ -291,6 +321,7 @@ export class Vault {
 
       // 1) 계획: 가상의 상태 위에서 모든 연산을 검사한다. 디스크는 아직 그대로다.
       const verbs: string[] = [];
+      const moveList: [string, string][] = [];
       for (const op of ops) {
         if (op.op === "move") {
           const from = resolved.get(op.from)!;
@@ -305,6 +336,7 @@ export class Vault {
           if (b.content !== null) throw new ConflictError(b.hash, "이미 같은 이름의 문서가 있습니다", to);
           set(b, a.content);
           set(a, null);
+          moveList.push([from, to]);
           verbs.push(`이동: ${from} → ${to}`);
           continue;
         }
@@ -340,11 +372,48 @@ export class Vault {
         }
       }
 
+      // 1-2) 이동한 문서를 가리키던 링크를 고친다(모든 연산을 적용한 가상 상태 위에서)
+      const linksUpdated: string[] = [];
+      let linkCount = 0;
+      const moves = chainMoves(moveList);
+      if (moves.size > 0 && opts.links?.enabled !== false) {
+        const canSee = opts.links?.canSee ?? (() => true);
+        const before = (await this.allFiles()).filter(canSee);
+        const after = new Set(before);
+        for (const [rel, s] of slots) {
+          if (s.content === null && !s.bytes) after.delete(rel);
+          else if (canSee(rel)) after.add(rel);
+        }
+        const ctx = { moves, before, after: [...after], fullPaths: opts.links?.fullPaths };
+        const origin = new Map([...moves].map(([from, to]) => [to, from]));
+        for (const rel of [...after].sort()) {
+          if (!isMarkdown(rel) || this.readOnly(rel)) continue;
+          if (opts.links?.only && !opts.links.only.has(rel)) continue;
+          const existing = slots.get(rel);
+          const content = existing ? existing.content : ((await this.readBuffer(path.join(this.root, rel)))?.toString("utf8") ?? null);
+          if (content === null) continue;
+          const r = rewriteLinks(content, origin.get(rel) ?? rel, rel, ctx);
+          if (!r) continue;
+          // 이동 대상 문서는 이미 create 검사를 받았다. 나머지는 고칠 권한이 없으면 조용히 건너뛴다.
+          if (!origin.has(rel)) {
+            try {
+              guard("modify", rel);
+            } catch {
+              continue;
+            }
+          }
+          if (!existing) resolvedAbs.set(rel, (await this.resolve(rel)).abs);
+          set(await slot(rel), r.content);
+          linksUpdated.push(rel);
+          linkCount += r.count;
+        }
+      }
+
       const changed = [...slots.entries()].filter(([, s]) => {
         const before = s.original === null ? null : hashContent(s.original);
         return before !== s.hash;
       });
-      const files = [...slots.entries()].map(([p, s]) => ({ path: p, hash: s.hash }));
+      const files = changed.map(([p, s]) => ({ path: p, hash: s.hash }));
       if (opts.dryRun) {
         // 검사만 하고 디스크는 그대로 둔다(변경 검토 대기열용)
         const preview = changed.map(([rel, s]) => {
@@ -358,9 +427,9 @@ export class Vault {
             binary,
           };
         });
-        return { rev: null, files, preview };
+        return { rev: null, files, preview, linksUpdated, linkCount };
       }
-      if (changed.length === 0) return { rev: null, files };
+      if (changed.length === 0) return { rev: null, files, linksUpdated, linkCount };
 
       // 2) 적용: 실패하면 원래 바이트로 되돌린다.
       const written: [string, Slot][] = [];
@@ -378,8 +447,10 @@ export class Vault {
             await writeFile(s.abs, s.content, "utf8");
           }
         }
+        // 제목은 연산만으로 정한다(이동 하나면 "이동: a → b" — ScopedVault.history가 이 모양을 본다). 링크 갱신은 본문에.
         const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0] : `일괄 변경 ${verbs.length}건`);
-        const body = verbs.length > 1 || opts.message ? `${message}\n\n${verbs.join("\n")}` : message;
+        const lines = [...(verbs.length > 1 || opts.message ? verbs : []), ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => `링크 갱신: ${p}`)];
+        const body = lines.length > 0 ? `${message}\n\n${lines.join("\n")}` : message;
         const rev = await this.commitChanges(body, author, changed.map(([rel]) => rel));
         for (const fn of this.listeners) {
           try {
@@ -388,7 +459,7 @@ export class Vault {
             console.error("변경 알림 처리 실패", err);
           }
         }
-        return { rev, files };
+        return { rev, files, linksUpdated, linkCount };
       } catch (e) {
         for (const [, s] of written.reverse()) {
           try {

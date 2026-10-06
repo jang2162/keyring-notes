@@ -67,7 +67,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     read: (path) => wrap(() => vault.read(path)),
     write: (path, content, baseHash) => wrap(() => vault.write(path, content, baseHash)),
     remove: (path, baseHash) => wrap(() => vault.remove(path, baseHash)),
-    move: (from, to, baseHash) => wrap(() => vault.move(from, to, baseHash)),
+    move: (from, to, baseHash, opts) => wrap(() => vault.move(from, to, baseHash, opts)),
     history: (path) => wrap(() => vault.history(path)),
     revision: (path, rev) => wrap(() => vault.revision(path, rev)),
     rollback: (path, rev, baseHash) => wrap(() => vault.rollback(path, rev, baseHash)),
@@ -80,12 +80,16 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     createTopic: (name) => wrap(() => vault.createTopic(name)),
     ingest: serverOnly("원본 수집"),
     uploadFile: serverOnly("파일 업로드"),
+    uploadAttachment: async (path, file) => wrap(async () => vault.putFile(path, new Uint8Array(await file.arrayBuffer()))),
     lint: (folder) => wrap(() => vault.lint({ folder })),
     sources: (path) => wrap(() => vault.sources(path)),
+    properties: () => wrap(async () => vault.properties()),
+    mentions: (path) => wrap(() => vault.mentions(path)),
     graph: (folder) => wrap(() => vault.graph(folder)),
     semanticStatus: async () => ({ enabled: false }),
     semantic: serverOnly("의미 검색"),
     rawUrl,
+    readBytes: (path) => wrap(() => vault.readBytes(path)),
   };
   return local;
 }

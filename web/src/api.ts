@@ -5,6 +5,7 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
+import type { Mention, PropertyStat } from "@keyring-notes/core";
 import { isNetworkError, offline } from "./offline";
 
 export interface Doc {
@@ -88,14 +89,30 @@ export interface TaskRow {
   text: string;
 }
 
+export interface WidgetRow {
+  path: string;
+  title: string;
+  values: Record<string, unknown>;
+  /** 문서 해시(위젯에서 프런트매터를 고칠 때 baseHash) */
+  hash: string;
+  summary?: string;
+}
+
+/** 문서 목록 위젯(query·table·cards·kanban) */
+export interface ListWidgetResult {
+  type: "query" | "table" | "cards" | "kanban";
+  title?: string;
+  columns: string[];
+  rows: WidgetRow[];
+  total: number;
+  /** 묶을 필드(kanban은 칸) */
+  group?: string;
+  /** kanban 칸 순서 */
+  lanes?: string[];
+}
+
 export type WidgetResult =
-  | {
-      type: "query" | "table";
-      title?: string;
-      columns: string[];
-      rows: { path: string; title: string; values: Record<string, unknown> }[];
-      total: number;
-    }
+  | ListWidgetResult
   | { type: "tasks"; title?: string; groups: { path: string; title: string; hash: string; tasks: TaskRow[] }[]; total: number }
   | { type: "chart"; title?: string; chart: "bar" | "line"; x: string; y: string; series: { label: string; value: number }[] }
   | {
@@ -104,7 +121,7 @@ export type WidgetResult =
       options: Record<string, unknown>;
       title?: string;
       columns: string[];
-      rows: { path: string; title: string; values: Record<string, unknown> }[];
+      rows: WidgetRow[];
       total: number;
     };
 
@@ -112,6 +129,28 @@ export interface AuthStatus {
   authenticated: boolean;
   principal: { name: string; kind: "owner" | "agent" } | null;
   passwordSet: boolean;
+  /** 이 주소로 등록한 패스키가 있다 */
+  passkey?: boolean;
+}
+
+export interface PasskeyInfo {
+  id: string;
+  name: string;
+  rpID: string;
+  transports: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+/** 이 브라우저가 패스키를 쓸 수 있는지(https 또는 localhost) */
+export const passkeySupported = () => typeof window !== "undefined" && window.isSecureContext && typeof window.PublicKeyCredential === "function";
+
+/** 패스키 로그인(서버 모드). 브라우저 쪽 WebAuthn 도우미는 쓸 때만 불러온다 */
+export async function passkeyLogin(): Promise<void> {
+  const { startAuthentication } = await import("@simplewebauthn/browser");
+  const { id, options } = await request<{ id: string; options: Parameters<typeof startAuthentication>[0]["optionsJSON"] }>("POST", "/api/auth/passkey/options", {});
+  const response = await startAuthentication({ optionsJSON: options });
+  await request<{ ok: true }>("POST", "/api/auth/passkey/login", { id, response });
 }
 
 export type Level = "hidden" | "read" | "append" | "write" | "delete";
@@ -170,7 +209,7 @@ export interface AdminStatus {
   security: { https: boolean; publicUrl: string | null; allowedHosts: string[] | null };
   storage?: {
     s3: string | null;
-    remoteBackups: { enabled: boolean; lastUpload: string | null; lastError: string | null } | null;
+    remoteBackups: { enabled: boolean; encrypted?: boolean; lastUpload: string | null; lastError: string | null } | null;
     blobs: { count: number; bytes: number; pending: number; minBytes: number; lastError: string | null } | null;
   };
 }
@@ -238,9 +277,17 @@ export interface GraphData {
   edges: { source: string; target: string; kind: "link" | "source" }[];
 }
 
+/** 연결되지 않은 언급: 이 문서의 이름이 링크 없이 나오는 다른 문서(줄·위치는 그 문서 원문 기준) */
+export interface MentionsInfo {
+  path: string;
+  names: string[];
+  docs: { path: string; title: string; hash: string; mentions: Mention[] }[];
+}
+
 export interface SourcesInfo {
   path: string;
-  sources: { target: string; path: string | null }[];
+  /** anchor: `#제목`·`#^블록`(원본의 어느 부분을 인용했는지) */
+  sources: { target: string; path: string | null; anchor?: string }[];
   citedBy: { path: string; title: string }[];
   linkedBy: { path: string; title: string }[];
 }
@@ -302,6 +349,14 @@ export const admin = {
   devices: () => request<{ devices: DeviceInfo[] }>("GET", "/api/admin/devices").then((r) => r.devices),
   removeDevice: (id: string) => request<unknown>("DELETE", `/api/admin/devices/${enc(id)}`, {}),
   password: (current: string, next: string) => request<unknown>("POST", "/api/admin/password", { current, next }),
+  passkeys: () => request<{ passkeys: PasskeyInfo[]; here: string | null }>("GET", "/api/admin/passkeys"),
+  async registerPasskey(name: string): Promise<PasskeyInfo> {
+    const { startRegistration } = await import("@simplewebauthn/browser");
+    const { id, options } = await request<{ id: string; options: Parameters<typeof startRegistration>[0]["optionsJSON"] }>("POST", "/api/admin/passkeys/options", {});
+    const response = await startRegistration({ optionsJSON: options });
+    return request<PasskeyInfo>("POST", "/api/admin/passkeys", { id, response, name });
+  },
+  removePasskey: (id: string) => request<unknown>("DELETE", `/api/admin/passkeys/${enc(id)}`, {}),
   backups: () => request<{ backups: BackupInfo[]; settings: BackupSettings }>("GET", "/api/admin/backups"),
   createBackup: (includeConfig?: boolean) => request<BackupInfo>("POST", "/api/admin/backups", { includeConfig }),
   backupSettings: (s: Partial<BackupSettings>) => request<{ settings: BackupSettings }>("PUT", "/api/admin/backups/settings", s),
@@ -370,7 +425,9 @@ const remoteApi = {
   write: (path: string, content: string, baseHash: string | null) =>
     request<Doc>("PUT", "/api/file", { path, content, baseHash }),
   remove: (path: string, baseHash: string) => request<unknown>("DELETE", "/api/file", { path, baseHash }),
-  move: (from: string, to: string, baseHash: string) => request<Doc>("POST", "/api/move", { from, to, baseHash }),
+  /** 이동·이름 바꾸기. 기본으로 이 문서를 가리키던 링크도 같이 고친다(linksUpdated: 고친 문서, linkCount: 고친 링크 수) */
+  move: (from: string, to: string, baseHash: string, opts: { updateLinks?: boolean } = {}) =>
+    request<Doc & { linksUpdated?: string[]; linkCount?: number }>("POST", "/api/move", { from, to, baseHash, updateLinks: opts.updateLinks }),
   history: (path: string) => request<{ commits: CommitInfo[] }>("GET", `/api/history?path=${q(path)}`).then((r) => r.commits),
   revision: (path: string, rev: string) =>
     request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),
@@ -386,6 +443,18 @@ const remoteApi = {
   topics: () => request<{ topics: Topic[] }>("GET", "/api/topics").then((r) => r.topics),
   createTopic: (name: string) => request<{ topic: string; schema: string }>("POST", "/api/topics", { name }),
   ingest: (req: IngestRequest) => request<IngestResult>("POST", "/api/ingest", req),
+  /** 첨부 파일 새로 만들기(붙여넣기·끌어놓기). 이미 있으면 409 */
+  async uploadAttachment(path: string, file: Blob): Promise<{ path: string; hash: string | null }> {
+    const res = await fetch(`/api/attachment?path=${q(path)}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", "x-keyring-upload": "1" },
+      body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
+    if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText, data.currentHash);
+    return data as { path: string; hash: string | null };
+  },
   async uploadFile(topic: string, file: File): Promise<IngestResult> {
     const res = await fetch(`/api/ingest/file?topic=${q(topic)}&name=${q(file.name)}`, {
       method: "POST",
@@ -399,11 +468,20 @@ const remoteApi = {
   },
   lint: (folder?: string) => request<LintReport>("GET", `/api/lint${folder ? `?folder=${q(folder)}` : ""}`),
   sources: (path: string) => request<SourcesInfo>("GET", `/api/sources?path=${q(path)}`),
+  properties: () => request<{ properties: PropertyStat[] }>("GET", "/api/properties").then((r) => r.properties),
+  mentions: (path: string) => request<MentionsInfo>("GET", `/api/mentions?path=${q(path)}`),
   graph: (folder?: string) => request<GraphData>("GET", `/api/graph${folder ? `?folder=${q(folder)}` : ""}`),
   semanticStatus: () => request<{ enabled: boolean; model?: string; pending?: number; chunks?: number; lastError?: string | null }>("GET", "/api/semantic/status"),
   semantic: (query: string) =>
     request<{ hits: { path: string; title: string; score: number; heading: string; snippet: string }[] }>("GET", `/api/semantic?q=${encodeURIComponent(query)}&limit=20`).then((r) => r.hits),
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
+  /** 첨부 파일 내용(PDF 보기) */
+  readBytes: async (path: string): Promise<Uint8Array> => {
+    const res = await fetch(`/api/raw?path=${q(path)}`, { credentials: "same-origin" });
+    if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
+    if (!res.ok) throw new ApiError(res.status, "error", res.status === 404 ? `파일이 없습니다: ${path}` : res.statusText);
+    return new Uint8Array(await res.arrayBuffer());
+  },
 };
 
 /** 화면이 쓰는 볼트 API. 서버(REST)와 기기 로컬 볼트가 같은 모양으로 구현한다. */

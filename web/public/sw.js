@@ -4,6 +4,8 @@
 const BUILD = "__KEYRING_BUILD__";
 const CACHE = `keyring-shell-${BUILD}`;
 const STATIC = ["/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+// 처음 화면에는 없지만 나중에 불러오는 자산(수식·다이어그램 조각, 글꼴). 빌드 때 채워진다.
+const LAZY = "__KEYRING_LAZY__";
 
 async function precache() {
   const cache = await caches.open(CACHE);
@@ -26,7 +28,24 @@ self.addEventListener("activate", (e) => {
       await self.clients.claim();
     })(),
   );
+  // 활성화를 막지 않고 뒤에서: 나중에 불러오는 자산을 받아 둬 오프라인에서도 수식·다이어그램이 보이게.
+  // 데이터 절약 모드면 받지 않는다(쓸 때 받은 것만 캐시된다).
+  if (!(self.navigator.connection && self.navigator.connection.saveData) && Array.isArray(LAZY)) void warmLazy();
 });
+
+async function warmLazy() {
+  const cache = await caches.open(CACHE);
+  for (const url of LAZY) {
+    try {
+      if (!(await cache.match(url))) {
+        const res = await fetch(url);
+        if (res.ok) await cache.put(url, res);
+      }
+    } catch {
+      return; // 연결이 끊겼으면 다음에
+    }
+  }
+}
 
 function remember(req, res) {
   if (res.ok) {

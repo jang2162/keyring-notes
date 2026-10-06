@@ -101,7 +101,7 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
   server.registerTool(
     "read_section",
     {
-      description: "문서 일부 읽기. heading(예: '설치 > 요구사항') 또는 start_line/end_line(1부터, 포함)",
+      description: "문서 일부 읽기. heading(예: '설치 > 요구사항', 블록 ID면 '^p3') 또는 start_line/end_line(1부터, 포함)",
       inputSchema: {
         path: z.string(),
         heading: z.string().optional(),
@@ -151,6 +151,16 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
     "backlinks",
     { description: "이 문서를 위키링크로 가리키는 문서 목록", inputSchema: { path: z.string() }, annotations: ro },
     ({ path }) => run(() => scoped.backlinks(path)),
+  );
+
+  server.registerTool(
+    "unlinked_mentions",
+    {
+      description: "이 문서의 이름(파일 이름·title·aliases)이 링크 없이 나오는 다른 문서와 그 자리(줄·위치·문맥). 링크로 바꾸려면 write_document로 그 문서를 고친다",
+      inputSchema: { path: z.string() },
+      annotations: ro,
+    },
+    ({ path }) => run(() => scoped.mentions(path)),
   );
 
   server.registerTool(
@@ -256,11 +266,12 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
   server.registerTool(
     "move_document",
     {
-      description: "문서 이동·이름 변경. 원래 위치에 delete 권한이 필요하다.",
-      inputSchema: { from: z.string(), to: z.string(), base_hash: hash },
+      description:
+        "문서 이동·이름 변경. 원래 위치에 delete 권한이 필요하다. 기본으로 이 문서를 가리키던 링크(위키링크·상대 마크다운 링크·프런트매터 sources)를 같은 커밋에서 고친다(쓰기 권한이 있는 문서만, linksUpdated). update_links=false면 고치지 않는다.",
+      inputSchema: { from: z.string(), to: z.string(), base_hash: hash, update_links: z.boolean().optional().describe("링크 자동 갱신(기본 true)") },
       annotations: { destructiveHint: true, openWorldHint: false },
     },
-    ({ from, to, base_hash }) => run(() => scoped.move(from, to, base_hash).then(stripContent)),
+    ({ from, to, base_hash, update_links }) => run(() => scoped.move(from, to, base_hash, { updateLinks: update_links }).then(stripContent)),
   );
 
   server.registerTool(
@@ -277,14 +288,15 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
     "batch_write",
     {
       description:
-        "여러 연산(write/append/delete/move)을 하나의 커밋으로. 앞 연산 결과 위에서 차례로 검사되며, 하나라도 실패하면 아무것도 바뀌지 않는다.",
+        "여러 연산(write/append/delete/move)을 하나의 커밋으로. 앞 연산 결과 위에서 차례로 검사되며, 하나라도 실패하면 아무것도 바뀌지 않는다. move가 있으면 링크를 함께 고친다(update_links=false로 끔).",
       inputSchema: {
         message: z.string().optional().describe("커밋 메시지"),
         operations: z.array(opSchema).min(1).max(500),
+        update_links: z.boolean().optional().describe("move 때 링크 자동 갱신(기본 true)"),
       },
       annotations: { destructiveHint: true, openWorldHint: false },
     },
-    ({ message, operations }) => run(() => scoped.batch(operations.map(toOp), message)),
+    ({ message, operations, update_links }) => run(() => scoped.batch(operations.map(toOp), message, { updateLinks: update_links })),
   );
 
   return server;

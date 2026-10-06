@@ -39,6 +39,12 @@ class FakeServer implements RemoteVault {
     await this.put(path, content);
     return { hash: this.files.get(path)!.hash };
   }
+  async putRaw(path: string, data: Uint8Array) {
+    this.check();
+    if (this.files.has(path)) throw new ConflictError(this.files.get(path)!.hash);
+    await this.put(path, data);
+    return { hash: this.files.get(path)!.hash };
+  }
   async remove(path: string, baseHash: string) {
     this.check();
     const cur = this.files.get(path)?.hash ?? null;
@@ -227,6 +233,19 @@ describe("동기화", () => {
     await sb.run();
     await sa.run();
     expect(await content(a.v, "공유.md")).toBe("폰에서 이어 씀");
+  });
+
+  it("기기에서 새로 만든 첨부(붙여넣은 이미지)는 올린다", async () => {
+    const server = new FakeServer();
+    const { v } = await device();
+    await v.putFile("노트/attachments/그림.png", new Uint8Array([5, 6]));
+    await v.write("노트/글.md", "![[그림.png]]", null);
+    const r = await new SyncEngine(v, server).run();
+    expect(r.pushed.sort()).toEqual(["노트/attachments/그림.png", "노트/글.md"]);
+    expect([...(server.files.get("노트/attachments/그림.png")!.content as Uint8Array)]).toEqual([5, 6]);
+    const again = await new SyncEngine(v, server).run();
+    expect([again.pushed, again.pulled, again.skipped].flat()).toEqual([]);
+    await expect(v.putFile("노트/attachments/그림.png", new Uint8Array([1]))).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("기기에서 바뀐 첨부는 보내지 않고 알린다", async () => {

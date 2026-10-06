@@ -1,7 +1,10 @@
+import { propertyStats, type PropertyStat } from "./frontmatter.js";
+import { mentionNames, unlinkedMentions, type Mention } from "./mentions.js";
 import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysis.js";
+import { rewriteLinks, type LinkRewriteContext } from "./links.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "./errors.js";
 import { fromUtf8, sha256Hex, utf8 } from "./hash.js";
-import { analyze, parseFrontmatter, resolveLink, setTaskState, sourceTargets } from "./markdown.js";
+import { analyze, anchorExists, parseFrontmatter, resolveLink, setTaskState, sourceRefs } from "./markdown.js";
 import { isMarkdown, normalizeFolder, normalizeVaultPath, PathError } from "./paths.js";
 import type { CommitInfo, DocMeta, LinkRow, SearchHit, TaskRow, TreeNode } from "./types.js";
 import { parseWidget, runWidget, type WidgetResult } from "./widget.js";
@@ -409,13 +412,35 @@ export class LocalVault {
     return this.withTitles(this.incoming(normalizeVaultPath(input)));
   }
 
+  /** 속성(프런트매터) 이름·종류·자주 쓴 값 */
+  properties(): PropertyStat[] {
+    return propertyStats(this.docs());
+  }
+
+  /** 연결되지 않은 언급: 이 문서의 이름이 링크 없이 나오는 다른 문서와 그 자리 */
+  async mentions(input: string): Promise<{ path: string; names: string[]; docs: { path: string; title: string; hash: string; mentions: Mention[] }[] }> {
+    const doc = await this.read(input);
+    const names = mentionNames(doc.path, parseFrontmatter(doc.content).data);
+    const lowered = names.map((n) => n.toLowerCase());
+    const docs: { path: string; title: string; hash: string; mentions: Mention[] }[] = [];
+    for (const e of this.mdEntries().sort((a, b) => (a.path < b.path ? -1 : 1))) {
+      if (e.path === doc.path || !e.content) continue;
+      const lower = e.content.toLowerCase();
+      if (!lowered.some((n) => lower.includes(n))) continue;
+      const found = unlinkedMentions(e.content, names);
+      if (found.length) docs.push({ path: e.path, title: e.meta?.title ?? e.path, hash: e.hash!, mentions: found.slice(0, 50) });
+      if (docs.length >= 100) break;
+    }
+    return { path: doc.path, names, docs };
+  }
+
   async sources(input: string) {
     const doc = await this.read(input);
     const fm = parseFrontmatter(doc.content).data;
     const files = this.allPaths();
     return {
       path: doc.path,
-      sources: sourceTargets(fm).map((target) => ({ target, path: resolveLink(target, files) })),
+      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files), ...(r.anchor ? { anchor: r.anchor } : {}) })),
       citedBy: this.withTitles(this.incoming(doc.path, "source")),
       linkedBy: this.withTitles(this.incoming(doc.path, "link")),
     };
@@ -447,7 +472,19 @@ export class LocalVault {
   }
 
   lint(opts: { folder?: string; staleDays?: number } = {}): LintReport {
+    // 문단·제목을 가리키는 출처가 실제로 있는지
+    const files = this.allPaths();
+    const missingAnchors: { src: string; target: string; anchor: string }[] = [];
+    for (const e of this.mdEntries()) {
+      for (const r of sourceRefs(e.meta!.frontmatter)) {
+        if (!r.anchor) continue;
+        const to = resolveLink(r.target, files);
+        const content = to ? this.files.get(to)?.content : undefined;
+        if (content !== undefined && !anchorExists(content, r.anchor)) missingAnchors.push({ src: e.path, target: r.target, anchor: r.anchor });
+      }
+    }
     return lintVault({
+      missingAnchors,
       docs: this.docs(),
       files: this.allPaths(),
       links: this.linkRows(),
@@ -577,16 +614,60 @@ export class LocalVault {
     });
   }
 
-  move(fromInput: string, toInput: string, baseHash: string): Promise<LocalDoc> {
+  /**
+   * 이동·이름 바꾸기. updateLinks(기본 켬)면 이 문서를 가리키던 링크(다른 문서와 이 문서 자신의 상대 링크)를
+   * 같은 기록 안에서 함께 고친다. linksUpdated: 링크를 고친 문서(이동한 문서 포함), linkCount: 고친 링크 수.
+   */
+  move(fromInput: string, toInput: string, baseHash: string, opts: { updateLinks?: boolean } = {}): Promise<LocalDoc & { linksUpdated: string[]; linkCount: number }> {
     return this.exclusive(async () => {
       const from = this.requireWritable(fromInput);
       const to = this.requireWritable(toInput);
       if (from === to) throw new PathError("같은 경로입니다");
       this.check(from, baseHash);
       if (this.files.has(to)) throw new ConflictError(this.files.get(to)!.hash, `이미 있는 문서입니다: ${to}`);
-      const content = this.files.get(from)!.content!;
-      await this.apply([{ path: to, content, from }], this.author, `이동: ${from} → ${to}`, "local");
-      return { path: to, content, hash: this.files.get(to)!.hash! };
+      let content = this.files.get(from)!.content!;
+      const changes: { path: string; content: string | null; from?: string }[] = [];
+      const linksUpdated: string[] = [];
+      let linkCount = 0;
+      if (opts.updateLinks !== false) {
+        const generated = [...this.topicSet].flatMap(generatedPaths);
+        const before = [...this.files.keys(), ...generated];
+        const ctx: LinkRewriteContext = { moves: new Map([[from, to]]), before, after: [...before.filter((p) => p !== from), to] };
+        const own = rewriteLinks(content, from, to, ctx);
+        if (own) {
+          content = own.content;
+          linksUpdated.push(to);
+          linkCount += own.count;
+        }
+        for (const e of this.mdEntries()) {
+          if (e.path === from) continue;
+          const r = rewriteLinks(e.content!, e.path, e.path, ctx);
+          if (!r) continue;
+          changes.push({ path: e.path, content: r.content });
+          linksUpdated.push(e.path);
+          linkCount += r.count;
+        }
+      }
+      await this.apply([{ path: to, content, from }, ...changes], this.author, `이동: ${from} → ${to}`, "local");
+      return { path: to, content, hash: this.files.get(to)!.hash!, linksUpdated, linkCount };
+    });
+  }
+
+  /**
+   * 첨부 파일(이미지 등) 새로 만들기. 이미 있으면 충돌. 첨부는 변경 기록(스냅샷)에 내용을 남기지 않는다
+   * (기록의 스냅샷은 마크다운 원문용이다).
+   */
+  putFile(input: string, data: Uint8Array): Promise<{ path: string; hash: string }> {
+    return this.exclusive(async () => {
+      const rel = normalizeVaultPath(input);
+      if (isMarkdown(rel)) throw new PathError("마크다운 문서는 write로 씁니다");
+      if (this.isGenerated(rel)) throw new ForbiddenError("자동 생성 문서 자리입니다");
+      if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, `이미 있는 파일입니다: ${rel}`);
+      const st = await this.store.write(rel, data);
+      const hash = await sha256Hex(data);
+      this.files.set(rel, { path: rel, size: st.size, mtime: st.mtime, md: false, hash });
+      this.emit([rel], "local");
+      return { path: rel, hash };
     });
   }
 

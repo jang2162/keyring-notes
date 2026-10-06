@@ -45,6 +45,8 @@ export function lintVault(input: {
   staleDays?: number;
   required?: string[];
   now?: number;
+  /** 출처가 가리키는 제목·블록(`#^id`)이 대상 문서에 없는 것(부르는 쪽이 내용을 읽어 확인해 넘긴다) */
+  missingAnchors?: { src: string; target: string; anchor: string }[];
 }): LintReport {
   const { files, links, canRead, wiki } = input;
   const f = input.folder;
@@ -79,6 +81,11 @@ export function lintVault(input: {
           : { kind: "broken_link", path: r.src, target: r.target, detail: `링크 [[${r.target}]]의 대상이 없거나 볼 수 없음` },
       );
     }
+  }
+
+  for (const m of input.missingAnchors ?? []) {
+    if (!inScope(m.src)) continue;
+    issues.push({ kind: "broken_source", path: m.src, target: `${m.target}#${m.anchor}`, detail: `출처 "${m.target}"에 ${m.anchor.startsWith("^") ? `블록 ${m.anchor}` : `제목 "${m.anchor}"`}이(가) 없음` });
   }
 
   const now = input.now ?? Date.now();
