@@ -146,6 +146,17 @@ export interface BackupSettings {
   intervalHours: number;
   keep: number;
   includeConfig: boolean;
+  /** 백업을 S3에도 올리기 */
+  remote: boolean;
+  remoteKeep: number;
+}
+
+export interface RemoteBackupInfo {
+  name: string;
+  kind: "auto" | "manual" | "pre-restore";
+  size: number;
+  uploadedAt: string;
+  local: boolean;
 }
 
 export interface AdminStatus {
@@ -157,6 +168,11 @@ export interface AdminStatus {
   backups: { dir: string; count: number; last: BackupInfo | null; next: string | null; settings: BackupSettings; lastError: string | null };
   agents: { name: string; lastUsed: string | null }[];
   security: { https: boolean; publicUrl: string | null; allowedHosts: string[] | null };
+  storage?: {
+    s3: string | null;
+    remoteBackups: { enabled: boolean; lastUpload: string | null; lastError: string | null } | null;
+    blobs: { count: number; bytes: number; pending: number; minBytes: number; lastError: string | null } | null;
+  };
 }
 
 export interface UpdateInfo {
@@ -290,8 +306,18 @@ export const admin = {
   createBackup: (includeConfig?: boolean) => request<BackupInfo>("POST", "/api/admin/backups", { includeConfig }),
   backupSettings: (s: Partial<BackupSettings>) => request<{ settings: BackupSettings }>("PUT", "/api/admin/backups/settings", s),
   removeBackup: (name: string) => request<unknown>("DELETE", `/api/admin/backups/${enc(name)}`, {}),
+  remoteBackups: () =>
+    request<{ configured: boolean; location?: string; backups: RemoteBackupInfo[]; lastError?: string | null }>("GET", "/api/admin/backups/remote"),
+  fetchRemote: (name: string) => request<BackupInfo>("POST", `/api/admin/backups/remote/${enc(name)}/fetch`, {}),
+  pushRemote: (name: string) => request<unknown>("POST", `/api/admin/backups/${enc(name)}/push`, {}),
   restore: (name: string, restoreConfig: boolean) =>
-    request<{ restoredHead: string; previousRef: string | null; preRestoreBackup: string | null; configRestored: boolean }>(
+    request<{
+      restoredHead: string;
+      previousRef: string | null;
+      preRestoreBackup: string | null;
+      configRestored: boolean;
+      attachments?: { downloaded: string[]; removed: string[]; missing: string[] };
+    }>(
       "POST",
       `/api/admin/backups/${enc(name)}/restore`,
       { restoreConfig },
@@ -327,8 +353,9 @@ const remoteApi = {
     }
   },
   /** 오프라인 저장 대기 내용이 있으면 그것을, 연결이 없으면 이 기기의 사본을 돌려준다. */
-  async read(path: string): Promise<Doc> {
-    const pending = await offline.pendingFor(path).catch(() => undefined);
+  /** fresh: 오프라인 대기분을 건너뛰고 서버 것을 읽는다(병합할 때) */
+  async read(path: string, opts: { fresh?: boolean } = {}): Promise<Doc> {
+    const pending = opts.fresh ? undefined : await offline.pendingFor(path).catch(() => undefined);
     if (pending) return { path, content: pending.content, hash: pending.baseHash ?? "", pendingOffline: true };
     try {
       const d = await request<Doc>("GET", `/api/file?path=${q(path)}`);

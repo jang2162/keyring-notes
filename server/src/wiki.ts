@@ -35,7 +35,7 @@ export class Wiki {
     }
     this.index.skip = (rel) => this.isGenerated(rel);
     this.vault.readOnly = (rel) => this.isGenerated(rel);
-    this.vault.git.extraExcludes = this.generatedPaths();
+    this.vault.git.presetExcludes("wiki", this.generatedPaths());
   }
 
   /** vault.init() 뒤에 부른다: 예전에 추적되던 자동 생성 문서가 있으면 이력에서 빼고, 모두 다시 만든다. */
@@ -76,7 +76,7 @@ export class Wiki {
   }
 
   private async updateExcludes() {
-    await this.vault.git.setExtraExcludes(this.generatedPaths());
+    await this.vault.git.setExcludes("wiki", this.generatedPaths());
     await this.vault.git.commitStaged("자동 생성 문서를 이력에서 제외", SYSTEM_AUTHOR);
   }
 

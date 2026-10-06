@@ -15,6 +15,8 @@ import { Automation } from "./automation.js";
 import { ScopedVault } from "./scoped.js";
 import { SemanticIndex } from "./embeddings.js";
 import { Wiki } from "./wiki.js";
+import { BlobStore } from "./blobs.js";
+import { S3Client, s3ConfigFromEnv } from "./s3.js";
 import { Vault } from "./vault.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -45,8 +47,16 @@ await mkdir(vaultDir, { recursive: true });
 const index = new NoteIndex(path.resolve(env("KEYRING_INDEX") ?? path.join(vaultDir, ".keyring", "index.db")));
 const wiki = new Wiki(vault, index);
 const started = Date.now();
+// S3(선택): 원격 백업과 큰 첨부 보관
+const s3Config = s3ConfigFromEnv();
+const s3 = s3Config ? new S3Client(s3Config) : null;
+const blobs =
+  s3 && process.env.KEYRING_S3_BLOBS === "1" ? new BlobStore(vault, s3, Math.max(0, Number(env("KEYRING_S3_BLOB_MIN_KB") ?? 256)) * 1024) : null;
+
 // 순서: 위키 토픽을 먼저 찾아 자동 생성 문서를 Git·인덱스 제외 목록에 올린 뒤 볼트를 연다.
+// S3 첨부 목록도 먼저 읽어, 시작 커밋에 큰 첨부가 섞이지 않게 한다.
 await wiki.prepare();
+if (blobs) await blobs.attach();
 await vault.init();
 await wiki.init();
 const synced = await index.sync(vault);
@@ -58,7 +68,11 @@ vault.onChange((paths) => wiki.onChange(paths));
 
 const ingestor = new Ingestor(vault, wiki, { allowPrivate: process.env.KEYRING_FETCH_ALLOW_PRIVATE === "1" });
 const backups = new BackupService(vault, config, backupDir, () => wiki.resync());
+backups.remote = s3;
+backups.blobs = blobs;
 if (process.env.KEYRING_BACKUP_SCHEDULER !== "0") backups.start();
+if (blobs) blobs.start();
+if (s3) console.log(`S3: ${s3.describe()} (원격 백업${blobs ? `, ${blobs.minBytes / 1024}KB 이상 첨부 보관` : ""})`);
 
 // 처음 설치: 비밀번호가 없으면 일회용 설정 코드를 만들어 로그에만 보여 준다(웹에서 비밀번호 설정).
 let setupCode: string | null = null;
@@ -107,7 +121,7 @@ const app = createApp({
   config,
   wiki,
   ingestor,
-  admin: { backups, publicUrl, allowedHosts, updateUrl, automation },
+  admin: { backups, publicUrl, allowedHosts, updateUrl, automation, s3, blobs },
   setupCode: () => (config.get().owner.passwordHash === null ? setupCode : null),
 });
 

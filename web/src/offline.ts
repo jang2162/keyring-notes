@@ -13,6 +13,8 @@ export interface OutboxItem {
   content: string;
   /** 오프라인 편집을 시작한 서버 버전. 새 문서면 null */
   baseHash: string | null;
+  /** 그 버전의 내용(다시 연결됐을 때 서버 변경과 3방향 병합하는 기준). 예전 대기분에는 없다 */
+  baseContent?: string | null;
   queuedAt: string;
 }
 
@@ -71,9 +73,11 @@ export const offline = {
     return (await tx("meta", "readonly", (s) => s.get("tree"))) as TreeNode[] | undefined;
   },
   /** 오프라인 저장. 같은 문서를 여러 번 저장하면 내용만 바꾸고 처음 baseHash는 유지한다. */
-  async queue(path: string, content: string, baseHash: string | null): Promise<void> {
+  async queue(path: string, content: string, baseHash: string | null, baseContent: string | null = null): Promise<void> {
     const prev = (await tx("outbox", "readonly", (s) => s.get(path))) as OutboxItem | undefined;
-    const item: OutboxItem = { path, content, baseHash: prev ? prev.baseHash : baseHash, queuedAt: new Date().toISOString() };
+    const item: OutboxItem = prev
+      ? { ...prev, content, queuedAt: new Date().toISOString() }
+      : { path, content, baseHash, baseContent, queuedAt: new Date().toISOString() };
     await tx("outbox", "readwrite", (s) => s.put(item));
     await tx("docs", "readwrite", (s) => s.put({ path, content, hash: item.baseHash ?? "" }));
   },

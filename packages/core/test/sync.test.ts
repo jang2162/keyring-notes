@@ -119,6 +119,52 @@ describe("동기화", () => {
     expect([again.pulled, again.pushed, again.conflicts].flat()).toEqual([]);
   });
 
+  it("양쪽이 서로 다른 곳을 고쳤으면 자동으로 합친다", async () => {
+    const doc = "# 메모\n\n## 아침\n운동\n\n## 저녁\n독서\n";
+    const server = new FakeServer();
+    await server.put("메모.md", doc);
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await v.write("메모.md", doc.replace("운동", "운동 30분"), (await v.read("메모.md")).hash);
+    await server.put("메모.md", doc.replace("독서", "독서 1시간"));
+    const r = await sync.run();
+    expect(r.conflicts).toEqual([]);
+    expect(r.merged).toEqual(["메모.md"]);
+    const merged = doc.replace("운동", "운동 30분").replace("독서", "독서 1시간");
+    expect(await content(v, "메모.md")).toBe(merged);
+    expect(server.text("메모.md")).toBe(merged);
+    expect(v.history("메모.md")[0].message).toContain("자동 병합");
+    // 그 뒤로는 같다
+    const again = await sync.run();
+    expect([again.pulled, again.pushed, again.merged, again.conflicts].flat()).toEqual([]);
+  });
+
+  it("서버에서 받은 적 없는(처음부터 양쪽에 있던) 문서도 다음부터는 합친다", async () => {
+    const doc = "a\nb\nc\nd\ne\n";
+    const server = new FakeServer();
+    await server.put("x.md", doc);
+    const { v, store } = await device();
+    store.touch("x.md", doc); // 같은 내용이 기기에도 이미 있다(예: 폴더를 복사해 옴)
+    await v.rescan();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await v.write("x.md", doc.replace("a", "A"), (await v.read("x.md")).hash);
+    await server.put("x.md", doc.replace("e", "E"));
+    expect((await sync.run()).merged).toEqual(["x.md"]);
+    expect(await content(v, "x.md")).toBe("A\nb\nc\nd\nE\n");
+  });
+
+  it("처음 연결했는데 양쪽 내용이 다르면(기준점 없음) 합치지 않고 사본", async () => {
+    const server = new FakeServer();
+    await server.put("y.md", "서버\n");
+    const { v } = await device();
+    await v.write("y.md", "기기\n", null);
+    const r = await new SyncEngine(v, server).run();
+    expect(r.merged).toEqual([]);
+    expect(r.conflicts).toHaveLength(1);
+  });
+
   it("지운 쪽과 고친 쪽이 갈리면 고친 쪽을 살린다", async () => {
     const server = new FakeServer();
     await server.put("x.md", "x");

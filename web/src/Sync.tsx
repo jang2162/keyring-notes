@@ -26,17 +26,22 @@ function Report({ r, onOpen }: { r: SyncReport; onOpen: (p: string) => void }) {
       {p}
     </a>
   );
-  const total = r.pulled.length + r.pushed.length + r.deletedLocal.length + r.deletedRemote.length + r.conflicts.length;
+  const merged = r.merged ?? [];
+  const total = r.pulled.length + r.pushed.length + r.deletedLocal.length + r.deletedRemote.length + r.conflicts.length + merged.length;
   return (
     <div className="sync-report">
       <p className="meta">
-        {new Date(r.finishedAt).toLocaleString()} · 받음 {r.pulled.length} · 보냄 {r.pushed.length} · 지움 {r.deletedLocal.length + r.deletedRemote.length} · 충돌{" "}
-        {r.conflicts.length}
+        {new Date(r.finishedAt).toLocaleString()} · 받음 {r.pulled.length} · 보냄 {r.pushed.length} · 지움 {r.deletedLocal.length + r.deletedRemote.length} · 자동 병합 {merged.length} · 충돌 {r.conflicts.length}
       </p>
       {total === 0 && r.errors.length === 0 && <p className="note-ok">이 기기와 서버가 같습니다.</p>}
+      {merged.length > 0 && (
+        <p className="note-ok">
+          양쪽에서 서로 다른 부분을 고친 문서를 자동으로 합쳤습니다: {merged.map((p, i) => <span key={p}>{i > 0 && ", "}{link(p)}</span>)}. 이력에서 되돌릴 수 있습니다.
+        </p>
+      )}
       {r.conflicts.length > 0 && (
         <div className="banner conflict">
-          양쪽에서 다르게 고친 문서가 있어 덮어쓰지 않았습니다. 원래 문서는 서버 버전이고, 이 기기에서 고친 내용은 사본으로 남겼습니다.
+          양쪽에서 같은 부분을 다르게 고친 문서가 있어 덮어쓰지 않았습니다. 원래 문서는 서버 버전이고, 이 기기에서 고친 내용은 사본으로 남겼습니다.
           <ul>
             {r.conflicts.map((c) => (
               <li key={c.copy}>

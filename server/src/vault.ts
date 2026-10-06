@@ -99,6 +99,19 @@ export class Vault {
   private queue: Promise<unknown> = Promise.resolve();
   private realRoot = "";
   private listeners: ((paths: string[]) => Promise<void> | void)[] = [];
+  /**
+   * 커밋 직전에 부른다(첨부를 S3에 올리고 이력에서 빼는 등). 바뀐 경로(볼트 전체면 undefined)를 받아
+   * 실제로 git에 넣을 경로를 돌려준다.
+   */
+  beforeCommit: ((paths: string[] | undefined) => Promise<string[] | undefined>) | null = null;
+
+  private async commitChanges(message: string, author: Author, paths?: string[]): Promise<string | null> {
+    const finalPaths = this.beforeCommit ? await this.beforeCommit(paths) : paths;
+    // 경로를 지정했는데 넣을 것이 하나도 없으면(모두 S3로 간 첨부) 스테이징된 것만 커밋한다
+    if (paths && finalPaths && finalPaths.length === 0) return this.git.commitStaged(message, author);
+    return this.git.commit(message, author, finalPaths);
+  }
+
   /** 서버가 만드는 파일(위키 index·log)처럼 API로 쓸 수 없는 경로인지. */
   readOnly: (rel: string) => boolean = () => false;
 
@@ -111,7 +124,7 @@ export class Vault {
     await mkdir(this.root, { recursive: true });
     this.realRoot = await realpath(this.root);
     await this.git.init();
-    await this.exclusive(() => this.git.commit("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
+    await this.exclusive(() => this.commitChanges("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
   }
 
   /** 쓰기를 잠시 막고 fn을 실행한다(백업 복원처럼 볼트 전체를 바꾸는 작업). */
@@ -121,7 +134,7 @@ export class Vault {
 
   /** 서버 밖(다른 에디터 등)에서 생긴 변경을 커밋한다. 백업 직전에 부른다. */
   absorbOutsideChanges(): Promise<string | null> {
-    return this.exclusive(() => this.git.commit("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
+    return this.exclusive(() => this.commitChanges("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
   }
 
   /** 변경이 커밋된 직후(다음 쓰기보다 먼저) 바뀐 경로 목록으로 호출된다. 인덱스 갱신용. */
@@ -367,7 +380,7 @@ export class Vault {
         }
         const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0] : `일괄 변경 ${verbs.length}건`);
         const body = verbs.length > 1 || opts.message ? `${message}\n\n${verbs.join("\n")}` : message;
-        const rev = await this.git.commit(body, author, changed.map(([rel]) => rel));
+        const rev = await this.commitChanges(body, author, changed.map(([rel]) => rel));
         for (const fn of this.listeners) {
           try {
             await fn(changed.map(([rel]) => rel));

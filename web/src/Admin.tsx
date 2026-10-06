@@ -10,6 +10,7 @@ import {
   type DeviceInfo,
   type JobInfo,
   type Level,
+  type RemoteBackupInfo,
   type UpdateInfo,
   type WebhookInfo,
 } from "./api";
@@ -108,6 +109,8 @@ function StatusView() {
   if (!s.security.https && !["localhost", "127.0.0.1"].includes(location.hostname)) warnings.push("HTTPS가 아닌 주소로 접속 중입니다. 리버스 프록시(HTTPS) 또는 VPN 뒤에서 쓰세요.");
   if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1" && !s.security.allowedHosts?.length) warnings.push("허용 호스트(KEYRING_ALLOWED_HOSTS 또는 KEYRING_PUBLIC_URL)가 설정되지 않았습니다.");
   if (s.backups.lastError) warnings.push(`마지막 자동 백업 실패: ${s.backups.lastError}`);
+  if (s.storage?.remoteBackups?.lastError) warnings.push(`S3 백업 업로드 실패: ${s.storage.remoteBackups.lastError}`);
+  if (s.storage?.blobs?.pending) warnings.push(`S3에 아직 올리지 못한 첨부가 ${s.storage.blobs.pending}개 있습니다(5분마다 다시 시도). 이 첨부는 백업에 들어가지 않습니다. ${s.storage.blobs.lastError ?? ""}`);
   if (!s.backups.last) warnings.push("백업이 아직 없습니다.");
   if (diskUsed !== null && diskUsed > 0.9) warnings.push(`디스크가 ${Math.round(diskUsed * 100)}% 찼습니다.`);
   return (
@@ -137,6 +140,19 @@ function StatusView() {
           value={s.backups.last ? when(s.backups.last.createdAt) : "없음"}
           sub={`${s.backups.count}개 · 자동 ${s.backups.settings.enabled ? `${s.backups.settings.intervalHours}시간마다, 다음 ${when(s.backups.next)}` : "꺼짐"}`}
         />
+        {s.storage?.s3 && (
+          <Stat
+            label="S3"
+            value={s.storage.blobs ? `첨부 ${s.storage.blobs.count.toLocaleString()}개` : "원격 백업"}
+            sub={[
+              s.storage.s3,
+              s.storage.blobs ? `${bytes(s.storage.blobs.bytes)} · ${Math.round(s.storage.blobs.minBytes / 1024)}KB 이상${s.storage.blobs.pending ? ` · 올리기 대기 ${s.storage.blobs.pending}` : ""}` : null,
+              s.storage.remoteBackups?.lastUpload ? `마지막 백업 업로드 ${when(s.storage.remoteBackups.lastUpload)}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          />
+        )}
         <Stat label="에이전트" value={`${s.agents.length}개`} sub={s.agents.map((a) => `${a.name}${a.lastUsed ? ` (${when(a.lastUsed)})` : ""}`).join(", ") || "—"} />
       </div>
       <dl className="admin-dl">
@@ -439,16 +455,17 @@ function BackupsView() {
   const [settings, setSettings] = useState<BackupSettings | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [remote, setRemote] = useState<{ configured: boolean; location?: string; backups: RemoteBackupInfo[]; lastError?: string | null } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const load = useCallback(
     () =>
-      admin
-        .backups()
-        .then((r) => {
+      Promise.all([
+        admin.backups().then((r) => {
           setList(r.backups);
           setSettings(r.settings);
-        })
-        .catch((e) => setNote({ ok: false, text: msg(e) })),
+        }),
+        admin.remoteBackups().then(setRemote),
+      ]).catch((e) => setNote({ ok: false, text: msg(e) })),
     [],
   );
   useEffect(() => {
@@ -480,7 +497,11 @@ function BackupsView() {
     if (!confirm(`${when(b.createdAt)} 백업으로 되돌립니다. 그 뒤의 변경은 사라지지만, 지금 상태를 "복원 전" 백업으로 먼저 남깁니다. 계속할까요?`)) return;
     void run("restore", async () => {
       const r = await admin.restore(b.name, withConfig);
-      return `복원했습니다(${r.restoredHead.slice(0, 7)}).${r.preRestoreBackup ? ` 되돌리려면 "복원 전" 백업 ${r.preRestoreBackup}으로 다시 복원하세요.` : ""}${r.configRestored ? " 설정도 바뀌어 다시 로그인해야 할 수 있습니다." : ""}`;
+      const a = r.attachments;
+      const att = a
+        ? ` 첨부: S3에서 ${a.downloaded.length}개 받음, ${a.removed.length}개 지움${a.missing.length ? `, 받지 못함 ${a.missing.length}개(${a.missing.slice(0, 3).join(", ")}${a.missing.length > 3 ? " …" : ""})` : ""}.`
+        : "";
+      return `복원했습니다(${r.restoredHead.slice(0, 7)}).${att}${r.preRestoreBackup ? ` 되돌리려면 "복원 전" 백업 ${r.preRestoreBackup}으로 다시 복원하세요.` : ""}${r.configRestored ? " 설정도 바뀌어 다시 로그인해야 할 수 있습니다." : ""}`;
     });
   };
 
@@ -507,6 +528,17 @@ function BackupsView() {
             <input type="checkbox" checked={settings.includeConfig} onChange={(e) => saveSettings({ includeConfig: e.target.checked })} /> 설정 포함
           </label>
           <p className="meta">마지막 자동 백업 뒤 바뀐 것이 없으면 건너뜁니다. 수동·복원 전 백업은 자동으로 지우지 않습니다.</p>
+          {remote?.configured && (
+            <>
+              <label>
+                <input type="checkbox" checked={settings.remote} onChange={(e) => saveSettings({ remote: e.target.checked })} /> S3에도 올리기
+              </label>
+              <label>
+                S3에 남길 자동 백업{" "}
+                <input type="number" min={1} max={3650} defaultValue={settings.remoteKeep} onBlur={(e) => Number(e.target.value) !== settings.remoteKeep && saveSettings({ remoteKeep: Number(e.target.value) })} />
+              </label>
+            </>
+          )}
         </fieldset>
       )}
       <div className="agent-actions">
@@ -576,6 +608,69 @@ function BackupsView() {
           )}
         </tbody>
       </table>
+
+      <h4>S3 원격 백업</h4>
+      {!remote?.configured ? (
+        <p className="meta">
+          S3 호환 저장소(AWS S3·Cloudflare R2·MinIO 등)를 설정하면 백업을 만들 때마다 서버 밖에도 올립니다. 환경 변수 KEYRING_S3_BUCKET·KEYRING_S3_ACCESS_KEY_ID·KEYRING_S3_SECRET_ACCESS_KEY(·KEYRING_S3_ENDPOINT)를 넣고 서버를 다시 시작하세요.
+        </p>
+      ) : (
+        <>
+          <p className="meta">
+            {remote.location}. 서버 디스크를 잃어도 새 서버에서 여기 있는 백업을 "가져오기" → 위 목록에서 "복원"하면 됩니다(첨부 보관을 켰다면 첨부도 S3에서 받아 옵니다).
+          </p>
+          {remote.lastError && <p className="form-error">{remote.lastError}</p>}
+          <table className="widget-table backups">
+            <thead>
+              <tr>
+                <th>백업</th>
+                <th>종류</th>
+                <th>크기</th>
+                <th>올린 시각</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {remote.backups.map((b) => (
+                <tr key={b.name}>
+                  <td>{b.name}</td>
+                  <td>{KIND_LABEL[b.kind]}</td>
+                  <td className="num">{bytes(b.size)}</td>
+                  <td>{b.uploadedAt ? when(b.uploadedAt) : "—"}</td>
+                  <td className="row-actions">
+                    {b.local ? (
+                      <span className="meta">이 서버에도 있음</span>
+                    ) : (
+                      <button disabled={busy !== null} onClick={() => void run("fetch", async () => `가져왔습니다: ${(await admin.fetchRemote(b.name)).name} — 위 목록에서 "복원"을 누르세요.`)}>
+                        가져오기
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {remote.backups.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="widget-empty">
+                    S3에 올린 백업이 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {list.some((b) => !remote.backups.some((r) => r.name === b.name)) && (
+            <p className="meta">
+              S3에 없는 로컬 백업:{" "}
+              {list
+                .filter((b) => !remote.backups.some((r) => r.name === b.name))
+                .map((b) => (
+                  <button key={b.name} disabled={busy !== null} onClick={() => void run("push", async () => (await admin.pushRemote(b.name), `올렸습니다: ${b.name}`))}>
+                    {when(b.createdAt)} 올리기
+                  </button>
+                ))}
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }

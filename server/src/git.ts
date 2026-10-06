@@ -56,8 +56,18 @@ export class GitHistory {
   }
 
   private baseExcludes = ["/.history/", "/.keyring/", "/.trash/", ".DS_Store"];
-  /** 서버가 만드는 파일처럼 추적하지 않을 경로. init 전에 정해 두면 시작 커밋에도 섞이지 않는다. */
-  extraExcludes: string[] = [];
+  /** 추적하지 않을 경로 묶음(위키 자동 생성 문서, S3에 둔 첨부 …). */
+  private excludeGroups = new Map<string, string[]>();
+
+  /** 지금 제외 중인 경로 전체 */
+  get extraExcludes(): string[] {
+    return [...new Set([...this.excludeGroups.values()].flat())];
+  }
+
+  /** init 전에 미리 정해 둔다(시작 커밋에도 섞이지 않게). git 명령은 쓰지 않는다. */
+  presetExcludes(group: string, paths: string[]) {
+    this.excludeGroups.set(group, paths);
+  }
 
   private async writeExcludes() {
     const lines = [...this.baseExcludes, ...this.extraExcludes.map((p) => "/" + p.replace(/([*?[\]\\])/g, "\\$1"))];
@@ -65,12 +75,13 @@ export class GitHistory {
     await writeFile(path.join(this.gitDir, "info", "exclude"), lines.join("\n") + "\n");
   }
 
-  /** 추적하지 않을 경로를 바꾼다. 이미 추적 중이면 이력에서만 뺀다(스테이징만, 커밋은 호출한 쪽이). */
-  async setExtraExcludes(paths: string[]): Promise<void> {
-    this.extraExcludes = paths;
+  /** 한 묶음의 제외 경로를 바꾼다. 이미 추적 중이면 이력에서만 뺀다(스테이징만, 커밋은 호출한 쪽이). */
+  async setExcludes(group: string, paths: string[]): Promise<void> {
+    this.excludeGroups.set(group, paths);
     await this.writeExcludes();
-    if (paths.length === 0) return;
-    await this.run(["rm", "--cached", "--quiet", "--ignore-unmatch", "--", ...paths], { allowFail: true });
+    for (let i = 0; i < paths.length; i += 500) {
+      await this.run(["rm", "--cached", "--quiet", "--ignore-unmatch", "--", ...paths.slice(i, i + 500)], { allowFail: true });
+    }
   }
 
   /** 커밋별 바뀐 파일 목록까지 포함한 이력(오래된 것부터). */

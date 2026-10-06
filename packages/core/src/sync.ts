@@ -1,6 +1,7 @@
 import { ConflictError, NotFoundError, UnauthorizedError } from "./errors.js";
 import { sha256Hex, utf8 } from "./hash.js";
 import type { LocalVault } from "./local.js";
+import { merge3 } from "./merge.js";
 import { isMarkdown } from "./paths.js";
 
 export interface RemoteFile {
@@ -29,7 +30,9 @@ export interface SyncReport {
   pushed: string[];
   deletedLocal: string[];
   deletedRemote: string[];
-  /** 양쪽에서 다르게 바뀜: path는 서버 버전, copy에 이 기기의 내용 */
+  /** 양쪽에서 바뀌었지만 서로 다른 곳이라 자동으로 합친 문서(양쪽 모두 합친 내용이 됨) */
+  merged: string[];
+  /** 양쪽에서 같은 곳을 다르게 바뀜: path는 서버 버전, copy에 이 기기의 내용 */
   conflicts: { path: string; copy: string }[];
   skipped: { path: string; reason: string }[];
   errors: { path: string; message: string }[];
@@ -63,7 +66,8 @@ function isNetworkFailure(e: unknown): boolean {
  *   L = S            → 같음. 기준점만 맞춘다.
  *   서버만 바뀜       → 받는다(서버에서 지웠으면 이 기기에서도 지운다).
  *   기기만 바뀜       → 보낸다(baseHash=B라 그 사이 서버가 바뀌었으면 409 → 아래 "둘 다 바뀜").
- *   둘 다 바뀜        → 원래 경로는 서버 버전, 이 기기 내용은 충돌 사본으로 새로 만들어 양쪽에 둔다.
+ *   둘 다 바뀜        → 기준점 내용으로 3방향 병합해 서로 다른 곳이면 합친 내용을 양쪽에 둔다.
+ *                       같은 곳을 다르게 고쳤으면 원래 경로는 서버 버전, 이 기기 내용은 충돌 사본으로 새로 만들어 양쪽에 둔다.
  *                       한쪽이 지우고 다른 쪽이 고쳤으면 고친 쪽을 살린다.
  *
  * 마크다운만 양방향이고 첨부는 서버 → 기기만. 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
@@ -109,6 +113,7 @@ export class SyncEngine {
       pushed: [],
       deletedLocal: [],
       deletedRemote: [],
+      merged: [],
       conflicts: [],
       skipped: [],
       errors: [],
@@ -122,11 +127,29 @@ export class SyncEngine {
     const taken = (p: string) => local.has(p) || server.has(p);
 
     /** 이 기기에 쓸 것(마지막에 한 번에, 그 사이 기기에서 바뀐 것은 건너뛴다) */
-    const pulls: { path: string; data: Uint8Array | null; expect: string | null; base: string | null }[] = [];
+    const pulls: { path: string; data: Uint8Array | null; expect: string | null; base: string | null; merged?: true }[] = [];
+    /** 양쪽이 이미 같아 기준점이 된 문서: 나중 병합의 기준 내용으로 남긴다 */
+    const agreed: string[] = [];
 
-    const conflict = async (path: string, L: string) => {
+    const conflict = async (path: string, L: string, B: string | null) => {
       const mine = await this.vault.read(path);
       const theirs = await this.remote.read(path);
+      // 기준점 내용이 있으면 3방향 병합을 먼저 해 본다
+      const baseText = B ? await this.vault.contentByHash(B) : null;
+      if (baseText !== null) {
+        const m = merge3(baseText, mine.content, theirs.content);
+        if (m.ok) {
+          try {
+            const res = m.text === theirs.content ? { hash: theirs.hash } : await this.remote.write(path, m.text, theirs.hash);
+            pulls.push({ path, data: utf8(m.text), expect: L, base: res.hash, merged: true });
+            report.merged.push(path);
+            return;
+          } catch (e) {
+            // 합치는 사이 서버가 또 바뀌었다 → 아래 충돌 사본으로
+            if (!(e instanceof ConflictError)) throw e;
+          }
+        }
+      }
       const copy = conflictCopyPath(path, "동기화 충돌 사본", taken);
       // 사본의 기준점은 이 기기에 실제로 만들어졌을 때만 남긴다(아니면 다음 동기화가 서버 사본을 받아 온다)
       const pushedCopy = await this.remote.write(copy, mine.content, null);
@@ -143,7 +166,10 @@ export class SyncEngine {
         try {
           if (L === S) {
             if (S === null) delete base[path];
-            else base[path] = S;
+            else {
+              if (base[path] !== S && isMarkdown(path)) agreed.push(path);
+              base[path] = S;
+            }
             continue;
           }
           const localChanged = L !== B;
@@ -189,7 +215,7 @@ export class SyncEngine {
               } else if (L === null) {
                 pulls.push({ path, data: utf8((await this.remote.read(path)).content), expect: null, base: now });
               } else {
-                await conflict(path, L);
+                await conflict(path, L, B);
               }
             }
             continue;
@@ -205,7 +231,7 @@ export class SyncEngine {
             base[path] = (await this.remote.write(path, doc.content, null)).hash;
             report.pushed.push(path);
           } else {
-            await conflict(path, L);
+            await conflict(path, L, B);
           }
         } catch (e) {
           if (isNetworkFailure(e)) throw e;
@@ -214,8 +240,14 @@ export class SyncEngine {
       }
     } finally {
       // 받은 것을 반영하고 기준점을 저장한다(중간에 끊겨도 한 것까지는 남긴다)
+      if (agreed.length) await this.vault.preserve(agreed);
       if (pulls.length) {
-        const applied = new Set(await this.vault.applySync(pulls.map(({ path, data, expect }) => ({ path, data, expect })), "동기화: 서버에서 받음"));
+        const apply = (list: typeof pulls, message: string) =>
+          list.length ? this.vault.applySync(list.map(({ path, data, expect }) => ({ path, data, expect })), message) : Promise.resolve([]);
+        const applied = new Set([
+          ...(await apply(pulls.filter((p) => !p.merged), "동기화: 서버에서 받음")),
+          ...(await apply(pulls.filter((p) => p.merged), "동기화: 자동 병합(이 기기와 서버의 변경을 합침)")),
+        ]);
         for (const p of pulls) {
           if (!applied.has(p.path)) {
             report.skipped.push({ path: p.path, reason: "받는 사이 이 기기에서 바뀌어 다음 동기화로 미룸" });
@@ -224,7 +256,7 @@ export class SyncEngine {
           if (p.base === null) delete base[p.path];
           else base[p.path] = p.base;
           if (p.data === null) report.deletedLocal.push(p.path);
-          else if (!report.conflicts.some((c) => c.copy === p.path)) report.pulled.push(p.path);
+          else if (!p.merged && !report.conflicts.some((c) => c.copy === p.path)) report.pulled.push(p.path);
         }
       }
       state.lastSync = new Date().toISOString();

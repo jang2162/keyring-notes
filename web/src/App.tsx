@@ -13,6 +13,7 @@ import { LinkResolver, renderMarkdown } from "./markdown";
 import { localContext } from "./local/boot";
 import { SyncPanel, useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
+import { merge3 } from "@keyring-notes/core";
 
 type ViewMode = "split" | "edit" | "preview";
 
@@ -99,6 +100,20 @@ function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: string) =
       )}
     </section>
   );
+}
+
+/**
+ * 저장이 충돌(409)로 막혔을 때: 고치기 시작한 버전(base)을 기준으로 지금 저장된 버전과 3방향 병합한다.
+ * 서로 다른 곳을 고쳤으면 합친 내용을 저장하고 돌려준다. 같은 곳이면 null(지금처럼 충돌 처리).
+ */
+async function saveMerged(path: string, base: string, mine: string): Promise<{ text: string; hash: string } | null> {
+  const theirs = await api.read(path, { fresh: true });
+  if (theirs.generated || theirs.pendingOffline || theirs.cachedOffline) return null;
+  const m = merge3(base, mine, theirs.content);
+  if (!m.ok) return null;
+  if (m.text === theirs.content) return { text: m.text, hash: theirs.hash };
+  const d = await api.write(path, m.text, theirs.hash);
+  return { text: m.text, hash: d.hash };
 }
 
 function folderPaths(nodes: TreeNode[]): string[] {
@@ -411,11 +426,28 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     } catch (e) {
       if (isNetworkError(e)) {
         // 오프라인: 이 기기에 저장해 두고, 연결되면 보낸다
-        await offline.queue(doc.path, content, doc.hash || null);
+        await offline.queue(doc.path, content, doc.hash || null, doc.hash ? doc.saved : null);
         setDoc((prev) => (prev && prev.path === doc.path ? { ...prev, saved: content } : prev));
         setOutboxCount((await offline.pending()).length);
-      } else if (e instanceof ApiError && e.status === 409) setConflict({ currentHash: e.currentHash ?? null });
-      else report(e);
+      } else if (e instanceof ApiError && e.status === 409) {
+        // 다른 곳(다른 탭·에이전트·동기화)에서 먼저 고쳤다: 서로 다른 부분이면 자동으로 합친다
+        const merged = e.currentHash && doc.hash ? await saveMerged(doc.path, doc.saved, content).catch(() => null) : null;
+        if (!merged) setConflict({ currentHash: e.currentHash ?? null });
+        else {
+          const prev = docRef.current;
+          // 저장하는 동안 더 입력했다면 그 입력도 합친다
+          const draft = !prev || prev.draft === content ? merged.text : (() => {
+            const more = merge3(content, prev.draft, merged.text);
+            return more.ok ? more.text : null;
+          })();
+          if (prev && prev.path === doc.path && draft !== null) {
+            setDoc({ ...prev, saved: merged.text, hash: merged.hash, draft, seq: prev.seq + 1 });
+            setConflict(null);
+            setError("다른 곳에서 바뀐 내용과 자동으로 합쳐 저장했습니다(서로 다른 부분을 고쳤습니다). 이력에서 되돌릴 수 있습니다.");
+          } else setConflict({ currentHash: merged.hash });
+          vaultChanged();
+        }
+      } else report(e);
     } finally {
       setSaving(false);
     }
@@ -428,6 +460,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     flushing.current = true;
     const synced: string[] = [];
     const conflicts: string[] = [];
+    const merged: string[] = [];
     try {
       for (const item of await offline.pending()) {
         try {
@@ -437,6 +470,15 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           synced.push(item.path);
         } catch (e) {
           if (e instanceof ApiError && e.status === 409) {
+            // 서로 다른 곳을 고쳤으면 합치고, 같은 곳이면 사본으로
+            const m =
+              e.currentHash && item.baseContent != null ? await saveMerged(item.path, item.baseContent, item.content).catch(() => null) : null;
+            if (m) {
+              await offline.done(item.path);
+              await offline.saveDoc({ path: item.path, content: m.text, hash: m.hash });
+              merged.push(item.path);
+              continue;
+            }
             const copy = conflictCopyPath(item.path, "오프라인 충돌 사본");
             await api.write(copy, item.content, null);
             await offline.done(item.path);
@@ -448,14 +490,15 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       flushing.current = false;
       setOutboxCount((await offline.pending().catch(() => [])).length);
     }
-    if (synced.length || conflicts.length) {
+    if (synced.length || conflicts.length || merged.length) {
       vaultChanged();
       void refreshTree();
       const cur = docRef.current;
       // 다시 불러오기가 알림을 지우지 않도록 먼저 끝낸다
-      if (cur && (synced.includes(cur.path) || conflicts.length) && cur.draft === cur.saved) await load(cur.path);
+      if (cur && (synced.includes(cur.path) || merged.includes(cur.path) || conflicts.length) && cur.draft === cur.saved) await load(cur.path);
       setError(
-        `오프라인에서 저장한 ${synced.length + conflicts.length}개를 보냈습니다.` +
+        `오프라인에서 저장한 ${synced.length + conflicts.length + merged.length}개를 보냈습니다.` +
+          (merged.length ? ` 그 사이 서버에서 다른 부분이 바뀐 ${merged.length}개는 자동으로 합쳤습니다.` : "") +
           (conflicts.length ? ` 그 사이 서버에서 바뀐 문서는 덮어쓰지 않고 사본으로 남겼습니다: ${conflicts.join(", ")}` : ""),
       );
     }
