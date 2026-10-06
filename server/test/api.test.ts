@@ -178,6 +178,7 @@ describe("MCP", () => {
         "read_section",
         "search",
         "backlinks",
+        "unlinked_mentions",
         "list_tags",
         "query",
         "list_topics",

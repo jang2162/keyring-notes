@@ -524,3 +524,16 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .kanban-move { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--muted); align-self: flex-start; }
 .backlinks .source-quote { margin: 4px 0 6px; padding: 4px 10px; border-left: 3px solid var(--border); color: var(--muted); font-size: 13px; white-space: pre-wrap; }
 .backlinks .source-quote.broken { color: var(--co-red); border-left-color: var(--co-red); }
+
+/* 연결되지 않은 언급 */
+.backlinks.mentions-wrap { margin-top: 10px; padding-top: 0; border-top: none; }
+.backlinks .mention-context mark { background: var(--mark-bg); color: var(--mark-fg); border-radius: 3px; padding: 0 1px; }
+.backlinks .mentions summary { cursor: pointer; list-style: none; }
+.backlinks .mentions summary::-webkit-details-marker { display: none; }
+.backlinks .mentions summary h4 { display: inline; }
+.backlinks .mentions summary h4::before { content: "▸ "; }
+.backlinks .mentions[open] summary h4::before { content: "▾ "; }
+.backlinks .mention-list { margin: 2px 0 6px; padding-left: 16px; }
+.backlinks .mention-context { color: var(--muted); font-size: 13px; }
+.backlinks .link-btn { font-size: 12px; padding: 1px 6px; }
+.backlinks .mention-error { color: var(--co-red); font-size: 13px; }

@@ -1,3 +1,4 @@
+import { mentionNames, unlinkedMentions, type Mention } from "./mentions.js";
 import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysis.js";
 import { rewriteLinks, type LinkRewriteContext } from "./links.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "./errors.js";
@@ -408,6 +409,23 @@ export class LocalVault {
 
   backlinks(input: string): { path: string; title: string }[] {
     return this.withTitles(this.incoming(normalizeVaultPath(input)));
+  }
+
+  /** 연결되지 않은 언급: 이 문서의 이름이 링크 없이 나오는 다른 문서와 그 자리 */
+  async mentions(input: string): Promise<{ path: string; names: string[]; docs: { path: string; title: string; hash: string; mentions: Mention[] }[] }> {
+    const doc = await this.read(input);
+    const names = mentionNames(doc.path, parseFrontmatter(doc.content).data);
+    const lowered = names.map((n) => n.toLowerCase());
+    const docs: { path: string; title: string; hash: string; mentions: Mention[] }[] = [];
+    for (const e of this.mdEntries().sort((a, b) => (a.path < b.path ? -1 : 1))) {
+      if (e.path === doc.path || !e.content) continue;
+      const lower = e.content.toLowerCase();
+      if (!lowered.some((n) => lower.includes(n))) continue;
+      const found = unlinkedMentions(e.content, names);
+      if (found.length) docs.push({ path: e.path, title: e.meta?.title ?? e.path, hash: e.hash!, mentions: found.slice(0, 50) });
+      if (docs.length >= 100) break;
+    }
+    return { path: doc.path, names, docs };
   }
 
   async sources(input: string) {

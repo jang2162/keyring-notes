@@ -13,6 +13,9 @@ import {
   setTaskState,
   sourceRefs,
   anchorExists,
+  mentionNames,
+  unlinkedMentions,
+  type Mention,
   wikilinkTargets,
   type GraphData,
   type Heading,
@@ -303,6 +306,32 @@ export class ScopedVault {
       .backlinks(rel)
       .filter((p) => this.canRead(p))
       .map((p) => ({ path: p, title: titles.get(p) ?? p }));
+  }
+
+  /**
+   * 연결되지 않은 언급: 이 문서의 이름(파일 이름·title·aliases)이 링크 없이 나오는 다른 문서.
+   * 후보는 검색 인덱스로 좁히고, 읽을 수 있는 문서만 원문을 읽어 확인한다.
+   */
+  async mentions(input: string): Promise<{ path: string; names: string[]; docs: { path: string; title: string; hash: string; mentions: Mention[] }[] }> {
+    const doc = await this.read(input);
+    const names = mentionNames(doc.path, parseFrontmatter(doc.content).data);
+    const titles = new Map(this.index.docs().map((d) => [d.path, d.title]));
+    const candidates = new Set<string>();
+    for (const name of names) for (const hit of this.index.search(name)) candidates.add(hit.path);
+    const out: { path: string; title: string; hash: string; mentions: Mention[] }[] = [];
+    for (const p of [...candidates].sort()) {
+      if (p === doc.path || !this.canRead(p) || this.wiki?.isGenerated(p)) continue;
+      let other: Doc;
+      try {
+        other = await this.vault.read(p);
+      } catch {
+        continue; // 인덱스와 파일이 잠시 어긋난 경우
+      }
+      const found = unlinkedMentions(other.content, names);
+      if (found.length) out.push({ path: p, title: titles.get(p) ?? p, hash: other.hash, mentions: found.slice(0, 50) });
+      if (out.length >= 100) break;
+    }
+    return { path: doc.path, names, docs: out };
   }
 
   /** 읽을 수 있는 모든 파일 경로(첨부 포함). */

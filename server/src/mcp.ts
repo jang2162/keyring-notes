@@ -154,6 +154,16 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
   );
 
   server.registerTool(
+    "unlinked_mentions",
+    {
+      description: "이 문서의 이름(파일 이름·title·aliases)이 링크 없이 나오는 다른 문서와 그 자리(줄·위치·문맥). 링크로 바꾸려면 write_document로 그 문서를 고친다",
+      inputSchema: { path: z.string() },
+      annotations: ro,
+    },
+    ({ path }) => run(() => scoped.mentions(path)),
+  );
+
+  server.registerTool(
     "lint",
     {
       description:

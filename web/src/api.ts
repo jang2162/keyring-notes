@@ -5,6 +5,7 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
+import type { Mention } from "@keyring-notes/core";
 import { isNetworkError, offline } from "./offline";
 
 export interface Doc {
@@ -254,6 +255,13 @@ export interface GraphData {
   edges: { source: string; target: string; kind: "link" | "source" }[];
 }
 
+/** 연결되지 않은 언급: 이 문서의 이름이 링크 없이 나오는 다른 문서(줄·위치는 그 문서 원문 기준) */
+export interface MentionsInfo {
+  path: string;
+  names: string[];
+  docs: { path: string; title: string; hash: string; mentions: Mention[] }[];
+}
+
 export interface SourcesInfo {
   path: string;
   /** anchor: `#제목`·`#^블록`(원본의 어느 부분을 인용했는지) */
@@ -430,6 +438,7 @@ const remoteApi = {
   },
   lint: (folder?: string) => request<LintReport>("GET", `/api/lint${folder ? `?folder=${q(folder)}` : ""}`),
   sources: (path: string) => request<SourcesInfo>("GET", `/api/sources?path=${q(path)}`),
+  mentions: (path: string) => request<MentionsInfo>("GET", `/api/mentions?path=${q(path)}`),
   graph: (folder?: string) => request<GraphData>("GET", `/api/graph${folder ? `?folder=${q(folder)}` : ""}`),
   semanticStatus: () => request<{ enabled: boolean; model?: string; pending?: number; chunks?: number; lastError?: string | null }>("GET", "/api/semantic/status"),
   semantic: (query: string) =>

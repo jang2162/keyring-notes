@@ -83,6 +83,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     uploadAttachment: async (path, file) => wrap(async () => vault.putFile(path, new Uint8Array(await file.arrayBuffer()))),
     lint: (folder) => wrap(() => vault.lint({ folder })),
     sources: (path) => wrap(() => vault.sources(path)),
+    mentions: (path) => wrap(() => vault.mentions(path)),
     graph: (folder) => wrap(() => vault.graph(folder)),
     semanticStatus: async () => ({ enabled: false }),
     semantic: serverOnly("의미 검색"),
