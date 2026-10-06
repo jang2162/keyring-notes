@@ -617,6 +617,24 @@ export class LocalVault {
     });
   }
 
+  /**
+   * 첨부 파일(이미지 등) 새로 만들기. 이미 있으면 충돌. 첨부는 변경 기록(스냅샷)에 내용을 남기지 않는다
+   * (기록의 스냅샷은 마크다운 원문용이다).
+   */
+  putFile(input: string, data: Uint8Array): Promise<{ path: string; hash: string }> {
+    return this.exclusive(async () => {
+      const rel = normalizeVaultPath(input);
+      if (isMarkdown(rel)) throw new PathError("마크다운 문서는 write로 씁니다");
+      if (this.isGenerated(rel)) throw new ForbiddenError("자동 생성 문서 자리입니다");
+      if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, `이미 있는 파일입니다: ${rel}`);
+      const st = await this.store.write(rel, data);
+      const hash = await sha256Hex(data);
+      this.files.set(rel, { path: rel, size: st.size, mtime: st.mtime, md: false, hash });
+      this.emit([rel], "local");
+      return { path: rel, hash };
+    });
+  }
+
   async setTask(input: string, line: number, done: boolean, baseHash: string): Promise<LocalDoc> {
     const doc = await this.read(input);
     if (doc.hash !== baseHash) throw new ConflictError(doc.hash);

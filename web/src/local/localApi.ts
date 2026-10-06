@@ -80,6 +80,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     createTopic: (name) => wrap(() => vault.createTopic(name)),
     ingest: serverOnly("원본 수집"),
     uploadFile: serverOnly("파일 업로드"),
+    uploadAttachment: async (path, file) => wrap(async () => vault.putFile(path, new Uint8Array(await file.arrayBuffer()))),
     lint: (folder) => wrap(() => vault.lint({ folder })),
     sources: (path) => wrap(() => vault.sources(path)),
     graph: (folder) => wrap(() => vault.graph(folder)),

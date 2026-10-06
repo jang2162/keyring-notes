@@ -19,6 +19,8 @@ export interface RemoteVault {
   readRaw(path: string): Promise<Uint8Array>;
   write(path: string, content: string, baseHash: string | null): Promise<{ hash: string }>;
   remove(path: string, baseHash: string): Promise<void>;
+  /** 새 첨부 올리기(이미 있으면 ConflictError). 없으면 기기에서 만든 첨부는 올리지 않는다 */
+  putRaw?(path: string, data: Uint8Array): Promise<{ hash: string }>;
 }
 
 export interface SyncReport {
@@ -70,7 +72,8 @@ function isNetworkFailure(e: unknown): boolean {
  *                       같은 곳을 다르게 고쳤으면 원래 경로는 서버 버전, 이 기기 내용은 충돌 사본으로 새로 만들어 양쪽에 둔다.
  *                       한쪽이 지우고 다른 쪽이 고쳤으면 고친 쪽을 살린다.
  *
- * 마크다운만 양방향이고 첨부는 서버 → 기기만. 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
+ * 마크다운은 양방향, 첨부는 서버 → 기기에 더해 기기에서 새로 만든 첨부(붙여넣은 이미지 등)만 올린다.
+ * 이미 있는 첨부를 기기에서 바꾸거나 지운 것은 보내지 않는다. 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
  */
 export class SyncEngine {
   private running: Promise<SyncReport> | null = null;
@@ -176,7 +179,19 @@ export class SyncEngine {
           const serverChanged = S !== B;
 
           if (!isMarkdown(path)) {
-            // 첨부: 서버가 기준. 이 기기에서 바뀐 첨부는 보내지 않고 알린다.
+            // 첨부: 서버가 기준. 기기에서 새로 만든 첨부(서버에도 기준점에도 없음)만 올린다.
+            if (L !== null && S === null && B === null && this.remote.putRaw) {
+              const data = await this.vault.readBytes(path);
+              try {
+                base[path] = (await this.remote.putRaw(path, data)).hash;
+                report.pushed.push(path);
+              } catch (e) {
+                if (!(e instanceof ConflictError)) throw e;
+                report.skipped.push({ path, reason: "같은 이름의 첨부가 서버에 생겨 다음 동기화에서 다시 비교합니다" });
+              }
+              continue;
+            }
+            // 이 기기에서 바뀐 첨부는 보내지 않고 알린다.
             if (localChanged && L !== null) {
               report.skipped.push({ path, reason: "이 기기에서 바뀐 첨부 파일은 서버로 보내지 않습니다" });
               continue;
@@ -317,6 +332,19 @@ export class HttpRemote implements RemoteVault {
 
   async remove(path: string, baseHash: string): Promise<void> {
     await this.req("DELETE", "/api/file", { path, baseHash });
+  }
+
+  async putRaw(path: string, data: Uint8Array): Promise<{ hash: string }> {
+    const res = await this.fetchFn(`${this.baseUrl}/api/attachment?path=${encodeURIComponent(path)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.token}`, "content-type": "application/octet-stream", "x-keyring-upload": "1" },
+      body: data as Uint8Array<ArrayBuffer>,
+    });
+    const body = (await res.json().catch(() => ({}))) as { message?: string; currentHash?: string | null; hash?: string };
+    if (res.status === 409) throw new ConflictError(body.currentHash ?? null, body.message);
+    if (res.status === 401) throw new UnauthorizedError(body.message ?? "서버가 이 기기를 받지 않습니다. 다시 연결하세요");
+    if (!res.ok) throw new Error(body.message ?? `서버 오류 ${res.status}`);
+    return { hash: body.hash ?? (await sha256Hex(data)) };
   }
 }
 

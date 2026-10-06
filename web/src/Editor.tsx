@@ -32,6 +32,8 @@ interface Props {
   linkCandidates: () => LinkCandidate[];
   handle?: MutableRefObject<EditorHandle | null>;
   readOnly?: boolean;
+  /** 붙여넣거나 끌어 놓은 파일을 첨부로 올리고, 그 자리에 넣을 마크다운(링크)을 돌려준다 */
+  onFiles?: (files: File[]) => Promise<string[]>;
 }
 
 /** `[[` 또는 `![[` 뒤에서 문서·첨부 이름을 제안하고, 고르면 `]]`까지 닫아 준다. */
@@ -62,10 +64,23 @@ function wikilinkSource(get: () => LinkCandidate[]) {
   };
 }
 
-export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle, readOnly = false }: Props) {
+export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle, readOnly = false, onFiles }: Props) {
   const host = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onChange, onSave, linkCandidates });
-  callbacks.current = { onChange, onSave, linkCandidates };
+  const callbacks = useRef({ onChange, onSave, linkCandidates, onFiles });
+  callbacks.current = { onChange, onSave, linkCandidates, onFiles };
+
+  /** 올리는 동안 자리 표시를 넣었다가 링크로 바꾼다(실패하면 지운다) */
+  const insertFiles = async (view: EditorView, files: File[], from: number, to: number) => {
+    const placeholder = `<!-- 첨부 올리는 중… -->`;
+    view.dispatch({ changes: { from, to, insert: placeholder } });
+    let text = "";
+    try {
+      text = (await callbacks.current.onFiles!(files)).join("\n");
+    } finally {
+      const at = view.state.doc.toString().indexOf(placeholder);
+      if (at >= 0) view.dispatch({ changes: { from: at, to: at + placeholder.length, insert: text }, selection: { anchor: at + text.length } });
+    }
+  };
 
   useEffect(() => {
     const view = new EditorView({
@@ -91,6 +106,24 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
             ...historyKeymap,
             ...searchKeymap,
           ]),
+          // 파일 붙여넣기·끌어놓기: 첨부로 올린 뒤 그 자리(놓은 곳)에 링크를 넣는다
+          EditorView.domEventHandlers({
+            paste(e, view) {
+              const files = [...(e.clipboardData?.files ?? [])];
+              if (!files.length || !callbacks.current.onFiles || readOnly) return false;
+              e.preventDefault();
+              void insertFiles(view, files, view.state.selection.main.from, view.state.selection.main.to);
+              return true;
+            },
+            drop(e, view) {
+              const files = [...(e.dataTransfer?.files ?? [])];
+              if (!files.length || !callbacks.current.onFiles || readOnly) return false;
+              e.preventDefault();
+              const at = view.posAtCoords({ x: e.clientX, y: e.clientY }) ?? view.state.selection.main.head;
+              void insertFiles(view, files, at, at);
+              return true;
+            },
+          }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) callbacks.current.onChange(u.state.doc.toString());
           }),

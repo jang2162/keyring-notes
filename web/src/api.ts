@@ -388,6 +388,18 @@ const remoteApi = {
   topics: () => request<{ topics: Topic[] }>("GET", "/api/topics").then((r) => r.topics),
   createTopic: (name: string) => request<{ topic: string; schema: string }>("POST", "/api/topics", { name }),
   ingest: (req: IngestRequest) => request<IngestResult>("POST", "/api/ingest", req),
+  /** 첨부 파일 새로 만들기(붙여넣기·끌어놓기). 이미 있으면 409 */
+  async uploadAttachment(path: string, file: Blob): Promise<{ path: string; hash: string | null }> {
+    const res = await fetch(`/api/attachment?path=${q(path)}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", "x-keyring-upload": "1" },
+      body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
+    if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText, data.currentHash);
+    return data as { path: string; hash: string | null };
+  },
   async uploadFile(topic: string, file: File): Promise<IngestResult> {
     const res = await fetch(`/api/ingest/file?topic=${q(topic)}&name=${q(file.name)}`, {
       method: "POST",

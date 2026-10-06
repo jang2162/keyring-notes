@@ -570,6 +570,44 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [save]);
 
+  /**
+   * 붙여넣거나 끌어 놓은 파일을 문서 옆 attachments/ 폴더에 첨부로 올린다(이름이 겹치면 " 2"…).
+   * 넣을 링크: 이미지는 ![[이름]], 나머지는 [[이름]]. 같은 이름이 볼트에 또 있으면 전체 경로로.
+   */
+  const uploadFiles = async (files: File[]): Promise<string[]> => {
+    if (!doc) return [];
+    const dir = doc.path.includes("/") ? `${doc.path.slice(0, doc.path.lastIndexOf("/"))}/attachments` : "attachments";
+    const taken = new Set(resolver.paths.map((p) => p.toLowerCase()));
+    const out: string[] = [];
+    for (const f of files) {
+      const ext = (/\.[A-Za-z0-9]+$/.exec(f.name)?.[0] ?? (f.type.startsWith("image/") ? `.${f.type.slice(6).replace("jpeg", "jpg").replace(/\+.*/, "")}` : "")).toLowerCase();
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+      // 클립보드 이미지는 이름이 image.png라 날짜로 바꾼다
+      const stem = !f.name || /^image\.\w+$/i.test(f.name) ? `붙여넣은 이미지 ${stamp}` : f.name.replace(/\.[A-Za-z0-9]+$/, "").replace(/[\\/:*?"<>|#^[\]]/g, " ").trim() || "첨부";
+      let path = "";
+      for (let i = 1; ; i++) {
+        const cand = `${dir}/${stem}${i > 1 ? ` ${i}` : ""}${ext}`;
+        if (taken.has(cand.toLowerCase())) continue;
+        try {
+          path = (await api.uploadAttachment(cand, f)).path;
+          break;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409 && i < 50) continue;
+          report(e);
+          return out;
+        }
+      }
+      taken.add(path.toLowerCase());
+      const name = path.split("/").pop()!;
+      const unique = resolver.paths.filter((p) => p.split("/").pop()!.toLowerCase() === name.toLowerCase()).length === 0;
+      const target = unique ? name : path;
+      out.push(/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(path) ? `![[${target}]]` : `[[${target}]]`);
+    }
+    vaultChanged();
+    await refreshTree();
+    return out;
+  };
+
   const saveConflictCopy = async () => {
     if (!doc) return;
     const copy = conflictCopyPath(doc.path);
@@ -950,6 +988,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                   onSave={save}
                   linkCandidates={() => linkCandidates}
                   handle={editorHandle}
+                  onFiles={uploadFiles}
                   readOnly={doc.generated}
                 />
               </div>

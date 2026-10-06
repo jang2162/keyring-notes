@@ -154,7 +154,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       return c.body(null, 204, {
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "GET, POST, PUT, DELETE",
-        "access-control-allow-headers": "authorization, content-type",
+        "access-control-allow-headers": "authorization, content-type, x-keyring-upload",
         "access-control-max-age": "600",
       });
     }
@@ -217,7 +217,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.use("*", async (c, next) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
       const ct = c.req.header("content-type") ?? "";
-      const rawBody = c.req.path === "/api/ingest/file" || c.req.path === "/api/admin/backups/upload";
+      const rawBody = c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" || c.req.path === "/api/admin/backups/upload";
       const upload = rawBody && c.req.header("x-keyring-upload") === "1";
       if (!upload && !ct.toLowerCase().startsWith("application/json")) {
         return c.json({ error: "bad_request", message: "Content-Type: application/json 이 필요합니다" }, 415);
@@ -229,7 +229,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     // 백업 업로드는 디스크로 바로 흘려 쓰며 크기를 따로 센다
     if (c.req.path === "/api/admin/backups/upload") return next();
     // 업로드·웹 클립(페이지 HTML 전체)은 크게, 나머지는 10MB까지
-    const max = c.req.path === "/api/ingest/file" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
+    const max = c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
     return bodyLimit({ maxSize: max * 1024 * 1024 })(c, next);
   });
 
@@ -395,6 +395,13 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       default:
         throw new PathError("kind는 url, html, text 중 하나입니다");
     }
+  });
+
+  // 첨부 파일 올리기(붙여넣기·끌어놓기, 앱 동기화): 새 파일만(이미 있으면 409). 원본 바이트, 헤더 x-keyring-upload: 1
+  api.post("/attachment", async (c) => {
+    const data = new Uint8Array(await c.req.arrayBuffer());
+    if (data.byteLength === 0) throw new PathError("빈 파일입니다");
+    return c.json(await c.var.scoped.putAttachment(requirePath(c.req.query("path")), data));
   });
 
   api.post("/ingest/file", async (c) => {

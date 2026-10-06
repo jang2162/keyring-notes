@@ -504,6 +504,13 @@ export class ScopedVault {
     return this.single({ op: "move", from, to, baseHash }, opts);
   }
 
+  /** 첨부 파일 새로 만들기(이미 있으면 충돌). 마크다운은 write로. */
+  async putAttachment(input: string, data: Uint8Array): Promise<{ path: string; hash: string | null; rev: string | null; pending?: PendingInfo }> {
+    const rel = normalizeVaultPath(input);
+    const res = await this.batch([{ op: "put", path: rel, data }]);
+    return { path: rel, hash: hashContent(Buffer.from(data)), rev: res.rev, pending: res.pending };
+  }
+
   async delete(path: string, baseHash: string): Promise<{ rev: string | null; pending?: PendingInfo }> {
     const res = await this.batch([{ op: "delete", path, baseHash }]);
     return res.pending ? { rev: null, pending: res.pending } : { rev: res.rev };
