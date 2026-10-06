@@ -124,3 +124,18 @@ describe("이동 때 링크 자동 갱신(서버)", () => {
     expect((await owner.read("비밀/숨은.md")).content).toBe("[[계획]]\n");
   });
 });
+
+describe("블록 단위 출처(서버)", () => {
+  it("sources에 문단 위치가 나오고, 없는 블록은 정리 점검에 잡힌다. 개요 섹션은 ^id로 읽는다", async () => {
+    await owner.write("원본.md", "# 원본\n\n중요한 문단. ^key\n\n다른 문단.\n", null);
+    await owner.write("정리.md", "---\nsources: ['[[원본#^key]]', '[[원본#^gone]]']\n---\n# 정리\n", null);
+    const s = await owner.sources("정리.md");
+    expect(s.sources).toEqual([
+      { target: "원본", path: "원본.md", anchor: "^key" },
+      { target: "원본", path: "원본.md", anchor: "^gone" },
+    ]);
+    const lint = await owner.lint();
+    expect(lint.issues.filter((i) => i.kind === "broken_source").map((i) => i.target)).toEqual(["원본#^gone"]);
+    expect((await owner.section("원본.md", { heading: "^key" })).content).toBe("중요한 문단. ^key");
+  });
+});

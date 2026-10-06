@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify";
-import { section } from "@keyring-notes/core";
+import { blockText, section } from "@keyring-notes/core";
 import { api } from "./api";
 import { renderMarkdown, SAFE_URI, splitFrontmatter, type LinkResolver } from "./markdown";
 
@@ -46,32 +46,6 @@ function fillMath(el: HTMLElement) {
   el.innerHTML = cleanMath(katexMod.renderTex(decodeURIComponent(el.dataset.tex ?? ""), el.classList.contains("math-display")));
   el.dataset.done = "1";
   return true;
-}
-
-/** `^id`가 붙은 블록(문단·목록 항목, ^id만 있는 줄이면 바로 앞 블록)의 원문 */
-export function blockText(content: string, id: string): string | null {
-  const lines = content.split("\n");
-  const esc = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const own = new RegExp(`^\\s*\\^${esc}\\s*$`);
-  const tail = new RegExp(`\\s\\^${esc}\\s*$`);
-  let at = lines.findIndex((l) => tail.test(l) || own.test(l));
-  if (at < 0) return null;
-  if (own.test(lines[at])) {
-    // ^id만 있는 줄: 앞쪽 빈 줄을 건너뛴 바로 앞 블록
-    at--;
-    while (at >= 0 && !lines[at].trim()) at--;
-    if (at < 0) return null;
-  } else if (/^\s*(?:[-*+]|\d+[.)])\s/.test(lines[at])) {
-    return lines[at].replace(tail, "");
-  }
-  let start = at;
-  let end = at;
-  while (start > 0 && lines[start - 1].trim()) start--;
-  while (end < lines.length - 1 && lines[end + 1].trim()) end++;
-  return lines
-    .slice(start, end + 1)
-    .map((l) => l.replace(tail, ""))
-    .join("\n");
 }
 
 async function fillEmbed(el: HTMLElement, ctx: EnhanceContext, alive: () => boolean) {

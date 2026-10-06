@@ -120,3 +120,34 @@ describe("주석 %%…%%", () => {
     expect(a.links).toEqual(["b"]);
   });
 });
+
+import { LocalVault, MemoryStore, section, sourceRefs, blockText } from "../src/index.js";
+
+describe("블록 단위 출처", () => {
+  const raw = "# 기사\n\n첫 문단입니다.\n이어지는 줄. ^p1\n\n- 항목 하나 ^li\n- 항목 둘\n\n| a | b |\n|---|---|\n| 1 | 2 |\n^tbl\n\n## 결론\n끝.\n";
+  it("블록 ID로 자르기(문단·목록 항목·앞 블록)", () => {
+    expect(blockText(raw, "p1")).toBe("첫 문단입니다.\n이어지는 줄.");
+    expect(blockText(raw, "li")).toBe("- 항목 하나");
+    expect(blockText(raw, "tbl")).toBe("| a | b |\n|---|---|\n| 1 | 2 |");
+    expect(section(raw, { heading: "^p1" })).toMatchObject({ startLine: 3, endLine: 4, heading: "^p1" });
+    expect(() => section(raw, { heading: "^없음" })).toThrow(/블록/);
+  });
+  it("sources의 #^블록·#제목을 구분한다", () => {
+    expect(sourceRefs({ sources: ["[[raw/기사#^p1|문단]]", "raw/기사#결론", "[[raw/기사]]", "https://x.y/a#b"] })).toEqual([
+      { target: "raw/기사", anchor: "^p1" },
+      { target: "raw/기사", anchor: "결론" },
+      { target: "raw/기사" },
+    ]);
+  });
+  it("정리 점검: 출처의 블록·제목이 없으면 broken_source", async () => {
+    const store = new MemoryStore();
+    store.touch("raw/기사.md", raw);
+    store.touch("위키.md", "---\nsources: ['[[기사#^p1]]', '[[기사#^사라짐]]', '[[기사#결론]]', '[[기사#없는 제목]]']\n---\n본문 [[기사]]");
+    const v = new LocalVault(store);
+    await v.open();
+    const issues = v.lint().issues.filter((i) => i.kind === "broken_source").map((i) => i.target);
+    expect(issues.sort()).toEqual(["기사#^사라짐", "기사#없는 제목"]);
+    const s = await v.sources("위키.md");
+    expect(s.sources[0]).toEqual({ target: "기사", path: "raw/기사.md", anchor: "^p1" });
+  });
+});

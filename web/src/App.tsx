@@ -12,7 +12,7 @@ import { authMemo, isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
 import { enhance, invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
-import { applyTemplate, dailyNotePath, headings } from "@keyring-notes/core";
+import { applyTemplate, blockText, dailyNotePath, headings, section } from "@keyring-notes/core";
 import { loadNoteSettings, saveNoteSettings, type NoteSettings } from "./noteSettings";
 import { NoteSettingsDialog } from "./NoteSettingsDialog";
 import { localContext } from "./local/boot";
@@ -50,14 +50,43 @@ function pathFromLocation(): string | null {
   return h || null;
 }
 
+/** 문단·제목을 가리키는 출처: 그 부분의 원문을 짧게 인용해 보인다(없으면 점검 대상) */
+function SourceQuote({ path, anchor }: { path: string; anchor: string }) {
+  const [text, setText] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    api
+      .read(path)
+      .then((d) => {
+        if (!alive) return;
+        if (anchor.startsWith("^")) setText(blockText(d.content, anchor.slice(1)));
+        else {
+          try {
+            setText(section(d.content, { heading: anchor }).content);
+          } catch {
+            setText(null);
+          }
+        }
+      })
+      .catch(() => alive && setText(null));
+    return () => {
+      alive = false;
+    };
+  }, [path, anchor]);
+  if (text === undefined) return null;
+  if (text === null) return <div className="source-quote broken">가리키는 {anchor.startsWith("^") ? "블록" : "제목"}이 원본에 없습니다</div>;
+  const short = text.length > 280 ? `${text.slice(0, 280)}…` : text;
+  return <blockquote className="source-quote">{short}</blockquote>;
+}
+
 /** 미리보기 아래: 출처(프런트매터 sources), 이 문서를 출처로 인용한 문서, 본문 백링크. */
-function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: string) => void }) {
-  const link = (p: string, label: string) => (
+function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: string, anchor?: string) => void }) {
+  const link = (p: string, label: string, anchor?: string) => (
     <a
       href={`#/${encodeURIComponent(p)}`}
       onClick={(e) => {
         e.preventDefault();
-        if (p.toLowerCase().endsWith(".md")) onOpen(p);
+        if (p.toLowerCase().endsWith(".md")) onOpen(p, anchor);
         else window.open(api.rawUrl(p), "_blank", "noreferrer");
       }}
     >
@@ -71,9 +100,10 @@ function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: string) =
           <h4>출처 {refs.sources.length}</h4>
           <ul>
             {refs.sources.map((s) => (
-              <li key={s.target}>
-                {s.path ? link(s.path, s.path.split("/").pop()!.replace(/\.md$/i, "")) : <span className="broken">{s.target}</span>}{" "}
+              <li key={`${s.target}#${s.anchor ?? ""}`}>
+                {s.path ? link(s.path, s.path.split("/").pop()!.replace(/\.md$/i, "") + (s.anchor ? ` › ${s.anchor.replace(/^\^/, "¶ ")}` : ""), s.anchor) : <span className="broken">{s.target}</span>}{" "}
                 <span className="meta">{s.path ?? "없거나 볼 수 없는 출처"}</span>
+                {s.path && s.anchor && <SourceQuote path={s.path} anchor={s.anchor} />}
               </li>
             ))}
           </ul>
@@ -1267,7 +1297,15 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                         `${i}:${rendered.widgets[i]}`,
                       ),
                 )}
-                {!revision && refs && <References refs={refs} onOpen={open} />}
+                {!revision && refs && (
+                  <References
+                    refs={refs}
+                    onOpen={(p, anchor) => {
+                      if (anchor) setPendingAnchor({ path: p, ...(anchor.startsWith("^") ? { block: anchor.slice(1) } : { heading: anchor.toLowerCase() }) });
+                      void open(p);
+                    }}
+                  />
+                )}
               </div>
             </div>
           </>

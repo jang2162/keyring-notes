@@ -256,7 +256,8 @@ export interface GraphData {
 
 export interface SourcesInfo {
   path: string;
-  sources: { target: string; path: string | null }[];
+  /** anchor: `#제목`·`#^블록`(원본의 어느 부분을 인용했는지) */
+  sources: { target: string; path: string | null; anchor?: string }[];
   citedBy: { path: string; title: string }[];
   linkedBy: { path: string; title: string }[];
 }

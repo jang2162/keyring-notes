@@ -101,7 +101,7 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor): McpSer
   server.registerTool(
     "read_section",
     {
-      description: "문서 일부 읽기. heading(예: '설치 > 요구사항') 또는 start_line/end_line(1부터, 포함)",
+      description: "문서 일부 읽기. heading(예: '설치 > 요구사항', 블록 ID면 '^p3') 또는 start_line/end_line(1부터, 포함)",
       inputSchema: {
         path: z.string(),
         heading: z.string().optional(),

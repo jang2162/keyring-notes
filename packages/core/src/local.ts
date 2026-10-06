@@ -2,7 +2,7 @@ import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysi
 import { rewriteLinks, type LinkRewriteContext } from "./links.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "./errors.js";
 import { fromUtf8, sha256Hex, utf8 } from "./hash.js";
-import { analyze, parseFrontmatter, resolveLink, setTaskState, sourceTargets } from "./markdown.js";
+import { analyze, anchorExists, parseFrontmatter, resolveLink, setTaskState, sourceRefs } from "./markdown.js";
 import { isMarkdown, normalizeFolder, normalizeVaultPath, PathError } from "./paths.js";
 import type { CommitInfo, DocMeta, LinkRow, SearchHit, TaskRow, TreeNode } from "./types.js";
 import { parseWidget, runWidget, type WidgetResult } from "./widget.js";
@@ -416,7 +416,7 @@ export class LocalVault {
     const files = this.allPaths();
     return {
       path: doc.path,
-      sources: sourceTargets(fm).map((target) => ({ target, path: resolveLink(target, files) })),
+      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files), ...(r.anchor ? { anchor: r.anchor } : {}) })),
       citedBy: this.withTitles(this.incoming(doc.path, "source")),
       linkedBy: this.withTitles(this.incoming(doc.path, "link")),
     };
@@ -448,7 +448,19 @@ export class LocalVault {
   }
 
   lint(opts: { folder?: string; staleDays?: number } = {}): LintReport {
+    // 문단·제목을 가리키는 출처가 실제로 있는지
+    const files = this.allPaths();
+    const missingAnchors: { src: string; target: string; anchor: string }[] = [];
+    for (const e of this.mdEntries()) {
+      for (const r of sourceRefs(e.meta!.frontmatter)) {
+        if (!r.anchor) continue;
+        const to = resolveLink(r.target, files);
+        const content = to ? this.files.get(to)?.content : undefined;
+        if (content !== undefined && !anchorExists(content, r.anchor)) missingAnchors.push({ src: e.path, target: r.target, anchor: r.anchor });
+      }
+    }
     return lintVault({
+      missingAnchors,
       docs: this.docs(),
       files: this.allPaths(),
       links: this.linkRows(),

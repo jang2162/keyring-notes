@@ -11,7 +11,8 @@ import {
   runWidget,
   section,
   setTaskState,
-  sourceTargets,
+  sourceRefs,
+  anchorExists,
   wikilinkTargets,
   type GraphData,
   type Heading,
@@ -323,7 +324,7 @@ export class ScopedVault {
    */
   async sources(input: string): Promise<{
     path: string;
-    sources: { target: string; path: string | null }[];
+    sources: { target: string; path: string | null; anchor?: string }[];
     citedBy: { path: string; title: string }[];
     linkedBy: { path: string; title: string }[];
   }> {
@@ -334,7 +335,7 @@ export class ScopedVault {
     const withTitle = (paths: string[]) => paths.filter((p) => this.canRead(p)).map((p) => ({ path: p, title: titles.get(p) ?? p }));
     return {
       path: doc.path,
-      sources: sourceTargets(fm).map((target) => ({ target, path: resolveLink(target, files) })),
+      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files), ...(r.anchor ? { anchor: r.anchor } : {}) })),
       citedBy: withTitle(this.index.backlinks(doc.path, "source")),
       linkedBy: withTitle(this.index.backlinks(doc.path, "link")),
     };
@@ -347,9 +348,22 @@ export class ScopedVault {
    * - 위키 원본(<토픽>/raw/): 어느 위키 페이지에서도 인용되지 않음
    */
   async lint(opts: { folder?: string; staleDays?: number; required?: string[] } = {}): Promise<LintReport> {
+    const files = await this.visibleFiles();
+    // 문단·제목을 가리키는 출처(`[[원본#^id]]`)가 실제로 있는지: 볼 수 있는 대상만 읽어 본다
+    const missingAnchors: { src: string; target: string; anchor: string }[] = [];
+    for (const d of this.visibleDocs()) {
+      for (const r of sourceRefs(d.frontmatter)) {
+        if (!r.anchor) continue;
+        const to = resolveLink(r.target, files);
+        if (!to || !/\.md$/i.test(to)) continue;
+        const content = await this.vault.read(to).then((x) => x.content, () => null);
+        if (content !== null && !anchorExists(content, r.anchor)) missingAnchors.push({ src: d.path, target: r.target, anchor: r.anchor });
+      }
+    }
     return lintVault({
+      missingAnchors,
       docs: this.visibleDocs(),
-      files: await this.visibleFiles(),
+      files,
       links: this.index.db.prepare("SELECT src, target, kind FROM links").all() as unknown as LinkRow[],
       canRead: (p) => this.canRead(p),
       wiki: this.wiki,

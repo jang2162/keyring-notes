@@ -522,3 +522,5 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .kanban-lane.over { outline: 2px dashed var(--accent); }
 .kanban-lane h5 { margin: 2px 4px; font-size: 13px; }
 .kanban-move { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--muted); align-self: flex-start; }
+.backlinks .source-quote { margin: 4px 0 6px; padding: 4px 10px; border-left: 3px solid var(--border); color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+.backlinks .source-quote.broken { color: var(--co-red); border-left-color: var(--co-red); }

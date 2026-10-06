@@ -66,8 +66,56 @@ export interface Section {
 }
 
 /**
+ * 블록 ID(`^id`)가 붙은 블록의 줄 범위(1부터, 포함). 문단 끝에 ` ^id`면 그 문단, 목록 항목이면 그 줄,
+ * `^id`만 있는 줄이면 바로 앞 블록(표·인용 등). 없으면 null.
+ */
+export function blockRange(content: string, id: string): { start: number; end: number } | null {
+  const lines = content.split("\n");
+  const esc = id.replace(/^\^/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const own = new RegExp(`^\\s*\\^${esc}\\s*$`);
+  const tail = new RegExp(`\\s\\^${esc}\\s*$`);
+  let at = lines.findIndex((l) => tail.test(l) || own.test(l));
+  if (at < 0) return null;
+  if (own.test(lines[at])) {
+    at--;
+    while (at >= 0 && !lines[at].trim()) at--;
+    if (at < 0) return null;
+  } else if (/^\s*(?:[-*+]|\d+[.)])\s/.test(lines[at])) {
+    return { start: at + 1, end: at + 1 };
+  }
+  let start = at;
+  let end = at;
+  while (start > 0 && lines[start - 1].trim()) start--;
+  while (end < lines.length - 1 && lines[end + 1].trim() && !own.test(lines[end + 1])) end++;
+  return { start: start + 1, end: end + 1 };
+}
+
+/** 블록 ID가 붙은 블록의 원문(` ^id` 표시는 뺀다). 없으면 null. */
+export function blockText(content: string, id: string): string | null {
+  const r = blockRange(content, id);
+  if (!r) return null;
+  const tail = new RegExp(`\\s\\^${id.replace(/^\^/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`);
+  return content
+    .split("\n")
+    .slice(r.start - 1, r.end)
+    .map((l) => l.replace(tail, ""))
+    .join("\n");
+}
+
+/** `#제목` 또는 `#^블록`이 문서에 있는지(출처 점검용) */
+export function anchorExists(content: string, anchor: string): boolean {
+  if (anchor.startsWith("^")) return blockRange(content, anchor.slice(1)) !== null;
+  try {
+    section(content, { heading: anchor });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 제목 이름(대소문자 무시) 또는 줄 범위로 문서 일부를 자른다.
- * 제목은 "상위 > 하위"처럼 경로로 좁힐 수 있다.
+ * 제목은 "상위 > 하위"처럼 경로로 좁힐 수 있고, `^id`면 그 블록(블록 ID)이다.
  */
 export function section(content: string, opts: { heading?: string; startLine?: number; endLine?: number }): Section {
   const lines = content.split("\n");
@@ -75,6 +123,12 @@ export function section(content: string, opts: { heading?: string; startLine?: n
   let start: number;
   let end: number;
   let headingText: string | null = null;
+  if (opts.heading?.trim().startsWith("^")) {
+    const id = opts.heading.trim().slice(1);
+    const r = blockRange(content, id);
+    if (!r) throw new RangeError(`블록을 찾을 수 없습니다: ^${id}`);
+    return { heading: `^${id}`, startLine: r.start, endLine: r.end, totalLines: total, content: lines.slice(r.start - 1, r.end).join("\n") };
+  }
   if (opts.heading) {
     const want = opts.heading.split(">").map((s) => s.trim().replace(/^#+\s*/, "").toLowerCase()).filter(Boolean);
     const hs = headings(content);
@@ -211,20 +265,33 @@ export interface TaskItem {
  * URL(http…)은 볼트 문서가 아니므로 뺀다.
  */
 export function sourceTargets(frontmatter: Record<string, unknown> | null): string[] {
+  return [...new Set(sourceRefs(frontmatter).map((r) => r.target))];
+}
+
+/**
+ * sources 항목마다 대상과 위치(`#제목`·`#^블록`). "[[원본#^p3|문단]]"처럼 원본의 문단을 가리키는 인용.
+ */
+export function sourceRefs(frontmatter: Record<string, unknown> | null): { target: string; anchor?: string }[] {
   const raw = frontmatter?.sources ?? frontmatter?.source;
   const list = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
-  const out = new Set<string>();
+  const out: { target: string; anchor?: string }[] = [];
+  const seen = new Set<string>();
   for (const v of list) {
     if (typeof v !== "string") continue;
-    const t = v
+    const ref = v
       .trim()
       .replace(/^\[\[|\]\]$/g, "")
-      .split("|")[0]
-      .split("#")[0]
-      .trim();
-    if (t && !/^[a-z]+:\/\//i.test(t)) out.add(t);
+      .split("|")[0];
+    const hash = ref.indexOf("#");
+    const t = (hash < 0 ? ref : ref.slice(0, hash)).trim();
+    const anchor = hash < 0 ? undefined : ref.slice(hash + 1).trim() || undefined;
+    if (!t || /^[a-z]+:\/\//i.test(t)) continue;
+    const key = `${t}#${anchor ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(anchor ? { target: t, anchor } : { target: t });
   }
-  return [...out];
+  return out;
 }
 
 export interface Analysis {
