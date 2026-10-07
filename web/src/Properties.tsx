@@ -41,6 +41,8 @@ export function Properties({ content, onChange, stats, readOnly }: Props) {
   // 값이 비어 종류를 알 수 없는 필드에 사람이 고른 종류
   const [chosen, setChosen] = useState<Record<string, PropertyType>>({});
   const [newKey, setNewKey] = useState("");
+  // 속성이 없는 문서는 "속성 더하기" 단추만 보이고, 누르면 입력칸을 연다
+  const [adding, setAdding] = useState(false);
   const statOf = useMemo(() => new Map(stats.map((s) => [s.key, s])), [stats]);
 
   const apply = (fn: (c: string) => string) => {
@@ -75,9 +77,19 @@ export function Properties({ content, onChange, stats, readOnly }: Props) {
     setNewKey("");
   };
 
+  if (entries.length === 0 && !adding) {
+    if (readOnly) return null;
+    return (
+      <div className="properties properties-empty">
+        <button className="prop-add-btn" onClick={() => setAdding(true)}>
+          ＋ 속성 더하기
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="properties">
-      {entries.length === 0 && <p className="meta">속성이 없습니다.</p>}
       {entries.length > 0 && (
         <table>
           <tbody>
@@ -139,6 +151,8 @@ export function Properties({ content, onChange, stats, readOnly }: Props) {
         <div className="prop-add">
           <input
             list="prop-keys"
+            autoFocus={adding && entries.length === 0}
+            onBlur={() => !newKey.trim() && setAdding(false)}
             placeholder="속성 더하기"
             aria-label="더할 속성 이름"
             value={newKey}

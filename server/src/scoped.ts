@@ -470,7 +470,7 @@ export class ScopedVault {
     return { enabled: true, canSee: (p) => this.canRead(p), fullPaths: true };
   }
 
-  async batch(ops: Op[], message?: string, opts: { updateLinks?: boolean } = {}): Promise<BatchResult & { pending?: PendingInfo }> {
+  async batch(ops: Op[], message?: string, opts: { updateLinks?: boolean; coalesce?: boolean } = {}): Promise<BatchResult & { pending?: PendingInfo }> {
     if (!Array.isArray(ops)) throw new PathError("operations가 필요합니다");
     for (const op of ops) {
       if (!op || typeof op !== "object") throw new PathError("연산 형식이 잘못되었습니다");
@@ -516,7 +516,8 @@ export class ScopedVault {
         return this.vault.batch(ops, this.author, { message, guard, links: { ...links, only: new Set(dry.linksUpdated) } });
       }
     }
-    return this.vault.batch(ops, this.author, { message, guard, links });
+    // 자동 저장 묶기는 사람(소유자)의 웹 편집에만: 에이전트 쓰기는 하나하나 이력에 남긴다
+    return this.vault.batch(ops, this.author, { message, guard, links, coalesce: opts.coalesce === true && this.principal.kind === "owner" });
   }
 
   /** 에이전트가 자기 제안의 처리 결과를 확인할 때. */
@@ -529,7 +530,7 @@ export class ScopedVault {
    * 문서 하나를 바꾼다. 검토 대기열에 올라가면(pending) 볼트는 그대로이고,
    * content·hash는 승인 뒤의 내용·해시를 돌려준다.
    */
-  private async single(op: Op, opts: { updateLinks?: boolean } = {}): Promise<Doc & { rev: string | null; pending?: PendingInfo; linksUpdated: string[]; linkCount: number }> {
+  private async single(op: Op, opts: { updateLinks?: boolean; coalesce?: boolean } = {}): Promise<Doc & { rev: string | null; pending?: PendingInfo; linksUpdated: string[]; linkCount: number }> {
     if (op.op === "put") throw new PathError("put은 batch로만 쓸 수 있습니다");
     const res = await this.batch([op], undefined, opts);
     const target = normalizeVaultPath(op.op === "move" ? op.to : op.path);
@@ -541,8 +542,9 @@ export class ScopedVault {
     return { ...doc, rev: res.rev, linksUpdated: res.linksUpdated, linkCount: res.linkCount };
   }
 
-  write(path: string, content: string, baseHash: string | null) {
-    return this.single({ op: "write", path, content, baseHash });
+  /** coalesce: 자동 저장. 같은 문서를 잇달아 저장하면 직전 커밋에 합친다(소유자만, Vault.COALESCE_WINDOW_MS 안) */
+  write(path: string, content: string, baseHash: string | null, opts: { coalesce?: boolean } = {}) {
+    return this.single({ op: "write", path, content, baseHash }, opts);
   }
 
   append(path: string, content: string, baseHash?: string | null) {

@@ -182,3 +182,42 @@ describe("일괄 쓰기", () => {
     expect((await vault.git.show(b.rev!, "a.md"))).toBe("A");
   });
 });
+
+describe("자동 저장 묶기", () => {
+  it("같은 문서를 잇달아 자동 저장하면 직전 커밋에 합친다", async () => {
+    await vault.init();
+    const a = await me.write("a.md", "A1", null, { coalesce: true });
+    const b = await me.write("a.md", "A2", a.hash, { coalesce: true });
+    const c = await me.write("a.md", "A3", b.hash, { coalesce: true });
+    const log = await vault.git.log("a.md");
+    expect(log).toHaveLength(1);
+    expect(log[0].message).toBe("생성: a.md");
+    expect(c.rev).toBe(log[0].rev);
+    expect(await vault.git.show(c.rev!, "a.md")).toBe("A3");
+  });
+
+  it("다른 문서·다른 작성자·백업이 끼면 새 커밋으로 남긴다", async () => {
+    await vault.init();
+    const a = await me.write("a.md", "A1", null, { coalesce: true });
+    await me.write("b.md", "B", null, { coalesce: true });
+    const a2 = await me.write("a.md", "A2", a.hash, { coalesce: true });
+    expect(await vault.git.log("a.md")).toHaveLength(2);
+
+    // 에이전트 쓰기는 묶지 않는다
+    const a3 = await agent.write("a.md", "A3", a2.hash, { coalesce: true });
+    const a4 = await me.write("a.md", "A4", a3.hash, { coalesce: true });
+    expect(await vault.git.log("a.md")).toHaveLength(4);
+
+    // 백업 직전(서버 밖 변경 흡수) 뒤에는 고쳐 쓰지 않는다
+    await vault.absorbOutsideChanges();
+    await me.write("a.md", "A5", a4.hash, { coalesce: true });
+    expect(await vault.git.log("a.md")).toHaveLength(5);
+  });
+
+  it("coalesce 없이 저장하면 늘 새 커밋이다", async () => {
+    await vault.init();
+    const a = await me.write("a.md", "A1", null);
+    await me.write("a.md", "A2", a.hash);
+    expect(await vault.git.log("a.md")).toHaveLength(2);
+  });
+});

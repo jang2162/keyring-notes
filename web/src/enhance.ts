@@ -29,7 +29,12 @@ export function invalidateEmbeds() {
   embedCache.clear();
 }
 
-const isDark = () => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+/** 설정에서 고른 테마(html[data-theme]), 없으면 시스템 설정 */
+const isDark = () => {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t) return t === "dark";
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+};
 
 /** 그린 수식은 KaTeX 출력(HTML+MathML)만 남기고 정화한다 */
 function cleanMath(html: string) {
