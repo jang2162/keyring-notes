@@ -160,6 +160,8 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
     console.log(`${sig}: 종료하는 중…`);
     backups.stop();
     automation.stop();
+    // 묶어 둔 doc.changed는 기다리지 않고 지금 보낸다
+    automation.flushDocs(true);
     server.close();
     void vault
       .maintenance(async () => index.close())

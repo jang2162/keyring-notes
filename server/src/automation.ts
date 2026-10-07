@@ -9,7 +9,9 @@ import type { Wiki } from "./wiki.js";
  *
  * 이벤트
  *   raw.added         위키 토픽 raw/에 새 원본이 들어옴(수집·에이전트 쓰기·제안 승인 모두)
- *   doc.changed       커밋 하나(작성자·메시지·파일 목록)
+ *   doc.changed       문서 변경. 같은 문서는 마지막 저장 뒤 조용한 시간(기본 90초)이 지나면 한 번만 보낸다
+ *                     (자동 저장이 몇 초마다 커밋을 합쳐도 웹훅이 몇 초마다 나가지 않게). 그때까지 쌓인 문서를 한 번에:
+ *                     {rev·author·message(마지막 커밋), commits(묶인 커밋 수), files[{status, path}]}
  *   proposal.created  검토 대기열에 새 제안
  *   schedule          정기 작업 실행(선택: 정리 점검 결과 포함)
  *   ping              웹훅 시험
@@ -116,6 +118,19 @@ export interface AutomationDeps {
   fetchImpl?: typeof fetch;
   /** 시험용: 재시도 간격(ms) */
   retryDelays?: number[];
+  /** doc.changed를 보내기 전 조용히 기다리는 시간(ms, 기본 90초). 0이면 커밋마다 바로 */
+  docChangedQuietMs?: number;
+}
+
+interface PendingDoc {
+  status: string;
+  rev: string;
+  author: string;
+  message: string;
+  /** 이 문서의 마지막 변경 시각 */
+  at: number;
+  /** 묶인 커밋 */
+  revs: Set<string>;
 }
 
 export class Automation {
@@ -124,12 +139,26 @@ export class Automation {
   private lastRun = new Map<string, string>();
   private lastResult = new Map<string, string>();
   private inflight = new Set<Promise<unknown>>();
+  /** 아직 보내지 않은 doc.changed(문서별) */
+  private pendingDocs = new Map<string, PendingDoc>();
+  private docTimer: NodeJS.Timeout | null = null;
 
   constructor(private deps: AutomationDeps) {}
 
-  /** 진행 중인 전송이 끝날 때까지(시험·종료용). */
+  /** doc.changed 조용한 시간(ms) */
+  get quietMs() {
+    return this.deps.docChangedQuietMs ?? 90_000;
+  }
+  set quietMs(ms: number) {
+    this.deps.docChangedQuietMs = ms;
+  }
+
+  /** 진행 중인 전송과 묶어 둔 doc.changed가 모두 나갈 때까지(시험·종료용). */
   async idle(): Promise<void> {
-    while (this.inflight.size) await Promise.allSettled([...this.inflight]);
+    while (this.inflight.size || this.pendingDocs.size) {
+      if (this.inflight.size) await Promise.allSettled([...this.inflight]);
+      else await new Promise((r) => setTimeout(r, Math.min(50, this.quietMs + 5)));
+    }
   }
 
   private track<T>(p: Promise<T>): Promise<T> {
@@ -207,7 +236,7 @@ export class Automation {
       const [status, p] = l.split("\t");
       return { status: status[0], path: p };
     });
-    this.emit("doc.changed", { rev, author, message, files });
+    if (hooks.some((w) => w.events.includes("doc.changed"))) this.queueDocChanged(rev, author, message, files);
     for (const f of files) {
       if (f.status !== "A" || !f.path.endsWith(".md")) continue;
       const topic = this.deps.wiki.topicOf(f.path);
@@ -215,6 +244,55 @@ export class Automation {
         this.emit("raw.added", { topic, path: f.path, rev, author, message });
       }
     }
+  }
+
+  /** doc.changed 묶기: 문서마다 마지막 변경 시각을 두고, 조용한 시간이 지난 문서들을 한 번에 보낸다 */
+  private queueDocChanged(rev: string, author: string, message: string, files: { status: string; path: string }[]) {
+    if (this.quietMs <= 0) {
+      this.emit("doc.changed", { rev, author, message, commits: 1, files });
+      return;
+    }
+    const now = Date.now();
+    for (const f of files) {
+      const prev = this.pendingDocs.get(f.path);
+      // 상태 합치기: 새로 만든 뒤 고치면 A, 만들고 지우면 보낼 것 없음, 지운 뒤 다시 만들면 M
+      let status = f.status;
+      if (prev?.status === "A" && f.status === "M") status = "A";
+      else if (prev?.status === "D" && f.status === "A") status = "M";
+      if (prev?.status === "A" && f.status === "D") {
+        this.pendingDocs.delete(f.path);
+        continue;
+      }
+      this.pendingDocs.set(f.path, { status, rev, author, message, at: now, revs: new Set([...(prev?.revs ?? []), rev]) });
+    }
+    this.scheduleDocs();
+  }
+
+  private scheduleDocs() {
+    if (this.docTimer) clearTimeout(this.docTimer);
+    this.docTimer = null;
+    if (this.pendingDocs.size === 0) return;
+    const earliest = Math.min(...[...this.pendingDocs.values()].map((p) => p.at));
+    this.docTimer = setTimeout(() => this.flushDocs(), Math.max(0, earliest + this.quietMs - Date.now()));
+    this.docTimer.unref();
+  }
+
+  /** 조용한 시간이 지난 문서(force면 모두)를 doc.changed 하나로 보낸다 */
+  flushDocs(force = false): void {
+    const now = Date.now();
+    const due = [...this.pendingDocs].filter(([, p]) => force || p.at + this.quietMs <= now);
+    if (due.length) {
+      for (const [path] of due) this.pendingDocs.delete(path);
+      const last = due.map(([, p]) => p).sort((a, b) => a.at - b.at).at(-1)!;
+      this.emit("doc.changed", {
+        rev: last.rev,
+        author: last.author,
+        message: last.message,
+        commits: new Set(due.flatMap(([, p]) => [...p.revs])).size,
+        files: due.map(([path, p]) => ({ status: p.status, path })).sort((a, b) => a.path.localeCompare(b.path)),
+      });
+    }
+    this.scheduleDocs();
   }
 
   // ── 정기 작업 ──

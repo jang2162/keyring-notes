@@ -66,7 +66,7 @@ beforeEach(async () => {
   config = new ConfigStore(path.join(root, "config.json"));
   review = new ReviewQueue(vault, config);
   owner = new ScopedVault(vault, ownerPrincipal, index, wiki, review);
-  automation = new Automation({ vault, wiki, config, lint: (folder) => owner.lint({ folder }), retryDelays: [10, 10, 10] });
+  automation = new Automation({ vault, wiki, config, lint: (folder) => owner.lint({ folder }), retryDelays: [10, 10, 10], docChangedQuietMs: 60 });
   vault.onChange(() => automation.onCommit());
   review.onCreate((p) => automation.emit("proposal.created", { id: p.id, agent: p.agent, topic: p.preview[0]?.path.split("/")[0], files: p.preview.map((f) => ({ path: f.path })) }));
   await owner.createTopic("경제");
@@ -106,12 +106,38 @@ describe("이벤트 웹훅", () => {
     expect(raw).toHaveLength(1); // 업무 토픽은 구독 안 함
     expect(raw[0].data).toMatchObject({ topic: "경제", path: r.path, author: "me" });
     const changed = received.filter((x) => x.event === "doc.changed");
-    expect(changed).toHaveLength(2);
-    expect(changed[0].data.files.map((f: { path: string }) => f.path)).toContain(r.path);
+    expect(changed.flatMap((x) => x.data.files.map((f: { path: string }) => f.path))).toContain(r.path);
     for (const x of received) {
       expect(x.headers["x-keyring-signature"]).toBe("sha256=" + createHmac("sha256", SECRET).update(x.body).digest("hex"));
       expect(x.headers["x-keyring-event"]).toBe(x.event);
     }
+  });
+
+  it("doc.changed: 같은 문서의 잇단 저장은 조용해진 뒤 한 번만, raw.added는 바로", async () => {
+    await automation.idle();
+    received = [];
+    automation.quietMs = 1500;
+    let d = await owner.write("업무/메모.md", "1", null);
+    for (let i = 2; i <= 5; i++) d = await owner.write("업무/메모.md", String(i), d.hash, { coalesce: true });
+    // 아직 조용한 시간 전: 보낸 doc.changed 없음
+    await new Promise((r) => setTimeout(r, 20));
+    expect(received.filter((x) => x.event === "doc.changed")).toHaveLength(0);
+    const raw = await ingestor.ingest(owner, { kind: "text", topic: "경제", title: "바로", text: "본문" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(received.filter((x) => x.event === "raw.added").map((x) => x.data.path)).toEqual([raw.path]);
+    await automation.idle();
+    const changed = received.filter((x) => x.event === "doc.changed");
+    const memo = changed.filter((x) => x.data.files.some((f: { path: string }) => f.path === "업무/메모.md"));
+    expect(memo).toHaveLength(1);
+    expect(memo[0].data.files.find((f: { path: string }) => f.path === "업무/메모.md").status).toBe("A");
+    // 조용해진 뒤 다시 고치면 새로 한 번
+    received = [];
+    await owner.write("업무/메모.md", "6", d.hash);
+    await automation.idle();
+    const again = received.filter((x) => x.event === "doc.changed");
+    expect(again).toHaveLength(1);
+    expect(again[0].data.files).toEqual([{ status: "M", path: "업무/메모.md" }]);
+    expect(again[0].data.commits).toBe(1);
   });
 
   it("검토 대기열에 제안이 쌓이면 proposal.created", async () => {
