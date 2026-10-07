@@ -7,9 +7,9 @@ import { agentPrincipal, openVault, ownerPrincipal, tempDir } from "./helpers.js
 
 // 계획서의 "폴더별 에이전트 권한 (예시)" 표
 const WIKI_WORK = {
-  "업무/raw": "append",
-  "업무/wiki": "delete",
-  "업무/SCHEMA.md": "read",
+  "업무/경제/raw": "append",
+  "업무/경제/wiki": "delete",
+  "업무/경제/SCHEMA.md": "read",
 } as const;
 const OPENCLAW_WORK = {
   "업무": "read",
@@ -37,9 +37,9 @@ beforeEach(async () => {
   work = new ScopedVault(vault, agentPrincipal("openclaw-work", { ...OPENCLAW_WORK }), index);
   personal = new ScopedVault(vault, agentPrincipal("openclaw-personal", { ...OPENCLAW_PERSONAL }), index);
   const seed: Record<string, string> = {
-    "업무/raw/기사.md": "# 기사\n원문 내용 금리\n",
-    "업무/wiki/금리.md": "# 금리\n[[가계부]] 와 [[기사]] 참고\n",
-    "업무/SCHEMA.md": "# 스키마\n",
+    "업무/경제/raw/기사.md": "# 기사\n원문 내용 금리\n",
+    "업무/경제/wiki/금리.md": "# 금리\n[[가계부]] 와 [[기사]] 참고\n",
+    "업무/경제/SCHEMA.md": "# 스키마\n",
     "에이전트 작업함/메모.md": "# 메모\n",
     "개인·재무/가계부.md": "---\ntags: [재무]\n---\n# 가계부\n금리 비밀 메모\n",
   };
@@ -72,11 +72,11 @@ describe("숨김", () => {
     expect((await personal.documents()).map((d) => d.path)).toEqual(["에이전트 작업함/메모.md"]);
     // 업무에 SCHEMA.md가 있어 위키 토픽이 되므로 서버가 만든 wiki/index.md·log.md도 보인다
     expect((await wiki.documents()).map((d) => d.path).sort()).toEqual([
-      "업무/SCHEMA.md",
-      "업무/raw/기사.md",
-      "업무/wiki/index.md",
-      "업무/wiki/log.md",
-      "업무/wiki/금리.md",
+      "업무/경제/SCHEMA.md",
+      "업무/경제/raw/기사.md",
+      "업무/경제/wiki/index.md",
+      "업무/경제/wiki/log.md",
+      "업무/경제/wiki/금리.md",
     ]);
   });
 
@@ -100,13 +100,13 @@ describe("숨김", () => {
   });
 
   it("숨김 문서를 가리키는 링크는 해석하지 않는다", async () => {
-    const outline = await wiki.outline("업무/wiki/금리.md");
+    const outline = await wiki.outline("업무/경제/wiki/금리.md");
     expect(outline.links).toEqual([
       { target: "가계부", path: null },
-      { target: "기사", path: "업무/raw/기사.md" },
+      { target: "기사", path: "업무/경제/raw/기사.md" },
     ]);
     // 소유자는 해석된다
-    expect((await owner.outline("업무/wiki/금리.md")).links[0].path).toBe("개인·재무/가계부.md");
+    expect((await owner.outline("업무/경제/wiki/금리.md")).links[0].path).toBe("개인·재무/가계부.md");
   });
 
   it("frontmatter 목록에도 숨김 문서가 없다", async () => {
@@ -115,7 +115,7 @@ describe("숨김", () => {
   });
 
   it("이력의 이동 메시지에 숨김 경로가 드러나지 않는다", async () => {
-    const moved = await owner.move("개인·재무/가계부.md", "업무/wiki/공개가계부.md", h["개인·재무/가계부.md"]);
+    const moved = await owner.move("개인·재무/가계부.md", "업무/경제/wiki/공개가계부.md", h["개인·재무/가계부.md"]);
     const msgs = (await wiki.history(moved.path)).map((c) => c.message);
     expect(msgs.join("\n")).not.toContain("개인·재무");
     expect((await owner.history(moved.path))[0].message).toContain("개인·재무");
@@ -124,11 +124,11 @@ describe("숨김", () => {
 
 describe("읽기 전용", () => {
   it("openclaw-work는 업무를 읽지만 쓰지 못한다", async () => {
-    expect((await work.read("업무/wiki/금리.md")).content).toContain("금리");
-    await expect(work.write("업무/wiki/금리.md", "바꿈", h["업무/wiki/금리.md"])).rejects.toThrow(/권한/);
-    await expect(work.append("업무/wiki/금리.md", "덧붙임")).rejects.toThrow(/권한/);
-    await expect(work.write("업무/wiki/새.md", "x", null)).rejects.toThrow(/권한/);
-    await expect(wiki.write("업무/SCHEMA.md", "규칙 변경", h["업무/SCHEMA.md"])).rejects.toThrow(/권한/);
+    expect((await work.read("업무/경제/wiki/금리.md")).content).toContain("금리");
+    await expect(work.write("업무/경제/wiki/금리.md", "바꿈", h["업무/경제/wiki/금리.md"])).rejects.toThrow(/권한/);
+    await expect(work.append("업무/경제/wiki/금리.md", "덧붙임")).rejects.toThrow(/권한/);
+    await expect(work.write("업무/경제/wiki/새.md", "x", null)).rejects.toThrow(/권한/);
+    await expect(wiki.write("업무/경제/SCHEMA.md", "규칙 변경", h["업무/경제/SCHEMA.md"])).rejects.toThrow(/권한/);
   });
 
   it("자기 작업함에서는 쓰기·삭제가 된다", async () => {
@@ -138,10 +138,10 @@ describe("읽기 전용", () => {
 });
 
 describe("추가 전용", () => {
-  const raw = "업무/raw/기사.md";
+  const raw = "업무/경제/raw/기사.md";
 
   it("새 원본 문서를 만들고 끝에 덧붙일 수 있다", async () => {
-    await wiki.write("업무/raw/새 기사.md", "# 새 기사\n", null);
+    await wiki.write("업무/경제/raw/새 기사.md", "# 새 기사\n", null);
     const d = await wiki.append(raw, "추가 메모\n");
     expect(d.content).toBe("# 기사\n원문 내용 금리\n추가 메모\n");
     // 전체 쓰기라도 기존 내용 뒤에 붙이기만 하면 허용
@@ -152,10 +152,10 @@ describe("추가 전용", () => {
     await expect(wiki.write(raw, "# 기사\n왜곡된 요약\n", h[raw])).rejects.toThrow(/추가 전용/);
     await expect(wiki.write(raw, "", h[raw])).rejects.toThrow(/권한/);
     await expect(wiki.delete(raw, h[raw])).rejects.toThrow(/권한/);
-    await expect(wiki.move(raw, "업무/wiki/기사.md", h[raw])).rejects.toThrow(/권한/);
+    await expect(wiki.move(raw, "업무/경제/wiki/기사.md", h[raw])).rejects.toThrow(/권한/);
     // 위키 쪽에서 원본 폴더로 옮겨와 덮어쓰기도 불가(이미 있는 이름이면 충돌)
-    const w = await wiki.write("업무/wiki/임시.md", "x", null);
-    await expect(wiki.move("업무/wiki/임시.md", raw, w.hash)).rejects.toThrow();
+    const w = await wiki.write("업무/경제/wiki/임시.md", "x", null);
+    await expect(wiki.move("업무/경제/wiki/임시.md", raw, w.hash)).rejects.toThrow();
     expect((await owner.read(raw)).content).toBe("# 기사\n원문 내용 금리\n");
   });
 
@@ -163,11 +163,11 @@ describe("추가 전용", () => {
     const before = await vault.git.log();
     await expect(
       wiki.batch([
-        { op: "write", path: "업무/wiki/요약.md", content: "요약", baseHash: null },
+        { op: "write", path: "업무/경제/wiki/요약.md", content: "요약", baseHash: null },
         { op: "write", path: raw, content: "덮어쓰기", baseHash: h[raw] },
       ]),
     ).rejects.toThrow(/추가 전용/);
-    await expect(owner.read("업무/wiki/요약.md")).rejects.toThrow();
+    await expect(owner.read("업무/경제/wiki/요약.md")).rejects.toThrow();
     expect(await vault.git.log()).toEqual(before);
   });
 });

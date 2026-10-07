@@ -1,5 +1,5 @@
 import { resolveLink } from "./markdown.js";
-import { dailyPropMismatch, parseDailyPath, type DailyConfig } from "./daily.js";
+import { dailyOfPath, dailyPropMismatch, type DailyLookup } from "./daily.js";
 import { isVaultSettingsPath } from "./settings.js";
 import type { DocMeta, LinkRow } from "./types.js";
 
@@ -8,8 +8,8 @@ export type LintKind = "broken_link" | "broken_source" | "orphan" | "no_sources"
 export interface LintIssue {
   kind: LintKind;
   path: string;
-  /** 사람이 읽을 설명 */
-  detail: string;
+  /** 설명에 끼워 넣을 값(화면·에이전트가 kind로 문장을 만든다) */
+  params?: Record<string, string | number>;
   target?: string;
 }
 
@@ -50,11 +50,10 @@ export function lintVault(input: {
   now?: number;
   /** 출처가 가리키는 제목·블록(`#^id`)이 대상 문서에 없는 것(부르는 쪽이 내용을 읽어 확인해 넘긴다) */
   missingAnchors?: { src: string; target: string; anchor: string }[];
-  /** 데일리 노트 설정(날짜 링크 해석·자동 속성 점검) */
-  daily?: DailyConfig | null;
+  /** 워크스페이스별 데일리 설정(날짜 링크 해석·자동 속성 점검) */
+  daily?: DailyLookup | null;
 }): LintReport {
   const { files, links, canRead, wiki } = input;
-  const o = { daily: input.daily };
   const f = input.folder;
   const staleDays = input.staleDays ?? 180;
   const required = input.required ?? ["title", "summary"];
@@ -75,48 +74,47 @@ export function lintVault(input: {
   const issues: LintIssue[] = [];
   for (const r of links) {
     if (!canRead(r.src) || wiki?.isGenerated(r.src)) continue;
-    const to = resolveLink(r.target, files, o);
+    const to = resolveLink(r.target, files, { daily: input.daily, from: r.src });
     if (to && to !== r.src) {
       incoming.set(to, (incoming.get(to) ?? 0) + 1);
       if (isWikiPage(r.src)) citedByWiki.add(to);
     }
     if (!to && inScope(r.src)) {
       issues.push(
-        r.kind === "source"
-          ? { kind: "broken_source", path: r.src, target: r.target, detail: `출처 "${r.target}"가 없거나 볼 수 없음` }
-          : { kind: "broken_link", path: r.src, target: r.target, detail: `링크 [[${r.target}]]의 대상이 없거나 볼 수 없음` },
+        r.kind === "source" ? { kind: "broken_source", path: r.src, target: r.target } : { kind: "broken_link", path: r.src, target: r.target },
       );
     }
   }
 
   for (const m of input.missingAnchors ?? []) {
     if (!inScope(m.src)) continue;
-    issues.push({ kind: "broken_source", path: m.src, target: `${m.target}#${m.anchor}`, detail: `출처 "${m.target}"에 ${m.anchor.startsWith("^") ? `블록 ${m.anchor}` : `제목 "${m.anchor}"`}이(가) 없음` });
+    issues.push({ kind: "broken_source", path: m.src, target: `${m.target}#${m.anchor}`, params: { anchor: m.anchor } });
   }
 
   const now = input.now ?? Date.now();
   for (const d of docs) {
     if (!inScope(d.path)) continue;
     if (isWikiPage(d.path)) {
-      if (!incoming.get(d.path)) issues.push({ kind: "orphan", path: d.path, detail: "다른 문서에서 링크하거나 인용하지 않음" });
+      if (!incoming.get(d.path)) issues.push({ kind: "orphan", path: d.path });
       const src = d.frontmatter?.sources;
-      if (!src || (Array.isArray(src) && src.length === 0)) issues.push({ kind: "no_sources", path: d.path, detail: "프런트매터 sources(근거 원본)가 없음" });
+      if (!src || (Array.isArray(src) && src.length === 0)) issues.push({ kind: "no_sources", path: d.path });
       const missing = required.filter((k) => {
         const v = d.frontmatter?.[k];
         return v === undefined || v === null || (typeof v === "string" && !v.trim());
       });
-      if (missing.length) issues.push({ kind: "missing_frontmatter", path: d.path, detail: `프런트매터 누락: ${missing.join(", ")}` });
+      if (missing.length) issues.push({ kind: "missing_frontmatter", path: d.path, params: { fields: missing.join(", ") } });
       const updatedRaw = d.frontmatter?.updated;
       const updated = typeof updatedRaw === "string" && !Number.isNaN(Date.parse(updatedRaw)) ? Date.parse(updatedRaw) : d.mtime;
       const age = Math.floor((now - updated) / 86400_000);
-      if (age > staleDays) issues.push({ kind: "stale", path: d.path, detail: `${age}일 동안 갱신되지 않음(기준 ${staleDays}일)` });
+      if (age > staleDays) issues.push({ kind: "stale", path: d.path, params: { days: age, limit: staleDays } });
     } else if (isRaw(d.path) && !citedByWiki.has(d.path)) {
-      issues.push({ kind: "unprocessed_raw", path: d.path, detail: "어느 위키 페이지에서도 인용하지 않은 원본" });
+      issues.push({ kind: "unprocessed_raw", path: d.path });
     }
-    const daily = parseDailyPath(d.path, input.daily);
+    const daily = dailyOfPath(d.path, input.daily);
     if (daily) {
-      const keys = dailyPropMismatch(d.frontmatter, daily.date, input.daily?.weekStart);
-      if (keys.length) issues.push({ kind: "daily_mismatch", path: d.path, detail: `데일리 속성과 이름 날짜(${daily.ymd})가 다름: ${keys.join(", ")}` });
+      const cfg = input.daily?.of(d.path.split("/")[0]);
+      const keys = dailyPropMismatch(d.frontmatter, daily.date, cfg?.weekStart, cfg?.lang);
+      if (keys.length) issues.push({ kind: "daily_mismatch", path: d.path, params: { date: daily.ymd, keys: keys.join(", ") } });
     }
   }
 
@@ -131,7 +129,7 @@ export function lintVault(input: {
  * 그래프 뷰(W9): 볼 수 있는 문서(자동 생성 문서 제외)와 그 사이의 링크(본문 링크·출처).
  * docs는 읽을 수 있는 문서만. 숨김 문서로 가는 링크는 아예 빠진다.
  */
-export function linkGraph(input: { docs: DocMeta[]; links: LinkRow[]; wiki?: WikiTopics; folder: string; daily?: DailyConfig | null }): GraphData {
+export function linkGraph(input: { docs: DocMeta[]; links: LinkRow[]; wiki?: WikiTopics; folder: string; daily?: DailyLookup | null }): GraphData {
   const f = input.folder;
   const docs = input.docs.filter((d) => !input.wiki?.isGenerated(d.path) && !isVaultSettingsPath(d.path) && (!f || d.path.startsWith(f + "/")));
   const ids = new Set(docs.map((d) => d.path));
@@ -141,7 +139,7 @@ export function linkGraph(input: { docs: DocMeta[]; links: LinkRow[]; wiki?: Wik
   const degree = new Map<string, number>();
   for (const r of input.links) {
     if (!ids.has(r.src)) continue;
-    const to = resolveLink(r.target, paths, { daily: input.daily });
+    const to = resolveLink(r.target, paths, { daily: input.daily, from: r.src });
     if (!to || to === r.src) continue;
     const key = `${r.src}\0${to}\0${r.kind}`;
     if (seen.has(key)) continue;
@@ -151,7 +149,13 @@ export function linkGraph(input: { docs: DocMeta[]; links: LinkRow[]; wiki?: Wik
     degree.set(to, (degree.get(to) ?? 0) + 1);
   }
   return {
-    nodes: docs.map((d) => ({ id: d.path, title: d.title, topic: d.path.includes("/") ? d.path.split("/")[0] : "(최상위)", degree: degree.get(d.path) ?? 0 })),
+    nodes: docs.map((d) => ({ id: d.path, title: d.title, topic: graphTopic(d.path), degree: degree.get(d.path) ?? 0 })),
     edges,
   };
+}
+
+/** 그래프 색 묶음: 워크스페이스 바로 아래 노드(업무/경제), 워크스페이스 노트·바로 아래 잎 노드는 워크스페이스 */
+export function graphTopic(path: string): string {
+  const segs = path.replace(/\.md$/i, "").split("/");
+  return segs.length >= 3 ? `${segs[0]}/${segs[1]}` : segs[0];
 }

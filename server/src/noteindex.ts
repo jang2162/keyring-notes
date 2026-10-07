@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { analyze, parseDailyPath, resolveLink, type DailyConfig, type DocMeta, type TaskRow } from "@keyring-notes/core";
+import { analyze, dailyOfPath, resolveLink, type DailyLookup, type DocMeta, type TaskRow } from "@keyring-notes/core";
 import { hashContent } from "./vault.js";
 
 const SCHEMA_VERSION = 3;
@@ -177,12 +177,14 @@ export class NoteIndex {
     }[];
   }
 
-  /** target 문서를 가리키는 링크가 있는 문서들. 링크 해석은 볼트 전체 기준(Obsidian 최단 경로 규칙). */
-  /** kind를 주면 그 종류만: "link"(본문 위키링크), "source"(프런트매터 출처). 없으면 둘 다. */
-  /** daily를 주면 데일리 노트를 날짜만으로 가리키는 링크(`[[2026-10-07]]`)도 센다. */
-  backlinks(target: string, kind?: "link" | "source", daily?: DailyConfig | null): string[] {
+  /**
+   * target 문서를 가리키는 링크가 있는 문서들. 링크 해석은 볼트 전체 기준(Obsidian 최단 경로 규칙, 링크를 쓴
+   * 문서의 워크스페이스 먼저). kind를 주면 그 종류만: "link"(본문 위키링크), "source"(프런트매터 출처).
+   * daily를 주면 데일리 노트를 날짜만으로 가리키는 링크(`[[2026-10-07]]`)도 센다.
+   */
+  backlinks(target: string, kind?: "link" | "source", daily?: DailyLookup | null): string[] {
     const names = [linkName(target)];
-    const d = parseDailyPath(target, daily);
+    const d = dailyOfPath(target, daily);
     if (d) names.push(linkName(d.datePart));
     const rows: { src: string; target: string }[] = [];
     for (const name of names) {
@@ -195,7 +197,7 @@ export class NoteIndex {
     if (rows.length === 0) return [];
     const all = this.allPaths();
     const out = new Set<string>();
-    for (const r of rows) if (r.src !== target && resolveLink(r.target, all, { daily }) === target) out.add(r.src);
+    for (const r of rows) if (r.src !== target && resolveLink(r.target, all, { daily, from: r.src }) === target) out.add(r.src);
     return [...out].sort();
   }
 

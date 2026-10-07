@@ -75,7 +75,7 @@ export class Ingestor {
 
   async ingest(scoped: ScopedVault, input: IngestInput): Promise<IngestResult> {
     const topic = normalizeVaultPath(input.topic);
-    if (topic.includes("/") || !this.wiki.topics.has(topic)) {
+    if (!this.wiki.topics.has(topic)) {
       throw new PathError(`위키 토픽이 아닙니다(SCHEMA.md 없음): ${input.topic}`);
     }
 
@@ -165,7 +165,7 @@ export class Ingestor {
     const ops: Op[] = [];
     if (assetPath && asset) ops.push({ op: "put", path: assetPath, data: asset.data });
     ops.push({ op: "write", path: docPath, content, baseHash: null });
-    const res = await scoped.batch(ops, `수집: ${title}`);
+    const res = await scoped.batch(ops, this.vault.text().commit.ingest(title));
     return { path: docPath, title, asset: assetPath, rev: res.rev };
   }
 }

@@ -1,5 +1,5 @@
 import { parse as parseYaml } from "yaml";
-import { dailyLinkDate, dailyNotesOn, type DailyConfig } from "./daily.js";
+import { dailyLinkDate, dailyNotesOn, type DailyLookup } from "./daily.js";
 
 export interface Heading {
   level: number;
@@ -238,13 +238,26 @@ export function wikilinkTargets(content: string): string[] {
 }
 
 export interface ResolveOptions {
-  /** 데일리 노트 설정: 주면 `[[2026-10-07]]`처럼 날짜만 쓴 링크가 그날 데일리 노트(날짜 뒤 제목 포함)를 가리킨다 */
-  daily?: DailyConfig | null;
+  /**
+   * 링크를 쓴 문서 경로. 주면 그 문서의 워크스페이스(볼트 루트 노드) 안에서 먼저 찾고, 없으면 볼트 전체에서 찾는다.
+   * `[[업무/…]]`처럼 경로를 쓰면 그 경로가 정확히 맞는 것이 늘 먼저다.
+   */
+  from?: string | null;
+  /** 워크스페이스별 데일리 설정: 주면 `[[2026-10-07]]`처럼 날짜만 쓴 링크가 그날 데일리 노트(날짜 뒤 제목 포함)를 가리킨다 */
+  daily?: DailyLookup | null;
+}
+
+/** 경로의 워크스페이스(맨 앞 이름. 루트의 X.md는 X) */
+function wsOf(p: string): string | null {
+  const i = p.indexOf("/");
+  if (i >= 0) return p.slice(0, i);
+  return /\.md$/i.test(p) ? p.slice(0, -3) : null;
 }
 
 /**
- * Obsidian식 링크 해석: 정확한 경로가 없으면 같은 파일 이름 중 가장 얕은 경로.
- * 그래도 없고 대상이 데일리 날짜면 그날 데일리 노트(날짜만 있는 이름 먼저). 정확한 이름의 문서가 늘 먼저다.
+ * Obsidian식 링크 해석: 정확한 경로가 없으면 같은 파일 이름 중 가장 얕은 경로. 링크를 쓴 문서(from)가 있으면
+ * 그 워크스페이스 안의 것이 먼저다. 그래도 없고 대상이 데일리 날짜면 그날 데일리 노트(같은 워크스페이스 먼저,
+ * 날짜만 있는 이름 먼저). 정확한 이름의 문서가 늘 먼저다.
  */
 export function resolveLink(target: string, paths: string[], opts: ResolveOptions = {}): string | null {
   const t = target.trim().replace(/^\/+/, "").toLowerCase();
@@ -255,12 +268,28 @@ export function resolveLink(target: string, paths: string[], opts: ResolveOption
     const exact = lowered.find(([l]) => l === c);
     if (exact) return exact[1];
   }
-  for (const c of candidates) {
-    const hits = lowered.filter(([l]) => l === c || l.endsWith("/" + c)).map(([, p]) => p);
-    if (hits.length) return hits.sort((a, b) => a.split("/").length - b.split("/").length)[0];
-  }
-  const day = opts.daily ? dailyLinkDate(target, opts.daily) : null;
-  return day ? (dailyNotesOn(paths, opts.daily, day)[0]?.path ?? null) : null;
+  const ws = opts.from ? wsOf(opts.from) : null;
+  const shallowest = (hits: string[]) => hits.sort((a, b) => a.split("/").length - b.split("/").length || (a < b ? -1 : a > b ? 1 : 0))[0];
+  const byName = (inWs: boolean): string | null => {
+    for (const c of candidates) {
+      const hits = lowered.filter(([l, p]) => (l === c || l.endsWith("/" + c)) && (!inWs || wsOf(p) === ws)).map(([, p]) => p);
+      if (hits.length) return shallowest(hits);
+    }
+    return null;
+  };
+  const byDaily = (which: "here" | "others" | "all"): string | null => {
+    if (!opts.daily) return null;
+    for (const { workspace, config } of opts.daily.all()) {
+      if ((which === "here" && workspace !== ws) || (which === "others" && workspace === ws)) continue;
+      const day = dailyLinkDate(target, config);
+      const hit = day ? dailyNotesOn(paths, config, day)[0] : undefined;
+      if (hit) return hit.path;
+    }
+    return null;
+  };
+  // 같은 워크스페이스(이름 → 그날 데일리 노트) → 볼트 전체(이름 → 다른 워크스페이스의 데일리 노트)
+  if (ws !== null) return byName(true) ?? byDaily("here") ?? byName(false) ?? byDaily("others");
+  return byName(false) ?? byDaily("all");
 }
 
 export interface TaskItem {

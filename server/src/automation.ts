@@ -175,10 +175,10 @@ export class Automation {
 
   private topicMatches(w: WebhookConfig, data: Record<string, unknown>): boolean {
     if (!w.topics || w.topics.length === 0) return true;
-    const topics = new Set<string>();
-    if (typeof data.topic === "string") topics.add(data.topic);
-    for (const f of (data.files as { path: string }[] | undefined) ?? []) topics.add(f.path.split("/")[0]);
-    return w.topics.some((t) => topics.has(t));
+    // 토픽(워크스페이스/이름) 또는 워크스페이스·노드 경로: 이벤트의 토픽이 같거나 파일이 그 노드 안이면
+    const files = ((data.files as { path: string }[] | undefined) ?? []).map((f) => f.path);
+    const topic = typeof data.topic === "string" ? data.topic : null;
+    return w.topics.some((t) => topic === t || (topic !== null && topic.startsWith(t + "/")) || files.some((p) => p === `${t}.md` || p.startsWith(t + "/")));
   }
 
   private async deliver(w: WebhookConfig, event: EventName, data: Record<string, unknown>): Promise<Delivery> {

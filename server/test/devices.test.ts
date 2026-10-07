@@ -76,13 +76,13 @@ describe("기기 토큰", () => {
 
   it("동기화 목록: 모든 파일과 해시, 서버가 만드는 위키 index·log는 뺀다", async () => {
     const { app, config, owner } = env;
-    await owner.createTopic("경제");
-    await owner.write("경제/wiki/금리.md", "# 금리\n", null);
-    await owner.batch([{ op: "put", path: "경제/raw/assets/표.png", data: new Uint8Array([7, 8]) }]);
+    await owner.createTopic("업무/경제");
+    await owner.write("업무/경제/wiki/금리.md", "# 금리\n", null);
+    await owner.batch([{ op: "put", path: "업무/경제/raw/assets/표.png", data: new Uint8Array([7, 8]) }]);
     const { token } = config.issueDeviceToken("폰");
     const res = await app.request("/api/sync/manifest", { headers: { authorization: `Bearer ${token}` } });
     const files = (await res.json()).files as { path: string; hash: string; size: number }[];
-    expect(files.map((f) => f.path).sort()).toEqual(["경제/SCHEMA.md", "경제/raw/assets/표.png", "경제/wiki/금리.md"]);
+    expect(files.map((f) => f.path).sort()).toEqual(["업무/경제/SCHEMA.md", "업무/경제/raw/assets/표.png", "업무/경제/wiki/금리.md"]);
     expect(files.find((f) => f.path.endsWith(".png"))).toMatchObject({ hash: hashContent(Buffer.from([7, 8])), size: 2 });
     const agent = config.issueToken("bot");
     expect((await app.request("/api/sync/manifest", { headers: { authorization: `Bearer ${agent}` } })).status).toBe(403);
@@ -118,9 +118,9 @@ describe("첨부 올리기 API", () => {
 describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
   it("기기 등록 → 양방향 동기화 → 충돌 사본", async () => {
     const { owner, fetchFn, vault } = env;
-    await owner.createTopic("경제");
-    await owner.write("경제/raw/기사.md", "# 기사\n본문\n", null);
-    await owner.batch([{ op: "put", path: "경제/raw/assets/표.png", data: new Uint8Array([1, 2]) }]);
+    await owner.createTopic("업무/경제");
+    await owner.write("업무/경제/raw/기사.md", "# 기사\n본문\n", null);
+    await owner.batch([{ op: "put", path: "업무/경제/raw/assets/표.png", data: new Uint8Array([1, 2]) }]);
 
     const paired = await pairDevice("http://localhost/", "correct horse", "노트북", fetchFn);
     expect(paired.server).toBe("http://localhost");
@@ -134,21 +134,21 @@ describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
     let r = await sync.run();
     expect(r.errors).toEqual([]);
     expect(r.pushed).toEqual(["오프라인.md"]);
-    expect(r.pulled.sort()).toEqual(["경제/SCHEMA.md", "경제/raw/assets/표.png", "경제/raw/기사.md"]);
+    expect(r.pulled.sort()).toEqual(["업무/경제/SCHEMA.md", "업무/경제/raw/assets/표.png", "업무/경제/raw/기사.md"]);
     expect((await owner.read("오프라인.md")).content).toBe("비행기에서 씀");
     expect((await vault.history("오프라인.md"))[0].author).toBe("me (노트북)");
     // 위키 index는 기기가 따로 만든다
-    expect((await local.read("경제/wiki/index.md")).content).toContain("[[경제/raw/기사|기사]]");
-    expect([...(await store.read("경제/raw/assets/표.png"))!]).toEqual([1, 2]);
+    expect((await local.read("업무/경제/wiki/index.md")).content).toContain("[[업무/경제/raw/기사|기사]]");
+    expect([...(await store.read("업무/경제/raw/assets/표.png"))!]).toEqual([1, 2]);
 
     // 양쪽에서 같은 문서를 다르게 고친다
-    const srv = await owner.read("경제/raw/기사.md");
-    await owner.write("경제/raw/기사.md", "# 기사\n서버에서 고침\n", srv.hash);
-    const mine = await local.read("경제/raw/기사.md");
-    await local.write("경제/raw/기사.md", "# 기사\n기기에서 고침\n", mine.hash);
+    const srv = await owner.read("업무/경제/raw/기사.md");
+    await owner.write("업무/경제/raw/기사.md", "# 기사\n서버에서 고침\n", srv.hash);
+    const mine = await local.read("업무/경제/raw/기사.md");
+    await local.write("업무/경제/raw/기사.md", "# 기사\n기기에서 고침\n", mine.hash);
     r = await sync.run();
     expect(r.conflicts).toHaveLength(1);
-    expect((await local.read("경제/raw/기사.md")).content).toContain("서버에서 고침");
+    expect((await local.read("업무/경제/raw/기사.md")).content).toContain("서버에서 고침");
     expect((await owner.read(r.conflicts[0].copy)).content).toContain("기기에서 고침");
     expect((await local.read(r.conflicts[0].copy)).content).toContain("기기에서 고침");
 

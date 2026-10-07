@@ -1,8 +1,21 @@
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { chainMoves, dailyConfigOf, parseVaultSettings, rewriteLinks, VAULT_SETTINGS_PATH, type DailyConfig, type VaultSettings } from "@keyring-notes/core";
+import {
+  chainMoves,
+  dailyLookup,
+  parseVaultSettings,
+  rewriteLinks,
+  vaultLanguage,
+  vaultText,
+  VAULT_SETTINGS_PATH,
+  workspaceOf,
+  type DailyLookup,
+  type VaultLang,
+  type VaultSettings,
+  type VaultText,
+} from "@keyring-notes/core";
 import { GitHistory, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
 import { isHiddenSegment, isMarkdown, normalizeVaultPath, PathError, resolveInVault } from "./paths.js";
 
@@ -177,8 +190,50 @@ export class Vault {
     return this.shared.value;
   }
 
-  daily(): DailyConfig {
-    return dailyConfigOf(this.sharedSettings());
+  /** 볼트 언어를 정하지 않았을 때 쓸 언어(서버 언어 설정 또는 LANG) */
+  fallbackLang: string | undefined = process.env.KEYRING_LANG || process.env.LANG;
+
+  /** 볼트 언어(볼트에 남는 글: 커밋 메시지·위키 목차·SCHEMA 템플릿) */
+  language(): VaultLang {
+    return vaultLanguage(this.sharedSettings(), this.fallbackLang);
+  }
+
+  text(): VaultText {
+    return vaultText(this.language());
+  }
+
+  private dailyCache: { settings: VaultSettings; value: DailyLookup } | null = null;
+  /** 워크스페이스 이름(볼트 루트 노드). 데일리 조회가 쓴다 */
+  private rootNames: string[] = [];
+
+  /** 워크스페이스별 데일리 설정(공통 설정 파일). 링크 해석·데일리 판정에 쓴다 */
+  daily(): DailyLookup {
+    const s = this.sharedSettings();
+    if (this.dailyCache?.settings !== s) {
+      this.rootNames = this.readRootNames();
+      this.dailyCache = { settings: s, value: dailyLookup(s, () => this.rootNames, this.fallbackLang) };
+    }
+    return this.dailyCache.value;
+  }
+
+  /** 볼트 루트의 워크스페이스 이름(공통 설정 파일·점 이름 제외) */
+  private readRootNames(): string[] {
+    try {
+      const out = new Set<string>();
+      for (const e of readdirSync(this.root, { withFileTypes: true })) {
+        if (e.name.startsWith(".")) continue;
+        const ws = e.isDirectory() ? e.name : workspaceOf(e.name);
+        if (ws) out.add(ws);
+      }
+      return [...out].sort();
+    } catch {
+      return [];
+    }
+  }
+
+  /** 볼트 루트가 바뀌었을 수 있을 때(쓰기 뒤) 워크스페이스 목록을 다시 읽는다 */
+  private refreshRoots() {
+    if (this.dailyCache) this.rootNames = this.readRootNames();
   }
 
   /** 볼트 폴더와 이력 저장소를 준비하고, 서버 밖에서 생긴 변경을 한 커밋으로 흡수한다. */
@@ -186,7 +241,7 @@ export class Vault {
     await mkdir(this.root, { recursive: true });
     this.realRoot = await realpath(this.root);
     await this.git.init();
-    await this.exclusive(() => this.commitChanges("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
+    await this.exclusive(() => this.commitChanges(this.text().commit.outside, SYSTEM_AUTHOR));
   }
 
   /** 쓰기를 잠시 막고 fn을 실행한다(백업 복원처럼 볼트 전체를 바꾸는 작업). */
@@ -198,7 +253,7 @@ export class Vault {
   absorbOutsideChanges(): Promise<string | null> {
     // 백업 직전에도 부른다: 백업에 들어간 커밋은 이후 자동 저장이 고쳐 쓰지 않게 묶음을 끊는다
     this.amendable = null;
-    return this.exclusive(() => this.commitChanges("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
+    return this.exclusive(() => this.commitChanges(this.text().commit.outside, SYSTEM_AUTHOR));
   }
 
   /** 변경이 커밋된 직후(다음 쓰기보다 먼저) 바뀐 경로 목록으로 호출된다. 인덱스 갱신용. */
@@ -372,7 +427,9 @@ export class Vault {
       };
 
       // 1) 계획: 가상의 상태 위에서 모든 연산을 검사한다. 디스크는 아직 그대로다.
-      const verbs: string[] = [];
+      // 연산마다 종류와 커밋 메시지 줄(볼트 언어). 자동 저장 묶기는 종류로 판단한다(메시지 글로 판단하지 않는다)
+      const T = this.text().commit;
+      const verbs: { kind: "create" | "modify" | "append" | "delete" | "move" | "attach"; text: string }[] = [];
       const moveList: [string, string][] = [];
       for (const op of ops) {
         if (op.op === "move") {
@@ -394,7 +451,7 @@ export class Vault {
           }
           set(a, null);
           moveList.push([from, to]);
-          verbs.push(`이동: ${from} → ${to}`);
+          verbs.push({ kind: "move", text: T.move(from, to) });
           continue;
         }
         const rel = resolved.get(op.path)!;
@@ -404,7 +461,7 @@ export class Vault {
           if (s.hash !== null) throw new ConflictError(s.hash, "이미 같은 이름의 파일이 있습니다", rel);
           s.bytes = op.data;
           s.hash = hashContent(Buffer.from(op.data));
-          verbs.push(`첨부: ${rel}`);
+          verbs.push({ kind: "attach", text: T.attach(rel) });
           continue;
         }
         if (op.op === "write") {
@@ -413,18 +470,18 @@ export class Vault {
           if (s.hash !== op.baseHash) {
             throw new ConflictError(s.hash, s.hash === null ? "문서가 없습니다(삭제되었을 수 있음)" : undefined, rel);
           }
-          verbs.push(`${s.content === null ? "생성" : "수정"}: ${rel}`);
+          verbs.push(s.content === null ? { kind: "create", text: T.create(rel) } : { kind: "modify", text: T.modify(rel) });
           set(s, op.content);
         } else if (op.op === "append") {
           guard(s.content === null ? "create" : "append", rel);
           if (op.baseHash !== undefined && s.hash !== op.baseHash) throw new ConflictError(s.hash, undefined, rel);
-          verbs.push(`${s.content === null ? "생성" : "덧붙임"}: ${rel}`);
+          verbs.push(s.content === null ? { kind: "create", text: T.create(rel) } : { kind: "append", text: T.append(rel) });
           set(s, s.content === null ? op.content : appendText(s.content, op.content));
         } else {
           if (s.hash === null) throw new NotFoundError(`${isMarkdown(rel) ? "문서" : "파일"}가 없습니다: ${rel}`);
           guard("delete", rel);
           if (s.hash !== op.baseHash) throw new ConflictError(s.hash, undefined, rel);
-          verbs.push(`삭제: ${rel}`);
+          verbs.push({ kind: "delete", text: T.delete(rel) });
           set(s, null);
         }
       }
@@ -504,11 +561,13 @@ export class Vault {
             await writeFile(s.abs, s.content ?? "", "utf8");
           }
         }
-        // 제목은 연산만으로 정한다(이동 하나면 "이동: a → b" — ScopedVault.history가 이 모양을 본다). 링크 갱신은 본문에.
-        const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0] : `일괄 변경 ${verbs.length}건`);
-        const lines = [...(verbs.length > 1 || opts.message ? verbs : []), ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => `링크 갱신: ${p}`)];
+        // 제목은 연산만으로 정한다(볼트 언어). 링크 갱신은 본문에. 숨김 경로 가리기는 메시지가 아니라
+        // 커밋의 변경 목록으로 한다(ScopedVault.history) — 메시지가 어떤 언어여도 안전하게
+        const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0].text : T.batch(verbs.length));
+        const lines = [...(verbs.length > 1 || opts.message ? verbs.map((v) => v.text) : []), ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => T.linkUpdate(p))];
         const body = lines.length > 0 ? `${message}\n\n${lines.join("\n")}` : message;
         const rev = await this.commitOrAmend(body, author, changed, verbs, opts.coalesce === true && !opts.message);
+        if (changed.some(([rel]) => !rel.includes("/"))) this.refreshRoots();
         for (const fn of this.listeners) {
           try {
             await fn(changed.map(([rel]) => rel));
@@ -538,9 +597,9 @@ export class Vault {
   /**
    * 커밋한다. coalesce(자동 저장)이고 문서 하나만 쓰기·만들기였으면, 직전 묶음 커밋에 합치거나 새 묶음을 시작한다.
    */
-  private async commitOrAmend(body: string, author: Author, changed: [string, Slot][], verbs: string[], coalesce: boolean): Promise<string | null> {
+  private async commitOrAmend(body: string, author: Author, changed: [string, Slot][], verbs: { kind: string }[], coalesce: boolean): Promise<string | null> {
     const paths = changed.map(([rel]) => rel);
-    const single = coalesce && changed.length === 1 && verbs.length === 1 && /^(수정|생성): /.test(verbs[0]) && changed[0][1].bytes === undefined && changed[0][1].content !== null;
+    const single = coalesce && changed.length === 1 && verbs.length === 1 && (verbs[0].kind === "modify" || verbs[0].kind === "create") && changed[0][1].bytes === undefined && changed[0][1].content !== null;
     if (!single) return this.commitChanges(body, author, paths);
     const rel = paths[0];
     const a = this.amendable;

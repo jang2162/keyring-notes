@@ -8,9 +8,11 @@ import { analyze, anchorExists, parseFrontmatter, resolveLink, setTaskState, sou
 import { isMarkdown, normalizeFolder, normalizeVaultPath, PathError } from "./paths.js";
 import type { CommitInfo, DocMeta, LinkRow, SearchHit, TaskRow, TreeNode } from "./types.js";
 import { parseWidget, runWidget, type WidgetResult } from "./widget.js";
-import { generatedKind, generatedPaths, renderWikiIndex, renderWikiLog, schemaTemplate, schemaTopic } from "./wiki.js";
-import { dailyConfigOf, isVaultSettingsPath, parseVaultSettings, VAULT_SETTINGS_PATH, type VaultSettings } from "./settings.js";
-import type { DailyConfig } from "./daily.js";
+import { generatedKind, generatedPaths, isTopicName, renderWikiIndex, renderWikiLog, schemaTemplate, schemaTopic, topicCandidate } from "./wiki.js";
+import { dailyLookup, isVaultSettingsPath, parseVaultSettings, vaultLanguage, VAULT_SETTINGS_PATH, type VaultSettings } from "./settings.js";
+import type { DailyLookup } from "./daily.js";
+import { moveNodePath, nodeFiles, workspaceOf } from "./nodes.js";
+import { vaultText, type VaultText } from "./vaultText.js";
 
 export interface FileEntry {
   /** 볼트 상대 경로("/" 구분) */
@@ -79,8 +81,9 @@ interface Entry extends FileEntry {
 const JOURNAL = "journal.jsonl";
 const objectName = (hash: string) => `objects/${hash.slice(0, 2)}/${hash}`;
 
-export const EXTERNAL_AUTHOR = "외부 변경";
-export const SYNC_AUTHOR = "동기화";
+/** 앱 밖 변경·동기화 기록의 작성자(이름이라 볼트 언어와 상관없이 고정) */
+export const EXTERNAL_AUTHOR = "external";
+export const SYNC_AUTHOR = "sync";
 
 let idSeq = 0;
 function newId(now: number): string {
@@ -265,7 +268,7 @@ export class LocalVault {
       changed.push(p);
       if (entry.md && this.lastHash.get(p)) external.push({ status: "D", path: p, hash: null });
     }
-    await this.record(EXTERNAL_AUTHOR, "앱 밖에서 생긴 변경 반영", external, contents);
+    await this.record(EXTERNAL_AUTHOR, this.text().commit.appOutside, external, contents);
     if (this.opened) this.emit(changed, "external");
     return changed;
   }
@@ -278,8 +281,8 @@ export class LocalVault {
   }
 
   topicOf(rel: string): string | null {
-    const t = rel.split("/")[0];
-    return this.topicSet.has(t) ? t : null;
+    const t = topicCandidate(rel);
+    return t !== null && this.topicSet.has(t) ? t : null;
   }
 
   private settingsCache: { hash: string | null; value: VaultSettings } | null = null;
@@ -292,8 +295,28 @@ export class LocalVault {
     return this.settingsCache.value;
   }
 
-  private daily(): DailyConfig {
-    return dailyConfigOf(this.settings());
+  /** 볼트 언어의 글(커밋 메시지·위키 목차 등) */
+  text(): VaultText {
+    return vaultText(vaultLanguage(this.settings()));
+  }
+
+  /** 볼트의 워크스페이스(루트 노드) 이름 */
+  workspaces(): string[] {
+    const out = new Set<string>();
+    for (const p of this.files.keys()) {
+      const ws = workspaceOf(p);
+      if (ws) out.add(ws);
+    }
+    return [...out].sort();
+  }
+
+  private dailyCache: { settings: VaultSettings; value: DailyLookup } | null = null;
+
+  /** 워크스페이스별 데일리 설정 */
+  daily(): DailyLookup {
+    const s = this.settings();
+    if (this.dailyCache?.settings !== s) this.dailyCache = { settings: s, value: dailyLookup(s, () => this.workspaces()) };
+    return this.dailyCache.value;
   }
 
   private mdEntries(): Entry[] {
@@ -373,12 +396,13 @@ export class LocalVault {
 
   private renderGenerated(rel: string): string {
     const g = generatedKind(rel)!;
-    if (g.kind === "index") return renderWikiIndex(g.topic, this.docs(), this.mdPaths(), this.linkRows(), { by: "app" });
+    const lang = vaultLanguage(this.settings());
+    if (g.kind === "index") return renderWikiIndex(g.topic, this.docs(), this.mdPaths(), this.linkRows(), { by: "app", lang });
     return renderWikiLog(
       g.topic,
       this.journal.map((e) => ({ date: e.date, author: e.author, message: e.message, files: e.files })),
       () => true,
-      { by: "app" },
+      { by: "app", lang },
     );
   }
 
@@ -414,10 +438,10 @@ export class LocalVault {
   private incoming(rel: string, kind?: "link" | "source"): string[] {
     const paths = this.mdPaths();
     const out = new Set<string>();
-    const o = { daily: this.daily() };
+    const daily = this.daily();
     for (const r of this.linkRows()) {
       if (r.src === rel || (kind && r.kind !== kind)) continue;
-      if (resolveLink(r.target, paths, o) === rel) out.add(r.src);
+      if (resolveLink(r.target, paths, { daily, from: r.src }) === rel) out.add(r.src);
     }
     return [...out].sort();
   }
@@ -458,7 +482,7 @@ export class LocalVault {
     const files = this.allPaths();
     return {
       path: doc.path,
-      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files, { daily: this.daily() }), ...(r.anchor ? { anchor: r.anchor } : {}) })),
+      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files, { daily: this.daily(), from: doc.path }), ...(r.anchor ? { anchor: r.anchor } : {}) })),
       citedBy: this.withTitles(this.incoming(doc.path, "source")),
       linkedBy: this.withTitles(this.incoming(doc.path, "link")),
     };
@@ -474,19 +498,24 @@ export class LocalVault {
     return runWidget(parseWidget(source), this.docs(), this.tasks());
   }
 
+  /** 토픽 = 워크스페이스 바로 아래 노드(워크스페이스/이름). 위키 토픽이면 페이지·원본 수를 함께 */
   topics(): { name: string; wiki: boolean; pages: number; raw: number }[] {
     const docs = this.docs();
-    return this.tree()
-      .filter((n) => n.type === "dir")
-      .map((n) => {
-        const wiki = this.topicSet.has(n.name);
-        return {
-          name: n.name,
-          wiki,
-          pages: wiki ? docs.filter((d) => d.path.startsWith(`${n.name}/wiki/`) && !this.isGenerated(d.path)).length : 0,
-          raw: wiki ? docs.filter((d) => d.path.startsWith(`${n.name}/raw/`) && !d.path.startsWith(`${n.name}/raw/assets/`)).length : 0,
-        };
-      });
+    const names = new Set<string>();
+    for (const p of this.files.keys()) {
+      const segs = p.split("/");
+      if (segs.length >= 2 && !isVaultSettingsPath(p)) names.add(`${segs[0]}/${segs[1].replace(/\.md$/i, "")}`);
+    }
+    for (const t of this.topicSet) names.add(t);
+    return [...names].sort((a, b) => a.localeCompare(b, "ko")).map((name) => {
+      const wiki = this.topicSet.has(name);
+      return {
+        name,
+        wiki,
+        pages: wiki ? docs.filter((d) => d.path.startsWith(`${name}/wiki/`) && !this.isGenerated(d.path)).length : 0,
+        raw: wiki ? docs.filter((d) => d.path.startsWith(`${name}/raw/`) && !d.path.startsWith(`${name}/raw/assets/`)).length : 0,
+      };
+    });
   }
 
   lint(opts: { folder?: string; staleDays?: number } = {}): LintReport {
@@ -496,7 +525,7 @@ export class LocalVault {
     for (const e of this.mdEntries()) {
       for (const r of sourceRefs(e.meta!.frontmatter)) {
         if (!r.anchor) continue;
-        const to = resolveLink(r.target, files, { daily: this.daily() });
+        const to = resolveLink(r.target, files, { daily: this.daily(), from: e.path });
         const content = to ? this.files.get(to)?.content : undefined;
         if (content !== undefined && !anchorExists(content, r.anchor)) missingAnchors.push({ src: e.path, target: r.target, anchor: r.anchor });
       }
@@ -582,7 +611,7 @@ export class LocalVault {
     }
     if (baseline.length) {
       const oldest = Math.min(...baseline.map((b) => this.files.get(b.path)!.mtime));
-      await this.record(this.author, "기존 내용", baseline, contents, Math.min(oldest, Date.now() - 1));
+      await this.record(this.author, this.text().commit.appBaseline, baseline, contents, Math.min(oldest, Date.now() - 1));
     }
     for (const c of changes) {
       const existed = this.files.has(c.path);
@@ -620,7 +649,7 @@ export class LocalVault {
       this.check(rel, baseHash);
       const cur = this.files.get(rel);
       if (cur && cur.content === content) return { path: rel, content, hash: cur.hash! };
-      await this.apply([{ path: rel, content }], this.author, message ?? `${cur ? "수정" : "추가"}: ${rel}`, "local");
+      await this.apply([{ path: rel, content }], this.author, message ?? (cur ? this.text().commit.modify(rel) : this.text().commit.create(rel)), "local");
       return { path: rel, content, hash: this.files.get(rel)!.hash! };
     });
   }
@@ -629,7 +658,7 @@ export class LocalVault {
     return this.exclusive(async () => {
       const rel = this.requireWritable(input);
       this.check(rel, baseHash);
-      await this.apply([{ path: rel, content: null }], this.author, `삭제: ${rel}`, "local");
+      await this.apply([{ path: rel, content: null }], this.author, this.text().commit.delete(rel), "local");
     });
   }
 
@@ -646,18 +675,73 @@ export class LocalVault {
   }
 
   /**
-   * 폴더 옮기기·이름 바꾸기: 안의 문서와 첨부를 한 기록으로 옮기고 링크를 고친다.
+   * 노드 옮기기·이름 바꾸기: 노드 노트(`A.md`)와 하위(`A/` 아래 문서·첨부 전체)를 한 기록으로 옮기고 링크를 고친다.
    * 첨부는 기록(스냅샷)에 내용을 남기지 않는다. 서버와 동기화하면 새 자리의 첨부는 올리고, 원래 자리의 첨부는
    * 서버에서도 그대로일 때만 지운다(SyncEngine).
    */
-  async moveFolder(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
-    const from = normalizeVaultPath(fromInput);
-    const to = normalizeVaultPath(toInput);
+  async moveNode(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
+    const from = normalizeVaultPath(fromInput).replace(/\.md$/i, "");
+    const to = normalizeVaultPath(toInput).replace(/\.md$/i, "");
     if (from === to) throw new PathError("같은 경로입니다");
-    if (to.startsWith(from + "/")) throw new PathError("폴더를 자기 안으로 옮길 수 없습니다");
-    const pairs: [string, string, null][] = [...this.files.keys()].filter((p) => p.startsWith(from + "/")).sort().map((p) => [p, to + p.slice(from.length), null]);
-    if (pairs.length === 0) throw new NotFoundError(`폴더가 없거나 비어 있습니다: ${from}`);
-    return this.moveMany(pairs, opts, `폴더 이동: ${from} → ${to}`);
+    if (to.startsWith(from + "/")) throw new PathError("노드를 자기 하위로 옮길 수 없습니다");
+    const files = nodeFiles(from, this.files.keys());
+    if (files.length === 0) throw new NotFoundError(`노드가 없습니다: ${from}`);
+    const pairs: [string, string, null][] = files.map((p) => [p, moveNodePath(p, from, to), null]);
+    return this.moveMany(pairs, opts, this.text().commit.nodeMove(from, to));
+  }
+
+  /**
+   * 노드 삭제: 노드 노트와 하위 전체를 한 기록으로 지운다. 되살릴 수 있게 지운 내용을 돌려준다
+   * (마크다운은 글, 첨부는 바이트).
+   */
+  deleteNode(input: string): Promise<{ deleted: { path: string; content?: string; data?: Uint8Array }[] }> {
+    return this.exclusive(async () => {
+      const node = normalizeVaultPath(input).replace(/\.md$/i, "");
+      const files = nodeFiles(node, this.files.keys());
+      if (files.length === 0) throw new NotFoundError(`노드가 없습니다: ${node}`);
+      for (const p of files) if (this.isGenerated(p)) throw new ForbiddenError("앱이 자동으로 만드는 문서(위키 목차·작업 기록)는 지울 수 없습니다");
+      const deleted: { path: string; content?: string; data?: Uint8Array }[] = [];
+      const md: { path: string; content: string | null }[] = [];
+      const attachments: string[] = [];
+      for (const p of files) {
+        const e = this.files.get(p)!;
+        if (e.md) {
+          deleted.push({ path: p, content: e.content! });
+          md.push({ path: p, content: null });
+        } else {
+          const data = await this.store.read(p);
+          if (data) deleted.push({ path: p, data });
+          await this.store.remove(p);
+          this.files.delete(p);
+          attachments.push(p);
+        }
+      }
+      if (md.length) await this.apply(md, this.author, this.text().commit.nodeDelete(node), "local");
+      this.emit(attachments, "local");
+      return { deleted };
+    });
+  }
+
+  /** 지운 파일 되살리기(노드 삭제 되돌리기): 없는 자리에만 쓴다. 마크다운은 한 기록으로 */
+  restoreFiles(files: { path: string; content?: string; data?: Uint8Array }[]): Promise<void> {
+    return this.exclusive(async () => {
+      const md: { path: string; content: string }[] = [];
+      const attachments: string[] = [];
+      for (const f of files) {
+        const rel = normalizeVaultPath(f.path);
+        if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, `이미 있는 파일입니다: ${rel}`);
+        if (f.content !== undefined) {
+          if (!isMarkdown(rel)) throw new PathError("마크다운이 아닌 파일은 data로 되살립니다");
+          md.push({ path: rel, content: f.content });
+        } else if (f.data) {
+          const st = await this.store.write(rel, f.data);
+          this.files.set(rel, { path: rel, size: st.size, mtime: st.mtime, md: false, hash: await sha256Hex(f.data) });
+          attachments.push(rel);
+        }
+      }
+      if (md.length) await this.apply(md, this.author, md.length === 1 ? this.text().commit.create(md[0].path) : this.text().commit.batch(md.length), "local");
+      this.emit(attachments, "local");
+    });
   }
 
   /** 여러 파일을 한 기록으로 옮긴다(데일리 노트 형식 옮기기 등). 링크도 같이 고친다 */
@@ -718,7 +802,7 @@ export class LocalVault {
         attachments.push(from, to);
       }
       const md = pairs.filter(([f]) => contents.has(f)).map(([from, to]) => ({ path: to, content: contents.get(from)!, from }));
-      const msg = message ?? (pairs.length === 1 ? `이동: ${pairs[0][0]} → ${pairs[0][1]}` : `이동 ${pairs.length}건`);
+      const msg = message ?? (pairs.length === 1 ? this.text().commit.move(pairs[0][0], pairs[0][1]) : this.text().commit.batch(pairs.length));
       if (md.length || changes.length) await this.apply([...md, ...changes], this.author, msg, "local");
       this.emit(attachments, "local");
       return { moved: pairs.map(([f, t]) => [f, t] as [string, string]), linksUpdated, linkCount };
@@ -748,22 +832,23 @@ export class LocalVault {
     if (doc.hash !== baseHash) throw new ConflictError(doc.hash);
     const next = setTaskState(doc.content, line, done);
     if (next === null) throw new PathError(`${line}번째 줄은 할 일이 아닙니다`);
-    return this.write(doc.path, next, baseHash, `할 일 ${done ? "완료" : "되돌림"}: ${doc.path}`);
+    return this.write(doc.path, next, baseHash, this.text().commit.task(done, doc.path));
   }
 
   async rollback(input: string, rev: string, baseHash: string | null): Promise<LocalDoc> {
     const rel = normalizeVaultPath(input);
     const old = await this.revision(rel, rev);
     if (old === null) throw new NotFoundError("그 기록에서는 문서가 지워진 상태입니다");
-    return this.write(rel, old, baseHash, `되돌리기: ${rel}`);
+    return this.write(rel, old, baseHash, this.text().commit.restore(rel, rev.slice(0, 7)));
   }
 
+  /** 새 위키 토픽: 이름은 워크스페이스/토픽(워크스페이스 바로 아래 노드) */
   async createTopic(name: string): Promise<{ topic: string; schema: string }> {
     const topic = normalizeVaultPath(name.trim());
-    if (topic.includes("/")) throw new PathError("토픽 이름에는 /를 쓸 수 없습니다(최상위 폴더 하나)");
+    if (!isTopicName(topic)) throw new PathError("토픽 이름은 워크스페이스/토픽 두 단계입니다");
     if (this.topicSet.has(topic)) throw new ConflictError(null, "이미 위키 토픽입니다");
     const schema = `${topic}/SCHEMA.md`;
-    await this.write(schema, schemaTemplate(topic), null, `위키 토픽 만들기: ${topic}`);
+    await this.write(schema, schemaTemplate(topic, vaultLanguage(this.settings())), null, this.text().commit.createTopic(topic));
     return { topic, schema };
   }
 

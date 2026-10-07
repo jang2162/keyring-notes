@@ -42,6 +42,8 @@ const port = Number(env("KEYRING_PORT") ?? 8787);
 
 const config = new ConfigStore(configFile);
 const vault = new Vault(vaultDir);
+// 볼트 언어를 아직 정하지 않았을 때의 볼트 글(커밋 메시지 등): 서버 언어 설정 → KEYRING_LANG → LANG
+vault.fallbackLang = config.get().language ?? process.env.KEYRING_LANG ?? process.env.LANG;
 await mkdir(vaultDir, { recursive: true });
 
 // 인덱스는 지워도 되는 캐시다. 볼트 안 숨김 폴더에 두고 Git 추적에서는 뺀다.
@@ -115,7 +117,7 @@ review.onCreate((p) =>
     id: p.id,
     agent: p.agent,
     message: p.message,
-    topic: p.preview[0]?.path.split("/")[0] ?? null,
+    topic: p.preview[0] ? (wiki.topicOf(p.preview[0].path) ?? p.preview[0].path.split("/")[0]) : null,
     files: p.preview.map((f) => ({ path: f.path })),
   }),
 );

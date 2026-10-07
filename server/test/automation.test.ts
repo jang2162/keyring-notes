@@ -68,12 +68,12 @@ beforeEach(async () => {
   owner = new ScopedVault(vault, ownerPrincipal, index, wiki, review);
   automation = new Automation({ vault, wiki, config, lint: (folder) => owner.lint({ folder }), retryDelays: [10, 10, 10], docChangedQuietMs: 60 });
   vault.onChange(() => automation.onCommit());
-  review.onCreate((p) => automation.emit("proposal.created", { id: p.id, agent: p.agent, topic: p.preview[0]?.path.split("/")[0], files: p.preview.map((f) => ({ path: f.path })) }));
-  await owner.createTopic("경제");
-  await owner.createTopic("업무");
+  review.onCreate((p) => automation.emit("proposal.created", { id: p.id, agent: p.agent, topic: p.preview[0] ? wiki.topicOf(p.preview[0].path) : null, files: p.preview.map((f) => ({ path: f.path })) }));
+  await owner.createTopic("업무/경제");
+  await owner.createTopic("업무/보고");
   config.update((c) => {
     c.webhooks = [
-      { id: "agent", name: "위키 에이전트", url: `${base}/hook`, secret: SECRET, events: ["raw.added", "proposal.created", "schedule"], topics: ["경제"], enabled: true },
+      { id: "agent", name: "위키 에이전트", url: `${base}/hook`, secret: SECRET, events: ["raw.added", "proposal.created", "schedule"], topics: ["업무/경제"], enabled: true },
       { id: "all", name: "전체 기록", url: `${base}/all`, secret: SECRET, events: ["doc.changed"], topics: [], enabled: true },
     ];
   });
@@ -99,12 +99,12 @@ describe("cron", () => {
 
 describe("이벤트 웹훅", () => {
   it("새 원본 수집 → raw.added(구독 토픽만), 모든 커밋 → doc.changed, 서명 확인", async () => {
-    const r = await ingestor.ingest(owner, { kind: "text", topic: "경제", title: "기사", text: "본문" });
-    await ingestor.ingest(owner, { kind: "text", topic: "업무", title: "다른 토픽", text: "본문" });
+    const r = await ingestor.ingest(owner, { kind: "text", topic: "업무/경제", title: "기사", text: "본문" });
+    await ingestor.ingest(owner, { kind: "text", topic: "업무/보고", title: "다른 토픽", text: "본문" });
     await automation.idle();
     const raw = received.filter((x) => x.event === "raw.added");
     expect(raw).toHaveLength(1); // 업무 토픽은 구독 안 함
-    expect(raw[0].data).toMatchObject({ topic: "경제", path: r.path, author: "me" });
+    expect(raw[0].data).toMatchObject({ topic: "업무/경제", path: r.path, author: "me" });
     const changed = received.filter((x) => x.event === "doc.changed");
     expect(changed.flatMap((x) => x.data.files.map((f: { path: string }) => f.path))).toContain(r.path);
     for (const x of received) {
@@ -122,7 +122,7 @@ describe("이벤트 웹훅", () => {
     // 아직 조용한 시간 전: 보낸 doc.changed 없음
     await new Promise((r) => setTimeout(r, 20));
     expect(received.filter((x) => x.event === "doc.changed")).toHaveLength(0);
-    const raw = await ingestor.ingest(owner, { kind: "text", topic: "경제", title: "바로", text: "본문" });
+    const raw = await ingestor.ingest(owner, { kind: "text", topic: "업무/경제", title: "바로", text: "본문" });
     await new Promise((r) => setTimeout(r, 20));
     expect(received.filter((x) => x.event === "raw.added").map((x) => x.data.path)).toEqual([raw.path]);
     await automation.idle();
@@ -138,17 +138,17 @@ describe("이벤트 웹훅", () => {
     expect(again).toHaveLength(1);
     expect(again[0].data.files).toEqual([{ status: "M", path: "업무/메모.md" }]);
     expect(again[0].data.commits).toBe(1);
-  });
+  }, 15_000); // 조용한 시간(1.5초)을 두 번 기다려 전체 테스트와 같이 돌면 기본 5초로는 빠듯하다
 
   it("검토 대기열에 제안이 쌓이면 proposal.created", async () => {
     config.update((c) => {
-      c.reviewPaths = ["경제/wiki"];
+      c.reviewPaths = ["업무/경제/wiki"];
     });
-    const agent = new ScopedVault(vault, agentPrincipal("wiki-work", { "경제/wiki": "delete" }), index, wiki, review);
-    const res = await agent.write("경제/wiki/a.md", "# A\n", null);
+    const agent = new ScopedVault(vault, agentPrincipal("wiki-work", { "업무/경제/wiki": "delete" }), index, wiki, review);
+    const res = await agent.write("업무/경제/wiki/a.md", "# A\n", null);
     await automation.idle();
     const p = received.find((x) => x.event === "proposal.created");
-    expect(p?.data).toMatchObject({ id: res.pending!.proposal, agent: "wiki-work", topic: "경제" });
+    expect(p?.data).toMatchObject({ id: res.pending!.proposal, agent: "wiki-work", topic: "업무/경제" });
   });
 
   it("5xx·연결 실패는 다시 보내고, 4xx는 바로 실패로 남긴다", async () => {
@@ -168,12 +168,12 @@ describe("이벤트 웹훅", () => {
 
 describe("정기 작업", () => {
   it("cron 시각에 한 번만 돌고, 정리 점검 결과와 지시문을 함께 보낸다", async () => {
-    await owner.batch([{ op: "write", path: "경제/wiki/고아.md", content: "# 고아\n", baseHash: null }]);
+    await owner.batch([{ op: "write", path: "업무/경제/wiki/고아.md", content: "# 고아\n", baseHash: null }]);
     await automation.idle();
     received = [];
     config.update((c) => {
       c.jobs = [
-        { id: "weekly-lint", name: "주간 정리", cron: "0 9 * * 1", webhook: "agent", topic: "경제", lint: true, instructions: "SCHEMA의 정리 절차대로", enabled: true },
+        { id: "weekly-lint", name: "주간 정리", cron: "0 9 * * 1", webhook: "agent", topic: "업무/경제", lint: true, instructions: "SCHEMA의 정리 절차대로", enabled: true },
         { id: "off", name: "꺼짐", cron: "* * * * *", webhook: "agent", topic: null, lint: false, instructions: null, enabled: false },
       ];
     });
@@ -184,7 +184,7 @@ describe("정기 작업", () => {
     await automation.idle();
     const s = received.filter((x) => x.event === "schedule");
     expect(s).toHaveLength(1);
-    expect(s[0].data).toMatchObject({ job: { id: "weekly-lint" }, topic: "경제", instructions: "SCHEMA의 정리 절차대로" });
+    expect(s[0].data).toMatchObject({ job: { id: "weekly-lint" }, topic: "업무/경제", instructions: "SCHEMA의 정리 절차대로" });
     expect(s[0].data.lint.counts.orphan).toBe(1);
     expect(automation.jobStatus(config.get().jobs[0]).lastResult).toMatch(/성공/);
   });
@@ -218,7 +218,7 @@ describe("정기 작업", () => {
     expect(res.status).toBe(400);
     res = await app.request("/api/admin/automation/jobs", { method: "PUT", headers: h, body: JSON.stringify({ jobs: [{ id: "j", cron: "0 3 * * *", webhook: "nope" }] }) });
     expect(res.status).toBe(400);
-    res = await app.request("/api/admin/automation/jobs", { method: "PUT", headers: h, body: JSON.stringify({ jobs: [{ id: "daily", name: "매일", cron: "0 3 * * *", webhook: "agent", topic: "경제", lint: true }] }) });
+    res = await app.request("/api/admin/automation/jobs", { method: "PUT", headers: h, body: JSON.stringify({ jobs: [{ id: "daily", name: "매일", cron: "0 3 * * *", webhook: "agent", topic: "업무/경제", lint: true }] }) });
     expect((await res.json()).jobs[0].next).toMatch(/T/);
     const ping = await (await app.request("/api/admin/automation/webhooks/n8n/test", { method: "POST", headers: h, body: "{}" })).json();
     expect(ping).toMatchObject({ event: "ping", status: "ok" });

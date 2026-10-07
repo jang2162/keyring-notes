@@ -19,6 +19,9 @@ export interface CommitInfo {
 export const SYSTEM_AUTHOR: Author = { name: "system", email: "system@keyring-notes.local" };
 
 const FIELD = "\x1f";
+
+/** 점으로 시작하는 이름이 든 경로(내부 기록 파일) */
+const isInternal = (p: string) => p.split("/").some((seg) => seg.startsWith("."));
 const RECORD = "\x1e";
 
 /**
@@ -84,10 +87,13 @@ export class GitHistory {
     }
   }
 
-  /** 커밋별 바뀐 파일 목록까지 포함한 이력(오래된 것부터). */
+  /**
+   * 커밋별 바뀐 파일 목록까지 포함한 이력(오래된 것부터). 파일 목록은 그 커밋의 변경 전체다(--full-diff:
+   * pathspec 밖의 파일도 들어간다 — 숨김 경로가 낀 커밋의 메시지를 가릴 때 쓴다).
+   */
   async logWithFiles(pathspec: string, limit = 300): Promise<(CommitInfo & { files: { status: string; path: string; from?: string }[] })[]> {
     const fmt = RECORD + ["%H", "%an", "%ae", "%aI", "%s"].join(FIELD);
-    const res = await this.run(["log", `--max-count=${limit}`, "--name-status", "-M", `--format=${fmt}`, "--", pathspec], { allowFail: true });
+    const res = await this.run(["log", `--max-count=${limit}`, "--full-diff", "--name-status", "-M", `--format=${fmt}`, "--", pathspec], { allowFail: true });
     if (res.code !== 0) return [];
     const out = res.stdout
       .split(RECORD)
@@ -97,7 +103,7 @@ export class GitHistory {
         const [rev, author, email, date, message] = head.split(FIELD);
         const files = rest
           .map((l) => l.split("\t"))
-          .filter((parts) => parts.length >= 2 && parts[0])
+          .filter((parts) => parts.length >= 2 && parts[0] && !parts.slice(1).some(isInternal))
           .map((parts) => (parts[0].startsWith("R") ? { status: "R", from: parts[1], path: parts[2] } : { status: parts[0][0], path: parts[1] }));
         return { rev, author, email, date, message, files };
       });
@@ -199,6 +205,25 @@ export class GitHistory {
       .map((r) => {
         const [rev, author, email, date, message] = r.split(FIELD);
         return { rev, author, email, date, message };
+      });
+  }
+
+  /**
+   * 경로의 이력(최근 것부터)과 커밋마다 실제로 바뀐 경로 전체(이동은 원래·새 경로 둘 다). 메시지와 상관없이
+   * 변경 목록으로 숨김 경로가 낀 커밋을 가려내는 데 쓴다(ScopedVault.history).
+   */
+  async logWithChanges(relPath: string, limit = 100): Promise<(CommitInfo & { files: string[] })[]> {
+    const fmt = RECORD + ["%H", "%an", "%ae", "%aI", "%s"].join(FIELD);
+    const res = await this.run(["log", `--max-count=${limit}`, "--full-diff", "--no-renames", "--name-only", `--format=${fmt}`, "--", relPath], { allowFail: true });
+    if (res.code !== 0) return [];
+    return res.stdout
+      .split(RECORD)
+      .filter((r) => r.trim())
+      .map((r) => {
+        const [head, ...rest] = r.split("\n");
+        const [rev, author, email, date, message] = head.split(FIELD);
+        // 점 파일(.keyring-blobs.json 등 내부 기록)은 사용자 경로가 아니라 뺀다
+        return { rev, author, email, date, message, files: rest.map((l) => l.trim()).filter((l) => l && !isInternal(l)) };
       });
   }
 

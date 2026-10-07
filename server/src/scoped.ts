@@ -1,4 +1,5 @@
 import { atLeast, levelOf, type Level, type Principal } from "./access.js";
+import { agentText, type AgentLang } from "./agentText.js";
 import type { Author, CommitInfo } from "./git.js";
 import {
   headings,
@@ -26,6 +27,9 @@ import {
   type Section,
   type WidgetResult,
   isVaultSettingsPath,
+  isTopicName,
+  nodeFiles,
+  moveNodePath,
 } from "@keyring-notes/core";
 import type { DocMeta, NoteIndex } from "./noteindex.js";
 import type { ReviewQueue } from "./review.js";
@@ -93,6 +97,9 @@ export class ScopedVault {
     private semanticIndex?: SemanticIndex,
   ) {}
 
+  /** 에이전트에게 가는 글의 언어(서버 설정) */
+  agentLang: AgentLang = "en";
+
   get author(): Author {
     return { name: this.principal.name, email: this.principal.email };
   }
@@ -105,9 +112,12 @@ export class ScopedVault {
     return level;
   }
 
-  /** 데일리 노트 설정(공통 설정 파일). 링크는 늘 읽는 사람에게 보이는 문서 안에서만 해석한다 */
-  private get linkOpts() {
-    return { daily: this.vault.daily() };
+  /**
+   * 링크 해석 옵션: 워크스페이스별 데일리 설정(공통 설정 파일)과 링크를 쓴 문서(같은 워크스페이스 먼저).
+   * 링크는 늘 읽는 사람에게 보이는 문서 안에서만 해석한다(부르는 쪽이 보이는 경로 목록을 넘긴다)
+   */
+  private linkOpts(from: string) {
+    return { daily: this.vault.daily(), from };
   }
 
   private canRead(relPath: string): boolean {
@@ -206,34 +216,78 @@ export class ScopedVault {
     return this.vault.readRaw(rel);
   }
 
-  /** 최상위 폴더(토픽) 목록. 위키 토픽이면 페이지·원본 수를 함께. */
-  async topics(): Promise<{ name: string; wiki: boolean; pages: number; raw: number; access: Level | "partial" }[]> {
+  /**
+   * 토픽 목록: 워크스페이스 바로 아래 노드(`<워크스페이스>/<이름>`, 볼 수 있는 것만). 위키 토픽이면 페이지·원본 수를 함께.
+   */
+  async topics(): Promise<{ name: string; workspace: string; wiki: boolean; pages: number; raw: number; access: Level | "partial" }[]> {
     const tree = await this.tree();
     const docs = this.visibleDocs();
-    return tree
-      .filter((n) => n.type === "dir")
-      .map((n) => {
-        const wiki = this.wiki?.topics.has(n.name) ?? false;
+    const names = new Set<string>();
+    for (const ws of tree) {
+      if (ws.type !== "dir") continue;
+      for (const n of ws.children ?? []) {
+        if (n.type === "dir") names.add(n.path);
+        else if (/\.md$/i.test(n.name)) names.add(n.path.replace(/\.md$/i, ""));
+      }
+    }
+    return [...names]
+      .sort((a, b) => a.localeCompare(b, "ko"))
+      .map((name) => {
+        const wiki = this.wiki?.topics.has(name) ?? false;
         return {
-          name: n.name,
+          name,
+          workspace: name.split("/")[0],
           wiki,
-          pages: wiki ? docs.filter((d) => d.path.startsWith(`${n.name}/wiki/`)).length : 0,
-          raw: wiki ? docs.filter((d) => d.path.startsWith(`${n.name}/raw/`) && !d.path.startsWith(`${n.name}/raw/assets/`)).length : 0,
-          // 토픽 자체 규칙은 숨김이지만 하위 폴더 규칙으로 일부가 보이면 "partial"
-          access: this.level(n.name) === "hidden" ? ("partial" as const) : this.level(n.name),
+          pages: wiki ? docs.filter((d) => d.path.startsWith(`${name}/wiki/`)).length : 0,
+          raw: wiki ? docs.filter((d) => d.path.startsWith(`${name}/raw/`) && !d.path.startsWith(`${name}/raw/assets/`)).length : 0,
+          // 토픽 자체 규칙은 숨김이지만 하위 규칙으로 일부가 보이면 "partial"
+          access: this.level(name) === "hidden" ? ("partial" as const) : this.level(name),
         };
       });
   }
 
-  /** 새 위키 토픽(SCHEMA.md 템플릿). 소유자만. 기존 폴더에 만들면 그 폴더가 위키 토픽이 된다. */
+  /** 새 위키 토픽(SCHEMA.md 템플릿, 볼트 언어). 소유자만. 이름은 워크스페이스/토픽. 기존 노드에 만들면 그 노드가 위키 토픽이 된다. */
   async createTopic(name: string): Promise<{ topic: string; schema: string }> {
     if (this.principal.kind !== "owner") throw new ForbiddenError("위키 토픽은 소유자만 만들 수 있습니다");
     const topic = normalizeVaultPath(name.trim());
-    if (topic.includes("/")) throw new PathError("토픽 이름에는 /를 쓸 수 없습니다(최상위 폴더 하나)");
+    if (!isTopicName(topic)) throw new PathError("토픽 이름은 워크스페이스/토픽 두 단계입니다(예: 업무/경제)");
     if (this.wiki?.topics.has(topic)) throw new ConflictError(null, "이미 위키 토픽입니다", topic);
     const schema = `${topic}/SCHEMA.md`;
-    await this.batch([{ op: "write", path: schema, content: schemaTemplate(topic), baseHash: null }], `위키 토픽 만들기: ${topic}`);
+    await this.batch([{ op: "write", path: schema, content: schemaTemplate(topic, this.vault.language()), baseHash: null }], this.vault.text().commit.createTopic(topic));
     return { topic, schema };
+  }
+
+  /** 노드의 바로 아래 노드(볼 수 있는 것만): 이름·노드 노트·하위가 있는지·첨부 수. path가 ""면 워크스페이스 목록 */
+  async children(input?: string): Promise<{ name: string; path: string; note: string | null; hasChildren: boolean; attachments: number }[]> {
+    const node = input ? normalizeVaultPath(input).replace(/\.md$/i, "") : "";
+    let nodes = await this.tree();
+    if (node) {
+      const find = (ns: TreeNode[]): TreeNode[] | null => {
+        for (const n of ns) {
+          if (n.type !== "dir") continue;
+          if (n.path === node) return n.children ?? [];
+          if (node.startsWith(n.path + "/")) return find(n.children ?? []);
+        }
+        return null;
+      };
+      const noteVisible = this.canRead(`${node}.md`) && (await this.vault.markdownPaths()).includes(`${node}.md`);
+      const found = find(nodes);
+      if (!found && !noteVisible) throw new NotFoundError(`노드가 없습니다: ${node}`);
+      nodes = found ?? [];
+    }
+    const out = new Map<string, { name: string; path: string; note: string | null; hasChildren: boolean; attachments: number }>();
+    const get = (name: string, path: string) => out.get(name) ?? out.set(name, { name, path, note: null, hasChildren: false, attachments: 0 }).get(name)!;
+    for (const n of nodes) {
+      if (!node && n.type === "file" && isVaultSettingsPath(n.path)) continue;
+      if (n.type === "dir") {
+        const e = get(n.name, n.path);
+        e.hasChildren = (n.children ?? []).some((c) => c.type === "dir" || /\.md$/i.test(c.name));
+        e.attachments = (n.children ?? []).filter((c) => c.type === "file" && !/\.md$/i.test(c.name)).length;
+      } else if (/\.md$/i.test(n.name)) {
+        get(n.name.replace(/\.md$/i, ""), n.path.replace(/\.md$/i, "")).note = n.path;
+      }
+    }
+    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }
 
   async outline(input: string): Promise<Outline> {
@@ -248,7 +302,7 @@ export class ScopedVault {
       frontmatter: fm.data,
       ...(fm.error ? { frontmatterError: fm.error } : {}),
       headings: headings(doc.content),
-      links: wikilinkTargets(doc.content).map((target) => ({ target, path: resolveLink(target, visible, this.linkOpts) })),
+      links: wikilinkTargets(doc.content).map((target) => ({ target, path: resolveLink(target, visible, this.linkOpts(doc.path)) })),
     };
   }
 
@@ -391,7 +445,7 @@ export class ScopedVault {
     const withTitle = (paths: string[]) => paths.filter((p) => this.canRead(p)).map((p) => ({ path: p, title: titles.get(p) ?? p }));
     return {
       path: doc.path,
-      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files, this.linkOpts), ...(r.anchor ? { anchor: r.anchor } : {}) })),
+      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files, this.linkOpts(doc.path)), ...(r.anchor ? { anchor: r.anchor } : {}) })),
       citedBy: withTitle(this.index.backlinks(doc.path, "source", this.vault.daily())),
       linkedBy: withTitle(this.index.backlinks(doc.path, "link", this.vault.daily())),
     };
@@ -410,7 +464,7 @@ export class ScopedVault {
     for (const d of this.visibleDocs()) {
       for (const r of sourceRefs(d.frontmatter)) {
         if (!r.anchor) continue;
-        const to = resolveLink(r.target, files, this.linkOpts);
+        const to = resolveLink(r.target, files, this.linkOpts(d.path));
         if (!to || !/\.md$/i.test(to)) continue;
         const content = await this.vault.read(to).then((x) => x.content, () => null);
         if (content !== null && !anchorExists(content, r.anchor)) missingAnchors.push({ src: d.path, target: r.target, anchor: r.anchor });
@@ -582,31 +636,53 @@ export class ScopedVault {
     return this.single({ op: "move", from, to, baseHash }, opts);
   }
 
-  /**
-   * 폴더 옮기기·이름 바꾸기: 안의 문서와 첨부(볼 수 있는 것)를 한 번의 일괄 쓰기(한 커밋)로 옮기고 링크를 고친다.
-   * 각 파일의 baseHash는 지금 내용으로 정한다(폴더 이동은 내용을 바꾸지 않는다).
-   */
-  async moveFolder(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}) {
-    const from = normalizeVaultPath(fromInput);
-    const to = normalizeVaultPath(toInput);
-    if (from === to) throw new PathError("같은 경로입니다");
-    if (to.startsWith(from + "/")) throw new PathError("폴더를 자기 안으로 옮길 수 없습니다");
-    const files: string[] = [];
+  /** 노드에 드는 파일(노드 노트와 하위 전체) 중 볼 수 있는 것. 자동 생성 문서(위키 index·log)는 뺀다 */
+  private async nodeFilesOf(node: string): Promise<string[]> {
+    const all: string[] = [];
     const walk = (ns: TreeNode[]) => {
       for (const n of ns) {
         if (n.type === "dir") walk(n.children ?? []);
-        else if (!this.wiki?.isGenerated(n.path)) files.push(n.path);
+        else if (!this.wiki?.isGenerated(n.path)) all.push(n.path);
       }
     };
-    walk(await this.tree(from));
-    if (files.length === 0) throw new NotFoundError(`폴더가 없거나 비어 있습니다: ${from}`);
+    walk(await this.tree());
+    return nodeFiles(node, all);
+  }
+
+  /**
+   * 노드 옮기기·이름 바꾸기: 노드 노트(`A.md`)와 하위(`A/` 아래 문서·첨부, 볼 수 있는 것)를 한 번의 일괄 쓰기(한 커밋)로
+   * 옮기고 링크를 고친다. 각 파일의 baseHash는 지금 내용으로 정한다(노드 이동은 내용을 바꾸지 않는다).
+   */
+  async moveNode(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}) {
+    const from = normalizeVaultPath(fromInput).replace(/\.md$/i, "");
+    const to = normalizeVaultPath(toInput).replace(/\.md$/i, "");
+    if (from === to) throw new PathError("같은 경로입니다");
+    if (to.startsWith(from + "/")) throw new PathError("노드를 자기 하위로 옮길 수 없습니다");
+    const files = await this.nodeFilesOf(from);
+    if (files.length === 0) throw new NotFoundError(`노드가 없습니다: ${from}`);
     const ops: Op[] = [];
-    for (const f of files.sort()) {
+    for (const f of files) {
       const { data } = await this.vault.readRaw(f);
-      ops.push({ op: "move", from: f, to: to + f.slice(from.length), baseHash: hashContent(data) });
+      ops.push({ op: "move", from: f, to: moveNodePath(f, from, to), baseHash: hashContent(data) });
     }
-    const res = await this.batch(ops, `폴더 이동: ${from} → ${to}`, opts);
+    const res = await this.batch(ops, this.vault.text().commit.nodeMove(from, to), opts);
     return { ...res, moved: ops.map((o) => (o.op === "move" ? [o.from, o.to] : [])) as [string, string][] };
+  }
+
+  /**
+   * 노드 삭제: 노드 노트와 하위 전체(볼 수 있는 것)를 한 커밋으로 지운다.
+   * expect(화면이 지우기 전에 읽은 파일과 해시)를 주면 노드가 그 사이 바뀌었을 때(파일이 늘거나 내용이 바뀜) 충돌로 거부한다.
+   */
+  async deleteNode(input: string, expect?: { path: string; baseHash: string }[]): Promise<{ rev: string | null; deleted: string[]; pending?: PendingInfo }> {
+    const node = normalizeVaultPath(input).replace(/\.md$/i, "");
+    const files = await this.nodeFilesOf(node);
+    if (files.length === 0) throw new NotFoundError(`노드가 없습니다: ${node}`);
+    const given = expect ? new Map(expect.map((e) => [normalizeVaultPath(e.path), e.baseHash])) : null;
+    if (given && (given.size !== files.length || files.some((f) => !given.has(f)))) throw new ConflictError(null, "그 사이 노드의 하위가 바뀌었습니다", node);
+    const ops: Op[] = [];
+    for (const f of files) ops.push({ op: "delete", path: f, baseHash: given?.get(f) ?? hashContent((await this.vault.readRaw(f)).data) });
+    const res = await this.batch(ops, this.vault.text().commit.nodeDelete(node));
+    return res.pending ? { rev: null, deleted: files, pending: res.pending } : { rev: res.rev, deleted: files };
   }
 
   /** 첨부 파일 새로 만들기(이미 있으면 충돌). 마크다운은 write로. */
@@ -621,15 +697,15 @@ export class ScopedVault {
     return res.pending ? { rev: null, pending: res.pending } : { rev: res.rev };
   }
 
+  /**
+   * 문서 이력. 에이전트에게는 커밋의 실제 변경 목록(이동·노드 이동·일괄 쓰기 모두)에 볼 수 없는 경로가 끼어 있으면
+   * 메시지를 가린다. 커밋 메시지(볼트 언어, 사람이 쓴 일괄 쓰기 메시지 포함)의 모양에 기대지 않는다.
+   */
   async history(input: string): Promise<CommitInfo[]> {
-    const commits = await this.vault.history(this.requireRead(input));
-    if (this.principal.kind === "owner") return commits;
-    // 이동 커밋 제목에 숨김 경로가 들어 있으면 가린다.
-    return commits.map((c) => {
-      const m = /^이동: (.+) → (.+)$/.exec(c.message);
-      if (m && !(this.safeCanRead(m[1]) && this.safeCanRead(m[2]))) return { ...c, message: "이동: (숨김 경로)" };
-      return c;
-    });
+    const rel = this.requireRead(input);
+    if (this.principal.kind === "owner") return this.vault.history(rel);
+    const commits = await this.vault.git.logWithChanges(rel);
+    return commits.map(({ files, ...c }) => (files.every((p) => this.safeCanRead(p)) ? c : { ...c, message: agentText(this.agentLang).hiddenCommit }));
   }
 
   private safeCanRead(p: string): boolean {

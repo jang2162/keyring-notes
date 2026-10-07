@@ -104,7 +104,7 @@ describe("동기화", () => {
     expect((await sync.run()).deletedLocal).toEqual(["a.md"]);
     await expect(v.read("a.md")).rejects.toBeInstanceOf(NotFoundError);
     // 동기화로 받은 변경도 이력에 남는다
-    expect(v.history("a.md").map((h) => h.author)).toContain("동기화");
+    expect(v.history("a.md").map((h) => h.author)).toContain("sync");
   });
 
   it("양쪽이 다르게 바뀌면 덮어쓰지 않고 충돌 사본을 만든다", async () => {
@@ -119,7 +119,7 @@ describe("동기화", () => {
     const r = await sync.run();
     expect(r.conflicts).toHaveLength(1);
     const copy = r.conflicts[0].copy;
-    expect(copy).toMatch(/^메모 \(동기화 충돌 사본 \d{8}-\d{4}\)\.md$/);
+    expect(copy).toMatch(/^메모 \(sync conflict copy \d{8}-\d{4}\)\.md$/);
     expect(await content(v, "메모.md")).toBe("서버에서 고침");
     expect(await content(v, copy)).toBe("기기에서 고침");
     expect(server.text(copy)).toBe("기기에서 고침");
@@ -143,7 +143,7 @@ describe("동기화", () => {
     const merged = doc.replace("운동", "운동 30분").replace("독서", "독서 1시간");
     expect(await content(v, "메모.md")).toBe(merged);
     expect(server.text("메모.md")).toBe(merged);
-    expect(v.history("메모.md")[0].message).toContain("자동 병합");
+    expect(v.history("메모.md")[0].message).toContain("merged automatically");
     // 그 뒤로는 같다
     const again = await sync.run();
     expect([again.pulled, again.pushed, again.merged, again.conflicts].flat()).toEqual([]);
@@ -265,19 +265,19 @@ describe("동기화", () => {
 
   it("기기에서 첨부가 든 폴더를 옮기면 새 자리는 올리고 원래 자리는 서버에서도 지운다", async () => {
     const server = new FakeServer();
-    await server.put("노트/글.md", "![[그림.png]] [링크](attachments/그림.png)");
-    await server.put("노트/attachments/그림.png", new Uint8Array([7, 8]));
+    await server.put("노트/글.md", "![[그림.png]] [링크](그림.png)");
+    await server.put("노트/그림.png", new Uint8Array([7, 8]));
     const { v } = await device();
     const sync = new SyncEngine(v, server);
     await sync.run();
-    const r = await v.moveFolder("노트", "보관/노트");
-    expect(r.moved.map(([, t]) => t).sort()).toEqual(["보관/노트/attachments/그림.png", "보관/노트/글.md"]);
+    const r = await v.moveNode("노트", "보관/노트");
+    expect(r.moved.map(([, t]) => t).sort()).toEqual(["보관/노트/그림.png", "보관/노트/글.md"]);
     // 한 기록(첨부는 기록에 남지 않는다)
-    expect(v.entries().at(-1)!.message).toBe("폴더 이동: 노트 → 보관/노트");
+    expect(v.entries().at(-1)!.message).toBe("Move node: 노트 → 보관/노트");
     const s = await sync.run();
-    expect(s.deletedRemote.sort()).toEqual(["노트/attachments/그림.png", "노트/글.md"]);
-    expect([...server.files.keys()].sort()).toEqual(["보관/노트/attachments/그림.png", "보관/노트/글.md"]);
-    expect(server.text("보관/노트/글.md")).toBe("![[그림.png]] [링크](attachments/그림.png)");
+    expect(s.deletedRemote.sort()).toEqual(["노트/그림.png", "노트/글.md"]);
+    expect([...server.files.keys()].sort()).toEqual(["보관/노트/그림.png", "보관/노트/글.md"]);
+    expect(server.text("보관/노트/글.md")).toBe("![[그림.png]] [링크](그림.png)");
     const again = await sync.run();
     expect([again.pushed, again.pulled, again.deletedLocal, again.deletedRemote, again.skipped].flat()).toEqual([]);
   });
@@ -294,5 +294,40 @@ describe("동기화", () => {
     const r = await sync.run();
     expect(r.pulled).toEqual(["img.png"]);
     expect([...(await v.readBytes("img.png"))]).toEqual([2]);
+  });
+
+  it("공통 설정 파일은 충돌 사본 없이 키 단위로 합친다(양쪽이 다르게 바꾼 키는 서버 값, 기기 값은 알림)", async () => {
+    const server = new FakeServer();
+    const base = "---\nkeyring: settings\nvault:\n  language: ko\nui:\n  theme: light\n  editorSize: 16\n---\n# 설정\n";
+    await server.put("keyring-settings.md", base);
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    // 기기: 테마·글꼴 크기, 서버: 테마·줄 번호
+    const mine = await v.read("keyring-settings.md");
+    await v.write("keyring-settings.md", mine.content.replace("theme: light", "theme: dark").replace("editorSize: 16", "editorSize: 18"), mine.hash);
+    await server.put("keyring-settings.md", base.replace("theme: light", "theme: system").replace("editorSize: 16", "editorSize: 16\n  lineNumbers: true"));
+    const r = await sync.run();
+    expect(r.conflicts).toEqual([]);
+    expect(r.merged).toEqual(["keyring-settings.md"]);
+    expect(r.settingsConflicts).toEqual([{ key: ["ui", "theme"], local: "dark", server: "system" }]);
+    const merged = server.text("keyring-settings.md")!;
+    expect(merged).toContain("theme: system");
+    expect(merged).toContain("editorSize: 18");
+    expect(merged).toContain("lineNumbers: true");
+    expect(merged).toContain("# 설정");
+    expect(await content(v, "keyring-settings.md")).toBe(merged);
+    expect([...server.files.keys()].filter((p) => p.includes("사본") || p.includes("copy"))).toEqual([]);
+  });
+
+  it("처음 연결해 기준점이 없어도 설정 파일은 키 단위로 합친다", async () => {
+    const server = new FakeServer();
+    await server.put("keyring-settings.md", "---\nkeyring: settings\nui:\n  theme: dark\n---\n");
+    const { v } = await device();
+    await v.write("keyring-settings.md", "---\nkeyring: settings\nui:\n  theme: light\n  live: false\n---\n", null);
+    const r = await new SyncEngine(v, server).run();
+    expect(r.conflicts).toEqual([]);
+    expect(r.settingsConflicts).toEqual([{ key: ["ui", "theme"], local: "light", server: "dark" }]);
+    expect(server.text("keyring-settings.md")).toBe("---\nkeyring: settings\nui:\n  theme: dark\n  live: false\n---\n");
   });
 });

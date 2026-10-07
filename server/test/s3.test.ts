@@ -199,7 +199,7 @@ describe("S3 첨부 보관", () => {
     expect(git(root, "status", "--porcelain")).toBe("");
   });
 
-  it("S3에 둔 첨부도 폴더 이동(한 커밋)으로 옮겨지고 목록이 따라간다", async () => {
+  it("S3에 둔 첨부도 노드 이동(한 커밋)으로 옮겨지고 목록이 따라간다", async () => {
     const { owner, vault } = await setup({ blobs: true, minBytes: 100 });
     await owner.batch([
       { op: "put", path: "자료/큰그림.png", data: png(500) },
@@ -207,7 +207,7 @@ describe("S3 첨부 보관", () => {
       { op: "write", path: "자료/글.md", content: "![[큰그림.png]] ![](작은그림.png)", baseHash: null },
     ]);
     const before = Number(git(vault.root, "rev-list", "--count", "HEAD"));
-    const r = await owner.moveFolder("자료", "보관/자료");
+    const r = await owner.moveNode("자료", "보관/자료");
     expect(r.rev).not.toBeNull();
     expect(Number(git(vault.root, "rev-list", "--count", "HEAD"))).toBe(before + 1);
     const sha = hashContent(Buffer.from(png(500)));

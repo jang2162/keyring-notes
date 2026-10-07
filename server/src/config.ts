@@ -148,6 +148,12 @@ export interface KeyringConfig {
   passkeys: PasskeyConfig[];
   /** 패스키에 넣는 사용자 ID(무작위, base64url). 인증기가 같은 사용자의 패스키를 하나로 묶는다 */
   passkeyUserId: string;
+  /**
+   * 서버 언어(CLI 출력, 볼트 언어를 아직 정하지 않았을 때의 볼트 글). null이면 LANG을 따른다
+   */
+  language: "en" | "ko" | null;
+  /** 에이전트에게 가는 글(MCP 안내·도구 설명·오류·정리 점검 설명)의 언어. 기본 영어 */
+  agentLanguage: "en" | "ko";
 }
 
 export const DEFAULT_BACKUP: BackupSettings = { enabled: true, intervalHours: 24, keep: 14, includeConfig: true, remote: true, remoteKeep: 30 };
@@ -193,6 +199,8 @@ function defaultConfig(): KeyringConfig {
     jobs: [],
     passkeys: [],
     passkeyUserId: randomBytes(16).toString("base64url"),
+    language: null,
+    agentLanguage: "en",
   };
 }
 
@@ -244,6 +252,8 @@ function validate(raw: unknown): KeyringConfig {
     jobs: validateJobs(c.jobs),
     passkeys: validatePasskeys(c.passkeys),
     passkeyUserId: typeof c.passkeyUserId === "string" && B64URL.test(c.passkeyUserId) ? c.passkeyUserId : base.passkeyUserId,
+    language: c.language === "en" || c.language === "ko" ? c.language : null,
+    agentLanguage: c.agentLanguage === "ko" ? "ko" : "en",
   };
 }
 

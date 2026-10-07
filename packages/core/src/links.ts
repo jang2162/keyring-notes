@@ -1,10 +1,11 @@
 import { parseFrontmatter, resolveLink } from "./markdown.js";
-import { parseDailyPath, type DailyConfig } from "./daily.js";
+import { dailyOfPath, type DailyLookup } from "./daily.js";
 
 /**
  * 이름 바꾸기·이동 때 다른 문서의 링크를 고친다(서버 Vault.batch와 앱 LocalVault가 같이 쓴다).
  *
- * 링크마다 이동 전 경로 목록으로 해석한 대상 R0와 이동 후 목록으로 해석한 대상 R1을 구해,
+ * 링크마다 이동 전 경로 목록으로 해석한 대상 R0와 이동 후 목록으로 해석한 대상 R1을 구해
+ * (같은 워크스페이스 먼저: 이동 전은 링크를 쓴 문서의 원래 위치, 이동 후는 새 위치 기준),
  * 기대 대상(moves.get(R0) ?? R0)과 R1이 다를 때만 고친다. 그래서
  *   - 이동한 문서를 가리키던 링크는 새 위치로,
  *   - 이동한 문서가 더 얕은 같은 이름이 되어 다른 문서의 링크를 가로채는 경우는 원래 대상으로
@@ -22,8 +23,8 @@ export interface LinkRewriteContext {
   after: string[];
   /** 늘 전체 경로로 쓴다(에이전트: 짧은 이름이 되는지로 숨김 문서가 드러나지 않게) */
   fullPaths?: boolean;
-  /** 데일리 노트 설정(`[[2026-10-07]]` → 그날 노트 해석을 같이 쓴다) */
-  daily?: DailyConfig | null;
+  /** 워크스페이스별 데일리 설정(`[[2026-10-07]]` → 그날 노트 해석을 같이 쓴다) */
+  daily?: DailyLookup | null;
 }
 
 export interface LinkRewriteResult {
@@ -68,7 +69,12 @@ class Rewriter {
   private afterSet: Set<string>;
   count = 0;
 
-  constructor(private ctx: LinkRewriteContext) {
+  constructor(
+    private ctx: LinkRewriteContext,
+    /** 링크를 쓴 문서의 이동 전·후 위치(같은 워크스페이스 먼저 해석) */
+    private oldPath: string,
+    private newPath: string,
+  ) {
     this.beforeSet = new Set(ctx.before);
     this.afterSet = new Set(ctx.after);
   }
@@ -77,12 +83,11 @@ class Rewriter {
   wikiTarget(target: string): string | null {
     const t = target.trim();
     if (!t) return null;
-    const o = { daily: this.ctx.daily };
-    const r0 = resolveLink(t, this.ctx.before, o);
+    const r0 = resolveLink(t, this.ctx.before, { daily: this.ctx.daily, from: this.oldPath });
     if (!r0) return null;
     const expected = this.ctx.moves.get(r0) ?? r0;
     if (!this.afterSet.has(expected)) return null;
-    if (resolveLink(t, this.ctx.after, o) === expected) return null;
+    if (resolveLink(t, this.ctx.after, { daily: this.ctx.daily, from: this.newPath }) === expected) return null;
     return this.format(expected, t);
   }
 
@@ -94,7 +99,7 @@ class Rewriter {
     const segs = expected.split("/");
     for (let k = 1; k <= segs.length; k++) {
       const cand = strip(segs.slice(segs.length - k).join("/"));
-      if (resolveLink(cand, this.ctx.after, { daily: this.ctx.daily }) === expected) return cand;
+      if (resolveLink(cand, this.ctx.after, { daily: this.ctx.daily, from: this.newPath }) === expected) return cand;
     }
     return strip(expected);
   }
@@ -180,13 +185,13 @@ export function rewriteLinks(content: string, oldPath: string, newPath: string, 
         names.add(enc.replace(/\(/g, "%28").replace(/\)/g, "%29"));
         names.add(stem.replace(/ /g, "%20").replace(/\(/g, "%28").replace(/\)/g, "%29"));
         // [[2026-10-07]]처럼 날짜만으로 데일리 노트를 가리키는 링크
-        const daily = parseDailyPath(p, ctx.daily);
+        const daily = dailyOfPath(p, ctx.daily);
         if (daily) names.add(daily.datePart.toLowerCase());
       }
     }
     if (![...names].some((n) => n && lower.includes(n))) return null;
   }
-  const rw = new Rewriter(ctx);
+  const rw = new Rewriter(ctx, oldPath, newPath);
   const lines = content.split("\n");
   const fm = parseFrontmatter(content);
   // 프런트매터: sources/source 키 아래 값만

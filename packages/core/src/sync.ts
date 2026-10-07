@@ -3,6 +3,8 @@ import { sha256Hex, utf8 } from "./hash.js";
 import type { LocalVault } from "./local.js";
 import { merge3 } from "./merge.js";
 import { isMarkdown } from "./paths.js";
+import { isVaultSettingsPath, replaceSettingsObject, settingsObject, vaultLanguage, parseVaultSettings } from "./settings.js";
+import { mergeSettingsObjects, type SettingsKeyConflict } from "./settingsMerge.js";
 
 export interface RemoteFile {
   path: string;
@@ -38,7 +40,17 @@ export interface SyncReport {
   merged: string[];
   /** 양쪽에서 같은 곳을 다르게 바뀜: path는 서버 버전, copy에 이 기기의 내용 */
   conflicts: { path: string; copy: string }[];
-  skipped: { path: string; reason: string }[];
+  /**
+   * 공통 설정 파일에서 양쪽이 다르게 바꾼 키(서버 값을 따랐다). 충돌 사본은 만들지 않는다.
+   * 화면이 기기 값(local)을 "이 기기에서만 다르게"로 남길지 묻는다.
+   */
+  settingsConflicts: SettingsKeyConflict[];
+  /**
+   * 이번에 건너뛴 것(다음 동기화에서 다시 본다). reason: attachment-taken(같은 이름의 첨부가 서버에 생김),
+   * attachment-changed(지우는 사이 서버에서 바뀜), attachment-local(기기에서 바꾼 첨부는 보내지 않음),
+   * local-changed(받는 사이 기기에서 바뀜), settings-changed(설정 파일을 합치는 사이 서버에서 또 바뀜)
+   */
+  skipped: { path: string; reason: "attachment-taken" | "attachment-changed" | "attachment-local" | "local-changed" | "settings-changed" }[];
   errors: { path: string; message: string }[];
 }
 
@@ -73,6 +85,9 @@ function isNetworkFailure(e: unknown): boolean {
  *   둘 다 바뀜        → 기준점 내용으로 3방향 병합해 서로 다른 곳이면 합친 내용을 양쪽에 둔다.
  *                       같은 곳을 다르게 고쳤으면 원래 경로는 서버 버전, 이 기기 내용은 충돌 사본으로 새로 만들어 양쪽에 둔다.
  *                       한쪽이 지우고 다른 쪽이 고쳤으면 고친 쪽을 살린다.
+ *
+ * 공통 설정 파일(keyring-settings.md)만은 줄 대신 키 단위로 합친다(settingsMerge.ts): 충돌 사본을 만들지 않고,
+ * 양쪽이 다르게 바꾼 키는 서버 값을 따른 뒤 settingsConflicts로 알린다. 처음 연결해 기준점이 없을 때도 같다.
  *
  * 마크다운은 양방향, 첨부는 서버 → 기기에 더해 기기에서 새로 만든 첨부(붙여넣은 이미지 등)는 올리고,
  * 기기에서 지운 첨부(폴더 이동으로 옮긴 원래 자리 포함)는 서버가 기준점 그대로일 때만 서버에서도 지운다.
@@ -121,6 +136,7 @@ export class SyncEngine {
       deletedRemote: [],
       merged: [],
       conflicts: [],
+      settingsConflicts: [],
       skipped: [],
       errors: [],
     };
@@ -137,9 +153,38 @@ export class SyncEngine {
     /** 양쪽이 이미 같아 기준점이 된 문서: 나중 병합의 기준 내용으로 남긴다 */
     const agreed: string[] = [];
 
+    /** 공통 설정 파일: 키 단위로 합쳐 양쪽에 둔다. 한쪽 YAML이 깨져 있으면 다른 쪽을 따른다 */
+    const mergeSettingsFile = async (path: string, L: string, B: string | null, mine: { content: string }, theirs: { content: string; hash: string }) => {
+      const baseText = B ? await this.vault.contentByHash(B) : null;
+      const l = settingsObject(mine.content);
+      const s = settingsObject(theirs.content);
+      let text: string;
+      if (!s && !l) text = theirs.content;
+      else if (!s) text = mine.content;
+      else if (!l) text = theirs.content;
+      else {
+        const m = mergeSettingsObjects(baseText !== null ? settingsObject(baseText) : null, l, s);
+        report.settingsConflicts.push(...m.conflicts);
+        text = replaceSettingsObject(theirs.content, m.merged, vaultLanguage(parseVaultSettings(theirs.content)));
+      }
+      const res = text === theirs.content ? { hash: theirs.hash } : await this.remote.write(path, text, theirs.hash);
+      pulls.push({ path, data: utf8(text), expect: L, base: res.hash, merged: true });
+      report.merged.push(path);
+    };
+
     const conflict = async (path: string, L: string, B: string | null) => {
       const mine = await this.vault.read(path);
       const theirs = await this.remote.read(path);
+      if (isVaultSettingsPath(path)) {
+        // 합치는 사이 서버가 또 바뀌면(409) 이번에는 건너뛰고 다음 동기화에서 다시 합친다(충돌 사본은 만들지 않는다)
+        try {
+          return await mergeSettingsFile(path, L, B, mine, theirs);
+        } catch (e) {
+          if (!(e instanceof ConflictError)) throw e;
+          report.skipped.push({ path, reason: "settings-changed" });
+          return;
+        }
+      }
       // 기준점 내용이 있으면 3방향 병합을 먼저 해 본다
       const baseText = B ? await this.vault.contentByHash(B) : null;
       if (baseText !== null) {
@@ -156,7 +201,7 @@ export class SyncEngine {
           }
         }
       }
-      const copy = conflictCopyPath(path, "동기화 충돌 사본", taken);
+      const copy = conflictCopyPath(path, this.vault.text().syncConflictCopy, taken);
       // 사본의 기준점은 이 기기에 실제로 만들어졌을 때만 남긴다(아니면 다음 동기화가 서버 사본을 받아 온다)
       const pushedCopy = await this.remote.write(copy, mine.content, null);
       pulls.push({ path: copy, data: utf8(mine.content), expect: null, base: pushedCopy.hash });
@@ -190,7 +235,7 @@ export class SyncEngine {
                 report.pushed.push(path);
               } catch (e) {
                 if (!(e instanceof ConflictError)) throw e;
-                report.skipped.push({ path, reason: "같은 이름의 첨부가 서버에 생겨 다음 동기화에서 다시 비교합니다" });
+                report.skipped.push({ path, reason: "attachment-taken" });
               }
               continue;
             }
@@ -202,13 +247,13 @@ export class SyncEngine {
                 report.deletedRemote.push(path);
               } catch (e) {
                 if (!(e instanceof ConflictError)) throw e;
-                report.skipped.push({ path, reason: "지우는 사이 서버에서 바뀌어 다음 동기화에서 다시 비교합니다" });
+                report.skipped.push({ path, reason: "attachment-changed" });
               }
               continue;
             }
             // 이 기기에서 바뀐 첨부는 보내지 않고 알린다.
             if (localChanged && L !== null) {
-              report.skipped.push({ path, reason: "이 기기에서 바뀐 첨부 파일은 서버로 보내지 않습니다" });
+              report.skipped.push({ path, reason: "attachment-local" });
               continue;
             }
             pulls.push({ path, data: S === null ? null : await this.remote.readRaw(path), expect: L, base: S });
@@ -275,12 +320,12 @@ export class SyncEngine {
         const apply = (list: typeof pulls, message: string) =>
           list.length ? this.vault.applySync(list.map(({ path, data, expect }) => ({ path, data, expect })), message) : Promise.resolve([]);
         const applied = new Set([
-          ...(await apply(pulls.filter((p) => !p.merged), "동기화: 서버에서 받음")),
-          ...(await apply(pulls.filter((p) => p.merged), "동기화: 자동 병합(이 기기와 서버의 변경을 합침)")),
+          ...(await apply(pulls.filter((p) => !p.merged), this.vault.text().commit.syncPulled)),
+          ...(await apply(pulls.filter((p) => p.merged), this.vault.text().commit.syncMerged)),
         ]);
         for (const p of pulls) {
           if (!applied.has(p.path)) {
-            report.skipped.push({ path: p.path, reason: "받는 사이 이 기기에서 바뀌어 다음 동기화로 미룸" });
+            report.skipped.push({ path: p.path, reason: "local-changed" });
             continue;
           }
           if (p.base === null) delete base[p.path];

@@ -1,20 +1,28 @@
 import { parseFrontmatter } from "./markdown.js";
 import { setFrontmatterField } from "./frontmatter.js";
+import { vaultText, type VaultLang } from "./vaultText.js";
 
 /**
  * 날짜 형식과 데일리 노트 판정. 웹·앱·서버(링크 해석·위젯·정리 점검)가 같은 규칙을 쓴다.
  *
- * 날짜 토큰: YYYY YY GGGG(주 기준 연도) M MM MMMM(10월) D DD W WW(주차) H HH m mm s ss ddd(수) dddd(수요일) [글자]
+ * 날짜 토큰: YYYY YY GGGG(주 기준 연도) M MM MMMM(월 이름) D DD W WW(주차) H HH m mm s ss ddd(요일) dddd(요일 긴 이름) [글자]
+ * 월·요일 이름은 볼트 언어를 따른다(한국어: 10월·수·수요일, 영어: October·Wed·Wednesday). 볼트에 남는 글이라 화면 언어가 아니다.
  * 주차는 주 시작 요일이 월요일이면 ISO 8601(목요일이 든 해의 주), 일요일이면 같은 규칙을 일요일 시작 주에 적용한다
  * (그 주의 수요일이 든 해·주. 주의 나흘 이상이 새해에 있으면 1주차).
  */
-const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
-
 export type WeekStart = "monday" | "sunday";
 
 export interface DateFormatOptions {
   /** 주 시작 요일(기본 월요일, ISO) */
   weekStart?: WeekStart;
+  /** 볼트 언어(월·요일 이름). 기본 영어 */
+  lang?: VaultLang;
+}
+
+/** 형식 검사 결과(화면이 번역한다) */
+export interface FormatProblem {
+  code: "empty" | "noYear" | "noMonth" | "noDay" | "emptySegment" | "dotSegment" | "dotStart" | "badChar";
+  segment?: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -37,6 +45,7 @@ export function weekOf(d: Date, weekStart: WeekStart = "monday"): { year: number
 const TOKEN_RE = /YYYY|GGGG|YY|MMMM|MM|M|WW|W|DD|D|HH|H|mm|m|ss|s|dddd|ddd|\[([^\]]*)\]/g;
 
 export function formatDate(d: Date, format: string, opts: DateFormatOptions = {}): string {
+  const t = vaultText(opts.lang);
   let wk: { year: number; week: number } | null = null;
   const week = () => (wk ??= weekOf(d, opts.weekStart));
   return format.replace(TOKEN_RE, (tok, lit: string | undefined) => {
@@ -49,7 +58,7 @@ export function formatDate(d: Date, format: string, opts: DateFormatOptions = {}
       case "GGGG":
         return String(week().year);
       case "MMMM":
-        return `${d.getMonth() + 1}월`;
+        return t.months[d.getMonth()];
       case "MM":
         return pad(d.getMonth() + 1);
       case "M":
@@ -75,9 +84,9 @@ export function formatDate(d: Date, format: string, opts: DateFormatOptions = {}
       case "s":
         return String(d.getSeconds());
       case "dddd":
-        return `${DAYS[d.getDay()]}요일`;
+        return t.weekdaysLong[d.getDay()];
       case "ddd":
-        return DAYS[d.getDay()];
+        return t.weekdaysShort[d.getDay()];
     }
     return tok;
   });
@@ -106,12 +115,38 @@ function validDate(y: number, m: number, d: number): Date | null {
   return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d ? date : null;
 }
 
-/** 데일리 노트 설정(모든 기기 공통 설정 파일에서 온다) */
+/** 데일리 노트 설정(모든 기기 공통 설정 파일의 워크스페이스 묶음에서 온다) */
 export interface DailyConfig {
+  /** 볼트 기준 폴더(워크스페이스 포함, 예: 개인/일기) */
   folder: string;
   /** 파일 이름 형식(/가 있으면 하위 폴더, 예: YYYY/MM/YYYY-MM-DD) */
   format: string;
   weekStart?: WeekStart;
+  /** 볼트 언어(월·요일 이름 토큰) */
+  lang?: VaultLang;
+}
+
+/**
+ * 워크스페이스별 데일리 설정. 경로의 워크스페이스로 그 설정을 고른다(꺼져 있으면 null).
+ * 링크 해석(`[[2026-10-07]]`)은 링크를 쓴 문서의 워크스페이스 것을 먼저 본다.
+ */
+export interface DailyLookup {
+  /** 그 워크스페이스의 데일리 설정(꺼져 있으면 null) */
+  of(workspace: string | null): DailyConfig | null;
+  /** 켜진 워크스페이스 설정 전부 */
+  all(): { workspace: string; config: DailyConfig }[];
+}
+
+/** 워크스페이스 하나에만 데일리 설정이 있는 조회(시험·단순한 경우) */
+export function singleDaily(workspace: string, config: DailyConfig): DailyLookup {
+  return { of: (ws) => (ws === workspace ? config : null), all: () => [{ workspace, config }] };
+}
+
+/** 경로의 워크스페이스 데일리 설정으로 그 경로를 판정한다 */
+export function dailyOfPath(path: string, lookup: DailyLookup | null | undefined): DailyNote | null {
+  if (!lookup) return null;
+  const ws = path.includes("/") ? path.slice(0, path.indexOf("/")) : null;
+  return parseDailyPath(path, lookup.of(ws));
 }
 
 const trimSlashes = (s: string) => s.trim().replace(/^\/+|\/+$/g, "");
@@ -123,31 +158,32 @@ export function dailyNotePath(folder: string, format: string, d: Date, opts: Dat
   return `${dir ? `${dir}/` : ""}${name}.md`;
 }
 
-export const DAILY_PRESETS: { id: string; label: string; format: string }[] = [
-  { id: "flat", label: "묶지 않음", format: "YYYY-MM-DD" },
-  { id: "year", label: "연도별", format: "YYYY/YYYY-MM-DD" },
-  { id: "month", label: "연·월별", format: "YYYY/MM/YYYY-MM-DD" },
-  { id: "week", label: "연·주차별", format: "GGGG/[W]WW/YYYY-MM-DD" },
+/** 묶음 방식 보기(이름은 화면이 번역한다: daily.preset.<id>) */
+export const DAILY_PRESETS: { id: string; format: string }[] = [
+  { id: "flat", format: "YYYY-MM-DD" },
+  { id: "year", format: "YYYY/YYYY-MM-DD" },
+  { id: "month", format: "YYYY/MM/YYYY-MM-DD" },
+  { id: "week", format: "GGGG/[W]WW/YYYY-MM-DD" },
 ];
 
 /**
- * 형식이 쓸 수 있는지. 못 쓰면 이유(사람이 읽을 글), 쓸 수 있으면 null.
+ * 형식이 쓸 수 있는지. 못 쓰면 이유(코드), 쓸 수 있으면 null.
  * 연·월·일을 모두 읽을 수 있어야 하고, 결과 경로에 파일 이름으로 못 쓰는 글자·빈 칸·..·점 폴더가 없어야 한다.
  */
-export function dailyFormatProblem(folder: string, format: string): string | null {
-  if (!format.trim()) return "형식이 비어 있습니다";
+export function dailyFormatProblem(folder: string, format: string, lang?: VaultLang): FormatProblem | null {
+  if (!format.trim()) return { code: "empty" };
   const toks = tokensOf(format);
-  if (!toks.some((t) => t === "YYYY" || t === "YY")) return "연도(YYYY)가 없습니다";
-  if (!toks.some((t) => t === "MM" || t === "M" || t === "MMMM")) return "월(MM)이 없습니다";
-  if (!toks.some((t) => t === "DD" || t === "D")) return "일(DD)이 없습니다";
-  const sample = dailyNotePath(folder, format, new Date(2026, 11, 31));
+  if (!toks.some((t) => t === "YYYY" || t === "YY")) return { code: "noYear" };
+  if (!toks.some((t) => t === "MM" || t === "M" || t === "MMMM")) return { code: "noMonth" };
+  if (!toks.some((t) => t === "DD" || t === "D")) return { code: "noDay" };
+  const sample = dailyNotePath(folder, format, new Date(2026, 11, 31), { lang });
   const segs = sample.replace(/\.md$/, "").split("/");
   for (const s of segs) {
-    if (!s.trim()) return "빈 폴더 이름이 생깁니다(// 또는 앞뒤 /)";
-    if (s === "." || s === "..") return "'..'·'.' 폴더는 쓸 수 없습니다";
-    if (s.startsWith(".")) return "점(.)으로 시작하는 폴더·파일은 동기화·API에서 빠져 쓸 수 없습니다";
+    if (!s.trim()) return { code: "emptySegment" };
+    if (s === "." || s === "..") return { code: "dotSegment" };
+    if (s.startsWith(".")) return { code: "dotStart" };
     // eslint-disable-next-line no-control-regex
-    if (/[\\:*?"<>|\u0000-\u001f]/.test(s)) return `파일 이름에 못 쓰는 글자가 있습니다: ${s}`;
+    if (/[\\:*?"<>|\u0000-\u001f]/.test(s)) return { code: "badChar", segment: s };
   }
   return null;
 }
@@ -161,7 +197,8 @@ function tokensOf(format: string): string[] {
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** 토큰 → 정규식 조각(날짜 값을 읽는 이름 있는 그룹) */
-function tokenPattern(tok: string, used: Set<string>): string {
+function tokenPattern(tok: string, used: Set<string>, lang?: VaultLang): string {
+  const t = vaultText(lang);
   const group = (name: string, body: string) => {
     if (used.has(name)) return body.replace(/^\(/, "(?:");
     used.add(name);
@@ -174,8 +211,13 @@ function tokenPattern(tok: string, used: Set<string>): string {
       return group("y", "(\\d{2})");
     case "GGGG":
       return "\\d{4}";
-    case "MMMM":
-      return `${group("M", "(\\d{1,2})")}월`;
+    case "MMMM": {
+      // 월 이름(볼트 언어). 읽을 때는 이름 순서로 월을 정한다
+      const names = [...t.months].sort((a, b) => b.length - a.length).map(escapeRe).join("|");
+      if (used.has("Mn")) return `(?:${names})`;
+      used.add("Mn");
+      return `(?<Mn>${names})`;
+    }
     case "MM":
       return group("M", "(\\d{2})");
     case "M":
@@ -197,19 +239,19 @@ function tokenPattern(tok: string, used: Set<string>): string {
     case "s":
       return "\\d{1,2}";
     case "dddd":
-      return "[일월화수목금토]요일";
+      return `(?:${t.weekdaysLong.map(escapeRe).join("|")})`;
     case "ddd":
-      return "[일월화수목금토]";
+      return `(?:${t.weekdaysShort.map(escapeRe).join("|")})`;
   }
   return escapeRe(tok);
 }
 
-function formatPattern(format: string, used: Set<string>): string {
+function formatPattern(format: string, used: Set<string>, lang?: VaultLang): string {
   let out = "";
   let last = 0;
   for (const m of format.matchAll(TOKEN_RE)) {
     out += escapeRe(format.slice(last, m.index));
-    out += m[1] !== undefined ? escapeRe(m[1]) : tokenPattern(m[0], used);
+    out += m[1] !== undefined ? escapeRe(m[1]) : tokenPattern(m[0], used, lang);
     last = m.index! + m[0].length;
   }
   return out + escapeRe(format.slice(last));
@@ -237,13 +279,13 @@ interface Matcher {
 const matcherCache = new Map<string, Matcher | null>();
 
 function matcherOf(cfg: DailyConfig): Matcher | null {
-  const key = `${cfg.folder}\0${cfg.format}\0${cfg.weekStart ?? "monday"}`;
+  const key = `${cfg.folder}\0${cfg.format}\0${cfg.weekStart ?? "monday"}\0${cfg.lang ?? "en"}`;
   if (matcherCache.has(key)) return matcherCache.get(key)!;
   let m: Matcher | null = null;
-  if (!dailyFormatProblem(cfg.folder, cfg.format)) {
+  if (!dailyFormatProblem(cfg.folder, cfg.format, cfg.lang)) {
     const dir = trimSlashes(cfg.folder);
     const used = new Set<string>();
-    const body = formatPattern(trimSlashes(cfg.format), used);
+    const body = formatPattern(trimSlashes(cfg.format), used, cfg.lang);
     // 날짜 뒤는 이름 끝이거나 구분 글자(공백·_·· 그리고 " - ")로 시작하는 제목. 숫자가 바로 이어지면 아니다.
     const re = new RegExp(`^${dir ? `${escapeRe(dir)}/` : ""}(?<date>${body})(?:(?<sep> - |[ _·]+)(?<title>[^/]*?))?\\.md$`);
     m = { re, cfg };
@@ -251,6 +293,13 @@ function matcherOf(cfg: DailyConfig): Matcher | null {
   if (matcherCache.size > 50) matcherCache.clear();
   matcherCache.set(key, m);
   return m;
+}
+
+/** 읽은 그룹 → 날짜(월은 숫자 M 또는 이름 Mn) */
+function dateOfGroups(g: Record<string, string | undefined>, lang?: VaultLang): Date | null {
+  const year = g.Y !== undefined ? Number(g.Y) : g.y !== undefined ? 2000 + Number(g.y) : NaN;
+  const month = g.Mn !== undefined ? vaultText(lang).months.indexOf(g.Mn) + 1 : Number(g.M);
+  return validDate(year, month, Number(g.D));
 }
 
 /**
@@ -265,11 +314,10 @@ export function parseDailyPath(path: string, cfg: DailyConfig | null | undefined
   const r = m.re.exec(path);
   if (!r?.groups) return null;
   const g = r.groups;
-  const year = g.Y !== undefined ? Number(g.Y) : g.y !== undefined ? 2000 + Number(g.y) : NaN;
-  const date = validDate(year, Number(g.M), Number(g.D));
+  const date = dateOfGroups(g, cfg.lang);
   if (!date) return null;
   const dir = trimSlashes(cfg.folder);
-  const expected = dailyNotePath(cfg.folder, cfg.format, date, { weekStart: cfg.weekStart });
+  const expected = dailyNotePath(cfg.folder, cfg.format, date, { weekStart: cfg.weekStart, lang: cfg.lang });
   if (expected !== `${dir ? `${dir}/` : ""}${g.date}.md`) return null;
   const datePart = expected.slice(expected.lastIndexOf("/") + 1, -3);
   return { path, date, ymd: ymd(date), datePart, title: (g.title ?? "").trim(), sep: g.sep ?? "" };
@@ -306,11 +354,10 @@ export function dailyLinkDate(target: string, cfg: DailyConfig | null | undefine
   const rel = folder && t.startsWith(folder + "/") ? t.slice(folder.length + 1) : t;
   const full = trimSlashes(cfg.format);
   for (const fmt of new Set([full.split("/").pop()!, full])) {
-    const g = new RegExp(`^${formatPattern(fmt, new Set())}$`).exec(rel)?.groups;
+    const g = new RegExp(`^${formatPattern(fmt, new Set(), cfg.lang)}$`).exec(rel)?.groups;
     if (!g) continue;
-    const year = g.Y !== undefined ? Number(g.Y) : g.y !== undefined ? 2000 + Number(g.y) : NaN;
-    const d = validDate(year, Number(g.M), Number(g.D));
-    if (d && formatDate(d, fmt, { weekStart: cfg.weekStart }) === rel) return d;
+    const d = dateOfGroups(g, cfg.lang);
+    if (d && formatDate(d, fmt, { weekStart: cfg.weekStart, lang: cfg.lang }) === rel) return d;
   }
   return null;
 }
@@ -318,7 +365,7 @@ export function dailyLinkDate(target: string, cfg: DailyConfig | null | undefine
 /** 데일리 노트 자동 속성(만들 때 넣고, 이름의 날짜를 바꿀 때 같이 고친다) */
 export const DAILY_PROP_KEYS = ["daily", "date", "year", "month", "monthday", "week", "weekday"] as const;
 
-export function dailyProps(d: Date, weekStart: WeekStart = "monday"): Record<(typeof DAILY_PROP_KEYS)[number], string | number | boolean> {
+export function dailyProps(d: Date, weekStart: WeekStart = "monday", lang?: VaultLang): Record<(typeof DAILY_PROP_KEYS)[number], string | number | boolean> {
   const w = weekOf(d, weekStart);
   return {
     daily: true,
@@ -327,7 +374,7 @@ export function dailyProps(d: Date, weekStart: WeekStart = "monday"): Record<(ty
     month: d.getMonth() + 1,
     monthday: `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
     week: `${w.year}-W${pad(w.week)}`,
-    weekday: DAYS[d.getDay()],
+    weekday: vaultText(lang).weekdaysShort[d.getDay()],
   };
 }
 
@@ -335,9 +382,9 @@ export function dailyProps(d: Date, weekStart: WeekStart = "monday"): Record<(ty
  * 데일리 노트 내용에 자동 속성을 합친다. 템플릿 프런트매터와 같은 키는 자동 값이 이기고,
  * icon은 템플릿 값이 있으면 그것을 둔다(없으면 설정의 데일리 기본 아이콘).
  */
-export function withDailyProps(content: string, d: Date, opts: { weekStart?: WeekStart; icon?: string } = {}): string {
+export function withDailyProps(content: string, d: Date, opts: { weekStart?: WeekStart; icon?: string; lang?: VaultLang } = {}): string {
   let out = content;
-  for (const [k, v] of Object.entries(dailyProps(d, opts.weekStart))) out = setFrontmatterField(out, k, v);
+  for (const [k, v] of Object.entries(dailyProps(d, opts.weekStart, opts.lang))) out = setFrontmatterField(out, k, v);
   const fm = parseFrontmatter(out).data;
   if (opts.icon && !(typeof fm?.icon === "string" && fm.icon.trim())) out = setFrontmatterField(out, "icon", opts.icon);
   return out;
@@ -347,10 +394,10 @@ export function withDailyProps(content: string, d: Date, opts: { weekStart?: Wee
  * 이름의 날짜가 바뀐 데일리 노트: 이미 있는 자동 속성만 새 날짜로 고친다(없던 속성은 넣지 않는다).
  * 바뀐 것이 없으면 null.
  */
-export function updateDailyProps(content: string, d: Date, weekStart: WeekStart = "monday"): string | null {
+export function updateDailyProps(content: string, d: Date, weekStart: WeekStart = "monday", lang?: VaultLang): string | null {
   const fm = parseFrontmatter(content).data;
   if (!fm) return null;
-  const want = dailyProps(d, weekStart);
+  const want = dailyProps(d, weekStart, lang);
   let out = content;
   for (const k of DAILY_PROP_KEYS) {
     if (!(k in fm) || k === "daily") continue;
@@ -360,16 +407,22 @@ export function updateDailyProps(content: string, d: Date, weekStart: WeekStart 
 }
 
 /** 자동 속성이 이름의 날짜와 다른 키(정리 점검용). 없는 속성은 보지 않는다 */
-export function dailyPropMismatch(frontmatter: Record<string, unknown> | null, d: Date, weekStart: WeekStart = "monday"): string[] {
+export function dailyPropMismatch(frontmatter: Record<string, unknown> | null, d: Date, weekStart: WeekStart = "monday", lang?: VaultLang): string[] {
   if (!frontmatter) return [];
-  const want = dailyProps(d, weekStart);
+  const want = dailyProps(d, weekStart, lang);
   return DAILY_PROP_KEYS.filter((k) => k !== "daily" && k in frontmatter && frontmatter[k] !== null && String(frontmatter[k]) !== String(want[k]));
 }
 
-/** 읽기 좋은 날짜: 10월 7일 (수), 올해가 아니면 2027년 1월 1일 (금) */
-export function friendlyDate(d: Date, now = new Date()): string {
-  const base = `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAYS[d.getDay()]})`;
-  return d.getFullYear() === now.getFullYear() ? base : `${d.getFullYear()}년 ${base}`;
+/**
+ * 읽기 좋은 날짜(화면 언어): ko "10월 7일 (수)", en "Wed, October 7". 올해가 아니면 연도를 붙인다.
+ */
+export function friendlyDate(d: Date, now = new Date(), locale = "en"): string {
+  const thisYear = d.getFullYear() === now.getFullYear();
+  if (locale.toLowerCase().startsWith("ko")) {
+    const base = `${d.getMonth() + 1}월 ${d.getDate()}일 (${vaultText("ko").weekdaysShort[d.getDay()]})`;
+    return thisYear ? base : `${d.getFullYear()}년 ${base}`;
+  }
+  return new Intl.DateTimeFormat(locale, { weekday: "short", month: "long", day: "numeric", ...(thisYear ? {} : { year: "numeric" }) }).format(d);
 }
 
 /**
@@ -377,11 +430,18 @@ export function friendlyDate(d: Date, now = new Date()): string {
  * 날짜(YYYY-MM-DD, YYYY.MM.DD, YYYY_MM_DD, YYYYMMDD)를 읽어 새 경로를 만든다. 날짜 뒤 제목은 살린다.
  * 날짜를 못 읽거나 옮길 자리에 이미 문서가 있으면 skipped.
  */
-export function planDailyMigration(paths: string[], cfg: DailyConfig): { moves: { from: string; to: string; date: Date }[]; skipped: { path: string; reason: string }[] } {
+export interface DailyMigrationSkip {
+  path: string;
+  /** noDate: 이름에서 날짜를 읽지 못함, taken: 옮길 자리(to)에 이미 문서가 있음 */
+  reason: "noDate" | "taken";
+  to?: string;
+}
+
+export function planDailyMigration(paths: string[], cfg: DailyConfig): { moves: { from: string; to: string; date: Date }[]; skipped: DailyMigrationSkip[] } {
   const dir = trimSlashes(cfg.folder);
   const taken = new Set(paths.map((p) => p.toLowerCase()));
   const moves: { from: string; to: string; date: Date }[] = [];
-  const skipped: { path: string; reason: string }[] = [];
+  const skipped: DailyMigrationSkip[] = [];
   for (const p of paths) {
     if (!/\.md$/i.test(p) || (dir && !p.startsWith(dir + "/"))) continue;
     if (parseDailyPath(p, cfg)) continue;
@@ -389,17 +449,17 @@ export function planDailyMigration(paths: string[], cfg: DailyConfig): { moves: 
     const m = /^(\d{4})[-._]?(\d{2})[-._]?(\d{2})(?!\d)(.*)$/.exec(stem);
     const d = m ? validDate(Number(m[1]), Number(m[2]), Number(m[3])) : null;
     if (!m || !d) {
-      skipped.push({ path: p, reason: "이름에서 날짜를 읽지 못함" });
+      skipped.push({ path: p, reason: "noDate" });
       continue;
     }
     const rest = m[4];
     const title = rest.replace(/^(?: - |[\s_·-])+/, "").trim();
     const sep = /^ - /.test(rest) ? " - " : /^_/.test(rest) ? "_" : /^·/.test(rest) ? "·" : " ";
-    const base = dailyNotePath(cfg.folder, cfg.format, d, { weekStart: cfg.weekStart });
+    const base = dailyNotePath(cfg.folder, cfg.format, d, { weekStart: cfg.weekStart, lang: cfg.lang });
     const to = title ? `${base.slice(0, -3)}${sep}${title}.md` : base;
     if (to === p) continue;
     if (taken.has(to.toLowerCase())) {
-      skipped.push({ path: p, reason: `옮길 자리에 이미 문서가 있음: ${to}` });
+      skipped.push({ path: p, reason: "taken", to });
       continue;
     }
     taken.add(to.toLowerCase());

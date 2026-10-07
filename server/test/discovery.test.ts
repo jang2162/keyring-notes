@@ -66,11 +66,11 @@ beforeEach(async () => {
   ({ vault, index, wiki } = await openVault(path.join(t.dir, "vault")));
   sem = new SemanticIndex(index, vault, { url, model: "fake-1", batchSize: 4 });
   owner = new ScopedVault(vault, ownerPrincipal, index, wiki, undefined, sem);
-  await owner.createTopic("경제");
+  await owner.createTopic("업무/경제");
   await owner.batch([
-    { op: "write", path: "경제/wiki/기준금리.md", content: "---\ntitle: 기준금리\nsummary: 정책 금리\n---\n# 기준금리\n금통위가 기준금리를 동결했다.\n\n## 영향\n[[환율]]에도 영향.\n", baseHash: null },
-    { op: "write", path: "경제/wiki/환율.md", content: "# 환율\n원화와 달러의 교환 비율. [[기준금리]] 참고\n", baseHash: null },
-    { op: "write", path: "경제/wiki/물가.md", content: "---\ntitle: 물가\nsources: [\"[[경제/wiki/기준금리]]\"]\n---\n# 물가\n소비자물가가 2% 올랐다.\n", baseHash: null },
+    { op: "write", path: "업무/경제/wiki/기준금리.md", content: "---\ntitle: 기준금리\nsummary: 정책 금리\n---\n# 기준금리\n금통위가 기준금리를 동결했다.\n\n## 영향\n[[환율]]에도 영향.\n", baseHash: null },
+    { op: "write", path: "업무/경제/wiki/환율.md", content: "# 환율\n원화와 달러의 교환 비율. [[기준금리]] 참고\n", baseHash: null },
+    { op: "write", path: "업무/경제/wiki/물가.md", content: "---\ntitle: 물가\nsources: [\"[[업무/경제/wiki/기준금리]]\"]\n---\n# 물가\n소비자물가가 2% 올랐다.\n", baseHash: null },
     { op: "write", path: "개인/고양이.md", content: "# 고양이\n반려동물 이야기. [[기준금리]] 몰래 링크\n", baseHash: null },
   ]);
   await sem.sync();
@@ -84,19 +84,19 @@ afterEach(async () => {
 describe("그래프 뷰", () => {
   it("문서와 본문 링크·출처 링크를 돌려주고, 자동 생성 문서는 뺀다", async () => {
     const g = await owner.graph();
-    expect(g.nodes.map((n) => n.id).sort()).toEqual(["개인/고양이.md", "경제/SCHEMA.md", "경제/wiki/기준금리.md", "경제/wiki/물가.md", "경제/wiki/환율.md"]);
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(["개인/고양이.md", "업무/경제/SCHEMA.md", "업무/경제/wiki/기준금리.md", "업무/경제/wiki/물가.md", "업무/경제/wiki/환율.md"]);
     const e = g.edges.map((x) => `${x.source.split("/").pop()}→${x.target.split("/").pop()}:${x.kind}`).sort();
     expect(e).toEqual(["고양이.md→기준금리.md:link", "기준금리.md→환율.md:link", "물가.md→기준금리.md:source", "환율.md→기준금리.md:link"]);
-    expect(g.nodes.find((n) => n.id === "경제/wiki/기준금리.md")).toMatchObject({ topic: "경제", degree: 4 });
+    expect(g.nodes.find((n) => n.id === "업무/경제/wiki/기준금리.md")).toMatchObject({ topic: "업무/경제", degree: 4 });
   });
 
   it("숨김 문서는 노드도, 그 문서에서 나온 링크도 없다", async () => {
-    const agent = new ScopedVault(vault, agentPrincipal("a", { 경제: "read" }), index, wiki);
+    const agent = new ScopedVault(vault, agentPrincipal("a", { "업무/경제": "read" }), index, wiki);
     const g = await agent.graph();
     expect(g.nodes.some((n) => n.id.startsWith("개인/"))).toBe(false);
     expect(g.edges.some((x) => x.source.startsWith("개인/"))).toBe(false);
-    expect(g.nodes.find((n) => n.id === "경제/wiki/기준금리.md")?.degree).toBe(3);
-    expect((await owner.graph("경제/wiki")).nodes).toHaveLength(3);
+    expect(g.nodes.find((n) => n.id === "업무/경제/wiki/기준금리.md")?.degree).toBe(3);
+    expect((await owner.graph("업무/경제/wiki")).nodes).toHaveLength(3);
   });
 });
 
@@ -111,37 +111,37 @@ describe("의미 검색", () => {
 
   it("단어가 달라도 뜻이 가까운 문서를 찾는다", async () => {
     const hits = await owner.semantic("이자율 인상 소식");
-    expect(hits[0].path).toBe("경제/wiki/기준금리.md");
-    expect((await owner.semantic("외환 시장"))[0].path).toBe("경제/wiki/환율.md");
-    expect((await owner.semantic("인플레이션"))[0]).toMatchObject({ path: "경제/wiki/물가.md", title: "물가" });
+    expect(hits[0].path).toBe("업무/경제/wiki/기준금리.md");
+    expect((await owner.semantic("외환 시장"))[0].path).toBe("업무/경제/wiki/환율.md");
+    expect((await owner.semantic("인플레이션"))[0]).toMatchObject({ path: "업무/경제/wiki/물가.md", title: "물가" });
     expect(sem.status()).toMatchObject({ enabled: true, model: "fake-1", pending: 0 });
   });
 
   it("권한 밖 문서와 폴더 밖 문서는 나오지 않는다", async () => {
     expect((await owner.semantic("강아지"))[0].path).toBe("개인/고양이.md");
-    const agent = new ScopedVault(vault, agentPrincipal("a", { 경제: "read" }), index, wiki, undefined, sem);
+    const agent = new ScopedVault(vault, agentPrincipal("a", { "업무/경제": "read" }), index, wiki, undefined, sem);
     expect((await agent.semantic("강아지")).map((h) => h.path)).not.toContain("개인/고양이.md");
-    expect((await owner.semantic("강아지", { folder: "경제" })).every((h) => h.path.startsWith("경제/"))).toBe(true);
+    expect((await owner.semantic("강아지", { folder: "업무/경제" })).every((h) => h.path.startsWith("업무/경제/"))).toBe(true);
   });
 
   it("바뀐 문서만 다시 임베딩하고, 지운 문서는 빠진다", async () => {
     calls = 0;
     await sem.sync();
     expect(calls).toBe(0); // 바뀐 게 없으면 요청 없음
-    const d = await owner.read("경제/wiki/환율.md");
-    await owner.write("경제/wiki/환율.md", "# 환율\n반려동물 사료 수입 가격과 원화\n", d.hash);
+    const d = await owner.read("업무/경제/wiki/환율.md");
+    await owner.write("업무/경제/wiki/환율.md", "# 환율\n반려동물 사료 수입 가격과 원화\n", d.hash);
     expect(sem.status().pending).toBe(1);
     await sem.sync();
     expect(calls).toBe(1); // 문서 하나(조각 4개 이하 = 요청 1번)
-    const m = await owner.read("경제/wiki/물가.md");
-    await owner.delete("경제/wiki/물가.md", m.hash);
+    const m = await owner.read("업무/경제/wiki/물가.md");
+    await owner.delete("업무/경제/wiki/물가.md", m.hash);
     await sem.sync();
-    expect((await owner.semantic("인플레이션")).map((h) => h.path)).not.toContain("경제/wiki/물가.md");
+    expect((await owner.semantic("인플레이션")).map((h) => h.path)).not.toContain("업무/경제/wiki/물가.md");
   });
 
   it("임베딩 서버 오류는 상태에 남고, 꺼져 있으면 알려 준다", async () => {
-    const d = await owner.read("경제/wiki/환율.md");
-    await owner.write("경제/wiki/환율.md", "# 환율\n바뀜\n", d.hash);
+    const d = await owner.read("업무/경제/wiki/환율.md");
+    await owner.write("업무/경제/wiki/환율.md", "# 환율\n바뀜\n", d.hash);
     fail = true;
     await sem.sync();
     expect(sem.status().lastError).toMatch(/HTTP 500/);

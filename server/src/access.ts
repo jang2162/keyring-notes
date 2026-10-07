@@ -26,7 +26,11 @@ export function normalizeRulePath(p: string): string {
   return normalizeVaultPath(trimmed.replace(/\/+$/, ""));
 }
 
-/** 토큰 하나의 "폴더 → 권한" 표. 가장 구체적인(가장 긴) 경로 규칙이 이긴다. 규칙이 없으면 숨김. */
+/**
+ * 토큰 하나의 "노드 → 권한" 표. 가장 구체적인(가장 긴) 경로 규칙이 이긴다. 규칙이 없으면 숨김.
+ * 노드 모델(형제 방식 `X.md` + `X/`)이라 규칙 `X`는 하위 `X/…`와 함께 노드 노트 `X.md`도 덮는다
+ * (숨김 노드의 노트가 상위 규칙으로 보이지 않게).
+ */
 export class AccessPolicy {
   private rules: [string, Level][];
 
@@ -38,7 +42,7 @@ export class AccessPolicy {
 
   level(relPath: string): Level {
     for (const [prefix, level] of this.rules) {
-      if (prefix === "" || relPath === prefix || relPath.startsWith(prefix + "/")) return level;
+      if (prefix === "" || relPath === prefix || relPath.startsWith(prefix + "/") || relPath === prefix + ".md") return level;
     }
     return "hidden";
   }

@@ -33,7 +33,7 @@ beforeEach(async () => {
   cleanup = t.cleanup;
   ({ vault, index, wiki, config, backups, owner } = await openServer("a"));
   config.setPassword("correct horse");
-  await owner.createTopic("경제");
+  await owner.createTopic("업무/경제");
   await owner.write("노트/a.md", "# A\n원래 내용\n", null);
   await owner.batch([{ op: "put", path: "노트/첨부.png", data: new Uint8Array([1, 2, 3]) }]);
 });
@@ -70,7 +70,7 @@ describe("백업", () => {
     const a = await owner.read("노트/a.md");
     await owner.write("노트/a.md", "# A\n바뀐 내용 zebra\n", a.hash);
     await owner.write("노트/새 문서.md", "# 새\n", null);
-    await owner.batch([{ op: "write", path: "경제/wiki/페이지.md", content: "# 페이지\n", baseHash: null }]);
+    await owner.batch([{ op: "write", path: "업무/경제/wiki/페이지.md", content: "# 페이지\n", baseHash: null }]);
     const changedHead = git(vault, "rev-parse", "HEAD");
 
     const r = await backups.restore(b.name);
@@ -83,13 +83,13 @@ describe("백업", () => {
     expect(git(vault, "status", "--porcelain")).toBe("");
     // 인덱스·위키 목차도 맞춰진다
     expect(await owner.search("zebra")).toEqual([]);
-    expect((await owner.read("경제/wiki/index.md")).content).not.toContain("[[경제/wiki/페이지");
+    expect((await owner.read("업무/경제/wiki/index.md")).content).not.toContain("[[업무/경제/wiki/페이지");
     // 되돌리기: 복원 전 자동 백업과 ref
     expect(git(vault, "rev-parse", r.previousRef!)).toBe(changedHead);
     expect(r.preRestoreBackup).toMatch(/pre-restore/);
     await backups.restore(r.preRestoreBackup!);
     expect((await owner.read("노트/a.md")).content).toBe("# A\n바뀐 내용 zebra\n");
-    expect((await owner.read("경제/wiki/index.md")).content).toContain("[[경제/wiki/페이지");
+    expect((await owner.read("업무/경제/wiki/index.md")).content).toContain("[[업무/경제/wiki/페이지");
   });
 
   it("설정은 고른 경우에만 복원한다", async () => {
@@ -112,7 +112,7 @@ describe("백업", () => {
       expect(git(other.vault, "log", "--format=%an %s")).toBe(git(vault, "log", "--format=%an %s"));
       expect((await other.owner.read("노트/a.md")).content).toBe("# A\n원래 내용\n");
       expect((await other.owner.search("원래 내용")).map((h) => h.path)).toEqual(["노트/a.md"]);
-      expect([...other.wiki.topics]).toEqual(["경제"]);
+      expect([...other.wiki.topics]).toEqual(["업무/경제"]);
       expect(other.config.checkPassword("correct horse")).toBe(true);
     } finally {
       other.index.close();
@@ -178,7 +178,7 @@ describe("관리 API·설치·보안", () => {
   it("상태: 버전·볼트·이력·백업·에이전트", async () => {
     const s = await (await app.request("/api/admin/status", { headers: { cookie } })).json();
     expect(s.app.version).toMatch(/^\d+\.\d+\.\d+/);
-    expect(s.vault).toMatchObject({ documents: expect.any(Number), wikiTopics: ["경제"] });
+    expect(s.vault).toMatchObject({ documents: expect.any(Number), wikiTopics: ["업무/경제"] });
     expect(s.history.commits).toBeGreaterThan(0);
     expect(s.backups).toMatchObject({ count: 0, settings: { enabled: true, intervalHours: 24, keep: 14 } });
     expect(s.disk.totalBytes).toBeGreaterThan(0);
@@ -192,12 +192,12 @@ describe("관리 API·설치·보안", () => {
     let res = await app.request("/api/admin/agents/wiki-work/rules", {
       method: "PUT",
       headers: { ...json, cookie },
-      body: JSON.stringify({ rules: { "경제/raw/": "append", "경제/wiki": "delete", "/": "read" } }),
+      body: JSON.stringify({ rules: { "업무/경제/raw/": "append", "업무/경제/wiki": "delete", "/": "read" } }),
     });
-    expect((await res.json()).rules).toEqual({ "경제/raw": "append", "경제/wiki": "delete", "/": "read" });
+    expect((await res.json()).rules).toEqual({ "업무/경제/raw": "append", "업무/경제/wiki": "delete", "/": "read" });
     res = await app.request("/api/admin/agents/wiki-work/rules", { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify({ rules: { "../x": "read" } }) });
     expect(res.status).toBe(400);
-    res = await app.request("/api/admin/agents/wiki-work/rules", { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify({ rules: { 경제: "admin" } }) });
+    res = await app.request("/api/admin/agents/wiki-work/rules", { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify({ rules: { "업무/경제": "admin" } }) });
     expect(res.status).toBe(400);
     // 새 토큰으로 바로 쓸 수 있고 마지막 사용 시각이 남는다
     expect((await app.request("/api/whoami", { headers: { authorization: `Bearer ${created.token}` } })).status).toBe(200);

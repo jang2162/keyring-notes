@@ -210,7 +210,10 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
         "www-authenticate": 'Bearer realm="keyring-notes"',
       });
     }
-    return handleMcpRequest(c.req.raw, new ScopedVault(vault, principal, index, wiki, review, semantic), ingestor);
+    const lang = config.get().agentLanguage;
+    const scoped = new ScopedVault(vault, principal, index, wiki, review, semantic);
+    scoped.agentLang = lang;
+    return handleMcpRequest(c.req.raw, scoped, ingestor, lang);
   });
 
   const api = new Hono<Env>();
@@ -232,7 +235,8 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     // 백업 업로드는 디스크로 바로 흘려 쓰며 크기를 따로 센다
     if (c.req.path === "/api/admin/backups/upload") return next();
     // 업로드·웹 클립(페이지 HTML 전체)은 크게, 나머지는 10MB까지
-    const max = c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
+    // 일괄 쓰기는 노드 되살리기(첨부 base64)를 실을 수 있어 크게
+    const max = c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" || c.req.path === "/api/batch" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
     return bodyLimit({ maxSize: max * 1024 * 1024 })(c, next);
   });
 
@@ -346,7 +350,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.use("*", async (c, next) => {
     const p = principalOf(c);
     if (!p) return c.json({ error: "unauthorized", message: "로그인이 필요합니다" }, 401);
-    c.set("scoped", new ScopedVault(vault, p, index, wiki, review, semantic));
+    const scoped = new ScopedVault(vault, p, index, wiki, review, semantic);
+    scoped.agentLang = config.get().agentLanguage;
+    c.set("scoped", scoped);
     await next();
   });
 
@@ -360,6 +366,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   });
 
   api.get("/tree", async (c) => c.json({ tree: await c.var.scoped.tree(c.req.query("folder")) }));
+
+  // 노드의 바로 아래 노드(노드 = 노트 A.md + 하위 A/). path가 없으면 워크스페이스 목록
+  api.get("/children", async (c) => c.json({ children: await c.var.scoped.children(c.req.query("path") || undefined) }));
 
   api.get("/documents", async (c) => c.json({ documents: await c.var.scoped.documents(c.req.query("folder")) }));
 
@@ -504,11 +513,20 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.post("/move", async (c) => {
     const body = await c.req.json();
-    // 폴더 옮기기: 안의 문서·첨부를 한 커밋으로(baseHash 없이, 지금 내용 기준)
-    if (body.folder === true) return c.json(await c.var.scoped.moveFolder(requirePath(body.from), requirePath(body.to), { updateLinks: optionalBool(body.updateLinks) }));
+    // 노드 옮기기: 노드 노트와 하위 문서·첨부를 한 커밋으로(baseHash 없이, 지금 내용 기준)
+    if (body.node === true) return c.json(await c.var.scoped.moveNode(requirePath(body.from), requirePath(body.to), { updateLinks: optionalBool(body.updateLinks) }));
     return c.json(
       await c.var.scoped.move(requirePath(body.from), requirePath(body.to), requireHash(body.baseHash), { updateLinks: optionalBool(body.updateLinks) }),
     );
+  });
+
+  // 노드 삭제: 노드 노트와 하위 전체를 한 커밋으로. files(지우기 전에 읽은 경로·해시)를 주면 그 사이 바뀌었을 때 409
+  api.post("/node/delete", async (c) => {
+    const body = await c.req.json();
+    const files = Array.isArray(body.files)
+      ? body.files.map((f: Record<string, unknown>) => ({ path: requirePath(f?.path), baseHash: requireHash(f?.baseHash) }))
+      : undefined;
+    return c.json(await c.var.scoped.deleteNode(requirePath(body.path), files));
   });
 
   api.post("/batch", async (c) => {
@@ -531,6 +549,10 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
           return { op: "delete", path: requirePath(o.path), baseHash: requireHash(o.baseHash) };
         case "move":
           return { op: "move", from: requirePath(o.from), to: requirePath(o.to), baseHash: requireHash(o.baseHash) };
+        case "put":
+          // 첨부 새로 만들기(노드 삭제 되돌리기): data는 base64
+          if (typeof o.data !== "string") throw new PathError("data(base64)가 필요합니다");
+          return { op: "put", path: requirePath(o.path), data: new Uint8Array(Buffer.from(o.data, "base64")) };
         default:
           throw new PathError(`알 수 없는 연산입니다: ${String(o?.op)}`);
       }

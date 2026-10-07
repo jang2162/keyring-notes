@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { ConflictError, ForbiddenError, LocalVault, MemoryStore, NotFoundError, sha256Hex, sha256Sync, utf8 } from "../src/index.js";
 
+const KO_SETTINGS = "---\nkeyring: settings\nvault:\n  language: ko\n---\n";
+
+/** 볼트 언어는 한국어(커밋 메시지·위키 목차가 한국어) */
 async function vault(files: Record<string, string> = {}) {
   const store = new MemoryStore();
+  store.touch("keyring-settings.md", KO_SETTINGS);
   for (const [p, c] of Object.entries(files)) store.touch(p, c);
   const v = new LocalVault(store, { author: "노트북" });
   await v.open();
@@ -34,7 +38,7 @@ describe("로컬 볼트", () => {
     expect(w.type === "table" && w.rows.map((r) => r.path)).toEqual(["계획.md"]);
     const t = v.widget("type: tasks");
     expect(t.type === "tasks" && t.total).toBe(1);
-    expect(v.tree().map((n) => n.name)).toEqual(["일기", "계획.md"]);
+    expect(v.tree().map((n) => n.name)).toEqual(["일기", "계획.md", "keyring-settings.md"]);
   });
 
   it("baseHash가 다르면 덮어쓰지 않는다", async () => {
@@ -103,28 +107,29 @@ describe("로컬 볼트", () => {
     store.touch("새 문서.md", "새로");
     expect((await v.rescan()).sort()).toEqual(["a.md", "새 문서.md"]);
     expect((await v.read("a.md")).content).toBe("다른 편집기에서 고침");
-    expect(v.history("a.md")[0].author).toBe("외부 변경");
+    expect(v.history("a.md")[0].author).toBe("external");
     expect(seen[0][0]).toBe("external");
     // 다시 열어도 기록은 남는다
     const again = new LocalVault(store);
     await again.open();
-    expect(again.history("a.md").map((h) => h.author)).toEqual(["외부 변경", "노트북", "노트북"]);
+    expect(again.history("a.md").map((h) => h.author)).toEqual(["external", "노트북", "노트북"]);
   });
 
   it("위키 토픽: index·log를 앱이 만들고 고칠 수 없다", async () => {
-    const { v } = await vault({ "경제/raw/기사.md": "# 기사\n본문", "경제/wiki/index.md": "옛 파일" });
-    await v.createTopic("경제");
-    expect(v.topics().find((t) => t.name === "경제")).toMatchObject({ wiki: true, raw: 1, pages: 0 });
-    const idx = await v.read("경제/wiki/index.md");
+    const { v } = await vault({ "업무/경제/raw/기사.md": "# 기사\n본문", "업무/경제/wiki/index.md": "옛 파일" });
+    await expect(v.createTopic("경제")).rejects.toThrow(/두 단계/);
+    await v.createTopic("업무/경제");
+    expect(v.topics().find((t) => t.name === "업무/경제")).toMatchObject({ wiki: true, raw: 1, pages: 0 });
+    const idx = await v.read("업무/경제/wiki/index.md");
     expect(idx.generated).toBe(true);
     expect(idx.content).toContain("미반영 원본");
-    expect(idx.content).toContain("[[경제/raw/기사|기사]]");
-    await v.write("경제/wiki/금리.md", "---\nsources: ['[[경제/raw/기사]]']\n---\n# 금리\n", null);
-    expect((await v.read("경제/wiki/index.md")).content).toContain("페이지 1개에서 인용");
-    expect((await v.read("경제/wiki/log.md")).content).toContain("위키 토픽 만들기: 경제");
-    await expect(v.write("경제/wiki/index.md", "x", idx.hash)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(idx.content).toContain("[[업무/경제/raw/기사|기사]]");
+    await v.write("업무/경제/wiki/금리.md", "---\nsources: ['[[업무/경제/raw/기사]]']\n---\n# 금리\n", null);
+    expect((await v.read("업무/경제/wiki/index.md")).content).toContain("페이지 1개에서 인용");
+    expect((await v.read("업무/경제/wiki/log.md")).content).toContain("위키 토픽 만들기: 업무/경제");
+    await expect(v.write("업무/경제/wiki/index.md", "x", idx.hash)).rejects.toBeInstanceOf(ForbiddenError);
     expect(v.search("옛").length).toBe(0);
-    expect(v.graph().edges).toEqual([{ source: "경제/wiki/금리.md", target: "경제/raw/기사.md", kind: "source" }]);
+    expect(v.graph().edges).toEqual([{ source: "업무/경제/wiki/금리.md", target: "업무/경제/raw/기사.md", kind: "source" }]);
   });
 
   it("할 일 체크", async () => {
@@ -135,40 +140,57 @@ describe("로컬 볼트", () => {
   });
 });
 
-describe("공통 설정·폴더 이동", () => {
-  it("설정 파일은 검색·위젯·속성 통계에서 빠지고, [[날짜]]는 그날 데일리 노트로", async () => {
+describe("공통 설정·노드 이동", () => {
+  it("설정 파일은 검색·위젯·속성 통계에서 빠지고, [[날짜]]는 같은 워크스페이스의 그날 데일리 노트로", async () => {
     const { v } = await vault({
-      "keyring-settings.md": "---\nkeyring: settings\ndailyFolder: 일기\ndailyFormat: YYYY/YYYY-MM-DD\n---\n# Keyring Notes 설정\n일기",
-      "일기/2026/2026-10-07 회의.md": "---\nicon: 📅\n---\n회의 일기",
-      "a.md": "[[2026-10-07]] 일기",
+      "keyring-settings.md": "---\nkeyring: settings\nvault:\n  language: ko\nworkspaces:\n  개인:\n    daily:\n      format: YYYY/YYYY-MM-DD\n---\n# Keyring Notes 설정\n일기",
+      "개인/일기/2026/2026-10-07 회의.md": "---\nicon: 📅\n---\n회의 일기",
+      "업무/일기/2026-10-07.md": "업무 일기",
+      "개인/a.md": "[[2026-10-07]] 일기",
+      "업무/b.md": "[[2026-10-07]]",
     });
-    expect(v.settings().dailyFormat).toBe("YYYY/YYYY-MM-DD");
-    expect(v.search("일기").map((h) => h.path).sort()).toEqual(["a.md", "일기/2026/2026-10-07 회의.md"]);
+    expect(v.daily().of("개인")).toMatchObject({ folder: "개인/일기", format: "YYYY/YYYY-MM-DD" });
+    expect(v.search("일기").map((h) => h.path).sort()).toEqual(["개인/a.md", "개인/일기/2026/2026-10-07 회의.md", "업무/일기/2026-10-07.md"]);
     expect(v.properties().map((p) => p.key)).toEqual(["icon"]);
-    const w = v.widget("type: query");
-    expect(w.type === "query" && w.rows.map((r) => r.path).sort()).toEqual(["a.md", "일기/2026/2026-10-07 회의.md"]);
-    expect(v.backlinks("일기/2026/2026-10-07 회의.md").map((b) => b.path)).toEqual(["a.md"]);
+    const w = v.widget("type: query\nfrom: 개인");
+    expect(w.type === "query" && w.rows.map((r) => r.path).sort()).toEqual(["개인/a.md", "개인/일기/2026/2026-10-07 회의.md"]);
+    expect(v.backlinks("개인/일기/2026/2026-10-07 회의.md").map((b) => b.path)).toEqual(["개인/a.md"]);
+    expect(v.backlinks("업무/일기/2026-10-07.md").map((b) => b.path)).toEqual(["업무/b.md"]);
     expect(v.graph().nodes.map((n) => n.id)).not.toContain("keyring-settings.md");
-    const daily = v.tree().find((n) => n.name === "일기")!.children![0].children![0];
-    expect(daily).toMatchObject({ name: "2026-10-07 회의.md", icon: "📅" });
   });
 
-  it("폴더 이동: 문서와 첨부를 한 기록으로, 링크(첨부 임베드·상대 경로) 갱신", async () => {
+  it("노드 이동: 노트와 하위(문서·첨부)를 한 기록으로, 링크(첨부 임베드·상대 경로) 갱신", async () => {
     const { v, store } = await vault({
-      "프로젝트/계획.md": "![[도식.png]] ![](attachments/도식.png) [[참고]]",
-      "프로젝트/참고.md": "참고",
-      "밖.md": "[[프로젝트/참고]] ![[프로젝트/attachments/도식.png]] [x](프로젝트/attachments/도식.png)",
+      "업무/프로젝트.md": "# 프로젝트 소개 [[계획]]",
+      "업무/프로젝트/계획.md": "![[도식.png]] ![](도식.png) [[참고]]",
+      "업무/프로젝트/참고.md": "참고",
+      "업무/밖.md": "[[프로젝트]] [[프로젝트/참고]] ![[프로젝트/도식.png]] [x](프로젝트/도식.png)",
     });
-    store.touch("프로젝트/attachments/도식.png", "PNG");
+    store.touch("업무/프로젝트/도식.png", "PNG");
     await v.rescan();
-    const r = await v.moveFolder("프로젝트", "보관/2026 프로젝트");
+    const r = await v.moveNode("업무/프로젝트", "보관/2026 프로젝트");
     // 처음 고치는 문서의 "기존 내용" 기록 뒤에 이동 한 건
-    expect(v.entries().map((e) => e.message).slice(-2)).toEqual(["기존 내용", "폴더 이동: 프로젝트 → 보관/2026 프로젝트"]);
-    expect(r.linkCount).toBe(3);
-    expect((await v.read("밖.md")).content).toBe("[[보관/2026 프로젝트/참고]] ![[보관/2026 프로젝트/attachments/도식.png]] [x](보관/2026%20프로젝트/attachments/도식.png)");
-    expect((await v.read("보관/2026 프로젝트/계획.md")).content).toBe("![[도식.png]] ![](attachments/도식.png) [[참고]]");
-    expect(new TextDecoder().decode(await v.readBytes("보관/2026 프로젝트/attachments/도식.png"))).toBe("PNG");
-    await expect(v.readBytes("프로젝트/attachments/도식.png")).rejects.toBeInstanceOf(NotFoundError);
-    await expect(v.moveFolder("보관", "보관/안")).rejects.toThrow(/자기 안/);
+    expect(v.entries().map((e) => e.message).slice(-2)).toEqual(["기존 내용", "노드 이동: 업무/프로젝트 → 보관/2026 프로젝트"]);
+    expect(r.moved.map(([, t]) => t).sort()).toEqual(["보관/2026 프로젝트.md", "보관/2026 프로젝트/계획.md", "보관/2026 프로젝트/도식.png", "보관/2026 프로젝트/참고.md"]);
+    expect((await v.read("업무/밖.md")).content).toBe("[[2026 프로젝트]] [[보관/2026 프로젝트/참고]] ![[보관/2026 프로젝트/도식.png]] [x](../보관/2026%20프로젝트/도식.png)");
+    expect((await v.read("보관/2026 프로젝트/계획.md")).content).toBe("![[도식.png]] ![](도식.png) [[참고]]");
+    expect(new TextDecoder().decode(await v.readBytes("보관/2026 프로젝트/도식.png"))).toBe("PNG");
+    await expect(v.readBytes("업무/프로젝트/도식.png")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(v.moveNode("보관", "보관/안")).rejects.toThrow(/하위/);
+  });
+
+  it("노드 삭제는 하위까지 한 기록, 되살리면 하위까지", async () => {
+    const { v, store } = await vault({ "개인/여행.md": "여행", "개인/여행/제주.md": "제주", "개인/여행/제주/일정.md": "일정" });
+    store.touch("개인/여행/사진.png", "IMG");
+    await v.rescan();
+    const before = v.entries().length;
+    const { deleted } = await v.deleteNode("개인/여행");
+    expect(deleted.map((d) => d.path)).toEqual(["개인/여행.md", "개인/여행/사진.png", "개인/여행/제주.md", "개인/여행/제주/일정.md"]);
+    expect(v.entries().length - before).toBe(2); // 기존 내용 + 노드 삭제
+    expect(v.entries().at(-1)!.message).toBe("노드 삭제: 개인/여행");
+    expect(v.tree().find((n) => n.name === "개인")).toBeUndefined();
+    await v.restoreFiles(deleted);
+    expect((await v.read("개인/여행/제주/일정.md")).content).toBe("일정");
+    expect(new TextDecoder().decode(await v.readBytes("개인/여행/사진.png"))).toBe("IMG");
   });
 });

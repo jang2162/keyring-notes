@@ -1,7 +1,7 @@
 import { readdir, stat, writeFile, mkdir, access, rm, rmdir } from "node:fs/promises";
 import path from "node:path";
 import { SYSTEM_AUTHOR } from "./git.js";
-import { generatedKind, renderWikiIndex, renderWikiLog, schemaTopic, type LinkRow } from "@keyring-notes/core";
+import { generatedKind, renderWikiIndex, renderWikiLog, schemaTopic, topicCandidate, type LinkRow } from "@keyring-notes/core";
 import type { NoteIndex } from "./noteindex.js";
 import type { Vault } from "./vault.js";
 
@@ -23,14 +23,19 @@ export class Wiki {
    */
   async prepare(): Promise<void> {
     this.topics.clear();
+    // 토픽 = 워크스페이스 바로 아래 노드(<워크스페이스>/<토픽>/SCHEMA.md)
     const entries = await readdir(this.vault.root, { withFileTypes: true }).catch(() => []);
-    for (const e of entries) {
-      if (!e.isDirectory() || e.name.startsWith(".")) continue;
-      try {
-        await access(path.join(this.vault.root, e.name, "SCHEMA.md"));
-        this.topics.add(e.name);
-      } catch {
-        /* 일반 토픽 */
+    for (const ws of entries) {
+      if (!ws.isDirectory() || ws.name.startsWith(".")) continue;
+      const subs = await readdir(path.join(this.vault.root, ws.name), { withFileTypes: true }).catch(() => []);
+      for (const e of subs) {
+        if (!e.isDirectory() || e.name.startsWith(".")) continue;
+        try {
+          await access(path.join(this.vault.root, ws.name, e.name, "SCHEMA.md"));
+          this.topics.add(`${ws.name}/${e.name}`);
+        } catch {
+          /* 일반 노드 */
+        }
       }
     }
     this.index.skip = (rel) => this.isGenerated(rel);
@@ -54,7 +59,8 @@ export class Wiki {
     for (const t of before) {
       if (this.topics.has(t)) continue;
       for (const f of ["index.md", "log.md"]) await rm(path.join(this.vault.root, t, "wiki", f), { force: true });
-      for (const d of [path.join(this.vault.root, t, "wiki"), path.join(this.vault.root, t)]) await rmdir(d).catch(() => undefined);
+      const ws = t.split("/")[0];
+      for (const d of [path.join(this.vault.root, t, "wiki"), path.join(this.vault.root, t), path.join(this.vault.root, ws)]) await rmdir(d).catch(() => undefined);
     }
     await this.updateExcludes();
     await this.index.sync(this.vault);
@@ -71,13 +77,13 @@ export class Wiki {
   }
 
   topicOf(rel: string): string | null {
-    const t = rel.split("/")[0];
-    return this.topics.has(t) ? t : null;
+    const t = topicCandidate(rel);
+    return t !== null && this.topics.has(t) ? t : null;
   }
 
   private async updateExcludes() {
     await this.vault.git.setExcludes("wiki", this.generatedPaths());
-    await this.vault.git.commitStaged("자동 생성 문서를 이력에서 제외", SYSTEM_AUTHOR);
+    await this.vault.git.commitStaged(this.vault.text().commit.excludeGenerated, SYSTEM_AUTHOR);
   }
 
   /** Vault.onChange에서 부른다(인덱스 갱신 뒤). */
@@ -121,11 +127,11 @@ export class Wiki {
     const links = this.index.db
       .prepare("SELECT src, target, kind FROM links WHERE src LIKE ? ESCAPE '\\'")
       .all(`${topic.replace(/[\\%_]/g, (c) => "\\" + c)}/wiki/%`) as unknown as LinkRow[];
-    return renderWikiIndex(topic, docs, this.index.allPaths(), links);
+    return renderWikiIndex(topic, docs, this.index.allPaths(), links, { lang: this.vault.language() });
   }
 
   async renderLog(topic: string, canRead: (p: string) => boolean): Promise<string> {
-    return renderWikiLog(topic, await this.vault.git.logWithFiles(topic), canRead);
+    return renderWikiLog(topic, await this.vault.git.logWithFiles(topic), canRead, { lang: this.vault.language() });
   }
 }
 
