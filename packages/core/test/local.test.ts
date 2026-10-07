@@ -134,3 +134,41 @@ describe("로컬 볼트", () => {
     expect(r.content).toBe("- [ ] 하나\n- [x] 둘\n");
   });
 });
+
+describe("공통 설정·폴더 이동", () => {
+  it("설정 파일은 검색·위젯·속성 통계에서 빠지고, [[날짜]]는 그날 데일리 노트로", async () => {
+    const { v } = await vault({
+      "keyring-settings.md": "---\nkeyring: settings\ndailyFolder: 일기\ndailyFormat: YYYY/YYYY-MM-DD\n---\n# Keyring Notes 설정\n일기",
+      "일기/2026/2026-10-07 회의.md": "---\nicon: 📅\n---\n회의 일기",
+      "a.md": "[[2026-10-07]] 일기",
+    });
+    expect(v.settings().dailyFormat).toBe("YYYY/YYYY-MM-DD");
+    expect(v.search("일기").map((h) => h.path).sort()).toEqual(["a.md", "일기/2026/2026-10-07 회의.md"]);
+    expect(v.properties().map((p) => p.key)).toEqual(["icon"]);
+    const w = v.widget("type: query");
+    expect(w.type === "query" && w.rows.map((r) => r.path).sort()).toEqual(["a.md", "일기/2026/2026-10-07 회의.md"]);
+    expect(v.backlinks("일기/2026/2026-10-07 회의.md").map((b) => b.path)).toEqual(["a.md"]);
+    expect(v.graph().nodes.map((n) => n.id)).not.toContain("keyring-settings.md");
+    const daily = v.tree().find((n) => n.name === "일기")!.children![0].children![0];
+    expect(daily).toMatchObject({ name: "2026-10-07 회의.md", icon: "📅" });
+  });
+
+  it("폴더 이동: 문서와 첨부를 한 기록으로, 링크(첨부 임베드·상대 경로) 갱신", async () => {
+    const { v, store } = await vault({
+      "프로젝트/계획.md": "![[도식.png]] ![](attachments/도식.png) [[참고]]",
+      "프로젝트/참고.md": "참고",
+      "밖.md": "[[프로젝트/참고]] ![[프로젝트/attachments/도식.png]] [x](프로젝트/attachments/도식.png)",
+    });
+    store.touch("프로젝트/attachments/도식.png", "PNG");
+    await v.rescan();
+    const r = await v.moveFolder("프로젝트", "보관/2026 프로젝트");
+    // 처음 고치는 문서의 "기존 내용" 기록 뒤에 이동 한 건
+    expect(v.entries().map((e) => e.message).slice(-2)).toEqual(["기존 내용", "폴더 이동: 프로젝트 → 보관/2026 프로젝트"]);
+    expect(r.linkCount).toBe(3);
+    expect((await v.read("밖.md")).content).toBe("[[보관/2026 프로젝트/참고]] ![[보관/2026 프로젝트/attachments/도식.png]] [x](보관/2026%20프로젝트/attachments/도식.png)");
+    expect((await v.read("보관/2026 프로젝트/계획.md")).content).toBe("![[도식.png]] ![](attachments/도식.png) [[참고]]");
+    expect(new TextDecoder().decode(await v.readBytes("보관/2026 프로젝트/attachments/도식.png"))).toBe("PNG");
+    await expect(v.readBytes("프로젝트/attachments/도식.png")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(v.moveFolder("보관", "보관/안")).rejects.toThrow(/자기 안/);
+  });
+});

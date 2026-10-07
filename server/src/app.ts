@@ -504,6 +504,8 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.post("/move", async (c) => {
     const body = await c.req.json();
+    // 폴더 옮기기: 안의 문서·첨부를 한 커밋으로(baseHash 없이, 지금 내용 기준)
+    if (body.folder === true) return c.json(await c.var.scoped.moveFolder(requirePath(body.from), requirePath(body.to), { updateLinks: optionalBool(body.updateLinks) }));
     return c.json(
       await c.var.scoped.move(requirePath(body.from), requirePath(body.to), requireHash(body.baseHash), { updateLinks: optionalBool(body.updateLinks) }),
     );

@@ -45,6 +45,9 @@ class FakeServer implements RemoteVault {
     await this.put(path, data);
     return { hash: this.files.get(path)!.hash };
   }
+  async removeRaw(path: string, baseHash: string) {
+    return this.remove(path, baseHash);
+  }
   async remove(path: string, baseHash: string) {
     this.check();
     const cur = this.files.get(path)?.hash ?? null;
@@ -258,5 +261,38 @@ describe("동기화", () => {
     const r = await sync.run();
     expect(r.skipped.map((s) => s.path)).toEqual(["img.png"]);
     expect([...(server.files.get("img.png")!.content as Uint8Array)]).toEqual([1]);
+  });
+
+  it("기기에서 첨부가 든 폴더를 옮기면 새 자리는 올리고 원래 자리는 서버에서도 지운다", async () => {
+    const server = new FakeServer();
+    await server.put("노트/글.md", "![[그림.png]] [링크](attachments/그림.png)");
+    await server.put("노트/attachments/그림.png", new Uint8Array([7, 8]));
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    const r = await v.moveFolder("노트", "보관/노트");
+    expect(r.moved.map(([, t]) => t).sort()).toEqual(["보관/노트/attachments/그림.png", "보관/노트/글.md"]);
+    // 한 기록(첨부는 기록에 남지 않는다)
+    expect(v.entries().at(-1)!.message).toBe("폴더 이동: 노트 → 보관/노트");
+    const s = await sync.run();
+    expect(s.deletedRemote.sort()).toEqual(["노트/attachments/그림.png", "노트/글.md"]);
+    expect([...server.files.keys()].sort()).toEqual(["보관/노트/attachments/그림.png", "보관/노트/글.md"]);
+    expect(server.text("보관/노트/글.md")).toBe("![[그림.png]] [링크](attachments/그림.png)");
+    const again = await sync.run();
+    expect([again.pushed, again.pulled, again.deletedLocal, again.deletedRemote, again.skipped].flat()).toEqual([]);
+  });
+
+  it("기기에서 지운 첨부라도 그 사이 서버에서 바뀌었으면 서버 것을 받는다", async () => {
+    const server = new FakeServer();
+    await server.put("img.png", new Uint8Array([1]));
+    const { v, store } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await store.remove("img.png");
+    await v.rescan();
+    await server.put("img.png", new Uint8Array([2]));
+    const r = await sync.run();
+    expect(r.pulled).toEqual(["img.png"]);
+    expect([...(await v.readBytes("img.png"))]).toEqual([2]);
   });
 });

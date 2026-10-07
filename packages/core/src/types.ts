@@ -23,6 +23,8 @@ export interface TreeNode {
   path: string;
   type: "dir" | "file";
   children?: TreeNode[];
+  /** 문서 아이콘(프런트매터 icon) */
+  icon?: string;
 }
 
 /** 문서 사이 링크 한 줄. kind: 본문 위키링크(link) 또는 프런트매터 출처(source). */

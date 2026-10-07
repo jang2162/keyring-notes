@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { dailyLinkDate, dailyNotesOn, type DailyConfig } from "./daily.js";
 
 export interface Heading {
   level: number;
@@ -236,8 +237,16 @@ export function wikilinkTargets(content: string): string[] {
   return [...out];
 }
 
-/** Obsidian식 링크 해석: 정확한 경로가 없으면 같은 파일 이름 중 가장 얕은 경로. */
-export function resolveLink(target: string, paths: string[]): string | null {
+export interface ResolveOptions {
+  /** 데일리 노트 설정: 주면 `[[2026-10-07]]`처럼 날짜만 쓴 링크가 그날 데일리 노트(날짜 뒤 제목 포함)를 가리킨다 */
+  daily?: DailyConfig | null;
+}
+
+/**
+ * Obsidian식 링크 해석: 정확한 경로가 없으면 같은 파일 이름 중 가장 얕은 경로.
+ * 그래도 없고 대상이 데일리 날짜면 그날 데일리 노트(날짜만 있는 이름 먼저). 정확한 이름의 문서가 늘 먼저다.
+ */
+export function resolveLink(target: string, paths: string[], opts: ResolveOptions = {}): string | null {
   const t = target.trim().replace(/^\/+/, "").toLowerCase();
   if (!t) return null;
   const candidates = /\.[a-z0-9]+$/i.test(t) ? [t] : [`${t}.md`, t];
@@ -250,7 +259,8 @@ export function resolveLink(target: string, paths: string[]): string | null {
     const hits = lowered.filter(([l]) => l === c || l.endsWith("/" + c)).map(([, p]) => p);
     if (hits.length) return hits.sort((a, b) => a.split("/").length - b.split("/").length)[0];
   }
-  return null;
+  const day = opts.daily ? dailyLinkDate(target, opts.daily) : null;
+  return day ? (dailyNotesOn(paths, opts.daily, day)[0]?.path ?? null) : null;
 }
 
 export interface TaskItem {

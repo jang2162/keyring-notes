@@ -9,6 +9,8 @@ import { isMarkdown, normalizeFolder, normalizeVaultPath, PathError } from "./pa
 import type { CommitInfo, DocMeta, LinkRow, SearchHit, TaskRow, TreeNode } from "./types.js";
 import { parseWidget, runWidget, type WidgetResult } from "./widget.js";
 import { generatedKind, generatedPaths, renderWikiIndex, renderWikiLog, schemaTemplate, schemaTopic } from "./wiki.js";
+import { dailyConfigOf, isVaultSettingsPath, parseVaultSettings, VAULT_SETTINGS_PATH, type VaultSettings } from "./settings.js";
+import type { DailyConfig } from "./daily.js";
 
 export interface FileEntry {
   /** 볼트 상대 경로("/" 구분) */
@@ -280,6 +282,20 @@ export class LocalVault {
     return this.topicSet.has(t) ? t : null;
   }
 
+  private settingsCache: { hash: string | null; value: VaultSettings } | null = null;
+
+  /** 모든 기기 공통 설정(볼트의 keyring-settings.md). 파일이 없으면 기본값 */
+  settings(): VaultSettings {
+    const e = this.files.get(VAULT_SETTINGS_PATH);
+    const hash = e?.hash ?? null;
+    if (this.settingsCache?.hash !== hash) this.settingsCache = { hash, value: parseVaultSettings(e?.content) };
+    return this.settingsCache.value;
+  }
+
+  private daily(): DailyConfig {
+    return dailyConfigOf(this.settings());
+  }
+
   private mdEntries(): Entry[] {
     return [...this.files.values()].filter((e) => e.md && e.meta);
   }
@@ -324,7 +340,8 @@ export class LocalVault {
     const paths = [...this.files.keys(), ...[...this.topicSet].flatMap(generatedPaths)];
     for (const p of paths) {
       const i = p.lastIndexOf("/");
-      dirOf(i < 0 ? "" : p.slice(0, i)).push({ name: p.slice(i + 1), path: p, type: "file" });
+      const icon = this.files.get(p)?.meta?.frontmatter?.icon;
+      dirOf(i < 0 ? "" : p.slice(0, i)).push({ name: p.slice(i + 1), path: p, type: "file", ...(typeof icon === "string" && icon.trim() ? { icon: icon.trim() } : {}) });
     }
     const sort = (nodes: TreeNode[]) => {
       nodes.sort((a, b) => (a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name, "ko")));
@@ -378,7 +395,7 @@ export class LocalVault {
     const f = normalizeFolder(opts.folder);
     const scored: { e: Entry; s: number }[] = [];
     for (const e of this.mdEntries()) {
-      if (f && !e.path.startsWith(f + "/")) continue;
+      if ((f && !e.path.startsWith(f + "/")) || isVaultSettingsPath(e.path)) continue;
       if (tagTerms.length && !tagTerms.every((t) => e.meta!.tags.some((x) => x === t || x.startsWith(t + "/")))) continue;
       const title = e.meta!.title.toLowerCase();
       const path = e.path.toLowerCase();
@@ -397,9 +414,10 @@ export class LocalVault {
   private incoming(rel: string, kind?: "link" | "source"): string[] {
     const paths = this.mdPaths();
     const out = new Set<string>();
+    const o = { daily: this.daily() };
     for (const r of this.linkRows()) {
       if (r.src === rel || (kind && r.kind !== kind)) continue;
-      if (resolveLink(r.target, paths) === rel) out.add(r.src);
+      if (resolveLink(r.target, paths, o) === rel) out.add(r.src);
     }
     return [...out].sort();
   }
@@ -414,7 +432,7 @@ export class LocalVault {
 
   /** 속성(프런트매터) 이름·종류·자주 쓴 값 */
   properties(): PropertyStat[] {
-    return propertyStats(this.docs());
+    return propertyStats(this.docs().filter((d) => !isVaultSettingsPath(d.path)));
   }
 
   /** 연결되지 않은 언급: 이 문서의 이름이 링크 없이 나오는 다른 문서와 그 자리 */
@@ -440,7 +458,7 @@ export class LocalVault {
     const files = this.allPaths();
     return {
       path: doc.path,
-      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files), ...(r.anchor ? { anchor: r.anchor } : {}) })),
+      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files, { daily: this.daily() }), ...(r.anchor ? { anchor: r.anchor } : {}) })),
       citedBy: this.withTitles(this.incoming(doc.path, "source")),
       linkedBy: this.withTitles(this.incoming(doc.path, "link")),
     };
@@ -478,7 +496,7 @@ export class LocalVault {
     for (const e of this.mdEntries()) {
       for (const r of sourceRefs(e.meta!.frontmatter)) {
         if (!r.anchor) continue;
-        const to = resolveLink(r.target, files);
+        const to = resolveLink(r.target, files, { daily: this.daily() });
         const content = to ? this.files.get(to)?.content : undefined;
         if (content !== undefined && !anchorExists(content, r.anchor)) missingAnchors.push({ src: e.path, target: r.target, anchor: r.anchor });
       }
@@ -492,11 +510,12 @@ export class LocalVault {
       wiki: this,
       folder: normalizeFolder(opts.folder),
       staleDays: opts.staleDays,
+      daily: this.daily(),
     });
   }
 
   graph(folder?: string): GraphData {
-    return linkGraph({ docs: this.docs(), links: this.linkRows(), wiki: this, folder: normalizeFolder(folder) });
+    return linkGraph({ docs: this.docs(), links: this.linkRows(), wiki: this, folder: normalizeFolder(folder), daily: this.daily() });
   }
 
   // ── 이력 ──
@@ -615,41 +634,85 @@ export class LocalVault {
   }
 
   /**
-   * 이동·이름 바꾸기. updateLinks(기본 켬)면 이 문서를 가리키던 링크(다른 문서와 이 문서 자신의 상대 링크)를
+   * 이동·이름 바꾸기(문서·첨부). updateLinks(기본 켬)면 이 파일을 가리키던 링크(다른 문서와 이 문서 자신의 상대 링크)를
    * 같은 기록 안에서 함께 고친다. linksUpdated: 링크를 고친 문서(이동한 문서 포함), linkCount: 고친 링크 수.
    */
-  move(fromInput: string, toInput: string, baseHash: string, opts: { updateLinks?: boolean } = {}): Promise<LocalDoc & { linksUpdated: string[]; linkCount: number }> {
+  async move(fromInput: string, toInput: string, baseHash: string, opts: { updateLinks?: boolean } = {}): Promise<LocalDoc & { linksUpdated: string[]; linkCount: number }> {
+    const from = normalizeVaultPath(fromInput);
+    const r = await this.moveMany([[from, normalizeVaultPath(toInput), baseHash]], opts, null);
+    const to = r.moved[0][1];
+    const e = this.files.get(to)!;
+    return { path: to, content: e.content ?? "", hash: e.hash ?? "", linksUpdated: r.linksUpdated, linkCount: r.linkCount };
+  }
+
+  /**
+   * 폴더 옮기기·이름 바꾸기: 안의 문서와 첨부를 한 기록으로 옮기고 링크를 고친다.
+   * 첨부는 기록(스냅샷)에 내용을 남기지 않는다. 서버와 동기화하면 새 자리의 첨부는 올리고, 원래 자리의 첨부는
+   * 서버에서도 그대로일 때만 지운다(SyncEngine).
+   */
+  async moveFolder(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
+    const from = normalizeVaultPath(fromInput);
+    const to = normalizeVaultPath(toInput);
+    if (from === to) throw new PathError("같은 경로입니다");
+    if (to.startsWith(from + "/")) throw new PathError("폴더를 자기 안으로 옮길 수 없습니다");
+    const pairs: [string, string, null][] = [...this.files.keys()].filter((p) => p.startsWith(from + "/")).sort().map((p) => [p, to + p.slice(from.length), null]);
+    if (pairs.length === 0) throw new NotFoundError(`폴더가 없거나 비어 있습니다: ${from}`);
+    return this.moveMany(pairs, opts, `폴더 이동: ${from} → ${to}`);
+  }
+
+  private moveMany(pairs: [string, string, string | null][], opts: { updateLinks?: boolean }, message: string | null): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
     return this.exclusive(async () => {
-      const from = this.requireWritable(fromInput);
-      const to = this.requireWritable(toInput);
-      if (from === to) throw new PathError("같은 경로입니다");
-      this.check(from, baseHash);
-      if (this.files.has(to)) throw new ConflictError(this.files.get(to)!.hash, `이미 있는 문서입니다: ${to}`);
-      let content = this.files.get(from)!.content!;
+      const targets = new Set<string>();
+      for (const [from, to, baseHash] of pairs) {
+        if (from === to) throw new PathError("같은 경로입니다");
+        for (const p of [from, to]) {
+          if (this.isGenerated(p)) throw new ForbiddenError("앱이 자동으로 만드는 문서(위키 목차·작업 기록)는 옮길 수 없습니다");
+          if (isMarkdown(p) !== isMarkdown(from)) throw new PathError("문서와 첨부 사이로는 옮길 수 없습니다(확장자 .md 유지)");
+        }
+        const cur = this.files.get(from);
+        if (!cur) throw new NotFoundError(`파일이 없습니다: ${from}`);
+        if (baseHash !== null && cur.md) this.check(from, baseHash);
+        if (this.files.has(to) || targets.has(to)) throw new ConflictError(this.files.get(to)?.hash ?? null, `이미 있는 파일입니다: ${to}`);
+        targets.add(to);
+      }
+      const moves = new Map(pairs.map(([f, t]) => [f, t]));
+      const contents = new Map<string, string>();
+      for (const [f] of pairs) if (this.files.get(f)!.md) contents.set(f, this.files.get(f)!.content!);
       const changes: { path: string; content: string | null; from?: string }[] = [];
       const linksUpdated: string[] = [];
       let linkCount = 0;
       if (opts.updateLinks !== false) {
         const generated = [...this.topicSet].flatMap(generatedPaths);
         const before = [...this.files.keys(), ...generated];
-        const ctx: LinkRewriteContext = { moves: new Map([[from, to]]), before, after: [...before.filter((p) => p !== from), to] };
-        const own = rewriteLinks(content, from, to, ctx);
-        if (own) {
-          content = own.content;
-          linksUpdated.push(to);
-          linkCount += own.count;
-        }
+        const ctx: LinkRewriteContext = { moves, before, after: [...before.filter((p) => !moves.has(p)), ...targets], daily: this.daily() };
         for (const e of this.mdEntries()) {
-          if (e.path === from) continue;
-          const r = rewriteLinks(e.content!, e.path, e.path, ctx);
+          const to = moves.get(e.path) ?? e.path;
+          const r = rewriteLinks(e.content!, e.path, to, ctx);
           if (!r) continue;
-          changes.push({ path: e.path, content: r.content });
-          linksUpdated.push(e.path);
+          if (moves.has(e.path)) contents.set(e.path, r.content);
+          else changes.push({ path: e.path, content: r.content });
+          linksUpdated.push(to);
           linkCount += r.count;
         }
       }
-      await this.apply([{ path: to, content, from }, ...changes], this.author, `이동: ${from} → ${to}`, "local");
-      return { path: to, content, hash: this.files.get(to)!.hash!, linksUpdated, linkCount };
+      // 첨부는 바이트를 옮긴다(기록에는 남지 않는다)
+      const attachments: string[] = [];
+      for (const [from, to] of pairs) {
+        if (this.files.get(from)!.md) continue;
+        const data = await this.store.read(from);
+        if (data === null) throw new NotFoundError(`파일이 없습니다: ${from}`);
+        const st = await this.store.write(to, data);
+        await this.store.remove(from);
+        const old = this.files.get(from)!;
+        this.files.delete(from);
+        this.files.set(to, { path: to, size: st.size, mtime: st.mtime, md: false, hash: old.hash });
+        attachments.push(from, to);
+      }
+      const md = pairs.filter(([f]) => contents.has(f)).map(([from, to]) => ({ path: to, content: contents.get(from)!, from }));
+      const msg = message ?? (pairs.length === 1 ? `이동: ${pairs[0][0]} → ${pairs[0][1]}` : `이동 ${pairs.length}건`);
+      if (md.length || changes.length) await this.apply([...md, ...changes], this.author, msg, "local");
+      this.emit(attachments, "local");
+      return { moved: pairs.map(([f, t]) => [f, t] as [string, string]), linksUpdated, linkCount };
     });
   }
 

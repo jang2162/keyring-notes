@@ -1,6 +1,7 @@
 import { parse as parseYaml } from "yaml";
 import type { DocMeta, TaskRow } from "./types.js";
 import { PathError } from "./paths.js";
+import { isVaultSettingsPath } from "./settings.js";
 
 /**
  * 위젯 블록(```widget) 안의 YAML.
@@ -258,7 +259,8 @@ export function runWidget(spec: WidgetSpec, docs: DocMeta[], tasks: TaskRow[]): 
     return { type: "chart", title: spec.title, chart: spec.chart, x: "label", y: "value", series: spec.data };
   }
   const selected = sortDocs(
-    docs.filter((d) => inFrom(d, spec.from) && spec.where.every((c) => matches(d, c))),
+    // 공통 설정 파일은 문서 목록에 넣지 않는다
+    docs.filter((d) => !isVaultSettingsPath(d.path) && inFrom(d, spec.from) && spec.where.every((c) => matches(d, c))),
     spec.sort,
   );
 

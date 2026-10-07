@@ -25,11 +25,12 @@ import {
   type LintReport,
   type Section,
   type WidgetResult,
+  isVaultSettingsPath,
 } from "@keyring-notes/core";
 import type { DocMeta, NoteIndex } from "./noteindex.js";
 import type { ReviewQueue } from "./review.js";
 import type { SemanticIndex } from "./embeddings.js";
-import { normalizeVaultPath, PathError } from "./paths.js";
+import { isMarkdown, normalizeVaultPath, PathError } from "./paths.js";
 import { isSchemaPath, schemaTemplate, type Wiki } from "./wiki.js";
 import {
   ConflictError,
@@ -98,9 +99,15 @@ export class ScopedVault {
 
   level(relPath: string): Level {
     const level = levelOf(this.principal, relPath);
-    // 위키 SCHEMA.md는 사람만 고친다. 에이전트 규칙이 무엇이든 읽기까지만.
-    if (this.principal.kind === "agent" && isSchemaPath(relPath) && atLeast(level, "append")) return "read";
+    // 위키 SCHEMA.md와 모든 기기 공통 설정 파일(서버의 링크 해석·데일리 판정을 바꾼다)은 사람만 고친다.
+    // 에이전트 규칙이 무엇이든 읽기까지만.
+    if (this.principal.kind === "agent" && (isSchemaPath(relPath) || isVaultSettingsPath(relPath)) && atLeast(level, "append")) return "read";
     return level;
+  }
+
+  /** 데일리 노트 설정(공통 설정 파일). 링크는 늘 읽는 사람에게 보이는 문서 안에서만 해석한다 */
+  private get linkOpts() {
+    return { daily: this.vault.daily() };
   }
 
   private canRead(relPath: string): boolean {
@@ -137,8 +144,9 @@ export class ScopedVault {
     return out;
   }
 
+  /** 파일 트리(볼 수 있는 것만). 문서에는 아이콘(프런트매터 icon)을 붙인다 */
   async tree(folder?: string): Promise<TreeNode[]> {
-    let nodes = this.filterTree(await this.vault.tree());
+    let nodes = this.withIcons(this.filterTree(await this.vault.tree()));
     if (folder && normalizeFolder(folder)) {
       const f = normalizeFolder(folder);
       const find = (ns: TreeNode[]): TreeNode[] | null => {
@@ -154,6 +162,17 @@ export class ScopedVault {
       nodes = found;
     }
     return nodes;
+  }
+
+  private withIcons(nodes: TreeNode[]): TreeNode[] {
+    const icons = new Map<string, string>();
+    for (const d of this.index.docs()) {
+      const icon = d.frontmatter?.icon;
+      if (typeof icon === "string" && icon.trim()) icons.set(d.path, icon.trim());
+    }
+    const walk = (ns: TreeNode[]): TreeNode[] =>
+      ns.map((n) => (n.type === "dir" ? { ...n, children: walk(n.children ?? []) } : icons.has(n.path) ? { ...n, icon: icons.get(n.path) } : n));
+    return icons.size ? walk(nodes) : nodes;
   }
 
   /** 읽을 수 있는 문서 목록(평면). */
@@ -229,7 +248,7 @@ export class ScopedVault {
       frontmatter: fm.data,
       ...(fm.error ? { frontmatterError: fm.error } : {}),
       headings: headings(doc.content),
-      links: wikilinkTargets(doc.content).map((target) => ({ target, path: resolveLink(target, visible) })),
+      links: wikilinkTargets(doc.content).map((target) => ({ target, path: resolveLink(target, visible, this.linkOpts) })),
     };
   }
 
@@ -269,7 +288,8 @@ export class ScopedVault {
     if (tagTerms.length === 0 && textTerms.length === 0) throw new PathError("검색어가 필요합니다");
     const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
     const f = normalizeFolder(opts.folder);
-    const inScope = (p: string) => this.canRead(p) && (!f || p.startsWith(f + "/"));
+    // 공통 설정 파일은 검색에 나오지 않는다(설정 화면에서 고친다)
+    const inScope = (p: string) => this.canRead(p) && !isVaultSettingsPath(p) && (!f || p.startsWith(f + "/"));
 
     let candidates: { path: string; title: string; body: string }[];
     if (textTerms.length > 0) {
@@ -305,7 +325,7 @@ export class ScopedVault {
     const rel = this.requireRead(input);
     const titles = new Map(this.index.docs().map((d) => [d.path, d.title]));
     return this.index
-      .backlinks(rel)
+      .backlinks(rel, undefined, this.vault.daily())
       .filter((p) => this.canRead(p))
       .map((p) => ({ path: p, title: titles.get(p) ?? p }));
   }
@@ -338,7 +358,7 @@ export class ScopedVault {
 
   /** 볼 수 있는 문서들의 속성(프런트매터) 이름·종류·자주 쓴 값. 속성 입력 화면의 자동완성용 */
   properties(): PropertyStat[] {
-    return propertyStats(this.visibleDocs().filter((d) => !this.wiki?.isGenerated(d.path)));
+    return propertyStats(this.visibleDocs().filter((d) => !this.wiki?.isGenerated(d.path) && !isVaultSettingsPath(d.path)));
   }
 
   /** 읽을 수 있는 모든 파일 경로(첨부 포함). */
@@ -371,9 +391,9 @@ export class ScopedVault {
     const withTitle = (paths: string[]) => paths.filter((p) => this.canRead(p)).map((p) => ({ path: p, title: titles.get(p) ?? p }));
     return {
       path: doc.path,
-      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files), ...(r.anchor ? { anchor: r.anchor } : {}) })),
-      citedBy: withTitle(this.index.backlinks(doc.path, "source")),
-      linkedBy: withTitle(this.index.backlinks(doc.path, "link")),
+      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files, this.linkOpts), ...(r.anchor ? { anchor: r.anchor } : {}) })),
+      citedBy: withTitle(this.index.backlinks(doc.path, "source", this.vault.daily())),
+      linkedBy: withTitle(this.index.backlinks(doc.path, "link", this.vault.daily())),
     };
   }
 
@@ -390,7 +410,7 @@ export class ScopedVault {
     for (const d of this.visibleDocs()) {
       for (const r of sourceRefs(d.frontmatter)) {
         if (!r.anchor) continue;
-        const to = resolveLink(r.target, files);
+        const to = resolveLink(r.target, files, this.linkOpts);
         if (!to || !/\.md$/i.test(to)) continue;
         const content = await this.vault.read(to).then((x) => x.content, () => null);
         if (content !== null && !anchorExists(content, r.anchor)) missingAnchors.push({ src: d.path, target: r.target, anchor: r.anchor });
@@ -406,6 +426,7 @@ export class ScopedVault {
       folder: normalizeFolder(opts.folder),
       staleDays: opts.staleDays,
       required: opts.required,
+      daily: this.vault.daily(),
     });
   }
 
@@ -419,6 +440,7 @@ export class ScopedVault {
       links: this.index.db.prepare("SELECT src, target, kind FROM links").all() as unknown as LinkRow[],
       wiki: this.wiki,
       folder: normalizeFolder(folder),
+      daily: this.vault.daily(),
     });
   }
 
@@ -538,6 +560,10 @@ export class ScopedVault {
       const p = res.preview?.find((f) => f.path === target);
       return { path: target, content: p?.after ?? "", hash: p?.afterHash ?? "", rev: null, pending: res.pending, linksUpdated: res.linksUpdated, linkCount: res.linkCount };
     }
+    if (!isMarkdown(target)) {
+      // 첨부 이동: 내용 대신 해시만
+      return { path: target, content: "", hash: res.files.find((f) => f.path === target)?.hash ?? "", rev: res.rev, linksUpdated: res.linksUpdated, linkCount: res.linkCount };
+    }
     const doc = await this.vault.read(target);
     return { ...doc, rev: res.rev, linksUpdated: res.linksUpdated, linkCount: res.linkCount };
   }
@@ -554,6 +580,33 @@ export class ScopedVault {
   /** 이동·이름 바꾸기. updateLinks(기본 켬)면 이 문서를 가리키던 링크를 같은 커밋에서 고친다(linksUpdated). */
   move(from: string, to: string, baseHash: string, opts: { updateLinks?: boolean } = {}) {
     return this.single({ op: "move", from, to, baseHash }, opts);
+  }
+
+  /**
+   * 폴더 옮기기·이름 바꾸기: 안의 문서와 첨부(볼 수 있는 것)를 한 번의 일괄 쓰기(한 커밋)로 옮기고 링크를 고친다.
+   * 각 파일의 baseHash는 지금 내용으로 정한다(폴더 이동은 내용을 바꾸지 않는다).
+   */
+  async moveFolder(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}) {
+    const from = normalizeVaultPath(fromInput);
+    const to = normalizeVaultPath(toInput);
+    if (from === to) throw new PathError("같은 경로입니다");
+    if (to.startsWith(from + "/")) throw new PathError("폴더를 자기 안으로 옮길 수 없습니다");
+    const files: string[] = [];
+    const walk = (ns: TreeNode[]) => {
+      for (const n of ns) {
+        if (n.type === "dir") walk(n.children ?? []);
+        else if (!this.wiki?.isGenerated(n.path)) files.push(n.path);
+      }
+    };
+    walk(await this.tree(from));
+    if (files.length === 0) throw new NotFoundError(`폴더가 없거나 비어 있습니다: ${from}`);
+    const ops: Op[] = [];
+    for (const f of files.sort()) {
+      const { data } = await this.vault.readRaw(f);
+      ops.push({ op: "move", from: f, to: to + f.slice(from.length), baseHash: hashContent(data) });
+    }
+    const res = await this.batch(ops, `폴더 이동: ${from} → ${to}`, opts);
+    return { ...res, moved: ops.map((o) => (o.op === "move" ? [o.from, o.to] : [])) as [string, string][] };
   }
 
   /** 첨부 파일 새로 만들기(이미 있으면 충돌). 마크다운은 write로. */

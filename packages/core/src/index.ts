@@ -1,4 +1,5 @@
 export * from "./analysis.js";
+export * from "./daily.js";
 export * from "./errors.js";
 export * from "./frontmatter.js";
 export * from "./hash.js";
@@ -9,6 +10,7 @@ export * from "./memory.js";
 export * from "./mentions.js";
 export * from "./merge.js";
 export * from "./paths.js";
+export * from "./settings.js";
 export * from "./pdfnotes.js";
 export * from "./sync.js";
 export * from "./templates.js";

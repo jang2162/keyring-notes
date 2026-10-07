@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { chainMoves, rewriteLinks } from "@keyring-notes/core";
+import { chainMoves, dailyConfigOf, parseVaultSettings, rewriteLinks, VAULT_SETTINGS_PATH, type DailyConfig, type VaultSettings } from "@keyring-notes/core";
 import { GitHistory, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
 import { isHiddenSegment, isMarkdown, normalizeVaultPath, PathError, resolveInVault } from "./paths.js";
 
@@ -45,7 +46,8 @@ export function hashContent(content: string | Buffer): string {
  * 일괄 쓰기의 연산 하나.
  * - write: 문서 전체를 쓴다. baseHash가 null이면 새 문서 생성.
  * - append: 문서 끝에 덧붙인다(없으면 만든다). baseHash를 주면 그 버전일 때만.
- * - delete / move: baseHash가 현재 버전과 같아야 한다.
+ * - delete / move: baseHash가 현재 버전과 같아야 한다. 문서와 첨부(바이트 해시) 모두 된다.
+ *   이동은 문서 → 문서, 첨부 → 첨부만(확장자 .md를 바꿔 종류를 바꿀 수는 없다).
  */
 export type Op =
   | { op: "write"; path: string; content: string; baseHash: string | null }
@@ -96,9 +98,10 @@ export interface BatchResult {
 interface Slot {
   abs: string;
   original: Buffer | null;
+  /** 마크다운 내용(첨부·없는 파일은 null). 있는지는 hash로 본다 */
   content: string | null;
   hash: string | null;
-  /** put 연산으로 새로 쓸 바이트(첨부 파일). */
+  /** 새로 쓸 바이트(첨부: put·이동해 온 것). */
   bytes?: Uint8Array;
 }
 
@@ -145,6 +148,37 @@ export class Vault {
 
   constructor(readonly root: string) {
     this.git = new GitHistory(root);
+  }
+
+  private shared: { mtimeMs: number; size: number; value: VaultSettings } | null = null;
+
+  /**
+   * 모든 기기 공통 설정(볼트의 keyring-settings.md). 서버가 링크 해석·데일리 판정에 쓴다.
+   * 파일이 바뀌었을 때(크기·수정 시각)만 다시 읽는다. 권한 계층을 거치지 않고 읽으므로 내용을 응답에 싣지 않는다
+   * (읽는 사람에게 보이는 문서 안에서 링크를 해석하는 데만 쓴다).
+   */
+  sharedSettings(): VaultSettings {
+    let st: { mtimeMs: number; size: number } | null = null;
+    try {
+      const s = statSync(path.join(this.root, VAULT_SETTINGS_PATH));
+      st = s.isFile() ? { mtimeMs: s.mtimeMs, size: s.size } : null;
+    } catch {
+      st = null;
+    }
+    if (!st) return (this.shared = { mtimeMs: -1, size: -1, value: parseVaultSettings(null) }).value;
+    if (this.shared && this.shared.mtimeMs === st.mtimeMs && this.shared.size === st.size) return this.shared.value;
+    let text: string | null = null;
+    try {
+      text = readFileSync(path.join(this.root, VAULT_SETTINGS_PATH), "utf8");
+    } catch {
+      text = null;
+    }
+    this.shared = { ...st, value: parseVaultSettings(text) };
+    return this.shared.value;
+  }
+
+  daily(): DailyConfig {
+    return dailyConfigOf(this.sharedSettings());
   }
 
   /** 볼트 폴더와 이력 저장소를 준비하고, 서버 밖에서 생긴 변경을 한 커밋으로 흡수한다. */
@@ -289,23 +323,27 @@ export class Vault {
     // 경로 검증은 잠금 밖에서 먼저 한다.
     const resolved = new Map<string, string>();
     const resolvedAbs = new Map<string, string>();
-    const want = async (p: string, binary = false) => {
+    /** kind: md(문서만), bin(첨부만), any(이동·삭제: 둘 다) */
+    const want = async (p: string, kind: "md" | "bin" | "any" = "md") => {
       const { rel, abs } = await this.resolve(p);
-      if (!binary && !isMarkdown(rel)) throw new PathError(`마크다운 문서(.md)만 바꿀 수 있습니다: ${rel}`);
-      if (binary && isMarkdown(rel)) throw new PathError(`마크다운 문서는 put으로 쓸 수 없습니다: ${rel}`);
+      if (kind === "md" && !isMarkdown(rel)) throw new PathError(`마크다운 문서(.md)만 바꿀 수 있습니다: ${rel}`);
+      if (kind === "bin" && isMarkdown(rel)) throw new PathError(`마크다운 문서는 put으로 쓸 수 없습니다: ${rel}`);
       if (this.readOnly(rel)) throw new PathError(`자동 생성 문서라 직접 고칠 수 없습니다: ${rel}`);
       resolved.set(p, rel);
       resolvedAbs.set(rel, abs);
     };
     for (const op of ops) {
       if (op.op === "move") {
-        await want(op.from);
-        await want(op.to);
+        await want(op.from, "any");
+        await want(op.to, "any");
+        if (isMarkdown(op.from) !== isMarkdown(op.to)) throw new PathError(`문서와 첨부 사이로는 옮길 수 없습니다(확장자 .md 유지): ${op.from} → ${op.to}`);
       } else if (op.op === "put") {
         if (!(op.data instanceof Uint8Array)) throw new PathError("data가 필요합니다");
-        await want(op.path, true);
+        await want(op.path, "bin");
+      } else if (op.op === "delete") {
+        await want(op.path, "any");
       } else {
-        if (op.op !== "delete" && typeof op.content !== "string") throw new PathError("content가 필요합니다");
+        if (typeof op.content !== "string") throw new PathError("content가 필요합니다");
         await want(op.path);
       }
     }
@@ -320,7 +358,7 @@ export class Vault {
           s = {
             abs,
             original,
-            content: original === null ? null : original.toString("utf8"),
+            content: original === null || !isMarkdown(rel) ? null : original.toString("utf8"),
             hash: original === null ? null : hashContent(original),
           };
           slots.set(rel, s);
@@ -329,6 +367,7 @@ export class Vault {
       };
       const set = (s: Slot, content: string | null) => {
         s.content = content;
+        s.bytes = undefined;
         s.hash = content === null ? null : hashContent(content);
       };
 
@@ -341,13 +380,18 @@ export class Vault {
           const to = resolved.get(op.to)!;
           const a = await slot(from);
           const b = await slot(to);
-          if (a.content === null) throw new NotFoundError(`문서가 없습니다: ${from}`);
+          if (a.hash === null) throw new NotFoundError(`${isMarkdown(from) ? "문서" : "파일"}가 없습니다: ${from}`);
           guard("delete", from);
           guard("create", to);
           if (a.hash !== op.baseHash) throw new ConflictError(a.hash, undefined, from);
           if (from === to) continue;
-          if (b.content !== null) throw new ConflictError(b.hash, "이미 같은 이름의 문서가 있습니다", to);
-          set(b, a.content);
+          if (b.hash !== null) throw new ConflictError(b.hash, "이미 같은 이름의 파일이 있습니다", to);
+          if (isMarkdown(from)) set(b, a.content);
+          else {
+            // 첨부는 바이트를 그대로 옮긴다(S3 보관 첨부도 볼트에는 파일이 있다)
+            b.bytes = a.bytes ?? a.original!;
+            b.hash = a.hash;
+          }
           set(a, null);
           moveList.push([from, to]);
           verbs.push(`이동: ${from} → ${to}`);
@@ -357,7 +401,7 @@ export class Vault {
         const s = await slot(rel);
         if (op.op === "put") {
           guard("create", rel);
-          if (s.content !== null || s.bytes) throw new ConflictError(s.hash, "이미 같은 이름의 파일이 있습니다", rel);
+          if (s.hash !== null) throw new ConflictError(s.hash, "이미 같은 이름의 파일이 있습니다", rel);
           s.bytes = op.data;
           s.hash = hashContent(Buffer.from(op.data));
           verbs.push(`첨부: ${rel}`);
@@ -377,7 +421,7 @@ export class Vault {
           verbs.push(`${s.content === null ? "생성" : "덧붙임"}: ${rel}`);
           set(s, s.content === null ? op.content : appendText(s.content, op.content));
         } else {
-          if (s.content === null) throw new NotFoundError(`문서가 없습니다: ${rel}`);
+          if (s.hash === null) throw new NotFoundError(`${isMarkdown(rel) ? "문서" : "파일"}가 없습니다: ${rel}`);
           guard("delete", rel);
           if (s.hash !== op.baseHash) throw new ConflictError(s.hash, undefined, rel);
           verbs.push(`삭제: ${rel}`);
@@ -394,10 +438,10 @@ export class Vault {
         const before = (await this.allFiles()).filter(canSee);
         const after = new Set(before);
         for (const [rel, s] of slots) {
-          if (s.content === null && !s.bytes) after.delete(rel);
+          if (s.hash === null) after.delete(rel);
           else if (canSee(rel)) after.add(rel);
         }
-        const ctx = { moves, before, after: [...after], fullPaths: opts.links?.fullPaths };
+        const ctx = { moves, before, after: [...after], fullPaths: opts.links?.fullPaths, daily: this.daily() };
         const origin = new Map([...moves].map(([from, to]) => [to, from]));
         for (const rel of [...after].sort()) {
           if (!isMarkdown(rel) || this.readOnly(rel)) continue;
@@ -452,12 +496,12 @@ export class Vault {
           if (s.bytes) {
             await mkdir(path.dirname(s.abs), { recursive: true });
             await writeFile(s.abs, s.bytes);
-          } else if (s.content === null) {
+          } else if (s.hash === null) {
             await rm(s.abs, { force: true });
             await this.pruneEmptyDirs(path.dirname(s.abs));
           } else {
             await mkdir(path.dirname(s.abs), { recursive: true });
-            await writeFile(s.abs, s.content, "utf8");
+            await writeFile(s.abs, s.content ?? "", "utf8");
           }
         }
         // 제목은 연산만으로 정한다(이동 하나면 "이동: a → b" — ScopedVault.history가 이 모양을 본다). 링크 갱신은 본문에.

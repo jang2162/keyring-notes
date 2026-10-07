@@ -1,4 +1,5 @@
 import { parseFrontmatter, resolveLink } from "./markdown.js";
+import { parseDailyPath, type DailyConfig } from "./daily.js";
 
 /**
  * 이름 바꾸기·이동 때 다른 문서의 링크를 고친다(서버 Vault.batch와 앱 LocalVault가 같이 쓴다).
@@ -21,6 +22,8 @@ export interface LinkRewriteContext {
   after: string[];
   /** 늘 전체 경로로 쓴다(에이전트: 짧은 이름이 되는지로 숨김 문서가 드러나지 않게) */
   fullPaths?: boolean;
+  /** 데일리 노트 설정(`[[2026-10-07]]` → 그날 노트 해석을 같이 쓴다) */
+  daily?: DailyConfig | null;
 }
 
 export interface LinkRewriteResult {
@@ -74,11 +77,12 @@ class Rewriter {
   wikiTarget(target: string): string | null {
     const t = target.trim();
     if (!t) return null;
-    const r0 = resolveLink(t, this.ctx.before);
+    const o = { daily: this.ctx.daily };
+    const r0 = resolveLink(t, this.ctx.before, o);
     if (!r0) return null;
     const expected = this.ctx.moves.get(r0) ?? r0;
     if (!this.afterSet.has(expected)) return null;
-    if (resolveLink(t, this.ctx.after) === expected) return null;
+    if (resolveLink(t, this.ctx.after, o) === expected) return null;
     return this.format(expected, t);
   }
 
@@ -90,7 +94,7 @@ class Rewriter {
     const segs = expected.split("/");
     for (let k = 1; k <= segs.length; k++) {
       const cand = strip(segs.slice(segs.length - k).join("/"));
-      if (resolveLink(cand, this.ctx.after) === expected) return cand;
+      if (resolveLink(cand, this.ctx.after, { daily: this.ctx.daily }) === expected) return cand;
     }
     return strip(expected);
   }
@@ -175,6 +179,9 @@ export function rewriteLinks(content: string, oldPath: string, newPath: string, 
         names.add(enc);
         names.add(enc.replace(/\(/g, "%28").replace(/\)/g, "%29"));
         names.add(stem.replace(/ /g, "%20").replace(/\(/g, "%28").replace(/\)/g, "%29"));
+        // [[2026-10-07]]처럼 날짜만으로 데일리 노트를 가리키는 링크
+        const daily = parseDailyPath(p, ctx.daily);
+        if (daily) names.add(daily.datePart.toLowerCase());
       }
     }
     if (![...names].some((n) => n && lower.includes(n))) return null;

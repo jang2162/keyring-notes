@@ -21,6 +21,8 @@ export interface RemoteVault {
   remove(path: string, baseHash: string): Promise<void>;
   /** 새 첨부 올리기(이미 있으면 ConflictError). 없으면 기기에서 만든 첨부는 올리지 않는다 */
   putRaw?(path: string, data: Uint8Array): Promise<{ hash: string }>;
+  /** 첨부 지우기(baseHash가 맞을 때만). 없으면 기기에서 지운 첨부는 서버에 남는다 */
+  removeRaw?(path: string, baseHash: string): Promise<void>;
 }
 
 export interface SyncReport {
@@ -72,8 +74,9 @@ function isNetworkFailure(e: unknown): boolean {
  *                       같은 곳을 다르게 고쳤으면 원래 경로는 서버 버전, 이 기기 내용은 충돌 사본으로 새로 만들어 양쪽에 둔다.
  *                       한쪽이 지우고 다른 쪽이 고쳤으면 고친 쪽을 살린다.
  *
- * 마크다운은 양방향, 첨부는 서버 → 기기에 더해 기기에서 새로 만든 첨부(붙여넣은 이미지 등)만 올린다.
- * 이미 있는 첨부를 기기에서 바꾸거나 지운 것은 보내지 않는다. 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
+ * 마크다운은 양방향, 첨부는 서버 → 기기에 더해 기기에서 새로 만든 첨부(붙여넣은 이미지 등)는 올리고,
+ * 기기에서 지운 첨부(폴더 이동으로 옮긴 원래 자리 포함)는 서버가 기준점 그대로일 때만 서버에서도 지운다.
+ * 이미 있는 첨부를 기기에서 바꾼 것은 보내지 않는다. 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
  */
 export class SyncEngine {
   private running: Promise<SyncReport> | null = null;
@@ -188,6 +191,18 @@ export class SyncEngine {
               } catch (e) {
                 if (!(e instanceof ConflictError)) throw e;
                 report.skipped.push({ path, reason: "같은 이름의 첨부가 서버에 생겨 다음 동기화에서 다시 비교합니다" });
+              }
+              continue;
+            }
+            // 이 기기에서 지운 첨부: 서버가 기준점 그대로면 서버에서도 지운다(옮긴 첨부의 원래 자리가 되살아나지 않게)
+            if (L === null && S !== null && S === B && this.remote.removeRaw) {
+              try {
+                await this.remote.removeRaw(path, S);
+                delete base[path];
+                report.deletedRemote.push(path);
+              } catch (e) {
+                if (!(e instanceof ConflictError)) throw e;
+                report.skipped.push({ path, reason: "지우는 사이 서버에서 바뀌어 다음 동기화에서 다시 비교합니다" });
               }
               continue;
             }
@@ -331,6 +346,10 @@ export class HttpRemote implements RemoteVault {
   }
 
   async remove(path: string, baseHash: string): Promise<void> {
+    await this.req("DELETE", "/api/file", { path, baseHash });
+  }
+
+  async removeRaw(path: string, baseHash: string): Promise<void> {
     await this.req("DELETE", "/api/file", { path, baseHash });
   }
 
