@@ -487,7 +487,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.put("/file", async (c) => {
     const body = await c.req.json();
     if (typeof body.content !== "string") throw new PathError("content가 필요합니다");
-    return c.json(await c.var.scoped.write(requirePath(body.path), body.content, optionalHash(body.baseHash)));
+    return c.json(await c.var.scoped.write(requirePath(body.path), body.content, optionalHash(body.baseHash), { coalesce: optionalBool(body.coalesce) }));
   });
 
   api.post("/append", async (c) => {

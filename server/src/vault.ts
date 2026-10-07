@@ -102,6 +102,9 @@ interface Slot {
   bytes?: Uint8Array;
 }
 
+/** 자동 저장을 한 커밋으로 묶는 최대 시간(묶음의 첫 저장부터) */
+export const COALESCE_WINDOW_MS = 10 * 60 * 1000;
+
 function appendText(current: string, addition: string): string {
   if (current.length === 0 || current.endsWith("\n")) return current + addition;
   return `${current}\n${addition}`;
@@ -122,7 +125,15 @@ export class Vault {
    */
   beforeCommit: ((paths: string[] | undefined) => Promise<string[] | undefined>) | null = null;
 
+  /**
+   * 자동 저장 묶기: 같은 작성자가 같은 문서 하나만 고친 직전 커밋. 이 커밋이 HEAD이고 묶음을 시작한 지
+   * COALESCE_WINDOW_MS 안이면 다음 자동 저장을 이 커밋에 합친다. 다른 커밋·백업·서버 밖 변경 흡수가
+   * 끼면 지운다(이미 백업·동기화로 나간 커밋은 고쳐 쓰지 않는다).
+   */
+  private amendable: { rev: string; path: string; email: string; since: number } | null = null;
+
   private async commitChanges(message: string, author: Author, paths?: string[]): Promise<string | null> {
+    this.amendable = null;
     const finalPaths = this.beforeCommit ? await this.beforeCommit(paths) : paths;
     // 경로를 지정했는데 넣을 것이 하나도 없으면(모두 S3로 간 첨부) 스테이징된 것만 커밋한다
     if (paths && finalPaths && finalPaths.length === 0) return this.git.commitStaged(message, author);
@@ -151,6 +162,8 @@ export class Vault {
 
   /** 서버 밖(다른 에디터 등)에서 생긴 변경을 커밋한다. 백업 직전에 부른다. */
   absorbOutsideChanges(): Promise<string | null> {
+    // 백업 직전에도 부른다: 백업에 들어간 커밋은 이후 자동 저장이 고쳐 쓰지 않게 묶음을 끊는다
+    this.amendable = null;
     return this.exclusive(() => this.commitChanges("서버 밖에서 생긴 변경 반영", SYSTEM_AUTHOR));
   }
 
@@ -268,7 +281,7 @@ export class Vault {
    * 여러 연산을 하나의 커밋으로 적용한다. 하나라도 실패하면(충돌, 권한, 파일 오류, 커밋 오류)
    * 아무것도 바뀌지 않는다. 연산은 앞 연산의 결과 위에서 차례로 검사된다.
    */
-  async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard; dryRun?: boolean; links?: LinkUpdateOptions } = {}): Promise<BatchResult> {
+  async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard; dryRun?: boolean; links?: LinkUpdateOptions; coalesce?: boolean } = {}): Promise<BatchResult> {
     if (ops.length === 0) throw new PathError("연산이 비어 있습니다");
     if (ops.length > 500) throw new PathError("한 번에 500개까지 처리할 수 있습니다");
     const guard = opts.guard ?? (() => undefined);
@@ -451,7 +464,7 @@ export class Vault {
         const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0] : `일괄 변경 ${verbs.length}건`);
         const lines = [...(verbs.length > 1 || opts.message ? verbs : []), ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => `링크 갱신: ${p}`)];
         const body = lines.length > 0 ? `${message}\n\n${lines.join("\n")}` : message;
-        const rev = await this.commitChanges(body, author, changed.map(([rel]) => rel));
+        const rev = await this.commitOrAmend(body, author, changed, verbs, opts.coalesce === true && !opts.message);
         for (const fn of this.listeners) {
           try {
             await fn(changed.map(([rel]) => rel));
@@ -476,6 +489,26 @@ export class Vault {
         throw e;
       }
     });
+  }
+
+  /**
+   * 커밋한다. coalesce(자동 저장)이고 문서 하나만 쓰기·만들기였으면, 직전 묶음 커밋에 합치거나 새 묶음을 시작한다.
+   */
+  private async commitOrAmend(body: string, author: Author, changed: [string, Slot][], verbs: string[], coalesce: boolean): Promise<string | null> {
+    const paths = changed.map(([rel]) => rel);
+    const single = coalesce && changed.length === 1 && verbs.length === 1 && /^(수정|생성): /.test(verbs[0]) && changed[0][1].bytes === undefined && changed[0][1].content !== null;
+    if (!single) return this.commitChanges(body, author, paths);
+    const rel = paths[0];
+    const a = this.amendable;
+    if (a && a.path === rel && a.email === author.email && Date.now() - a.since < COALESCE_WINDOW_MS && (await this.git.head()) === a.rev) {
+      const finalPaths = this.beforeCommit ? await this.beforeCommit(paths) : paths;
+      const rev = finalPaths && finalPaths.length === 0 ? null : await this.git.amend(author, finalPaths ?? paths);
+      this.amendable = rev ? { ...a, rev } : a;
+      return rev ?? a.rev;
+    }
+    const rev = await this.commitChanges(body, author, paths);
+    if (rev) this.amendable = { rev, path: rel, email: author.email, since: Date.now() };
+    return rev;
   }
 
   /** 삭제로 비게 된 상위 폴더를 볼트 루트 직전까지 정리한다. */

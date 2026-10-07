@@ -140,6 +140,22 @@ export class GitHistory {
     return head.stdout.trim();
   }
 
+  /**
+   * 주어진 경로의 변경을 직전 커밋(HEAD)에 합친다(자동 저장 묶기). 메시지·작성 시각은 그대로 둔다.
+   * 합친 결과가 HEAD의 부모와 같아지면(되돌려 쓴 경우) 빈 커밋으로 남는다. 변경이 없으면 null.
+   */
+  async amend(author: Author, paths: string[]): Promise<string | null> {
+    await this.run(["add", "--all", "--", ...paths]);
+    const diff = await this.run(["diff", "--cached", "--quiet"], { allowFail: true });
+    if (diff.code === 0) return null;
+    const env = {
+      GIT_COMMITTER_NAME: author.name,
+      GIT_COMMITTER_EMAIL: author.email,
+    };
+    await this.run(["commit", "--quiet", "--no-verify", "--amend", "--no-edit", "--allow-empty"], { env });
+    return (await this.run(["rev-parse", "HEAD"])).stdout.trim();
+  }
+
   /** 이미 스테이징된 변경만 커밋한다(없으면 null). */
   async commitStaged(message: string, author: Author): Promise<string | null> {
     const diff = await this.run(["diff", "--cached", "--quiet"], { allowFail: true });
