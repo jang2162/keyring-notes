@@ -2,8 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
 import { formatCombo } from "./shortcuts";
+import { tipProps } from "./Tooltip";
 
-/** 아이콘 버튼. 툴팁에 단축키를 붙인다 */
+/**
+ * 아이콘 버튼. 이름·단축키·못 쓰는 이유는 앱 공통 툴팁(Tooltip.tsx)으로 보인다(접근성 이름은 aria-label).
+ * 비활성이어도 툴팁이 뜨도록 disabled 대신 aria-disabled를 쓰고 누름을 막는다. why: 못 쓰는 이유(툴팁에 덧붙인다)
+ */
 export function IconButton({
   icon: Icon,
   label,
@@ -11,9 +15,12 @@ export function IconButton({
   onClick,
   active,
   disabled,
+  why,
   badge,
   className,
   size = 18,
+  side,
+  showLabel,
 }: {
   icon: LucideIcon;
   label: string;
@@ -21,22 +28,33 @@ export function IconButton({
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   active?: boolean;
   disabled?: boolean;
+  why?: string;
   badge?: number | string;
   className?: string;
   size?: number;
+  /** 툴팁을 띄울 쪽(레일은 오른쪽) */
+  side?: "right" | "bottom" | "top" | "left";
+  /** 아이콘 옆에 이름도(레일 "아이콘 + 글자") */
+  showLabel?: boolean;
 }) {
-  const tip = keys ? `${label} (${formatCombo(keys)})` : label;
   return (
     <button
       type="button"
-      className={`icon-btn${active ? " active" : ""}${className ? ` ${className}` : ""}`}
-      title={tip}
+      className={`icon-btn${active ? " active" : ""}${showLabel ? " with-label" : ""}${className ? ` ${className}` : ""}`}
       aria-label={label}
       aria-pressed={active === undefined ? undefined : active}
-      disabled={disabled}
-      onClick={onClick}
+      aria-disabled={disabled || undefined}
+      {...tipProps({ label, keys, why: disabled ? why : undefined, side })}
+      onClick={(e) => {
+        if (disabled) {
+          e.preventDefault();
+          return;
+        }
+        onClick(e);
+      }}
     >
       <Icon size={size} strokeWidth={1.75} aria-hidden />
+      {showLabel && <span className="icon-btn-label">{label}</span>}
       {badge !== undefined && badge !== 0 && badge !== "" && <span className="icon-badge">{badge}</span>}
     </button>
   );
@@ -186,7 +204,7 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
   return (
     <div className="segmented" role="tablist" aria-label={label}>
       {options.map((o) => (
-        <button key={o.value} type="button" role="tab" aria-selected={value === o.value} title={o.title} className={value === o.value ? "on" : ""} onClick={() => onChange(o.value)}>
+        <button key={o.value} type="button" role="tab" aria-selected={value === o.value} {...(o.title ? tipProps({ label: o.title }) : {})} className={value === o.value ? "on" : ""} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}

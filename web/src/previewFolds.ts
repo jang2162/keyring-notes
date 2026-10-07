@@ -1,4 +1,5 @@
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, resolveFolds, setFolds } from "./folds";
+import { t } from "./i18n";
 
 /**
  * 미리보기 접기: 에디터와 같은 규칙(제목 아래 내용, 하위 목록, 콜아웃, 긴 코드 블록, 표)을 같은 기억(folds.ts)으로.
@@ -41,22 +42,22 @@ export function applyPreviewFolds(root: HTMLElement, path: string, content: stri
     delete el.dataset.foldBy;
   }
   const list = targets(root);
-  for (const t of list) {
-    let btn = t.el.querySelector<HTMLButtonElement>(":scope > .pv-fold");
+  for (const tg of list) {
+    let btn = tg.el.querySelector<HTMLButtonElement>(":scope > .pv-fold");
     if (!btn) {
       btn = document.createElement("button");
       btn.type = "button";
-      btn.className = `pv-fold pv-fold-${t.kind}`;
-      btn.dataset.foldLine = String(t.line);
-      t.el.classList.add("pv-foldable");
-      if (t.kind === "callout") t.el.querySelector(".callout-title")?.prepend(btn);
-      else t.el.prepend(btn);
+      btn.className = `pv-fold pv-fold-${tg.kind}`;
+      btn.dataset.foldLine = String(tg.line);
+      tg.el.classList.add("pv-foldable");
+      if (tg.kind === "callout") tg.el.querySelector(".callout-title")?.prepend(btn);
+      else tg.el.prepend(btn);
     }
-    const on = folded.has(t.line);
+    const on = folded.has(tg.line);
     btn.textContent = on ? "▸" : "▾";
-    btn.title = on ? "펴기" : "접기";
+    btn.title = on ? t("fold.unfold") : t("fold.fold");
     btn.setAttribute("aria-expanded", String(!on));
-    t.el.classList.toggle("pv-folded", on);
+    tg.el.classList.toggle("pv-folded", on);
   }
   // 접힌 제목: 다음 같은 수준 이상 제목 전까지 형제 블록을 숨긴다
   for (const t of list) {

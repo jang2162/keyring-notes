@@ -4,6 +4,7 @@ import { setLocalBackend } from "../api";
 import { IdbStore } from "./idbStore";
 import { createLocalApi } from "./localApi";
 import { defaultDeviceName, SyncController } from "./syncController";
+import { t } from "../i18n";
 
 export interface LocalContext {
   vault: LocalVault;
@@ -70,7 +71,7 @@ export async function startLocal(): Promise<LocalContext> {
     if (!isMobile()) {
       chooseFolder = async () => {
         const { open } = await import("@tauri-apps/plugin-dialog");
-        const dir = await open({ directory: true, title: "볼트 폴더 고르기(마크다운 파일이 있는 폴더)" });
+        const dir = await open({ directory: true, title: t("app.pickVault") });
         if (typeof dir === "string" && dir) {
           storage()?.setItem(DIR_KEY, dir);
           location.reload();

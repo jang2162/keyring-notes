@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Modal } from "./Modal";
+import { t } from "./i18n";
 
 /** 빠른 전환(문서)·명령 팔레트 공용 항목 */
 export interface PaletteItem {
@@ -107,7 +108,7 @@ export function Palette({ placeholder, items, onClose, hint }: { placeholder: st
               {it.detail && <span className="palette-detail">{it.detail}</span>}
             </li>
           ))}
-          {shown.length === 0 && <li className="meta">맞는 항목이 없습니다.</li>}
+          {shown.length === 0 && <li className="meta">{t("palette.none")}</li>}
         </ul>
         {hint && <p className="meta palette-hint">{hint}</p>}
     </Modal>

@@ -4,10 +4,19 @@ import { ClipPage } from "./Ingest";
 import { Login } from "./Login";
 import { authMemo, isNetworkError, offline } from "./offline";
 import { Workspace } from "./Workspace";
+import { useLang } from "./i18n";
+import { TooltipLayer } from "./Tooltip";
 
 export function App() {
+  // 화면 언어가 바뀌면 다시 그린다(편집 상태는 그대로)
+  useLang();
   // 데스크톱·모바일 앱(또는 브라우저 ?local): 기기 볼트라 로그인이 없다
-  return appMode.local ? <Workspace onLogout={() => undefined} /> : <ServerApp />;
+  return (
+    <>
+      {appMode.local ? <Workspace onLogout={() => undefined} /> : <ServerApp />}
+      <TooltipLayer />
+    </>
+  );
 }
 
 function ServerApp() {

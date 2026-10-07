@@ -48,15 +48,26 @@ export interface CommitInfo {
   message: string;
 }
 
+/**
+ * 서버 오류. code: 종류(not_found·forbidden·conflict·bad_request…), key·params: 화면이 번역할 메시지 키(error.<key>)와
+ * 끼워 넣을 값(오래된 서버는 없다 → message를 그대로 보인다)
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
     readonly currentHash?: string | null,
+    readonly key?: string,
+    readonly params?: Record<string, string | number>,
   ) {
     super(message);
   }
+}
+
+/** 응답 본문 → ApiError */
+export function apiErrorOf(status: number, data: { error?: string; message?: string; currentHash?: string | null; code?: string; params?: Record<string, string | number> }, fallback: string): ApiError {
+  return new ApiError(status, data.error ?? "error", data.message ?? fallback, data.currentHash, data.code, data.params);
 }
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -69,13 +80,17 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   if (res.status === 401 && !url.startsWith("/api/auth/")) {
     window.dispatchEvent(new Event("keyring:unauthorized"));
   }
-  if (!res.ok) {
-    throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText, data.currentHash);
-  }
+  if (!res.ok) throw apiErrorOf(res.status, data, res.statusText);
   return data as T;
 }
 
 const q = (path: string) => encodeURIComponent(path);
+
+function toBase64(data: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < data.length; i += 0x8000) s += String.fromCharCode(...data.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 
 export interface SearchHit {
   path: string;
@@ -271,7 +286,8 @@ export interface LintReport {
   checkedAt: string;
   folder: string | null;
   counts: Partial<Record<LintKind, number>>;
-  issues: { kind: LintKind; path: string; detail: string; target?: string }[];
+  /** 설명은 화면이 kind·params로 만든다(lint.<kind>) */
+  issues: { kind: LintKind; path: string; params?: Record<string, string | number>; target?: string }[];
 }
 
 export interface GraphData {
@@ -341,6 +357,9 @@ export const automation = {
 
 export const admin = {
   status: () => request<AdminStatus>("GET", "/api/admin/status"),
+  /** 서버·CLI 언어(null = LANG)와 에이전트 언어 */
+  language: () => request<{ language: string | null; agentLanguage: string }>("GET", "/api/admin/language"),
+  setLanguage: (patch: { language?: string | null; agentLanguage?: string }) => request<{ language: string | null; agentLanguage: string }>("PUT", "/api/admin/language", patch),
   update: (force = false) => request<UpdateInfo>("GET", `/api/admin/update${force ? "?force=1" : ""}`),
   agents: () => request<{ agents: AgentInfo[] }>("GET", "/api/admin/agents").then((r) => r.agents),
   createAgent: (name: string) => request<{ name: string; token: string }>("POST", "/api/admin/agents", { name }),
@@ -387,7 +406,7 @@ export const admin = {
       body: file,
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText);
+    if (!res.ok) throw apiErrorOf(res.status, data, res.statusText);
     return data as BackupInfo;
   },
 };
@@ -431,8 +450,21 @@ const remoteApi = {
   /** 이동·이름 바꾸기. 기본으로 이 문서를 가리키던 링크도 같이 고친다(linksUpdated: 고친 문서, linkCount: 고친 링크 수) */
   move: (from: string, to: string, baseHash: string, opts: { updateLinks?: boolean } = {}) =>
     request<Doc & { linksUpdated?: string[]; linkCount?: number }>("POST", "/api/move", { from, to, baseHash, updateLinks: opts.updateLinks }),
-  /** 폴더 옮기기·이름 바꾸기: 안의 문서·첨부를 한 커밋으로(링크도 같이 고친다) */
-  moveFolder: (from: string, to: string) => request<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }>("POST", "/api/move", { from, to, folder: true }),
+  /** 노드 옮기기·이름 바꾸기: 노드 노트(A.md)와 하위(A/ 아래 문서·첨부)를 한 커밋으로(링크도 같이 고친다) */
+  moveNode: (from: string, to: string) => request<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }>("POST", "/api/move", { from, to, node: true }),
+  /**
+   * 노드 삭제: 노드 노트와 하위 전체를 한 커밋으로. files(지우기 전에 읽은 경로와 해시)가 그 사이 바뀌었으면 409.
+   * 되살릴 수 있게 지운 내용을 돌려준다(부르는 쪽이 미리 읽어 넘긴다)
+   */
+  deleteNode: (path: string, files: { path: string; hash: string }[]) =>
+    request<{ deleted: string[] }>("POST", "/api/node/delete", { path, files: files.map((f) => ({ path: f.path, baseHash: f.hash })) }),
+  /** 지운 파일 되살리기(노드 삭제 되돌리기): 마크다운은 글, 첨부는 바이트. 한 커밋으로 */
+  async restoreFiles(files: { path: string; content?: string; data?: Uint8Array }[]): Promise<void> {
+    const operations = files.map((f) =>
+      f.content !== undefined ? { op: "write", path: f.path, content: f.content, baseHash: null } : { op: "put", path: f.path, data: toBase64(f.data ?? new Uint8Array()) },
+    );
+    await request("POST", "/api/batch", { operations });
+  },
   /** 여러 문서를 한 커밋으로 옮긴다(링크 자동 갱신). 데일리 노트 형식 옮기기 */
   async moveFiles(pairs: [string, string][], message: string): Promise<{ linksUpdated: string[]; linkCount: number }> {
     const operations = [];
@@ -444,10 +476,13 @@ const remoteApi = {
     request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),
   rollback: (path: string, rev: string, baseHash: string | null) =>
     request<Doc>("POST", "/api/rollback", { path, rev, baseHash }),
-  search: (q: string) => request<{ hits: SearchHit[] }>("GET", `/api/search?q=${encodeURIComponent(q)}&limit=50`).then((r) => r.hits),
+  /** 검색(folder: 워크스페이스 안만) */
+  search: (query: string, folder?: string) =>
+    request<{ hits: SearchHit[] }>("GET", `/api/search?q=${encodeURIComponent(query)}&limit=50${folder ? `&folder=${q(folder)}` : ""}`).then((r) => r.hits),
   backlinks: (path: string) =>
     request<{ backlinks: { path: string; title: string }[] }>("GET", `/api/backlinks?path=${q(path)}`).then((r) => r.backlinks),
-  tags: () => request<{ tags: { tag: string; count: number }[] }>("GET", "/api/tags").then((r) => r.tags),
+  /** 태그와 문서 수(folder: 워크스페이스·노드 안만) */
+  tags: (folder?: string) => request<{ tags: { tag: string; count: number }[] }>("GET", `/api/tags${folder ? `?folder=${q(folder)}` : ""}`).then((r) => r.tags),
   widget: (source: string) => request<WidgetResult>("POST", "/api/widget", { source }),
   setTask: (path: string, line: number, done: boolean, baseHash: string) =>
     request<Doc>("POST", "/api/task", { path, line, done, baseHash }),
@@ -463,7 +498,7 @@ const remoteApi = {
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
-    if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText, data.currentHash);
+    if (!res.ok) throw apiErrorOf(res.status, data, res.statusText);
     return data as { path: string; hash: string | null };
   },
   async uploadFile(topic: string, file: File): Promise<IngestResult> {
@@ -474,7 +509,7 @@ const remoteApi = {
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
-    if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText);
+    if (!res.ok) throw apiErrorOf(res.status, data, res.statusText);
     return data as IngestResult;
   },
   lint: (folder?: string) => request<LintReport>("GET", `/api/lint${folder ? `?folder=${q(folder)}` : ""}`),
@@ -483,14 +518,14 @@ const remoteApi = {
   mentions: (path: string) => request<MentionsInfo>("GET", `/api/mentions?path=${q(path)}`),
   graph: (folder?: string) => request<GraphData>("GET", `/api/graph${folder ? `?folder=${q(folder)}` : ""}`),
   semanticStatus: () => request<{ enabled: boolean; model?: string; pending?: number; chunks?: number; lastError?: string | null }>("GET", "/api/semantic/status"),
-  semantic: (query: string) =>
-    request<{ hits: { path: string; title: string; score: number; heading: string; snippet: string }[] }>("GET", `/api/semantic?q=${encodeURIComponent(query)}&limit=20`).then((r) => r.hits),
+  semantic: (query: string, folder?: string) =>
+    request<{ hits: { path: string; title: string; score: number; heading: string; snippet: string }[] }>("GET", `/api/semantic?q=${encodeURIComponent(query)}&limit=20${folder ? `&folder=${q(folder)}` : ""}`).then((r) => r.hits),
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
   /** 첨부 파일 내용(PDF 보기) */
   readBytes: async (path: string): Promise<Uint8Array> => {
     const res = await fetch(`/api/raw?path=${q(path)}`, { credentials: "same-origin" });
     if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
-    if (!res.ok) throw new ApiError(res.status, "error", res.status === 404 ? `파일이 없습니다: ${path}` : res.statusText);
+    if (!res.ok) throw new ApiError(res.status, res.status === 404 ? "not_found" : "error", res.statusText, undefined, res.status === 404 ? "fileNotFound" : undefined, { path });
     return new Uint8Array(await res.arrayBuffer());
   },
 };

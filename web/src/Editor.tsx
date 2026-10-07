@@ -28,6 +28,7 @@ import { useEffect, useRef, type MutableRefObject } from "react";
 import { codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
+import { t } from "./i18n";
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -222,7 +223,7 @@ const foldMarkers = foldGutter({
     const el = document.createElement("span");
     el.className = `cm-fold-marker ${open ? "open" : "closed"}`;
     el.textContent = open ? "▾" : "▸";
-    el.title = open ? "접기" : "펴기";
+    el.title = open ? t("fold.fold") : t("fold.unfold");
     return el;
   },
 });
@@ -289,7 +290,7 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
 
   /** 올리는 동안 자리 표시를 넣었다가 링크로 바꾼다(실패하면 지운다) */
   const insertFiles = async (view: EditorView, files: File[], from: number, to: number) => {
-    const placeholder = `<!-- 첨부 올리는 중… -->`;
+    const placeholder = `<!-- ${t("editor.uploading")} -->`;
     view.dispatch({ changes: { from, to, insert: placeholder } });
     let text = "";
     try {

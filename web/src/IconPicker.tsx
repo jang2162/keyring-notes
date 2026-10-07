@@ -1,5 +1,7 @@
 import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { t } from "./i18n";
+import { tipProps } from "./Tooltip";
 
 /**
  * 이모지 고르기 창(문서·폴더·데일리 기본 아이콘). 검색(한글·영어 낱말), 최근 쓴 것(이 기기), 지우기.
@@ -66,11 +68,11 @@ function remember(icon: string) {
 
 /** 이모지처럼 보이는 글(글자·숫자만이 아닌 짧은 것) */
 const looksLikeEmoji = (s: string) => {
-  const t = s.trim();
-  return !!t && [...t].length <= 8 && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(t);
+  const v = s.trim();
+  return !!v && [...v].length <= 8 && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(v);
 };
 
-export function IconPicker({ at, value, onPick, onClose, title = "아이콘" }: { at: { x: number; y: number }; value?: string | null; onPick: (icon: string | null) => void; onClose: () => void; title?: string }) {
+export function IconPicker({ at, value, onPick, onClose, title }: { at: { x: number; y: number }; value?: string | null; onPick: (icon: string | null) => void; onClose: () => void; title?: string }) {
   const [q, setQ] = useState("");
   const [recent] = useState(loadRecent);
   const ref = useRef<HTMLDivElement>(null);
@@ -113,13 +115,13 @@ export function IconPicker({ at, value, onPick, onClose, title = "아이콘" }: 
   };
 
   return createPortal(
-    <div ref={ref} className="icon-picker menu" role="dialog" aria-label={`${title} 고르기`} style={{ left: pos.x, top: pos.y }}>
+    <div ref={ref} className="icon-picker menu" role="dialog" aria-label={t("icon.pickTitle", { title: title ?? t("icon.title") })} style={{ left: pos.x, top: pos.y }}>
       <div className="icon-picker-head">
         <input
           autoFocus
           type="text"
-          placeholder="검색(예: 책, 일기, star) 또는 이모지 붙여넣기"
-          aria-label="이모지 검색"
+          placeholder={t("icon.searchPlaceholder")}
+          aria-label={t("icon.searchLabel")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
@@ -129,13 +131,13 @@ export function IconPicker({ at, value, onPick, onClose, title = "아이콘" }: 
             else if (shown[0]) pick(shown[0]);
           }}
         />
-        <button type="button" onClick={() => pick(null)} disabled={!value} title="아이콘 지우기">
-          지우기
+        <button type="button" onClick={() => pick(null)} disabled={!value} {...tipProps({ label: t("icon.clearTip") })}>
+          {t("icon.clear")}
         </button>
       </div>
       {!q && recent.length > 0 && (
         <>
-          <div className="icon-picker-label">최근</div>
+          <div className="icon-picker-label">{t("icon.recent")}</div>
           <div className="icon-grid">
             {recent.map((e) => (
               <button key={e} type="button" className={e === value ? "on" : ""} onClick={() => pick(e)} aria-label={e}>
@@ -143,7 +145,7 @@ export function IconPicker({ at, value, onPick, onClose, title = "아이콘" }: 
               </button>
             ))}
           </div>
-          <div className="icon-picker-label">전체</div>
+          <div className="icon-picker-label">{t("icon.all")}</div>
         </>
       )}
       <div className="icon-grid">
@@ -152,7 +154,7 @@ export function IconPicker({ at, value, onPick, onClose, title = "아이콘" }: 
             {e}
           </button>
         ))}
-        {shown.length === 0 && <p className="meta">맞는 이모지가 없습니다. 이모지를 직접 붙여 넣고 Enter.</p>}
+        {shown.length === 0 && <p className="meta">{t("icon.noMatch")}</p>}
       </div>
     </div>,
     document.body,

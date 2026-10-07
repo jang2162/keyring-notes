@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { api, type MentionsInfo, type SourcesInfo } from "./api";
 import { LinkResolver } from "./markdown";
 import { blockText, linkMentions, pdfAnnotations, section, type Mention } from "@keyring-notes/core";
+import { t } from "./i18n";
+import { errorText } from "./toast";
 
 /** [[ ]] 안에 쓸 이름: 파일 이름만으로 이 문서를 가리키면 파일 이름, 아니면 확장자 뺀 경로 */
-export function mentionTarget(path: string, resolver: LinkResolver): string {
+/** 문서를 가리킬 링크 대상: 링크를 쓸 문서(from)에서 해석이 맞으면 짧은 이름, 아니면 전체 경로 */
+export function mentionTarget(path: string, resolver: LinkResolver, from?: string | null): string {
   const stem = path.split("/").pop()!.replace(/\.md$/i, "");
-  return resolver.resolve(stem) === path ? stem : path.replace(/\.md$/i, "");
+  return resolver.resolve(stem, from) === path ? stem : path.replace(/\.md$/i, "");
 }
 
 /** 문단·제목을 가리키는 출처: 그 부분의 원문을 짧게 인용해 보인다(없으면 점검 대상) */
@@ -20,7 +23,7 @@ function SourceQuote({ path, anchor }: { path: string; anchor: string }) {
         if (!alive) return;
         // PDF 주석 줄은 "3쪽 “인용” — 메모"로 보인다(링크 문법 없이)
         const pdfNote = anchor.startsWith("^pdf-") ? pdfAnnotations(d.content).find((a) => a.id === anchor.slice(1)) : undefined;
-        if (pdfNote) setText(`${pdfNote.page}쪽 “${pdfNote.quote}”${pdfNote.note ? ` — ${pdfNote.note}` : ""}`);
+        if (pdfNote) setText(`${t("pdf.pageShort", { page: pdfNote.page })} “${pdfNote.quote}”${pdfNote.note ? ` — ${pdfNote.note}` : ""}`);
         else if (anchor.startsWith("^")) setText(blockText(d.content, anchor.slice(1)));
         else {
           try {
@@ -36,7 +39,7 @@ function SourceQuote({ path, anchor }: { path: string; anchor: string }) {
     };
   }, [path, anchor]);
   if (text === undefined) return null;
-  if (text === null) return <div className="source-quote broken">가리키는 {anchor.startsWith("^") ? "블록" : "제목"}이 원본에 없습니다</div>;
+  if (text === null) return <div className="source-quote broken">{anchor.startsWith("^") ? t("links.noBlock") : t("links.noHeading")}</div>;
   const short = text.length > 280 ? `${text.slice(0, 280)}…` : text;
   return <blockquote className="source-quote">{short}</blockquote>;
 }
@@ -59,7 +62,7 @@ export function UnlinkedMentions({ path, target, version, onOpen, onChanged }: {
     api
       .mentions(path)
       .then((r) => alive && setInfo(r))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => alive && setError(errorText(e)));
     return () => {
       alive = false;
     };
@@ -70,11 +73,11 @@ export function UnlinkedMentions({ path, target, version, onOpen, onChanged }: {
     setError(null);
     try {
       const cur = await api.read(doc.path);
-      if (cur.hash !== doc.hash) throw new Error(`${doc.path}이(가) 그 사이 바뀌었습니다. 다시 찾은 뒤 바꾸세요.`);
+      if (cur.hash !== doc.hash) throw new Error(t("links.changedRetry", { path: doc.path }));
       await api.write(doc.path, linkMentions(cur.content, ms, target), doc.hash);
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
       setInfo(null);
       api.mentions(path).then(setInfo).catch(() => undefined);
     } finally {
@@ -86,11 +89,11 @@ export function UnlinkedMentions({ path, target, version, onOpen, onChanged }: {
   return (
     <details className="mentions" open={shown} onToggle={(e) => setShown((e.currentTarget as HTMLDetailsElement).open)}>
       <summary>
-        <h4>연결되지 않은 언급{info ? ` ${total}` : ""}</h4>
+        <h4>{info ? t("links.mentionsCount", { count: total }) : t("links.mentions")}</h4>
       </summary>
       {error && <p className="mention-error">{error}</p>}
-      {!info && !error && <p className="meta">찾는 중…</p>}
-      {info && info.docs.length === 0 && <p className="meta">다른 문서에서 이 이름({info.names.join(", ")})을 링크 없이 쓴 곳이 없습니다.</p>}
+      {!info && !error && <p className="meta">{t("links.searching")}</p>}
+      {info && info.docs.length === 0 && <p className="meta">{t("links.noMentions", { names: info.names.join(", ") })}</p>}
       {info && info.docs.length > 0 && (
         <ul>
           {info.docs.map((d) => (
@@ -107,7 +110,7 @@ export function UnlinkedMentions({ path, target, version, onOpen, onChanged }: {
               <span className="meta">{d.path}</span>{" "}
               {d.mentions.length > 1 && (
                 <button className="link-btn" disabled={busy} onClick={() => void link(d, d.mentions)}>
-                  모두 링크로
+                  {t("links.linkAll")}
                 </button>
               )}
               <ul className="mention-list">
@@ -118,8 +121,8 @@ export function UnlinkedMentions({ path, target, version, onOpen, onChanged }: {
                       <mark>{m.context.slice(m.contextAt, m.contextAt + m.text.length)}</mark>
                       {m.context.slice(m.contextAt + m.text.length)}
                     </span>{" "}
-                    <button className="link-btn" disabled={busy} title={`${m.line}번째 줄의 "${m.text}"를 [[${target}]] 링크로`} onClick={() => void link(d, [m])}>
-                      링크로
+                    <button className="link-btn" disabled={busy} title={t("links.linkOneTip", { line: m.line, text: m.text, target })} onClick={() => void link(d, [m])}>
+                      {t("links.linkOne")}
                     </button>
                   </li>
                 ))}
@@ -150,12 +153,12 @@ export function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: st
     <section className="backlinks">
       {refs.sources.length > 0 && (
         <>
-          <h4>출처 {refs.sources.length}</h4>
+          <h4>{t("links.sources", { count: refs.sources.length })}</h4>
           <ul>
             {refs.sources.map((s) => (
               <li key={`${s.target}#${s.anchor ?? ""}`}>
                 {s.path ? link(s.path, s.path.split("/").pop()!.replace(/\.md$/i, "") + (s.anchor ? ` › ${s.anchor.replace(/^\^/, "¶ ")}` : ""), s.anchor) : <span className="broken">{s.target}</span>}{" "}
-                <span className="meta">{s.path ?? "없거나 볼 수 없는 출처"}</span>
+                <span className="meta">{s.path ?? t("links.sourceMissing")}</span>
                 {s.path && s.anchor && <SourceQuote path={s.path} anchor={s.anchor} />}
               </li>
             ))}
@@ -164,7 +167,7 @@ export function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: st
       )}
       {refs.citedBy.length > 0 && (
         <>
-          <h4>이 문서를 출처로 인용한 페이지 {refs.citedBy.length}</h4>
+          <h4>{t("links.citedBy", { count: refs.citedBy.length })}</h4>
           <ul>
             {refs.citedBy.map((b) => (
               <li key={b.path}>
@@ -174,9 +177,9 @@ export function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: st
           </ul>
         </>
       )}
-      <h4>백링크 {refs.linkedBy.length}</h4>
+      <h4>{t("links.backlinks", { count: refs.linkedBy.length })}</h4>
       {refs.linkedBy.length === 0 ? (
-        <p className="meta">이 문서를 본문에서 링크한 문서가 없습니다.</p>
+        <p className="meta">{t("links.noBacklinks")}</p>
       ) : (
         <ul>
           {refs.linkedBy.map((b) => (

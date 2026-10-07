@@ -2,6 +2,8 @@ import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent as Re
 import { DocIcon, IconLookup } from "./IconPicker";
 import { BUILTIN_FIELDS, parseFieldInput, setFrontmatterField } from "@keyring-notes/core";
 import { api, ApiError, appMode, type ListWidgetResult, type WidgetResult, type WidgetRow } from "./api";
+import { fmtNumber, t } from "./i18n";
+import { errorText } from "./toast";
 
 // 미리보기는 타이핑할 때마다 다시 그려지므로, 같은 위젯 원문의 결과를 저장 전까지 재사용한다.
 const cache = new Map<string, Promise<WidgetResult>>();
@@ -29,7 +31,7 @@ function formatValue(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (Array.isArray(v)) return v.map(formatValue).join(", ");
   if (typeof v === "object") return JSON.stringify(v);
-  if (typeof v === "number") return v.toLocaleString();
+  if (typeof v === "number") return fmtNumber(v);
   return String(v);
 }
 
@@ -39,14 +41,14 @@ function formatValue(v: unknown): string {
  */
 async function setField(row: WidgetRow, field: string, value: unknown): Promise<void> {
   const doc = await api.read(row.path, { fresh: true });
-  if (doc.hash !== row.hash) throw new ApiError(409, "conflict", "그 사이 문서가 바뀌었습니다. 다시 시도하세요.", doc.hash);
+  if (doc.hash !== row.hash) throw new ApiError(409, "conflict", t("widget.changedRetry"), doc.hash);
   await api.write(row.path, setFrontmatterField(doc.content, field, value), row.hash);
 }
 
 /** 내장 필드(title·path·tags 등)가 아니면 고칠 수 있다 */
 const editable = (field: string) => !BUILTIN_FIELDS.has(field);
 
-const groupKey = (v: unknown) => formatValue(v) || "(없음)";
+const groupKey = (v: unknown) => formatValue(v) || t("widget.noValue");
 
 interface Props {
   source: string;
@@ -61,7 +63,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
   const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fn = () => setTick((t) => t + 1);
+    const fn = () => setTick((n) => n + 1);
     subscribers.add(fn);
     return () => void subscribers.delete(fn);
   }, []);
@@ -71,7 +73,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
     let alive = true;
     load(source)
       .then((result) => alive && setState({ result }))
-      .catch((e) => alive && setState({ error: e instanceof Error ? e.message : String(e) }));
+      .catch((e) => alive && setState({ error: errorText(e) }));
     return () => {
       alive = false;
     };
@@ -92,9 +94,9 @@ export function Widget({ source, onOpen, onChanged }: Props) {
     </a>
   );
 
-  if (state.error) return <div className="widget widget-error">위젯 오류: {state.error}</div>;
+  if (state.error) return <div className="widget widget-error">{t("widget.error", { error: state.error })}</div>;
   const r = state.result;
-  if (!r) return <div className="widget widget-loading">불러오는 중…</div>;
+  if (!r) return <div className="widget widget-loading">{t("common.loading")}</div>;
 
   const edit = async (row: WidgetRow, field: string, value: unknown) => {
     try {
@@ -102,7 +104,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
       setEditError(null);
       onChanged(row.path);
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : String(e));
+      setEditError(errorText(e));
     } finally {
       invalidateWidgets();
     }
@@ -129,7 +131,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
       )}
       {r.type === "query" &&
         (r.rows.length === 0 ? (
-          <div className="widget-empty">조건에 맞는 문서가 없습니다.</div>
+          <div className="widget-empty">{t("widget.noMatch")}</div>
         ) : (
           grouped(r.rows, r.group).map(([key, rows]) => (
           <ul className="widget-list" key={key}>
@@ -191,7 +193,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
               {r.rows.length === 0 && (
                 <tr>
                   <td colSpan={r.columns.length} className="widget-empty">
-                    조건에 맞는 문서가 없습니다.
+                    {t("widget.noMatch")}
                   </td>
                 </tr>
               )}
@@ -201,7 +203,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
       )}
       {r.type === "cards" &&
         (r.rows.length === 0 ? (
-          <div className="widget-empty">조건에 맞는 문서가 없습니다.</div>
+          <div className="widget-empty">{t("widget.noMatch")}</div>
         ) : (
           grouped(r.rows, r.group).map(([key, rows]) => (
             <div key={key}>
@@ -220,7 +222,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
       {r.type === "plugin" && <PluginWidget result={r} onOpen={onOpen} />}
       {(r.type === "query" || r.type === "table" || r.type === "cards" || r.type === "kanban") && r.total > r.rows.length && (
         <div className="widget-more">
-          {r.total}개 중 {r.rows.length}개 표시
+          {t("widget.showing", { shown: fmtNumber(r.rows.length), total: fmtNumber(r.total) })}
         </div>
       )}
     </div>
@@ -261,7 +263,7 @@ function FieldCell({ value, label, onSave }: { value: unknown; label: string; on
     );
   }
   return (
-    <button className={`field-cell${busy ? " busy" : ""}`} title={`${label} — 눌러서 고치기`} onClick={start} disabled={busy}>
+    <button className={`field-cell${busy ? " busy" : ""}`} title={t("widget.clickToEdit", { label })} onClick={start} disabled={busy}>
       {formatValue(value) || <span className="field-empty">—</span>}
     </button>
   );
@@ -315,12 +317,13 @@ function Kanban({
 }) {
   const field = result.group ?? "status";
   const [over, setOver] = useState<string | null>(null);
+  const none = groupKey(null);
   const seen = result.rows.map((r) => groupKey(r.values[field]));
-  const lanes = [...new Set([...(result.lanes ?? []), ...seen.filter((k) => k !== "(없음)"), ...(seen.includes("(없음)") ? ["(없음)"] : [])])];
+  const lanes = [...new Set([...(result.lanes ?? []), ...seen.filter((k) => k !== none), ...(seen.includes(none) ? [none] : [])])];
   const move = (path: string, lane: string) => {
     const row = result.rows.find((r) => r.path === path);
     if (!row || groupKey(row.values[field]) === lane) return;
-    void edit(row, field, lane === "(없음)" ? null : lane);
+    void edit(row, field, lane === none ? null : lane);
   };
   return (
     <div className="widget-kanban">
@@ -355,7 +358,7 @@ function Kanban({
                 edit={edit}
                 draggable
                 extra={
-                  <select className="kanban-move" aria-label={`${row.title} 옮기기`} value={lane} onChange={(e) => move(row.path, e.target.value)}>
+                  <select className="kanban-move" aria-label={t("widget.moveCard", { title: row.title })} value={lane} onChange={(e) => move(row.path, e.target.value)}>
                     {lanes.map((l) => (
                       <option key={l} value={l}>
                         → {l}
@@ -383,7 +386,7 @@ function TaskList({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  if (result.groups.length === 0) return <div className="widget-empty">할 일이 없습니다.</div>;
+  if (result.groups.length === 0) return <div className="widget-empty">{t("widget.noTasks")}</div>;
   const toggle = async (path: string, hash: string, line: number, done: boolean) => {
     setBusy(`${path}:${line}`);
     setError(null);
@@ -392,7 +395,7 @@ function TaskList({
       onChanged(path);
       invalidateWidgets();
     } catch (e) {
-      setError(e instanceof ApiError && e.status === 409 ? "그 사이 문서가 바뀌었습니다. 다시 시도하세요." : String((e as Error).message));
+      setError(e instanceof ApiError && e.status === 409 ? t("widget.changedRetry") : errorText(e));
       invalidateWidgets();
     } finally {
       setBusy(null);
@@ -405,16 +408,16 @@ function TaskList({
         <div key={g.path}>
           <div className="widget-task-doc">{link(g.path, g.title)}</div>
           <ul>
-            {g.tasks.map((t) => (
-              <li key={t.line} className={t.done ? "done" : undefined}>
+            {g.tasks.map((task) => (
+              <li key={task.line} className={task.done ? "done" : undefined}>
                 <label>
                   <input
                     type="checkbox"
-                    checked={t.done}
+                    checked={task.done}
                     disabled={busy !== null}
-                    onChange={(e) => toggle(g.path, g.hash, t.line, e.target.checked)}
+                    onChange={(e) => toggle(g.path, g.hash, task.line, e.target.checked)}
                   />{" "}
-                  {t.text}
+                  {task.text}
                 </label>
               </li>
             ))}
@@ -444,7 +447,7 @@ function Chart({ result }: { result: Extract<WidgetResult, { type: "chart" }> })
   const H = Math.round(Math.min(260, Math.max(180, W * 0.38)));
   const pad = { l: 44, r: 12, t: 12, b: 36 };
   const { max, ticks } = useMemo(() => niceTicks(Math.max(0, ...data.map((d) => d.value))), [data]);
-  if (data.length === 0) return <div className="widget-empty">표시할 데이터가 없습니다.</div>;
+  if (data.length === 0) return <div className="widget-empty">{t("widget.noData")}</div>;
 
   const iw = W - pad.l - pad.r;
   const ih = H - pad.t - pad.b;
@@ -482,7 +485,7 @@ function Chart({ result }: { result: Extract<WidgetResult, { type: "chart" }> })
         </table>
         <div className="widget-footer">
           <button className="widget-toggle" onClick={() => setAsTable(false)}>
-            차트로 보기
+            {t("widget.showChart")}
           </button>
         </div>
       </div>
@@ -494,15 +497,15 @@ function Chart({ result }: { result: Extract<WidgetResult, { type: "chart" }> })
       <svg
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label={`${result.title ?? result.y} 차트`}
+        aria-label={t("widget.chartLabel", { title: result.title ?? result.y })}
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
       >
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} className="chart-grid" />
-            <text x={pad.l - 6} y={y(t)} className="chart-axis" textAnchor="end" dominantBaseline="middle">
-              {formatValue(t)}
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(tick)} y2={y(tick)} className="chart-grid" />
+            <text x={pad.l - 6} y={y(tick)} className="chart-axis" textAnchor="end" dominantBaseline="middle">
+              {formatValue(tick)}
             </text>
           </g>
         ))}
@@ -538,7 +541,7 @@ function Chart({ result }: { result: Extract<WidgetResult, { type: "chart" }> })
       )}
       <div className="widget-footer">
         <button className="widget-toggle" onClick={() => setAsTable(true)}>
-          표로 보기
+          {t("widget.showTable")}
         </button>
       </div>
     </div>
@@ -559,7 +562,7 @@ function niceTicks(maxValue: number): { max: number; ticks: number[] } {
   const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= rough)!;
   const max = Math.ceil(maxValue / step) * step;
   const ticks: number[] = [];
-  for (let t = 0; t <= max + step / 2; t += step) ticks.push(Number(t.toPrecision(12)));
+  for (let v = 0; v <= max + step / 2; v += step) ticks.push(Number(v.toPrecision(12)));
   return { max, ticks };
 }
 
@@ -589,18 +592,18 @@ function PluginWidget({ result, onOpen }: { result: Extract<WidgetResult, { type
     setError(null);
     if (appMode.local) {
       // 플러그인 모듈은 서버의 plugins 폴더에 있다. 기기 볼트에서는 쿼리 결과만 표로 보여 준다.
-      setError(`플러그인 "${result.plugin}"은(는) 서버에 연결된 웹 화면에서 그립니다. 여기서는 결과 ${result.total}건만 표시합니다.`);
+      setError(t("widget.pluginLocal", { name: result.plugin, count: result.total }));
       return;
     }
     import(/* @vite-ignore */ `/plugins/${result.plugin}.js`)
       .then((mod: PluginModule) => {
         if (!alive || !host.current) return;
         const render = mod.default?.render;
-        if (typeof render !== "function") throw new Error("default export에 render(el, data, api)가 없습니다");
+        if (typeof render !== "function") throw new Error(t("widget.pluginNoRender"));
         host.current.replaceChildren();
         cleanup = render(host.current, { rows: result.rows, columns: result.columns, total: result.total, title: result.title, options: result.options }, { open: onOpen, h });
       })
-      .catch((e) => alive && setError(`플러그인 "${result.plugin}" 오류: ${e instanceof Error ? e.message : String(e)}`));
+      .catch((e) => alive && setError(t("widget.pluginError", { name: result.plugin, error: errorText(e) })));
     return () => {
       alive = false;
       try {

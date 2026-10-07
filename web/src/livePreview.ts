@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { liveBlocks, type LiveRenderContext } from "./liveBlocks";
+import { t } from "./i18n";
 
 /**
  * 편집 중 렌더링(Live Preview): 커서가 없는 줄에서는 마크업 기호를 숨기고 모양만 보인다.
@@ -229,10 +230,10 @@ class FrontmatterWidget extends WidgetType {
     el.className = "cm-fm-fold";
     const props = document.createElement("span");
     props.className = "cm-fm-props";
-    props.textContent = this.count ? `속성 ${this.count}개 — 오른쪽 패널에서 보기` : "속성 — 오른쪽 패널에서 보기";
+    props.textContent = this.count ? t("live.propsCount", { count: this.count }) : t("live.props");
     const raw = document.createElement("span");
     raw.className = "cm-fm-raw";
-    raw.textContent = "원문 보기";
+    raw.textContent = t("live.showRaw");
     el.append(props, " · ", raw);
     return el;
   }

@@ -9,6 +9,9 @@ import {
   type PropertyStat,
   type PropertyType,
 } from "@keyring-notes/core";
+import { fmtNumber, t } from "./i18n";
+import { errorText } from "./toast";
+import { tipProps } from "./Tooltip";
 
 /**
  * 속성(프런트매터) 입력 화면. 원문 YAML을 고치지 않고도 필드를 종류에 맞는 입력칸으로 고친다.
@@ -16,15 +19,7 @@ import {
  * YAML이 깨져 있으면 아무것도 고치지 않고 원문에서 고치라고 알린다.
  */
 
-const TYPE_LABEL: Record<PropertyType, string> = {
-  text: "글",
-  number: "숫자",
-  checkbox: "체크",
-  date: "날짜",
-  datetime: "날짜·시간",
-  list: "목록",
-  object: "객체",
-};
+const typeLabel = (type: PropertyType) => t(`props.type.${type}`);
 const EDITABLE_TYPES: PropertyType[] = ["text", "number", "checkbox", "date", "datetime", "list"];
 
 interface Props {
@@ -54,25 +49,25 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
       setError(null);
       if (next !== content) onChange(next);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
 
-  if (fm.error) return <div className="properties"><p className="prop-error">프런트매터 YAML 오류: {fm.error} — 원문에서 고치세요.</p></div>;
+  if (fm.error) return <div className="properties"><p className="prop-error">{t("props.yamlError", { error: fm.error })}</p></div>;
   const entries = Object.entries(fm.data ?? {});
   const typeOf = (key: string, value: unknown): PropertyType => propertyType(value) ?? chosen[key] ?? statOf.get(key)?.type ?? "text";
 
   const set = (key: string, value: unknown) => apply((c) => setFrontmatterField(c, key, value, { keepEmpty: true }));
   const remove = (key: string) => apply((c) => setFrontmatterField(c, key, null));
   const rename = (from: string, to: string) => {
-    const t = to.trim();
-    if (!t || t === from) return;
-    apply((c) => renameFrontmatterField(c, from, t));
+    const name = to.trim();
+    if (!name || name === from) return;
+    apply((c) => renameFrontmatterField(c, from, name));
   };
   const add = () => {
     const key = newKey.trim();
     if (!key) return;
-    if (fm.data && key in fm.data) return setError(`이미 있는 속성입니다: ${key}`);
+    if (fm.data && key in fm.data) return setError(t("props.exists", { key }));
     const type = statOf.get(key)?.type ?? "text";
     setChosen((c) => ({ ...c, [key]: type }));
     const empty = type === "checkbox" ? false : type === "list" ? [] : type === "date" || type === "datetime" ? convertProperty(null, type) : null;
@@ -85,7 +80,7 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
     return (
       <div className="properties properties-empty">
         <button className="prop-add-btn" onClick={() => setAdding(true)}>
-          ＋ 속성 더하기
+          ＋ {t("props.add")}
         </button>
       </div>
     );
@@ -101,36 +96,36 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
               const auto = autoKeys.includes(key);
               const readOnly = readOnlyAll || auto;
               return (
-                <tr key={key} className={auto ? "prop-auto" : undefined} title={auto ? "데일리 노트 자동 속성: 날짜를 바꾸려면 제목 칸의 날짜 부분이나 이동으로" : undefined}>
+                <tr key={key} className={auto ? "prop-auto" : undefined} title={auto ? t("props.autoTip") : undefined}>
                   <th>
                     <input
                       className="prop-key"
                       defaultValue={key}
                       key={key}
                       disabled={readOnly}
-                      aria-label={`속성 이름 ${key}`}
-                      title={BUILTIN_FIELDS.has(key) ? "위젯이 따로 계산하는 이름과 같습니다(위젯에서는 계산한 값이 보입니다)" : undefined}
+                      aria-label={t("props.nameLabel", { key })}
+                      title={BUILTIN_FIELDS.has(key) ? t("props.builtinTip") : undefined}
                       onBlur={(e) => rename(key, e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
                     />
                   </th>
                   <td className="prop-type">
                     {type === "object" ? (
-                      <span className="meta">{TYPE_LABEL.object}</span>
+                      <span className="meta">{typeLabel("object")}</span>
                     ) : (
                       <select
                         value={type}
                         disabled={readOnly}
-                        aria-label={`${key}의 종류`}
+                        aria-label={t("props.typeLabel", { key })}
                         onChange={(e) => {
                           const to = e.target.value as PropertyType;
                           setChosen((c) => ({ ...c, [key]: to }));
                           set(key, convertProperty(value, to));
                         }}
                       >
-                        {EDITABLE_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {TYPE_LABEL[t]}
+                        {EDITABLE_TYPES.map((ty) => (
+                          <option key={ty} value={ty}>
+                            {typeLabel(ty)}
                           </option>
                         ))}
                       </select>
@@ -140,9 +135,9 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
                     <ValueInput name={key} type={type} value={value} suggestions={statOf.get(key)?.values ?? []} readOnly={readOnly} onSet={(v) => set(key, v)} />
                   </td>
                   <td>
-                    {auto && <span className="prop-auto-badge">자동</span>}
+                    {auto && <span className="prop-auto-badge">{t("props.auto")}</span>}
                     {!readOnly && (
-                      <button className="link-btn" title={`${key} 지우기`} aria-label={`${key} 지우기`} onClick={() => remove(key)}>
+                      <button className="link-btn" {...tipProps({ label: t("props.removeTip", { key }) })} aria-label={t("props.removeTip", { key })} onClick={() => remove(key)}>
                         ×
                       </button>
                     )}
@@ -159,8 +154,8 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
             list="prop-keys"
             autoFocus={adding && entries.length === 0}
             onBlur={() => !newKey.trim() && setAdding(false)}
-            placeholder="속성 더하기"
-            aria-label="더할 속성 이름"
+            placeholder={t("props.add")}
+            aria-label={t("props.newNameLabel")}
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
             onKeyDown={(e) => {
@@ -171,7 +166,7 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
             }}
           />
           <button onClick={add} disabled={!newKey.trim()}>
-            더하기
+            {t("props.addButton")}
           </button>
           <datalist id="prop-keys">
             {stats
@@ -179,7 +174,7 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
               .slice(0, 100)
               .map((s) => (
                 <option key={s.key} value={s.key}>
-                  {`${TYPE_LABEL[s.type]} · ${s.count}`}
+                  {`${typeLabel(s.type)} · ${fmtNumber(s.count)}`}
                 </option>
               ))}
           </datalist>
@@ -271,7 +266,7 @@ function ListInput({ name, items, listId, options, readOnly, onSet }: { name: st
         <span key={`${i}:${it}`} className="prop-chip">
           {it}
           {!readOnly && (
-            <button aria-label={`${it} 빼기`} onClick={() => onSet(items.filter((_, j) => j !== i))}>
+            <button aria-label={t("props.removeItem", { item: it })} {...tipProps({ label: t("props.removeItem", { item: it }) })} onClick={() => onSet(items.filter((_, j) => j !== i))}>
               ×
             </button>
           )}
@@ -282,8 +277,8 @@ function ListInput({ name, items, listId, options, readOnly, onSet }: { name: st
           <input
             value={draft}
             list={options ? listId : undefined}
-            placeholder="더하기"
-            aria-label={`${name}에 더하기`}
+            placeholder={t("props.addButton")}
+            aria-label={t("props.addTo", { name })}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={push}
             onKeyDown={(e) => {

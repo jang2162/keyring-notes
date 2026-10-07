@@ -90,7 +90,7 @@ export function formatCombo(combo: string | undefined): string {
   if (!combo) return "";
   const parts = combo.split("+");
   const key = parts.pop()!;
-  const k = ARROWS[key] ?? (key === "Delete" ? (isMac ? "⌦" : "Del") : key);
+  const k = ARROWS[key] ?? (key === "Delete" ? (isMac ? "⌦" : "Del") : key === "Escape" ? "Esc" : key);
   if (isMac) return parts.map((p) => MAC_SYMBOL[p] ?? p).join("") + k;
   return [...parts.map((p) => (p === "Mod" ? "Ctrl" : p)), k].join("+");
 }

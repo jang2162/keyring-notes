@@ -5,6 +5,8 @@ import { enhance } from "./enhance";
 import { LinkResolver, renderMarkdown } from "./markdown";
 import { IconButton } from "./ui";
 import { stemOf } from "./Tree";
+import { t } from "./i18n";
+import { errorText } from "./toast";
 
 /**
  * 옆 칸 미리보기: 다른 문서(또는 지금 문서)를 가운데 오른쪽에 읽기 전용으로 띄운다.
@@ -40,7 +42,7 @@ export function AsidePreview({
     api
       .read(path)
       .then((d) => alive && setContent(d.content))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => alive && setError(errorText(e)));
     return () => {
       alive = false;
     };
@@ -70,14 +72,14 @@ export function AsidePreview({
   };
 
   return (
-    <section className="aside-pane" aria-label={`옆 칸: ${stemOf(path)}`}>
+    <section className="aside-pane" aria-label={t("aside.label", { name: stemOf(path) })}>
       <header className="aside-head">
         <span className="aside-title" title={path}>
           {stemOf(path)}
-          <span className="meta"> · 읽기 전용</span>
+          <span className="meta"> · {t("aside.readOnly")}</span>
         </span>
-        <IconButton icon={SquarePen} label="가운데에서 편집" onClick={() => onEdit(path)} size={16} />
-        <IconButton icon={PanelRightClose} label="옆 칸 닫기" keys="Mod+\" onClick={onClose} size={16} />
+        <IconButton icon={SquarePen} label={t("aside.edit")} onClick={() => onEdit(path)} size={16} />
+        <IconButton icon={PanelRightClose} label={t("cmd.asideClose")} keys="Mod+\" onClick={onClose} size={16} />
       </header>
       <div className="aside-body" onClick={onClick}>
         {error ? (
@@ -85,7 +87,7 @@ export function AsidePreview({
             <X size={14} aria-hidden /> {error}
           </p>
         ) : text === null ? (
-          <p className="meta">불러오는 중…</p>
+          <p className="meta">{t("common.loading")}</p>
         ) : (
           <div className="markdown-body" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />
         )}
@@ -111,13 +113,13 @@ export function FileViewer({ path, onClose }: { path: string; onClose: () => voi
           </strong>
           <span>
             <a className="button-like" href={api.rawUrl(path)} target="_blank" rel="noreferrer">
-              <ExternalLink size={14} aria-hidden /> 원본 열기
+              <ExternalLink size={14} aria-hidden /> {t("file.openOriginal")}
             </a>{" "}
-            <IconButton icon={X} label="닫기" onClick={onClose} size={16} />
+            <IconButton icon={X} label={t("common.close")} onClick={onClose} size={16} />
           </span>
         </div>
         <p className="meta">{path}</p>
-        {image ? <img className="file-viewer-img" src={api.rawUrl(path)} alt={path.split("/").pop()} /> : <p>이 형식은 앱 안에서 미리 볼 수 없습니다. 원본을 열어 보세요.</p>}
+        {image ? <img className="file-viewer-img" src={api.rawUrl(path)} alt={path.split("/").pop()} /> : <p>{t("file.noPreview")}</p>}
       </div>
     </div>
   );

@@ -1,12 +1,14 @@
-import { ConflictError, ForbiddenError, NotFoundError, PathError, type LocalVault } from "@keyring-notes/core";
+import { ConflictError, ForbiddenError, KeyedError, NotFoundError, type LocalVault } from "@keyring-notes/core";
 import { ApiError, type VaultApi } from "../api";
+import { t } from "../i18n";
 
 /** 로컬 볼트 오류를 서버 응답과 같은 모양(ApiError)으로 바꿔 화면 코드가 그대로 처리하게 한다. */
 function toApiError(e: unknown): unknown {
-  if (e instanceof ConflictError) return new ApiError(409, "conflict", e.message, e.currentHash);
-  if (e instanceof NotFoundError) return new ApiError(404, "not_found", e.message);
-  if (e instanceof ForbiddenError) return new ApiError(403, "forbidden", e.message);
-  if (e instanceof PathError) return new ApiError(400, "bad_request", e.message);
+  const k = e instanceof KeyedError ? ([e.code, e.params as Record<string, string | number>] as const) : null;
+  if (e instanceof ConflictError) return new ApiError(409, "conflict", e.message, e.currentHash, k?.[0], k?.[1]);
+  if (e instanceof NotFoundError) return new ApiError(404, "not_found", e.message, undefined, k?.[0], k?.[1]);
+  if (e instanceof ForbiddenError) return new ApiError(403, "forbidden", e.message, undefined, k?.[0], k?.[1]);
+  if (e instanceof KeyedError) return new ApiError(400, "bad_request", e.message, undefined, k?.[0], k?.[1]);
   return e;
 }
 
@@ -18,8 +20,9 @@ async function wrap<T>(fn: () => T | Promise<T>): Promise<T> {
   }
 }
 
+/** 서버에서만 되는 기능(what은 메시지 키) */
 const serverOnly = (what: string) => async (): Promise<never> => {
-  throw new ApiError(501, "server_only", `${what}은(는) 서버에 연결된 웹 화면에서 쓸 수 있습니다.`);
+  throw new ApiError(501, "server_only", t("error.server_only", { what: t(what) }), undefined, "server_only", { what: t(what) });
 };
 
 /**
@@ -59,7 +62,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
   };
 
   const local: VaultApi = {
-    setup: serverOnly("처음 설정"),
+    setup: serverOnly("feature.setup"),
     status: async () => ({ authenticated: true, principal: { name: vault.author, kind: "owner" as const }, passwordSet: true }),
     login: async () => ({ ok: true as const }),
     logout: async () => ({ ok: true as const }),
@@ -68,20 +71,23 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     write: (path, content, baseHash) => wrap(() => vault.write(path, content, baseHash)),
     remove: (path, baseHash) => wrap(() => vault.remove(path, baseHash)),
     move: (from, to, baseHash, opts) => wrap(() => vault.move(from, to, baseHash, opts)),
-    moveFolder: (from, to) => wrap(() => vault.moveFolder(from, to)),
+    moveNode: (from, to) => wrap(() => vault.moveNode(from, to)),
+    // 앱은 지울 때 내용을 직접 돌려준다(되살리기용). files(미리 읽은 해시)는 같은 기기라 다시 확인하지 않는다
+    deleteNode: (path) => wrap(async () => ({ deleted: (await vault.deleteNode(path)).deleted.map((d) => d.path) })),
+    restoreFiles: (files) => wrap(() => vault.restoreFiles(files)),
     moveFiles: (pairs, message) => wrap(() => vault.moveFiles(pairs, message)),
     history: (path) => wrap(() => vault.history(path)),
     revision: (path, rev) => wrap(() => vault.revision(path, rev)),
     rollback: (path, rev, baseHash) => wrap(() => vault.rollback(path, rev, baseHash)),
-    search: (q) => wrap(() => vault.search(q, { limit: 50 })),
+    search: (q, folder) => wrap(() => vault.search(q, { limit: 50, folder })),
     backlinks: (path) => wrap(() => vault.backlinks(path)),
-    tags: () => wrap(() => vault.tags()),
+    tags: (folder) => wrap(() => vault.tags(folder)),
     widget: (source) => wrap(() => vault.widget(source)),
     setTask: (path, line, done, baseHash) => wrap(() => vault.setTask(path, line, done, baseHash)),
     topics: () => wrap(() => vault.topics()),
     createTopic: (name) => wrap(() => vault.createTopic(name)),
-    ingest: serverOnly("원본 수집"),
-    uploadFile: serverOnly("파일 업로드"),
+    ingest: serverOnly("tool.ingest"),
+    uploadFile: serverOnly("feature.upload"),
     uploadAttachment: async (path, file) => wrap(async () => vault.putFile(path, new Uint8Array(await file.arrayBuffer()))),
     lint: (folder) => wrap(() => vault.lint({ folder })),
     sources: (path) => wrap(() => vault.sources(path)),
@@ -89,7 +95,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     mentions: (path) => wrap(() => vault.mentions(path)),
     graph: (folder) => wrap(() => vault.graph(folder)),
     semanticStatus: async () => ({ enabled: false }),
-    semantic: serverOnly("의미 검색"),
+    semantic: serverOnly("feature.semantic"),
     rawUrl,
     readBytes: (path) => wrap(() => vault.readBytes(path)),
   };

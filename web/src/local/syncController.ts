@@ -1,4 +1,6 @@
 import { HttpRemote, pairDevice, SyncEngine, UnauthorizedError, type LocalVault, type SyncReport } from "@keyring-notes/core";
+import { t } from "../i18n";
+import { errorText } from "../toast";
 
 /** 이 기기의 서버 연결 정보. 볼트 폴더가 아니라 앱 설정(localStorage)에 둔다. */
 export interface SyncSettings {
@@ -47,7 +49,7 @@ export function defaultDeviceName(): string {
   if (/Mac/.test(ua)) return "Mac";
   if (/Windows/.test(ua)) return "Windows PC";
   if (/Linux/.test(ua)) return "Linux PC";
-  return "내 기기";
+  return t("device.mine");
 }
 
 /**
@@ -131,11 +133,11 @@ export class SyncController {
       const offline = e instanceof TypeError;
       const message =
         e instanceof UnauthorizedError
-          ? "서버가 이 기기 연결을 받지 않습니다(관리 콘솔에서 끊었거나 서버가 바뀜). 다시 연결하세요."
+          ? t("sync.unauthorized")
           : offline
-            ? "서버에 연결할 수 없습니다. 기기에 저장한 내용은 그대로이며, 연결되면 다시 동기화합니다."
+            ? t("sync.offline")
             : e instanceof Error
-              ? e.message
+              ? errorText(e)
               : String(e);
       this.set({ running: false, lastError: message });
       return null;

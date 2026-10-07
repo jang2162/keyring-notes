@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, passkeyLogin, passkeySupported } from "./api";
+import { t } from "./i18n";
+import { errorText } from "./toast";
 
 export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; passkey?: boolean; onDone: () => void }) {
   const [password, setPassword] = useState("");
@@ -10,7 +12,7 @@ export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; 
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!passwordSet && password !== again) return setError("비밀번호가 서로 다릅니다");
+    if (!passwordSet && password !== again) return setError(t("login.mismatch"));
     setBusy(true);
     setError(null);
     try {
@@ -18,7 +20,7 @@ export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; 
       else await api.setup(code, password);
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -32,7 +34,7 @@ export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; 
       onDone();
     } catch (err) {
       // 사람이 창을 닫은 것(NotAllowedError)은 조용히
-      if (!(err instanceof Error && err.name === "NotAllowedError")) setError(err instanceof Error ? err.message : String(err));
+      if (!(err instanceof Error && err.name === "NotAllowedError")) setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -47,28 +49,28 @@ export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; 
             type="password"
             autoFocus
             autoComplete="current-password"
-            placeholder="비밀번호"
+            placeholder={t("login.password")}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
         ) : (
           <>
             <p className="meta">
-              처음 설치입니다. 서버 로그에 나온 <strong>설정 코드</strong>를 넣고 비밀번호를 정하세요.
+              {t("login.firstRun")}
               <br />
-              (도커: <code>docker compose logs keyring</code>)
+              (Docker: <code>docker compose logs keyring</code>)
             </p>
-            <input autoFocus placeholder="설정 코드 (예: 1A2B-3C4D-5E6F)" value={code} onChange={(e) => setCode(e.target.value)} />
-            <input type="password" autoComplete="new-password" placeholder="새 비밀번호(8자 이상)" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
-            <input type="password" autoComplete="new-password" placeholder="비밀번호 확인" minLength={8} value={again} onChange={(e) => setAgain(e.target.value)} />
+            <input autoFocus placeholder={t("login.code")} value={code} onChange={(e) => setCode(e.target.value)} />
+            <input type="password" autoComplete="new-password" placeholder={t("login.newPassword")} minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
+            <input type="password" autoComplete="new-password" placeholder={t("login.again")} minLength={8} value={again} onChange={(e) => setAgain(e.target.value)} />
           </>
         )}
         <button type="submit" disabled={busy || !password || (!passwordSet && !code)}>
-          {busy ? "확인 중…" : passwordSet ? "로그인" : "비밀번호 정하고 시작"}
+          {busy ? t("login.checking") : passwordSet ? t("login.login") : t("login.setAndStart")}
         </button>
         {passwordSet && passkey && passkeySupported() && (
           <button type="button" className="passkey-login" disabled={busy} onClick={() => void withPasskey()}>
-            패스키로 로그인
+            {t("login.passkey")}
           </button>
         )}
         {error && <p className="login-error">{error}</p>}

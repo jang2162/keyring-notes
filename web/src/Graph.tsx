@@ -2,6 +2,8 @@ import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, f
 import { Modal } from "./Modal";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent } from "react";
 import { api, type GraphData } from "./api";
+import { t } from "./i18n";
+import { errorText } from "./toast";
 
 interface Node extends SimulationNodeDatum {
   id: string;
@@ -42,10 +44,11 @@ function neighborhood(data: GraphData, center: string, depth: number): Set<strin
   return seen;
 }
 
-export function GraphView({ current, folders, onClose, onOpen }: { current: string | null; folders: string[]; onClose: () => void; onOpen: (p: string) => void }) {
+/** initialFolder: 처음 볼 범위(지금 워크스페이스, ""면 볼트 전체) */
+export function GraphView({ current, folders, initialFolder = "", onClose, onOpen }: { current: string | null; folders: string[]; initialFolder?: string; onClose: () => void; onOpen: (p: string) => void }) {
   const [data, setData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [folder, setFolder] = useState("");
+  const [folder, setFolder] = useState(initialFolder);
   const [local, setLocal] = useState<0 | 1 | 2>(current ? 2 : 0);
   const [hover, setHover] = useState<{ node: Node; x: number; y: number } | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -60,7 +63,7 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
     api
       .graph(folder || undefined)
       .then(setData)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => setError(errorText(e)));
   }, [folder]);
 
   // 토픽별 색: 문서 수 상위 3개만 색, 나머지는 "기타"
@@ -71,7 +74,7 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
     const ranked = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"));
     const top = ranked.slice(0, 3).map(([topic, n], i) => ({ topic, n, slot: SLOT_VARS[i] }));
     const rest = ranked.slice(3).reduce((s, [, n]) => s + n, 0);
-    return rest ? [...top, { topic: `기타 ${ranked.length - 3}개 토픽`, n: rest, slot: "--cat-other" }] : top;
+    return rest ? [...top, { topic: t("graph.otherTopics", { count: ranked.length - 3 }), n: rest, slot: "--cat-other" }] : top;
   }, [data]);
 
   useEffect(() => {
@@ -226,14 +229,14 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
 
   return (
     <Modal
-      title="그래프"
+      title={t("tool.graph")}
       onClose={onClose}
       maximizable
       bodyClassName="flush"
       head={
         <>
-          <select value={folder} onChange={(e) => setFolder(e.target.value)} aria-label="폴더">
-            <option value="">볼트 전체</option>
+          <select value={folder} onChange={(e) => setFolder(e.target.value)} aria-label={t("graph.scope")}>
+            <option value="">{t("lint.wholeVault")}</option>
             {folders
               .filter((f) => !f.includes("/"))
               .map((f) => (
@@ -242,10 +245,10 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
                 </option>
               ))}
           </select>
-          <select value={local} onChange={(e) => setLocal(Number(e.target.value) as 0 | 1 | 2)} disabled={!current} aria-label="범위">
-            <option value={0}>모든 문서</option>
-            <option value={1}>현재 문서와 바로 이웃</option>
-            <option value={2}>현재 문서에서 두 단계</option>
+          <select value={local} onChange={(e) => setLocal(Number(e.target.value) as 0 | 1 | 2)} disabled={!current} aria-label={t("graph.depth")}>
+            <option value={0}>{t("graph.all")}</option>
+            <option value={1}>{t("graph.local1")}</option>
+            <option value={2}>{t("graph.local2")}</option>
           </select>
         </>
       }
@@ -256,7 +259,7 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
             <i style={{ background: `var(${l.slot})` }} /> {l.topic} <span className="meta">{l.n}</span>
           </span>
         ))}
-        <span className="meta">— 본문 링크 · ┄ 출처 · 크기 = 연결 수 · 휠로 확대, 끌어서 이동, 누르면 열기</span>
+        <span className="meta">{t("graph.legend")}</span>
       </div>
       {error && <p className="form-error">{error}</p>}
       <div className="graph-wrap" ref={wrap}>
@@ -278,17 +281,17 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
           }}
           onWheel={onWheel}
           role="img"
-          aria-label={`문서 ${data?.nodes.length ?? 0}개, 링크 ${data?.edges.length ?? 0}개의 그래프`}
+          aria-label={t("graph.label", { nodes: data?.nodes.length ?? 0, edges: data?.edges.length ?? 0 })}
         />
         {hover && (
           <div className="chart-tooltip graph-tooltip" style={{ left: hover.x, top: hover.y + 14 }}>
             <div>{hover.node.title}</div>
             <div className="chart-tooltip-label">
-              {hover.node.id} · 연결 {hover.node.degree}
+              {hover.node.id} · {t("graph.degree", { count: hover.node.degree })}
             </div>
           </div>
         )}
-        {data && data.nodes.length === 0 && <p className="graph-empty meta">보여 줄 문서가 없습니다.</p>}
+        {data && data.nodes.length === 0 && <p className="graph-empty meta">{t("graph.empty")}</p>}
       </div>
     </Modal>
   );

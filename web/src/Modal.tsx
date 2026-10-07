@@ -4,13 +4,18 @@ import { Maximize2, Minimize2, X } from "lucide-react";
 import { confirmDialog } from "./dialog";
 import { keyCapture } from "./shortcuts";
 import { toast } from "./toast";
+import { t } from "./i18n";
+import { tipProps } from "./Tooltip";
 
 /**
  * 모달 틀 하나: 설정·그래프·변경 검토·정리 점검·원본 수집·명령 팔레트·단축키가 같이 쓴다.
  *
  * - 닫기 세 가지: 오른쪽 위 X, Esc, 배경 누르기. 닫으면 열기 전 포커스로 돌아간다.
  * - Tab은 모달 밖으로 나가지 않는다. role="dialog"·aria-modal.
- * - 입력칸 안의 Esc는 그 칸이 먼저 쓴다(첫 Esc는 칸에서 나오기, 검색칸은 지우기). 단축키 바꾸는 중(keyCapture)에는 무시.
+ * - 처음 열 때 포커스는 모달 상자에 둔다. 바로 입력해야 하는 창(명령 팔레트·빠른 열기·원본 수집 URL)만
+ *   안의 [autofocus] 입력칸에 둔다. 그래서 Esc 한 번에 닫힌다(3차 확인: 그래프 모달이 Esc 두 번에 닫히던 것).
+ * - 사람이 직접 들어간 입력칸 안의 Esc는 그 칸이 먼저 쓴다(첫 Esc는 칸에서 나오기, 검색칸은 지우기).
+ *   처음 열 때 자동으로 포커스한 칸은 직접 들어간 것이 아니므로 바로 닫는다. 단축키 바꾸는 중(keyCapture)에는 무시.
  *   모달 위에 다른 창(확인 창·메뉴·다른 모달)이 뜨면 Esc는 맨 위 창만 닫는다.
  * - 닫으면 안 되는 상태는 안의 화면이 useCloseGuard로 알린다:
  *   confirm(토큰을 한 번만 보여 줌·저장 안 한 입력) → "닫을까요?"를 묻고, block(복원·업로드 진행 중) → 닫지 않는다.
@@ -42,12 +47,12 @@ async function passGuards(guards: Iterable<CloseGuard>): Promise<boolean> {
   const list = [...guards];
   const block = list.find((g) => g.kind === "block");
   if (block) {
-    toast(`${block.reason} 끝난 뒤에 닫을 수 있습니다.`, { kind: "warn" });
+    toast(t("modal.blocked", { reason: block.reason }), { kind: "warn" });
     return false;
   }
   const ask = list.filter((g) => g.kind === "confirm");
   if (ask.length === 0) return true;
-  return confirmDialog(`${ask.map((g) => g.reason).join("\n")}\n\n닫을까요?`, "닫기");
+  return confirmDialog(`${ask.map((g) => g.reason).join("\n")}\n\n${t("modal.confirmClose")}`, t("common.close"));
 }
 
 interface ModalControl {
@@ -114,6 +119,8 @@ export function Modal({
   const box = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const [max, setMax] = useState(false);
+  /** 처음 열 때 자동으로 포커스한 입력칸(사람이 직접 들어간 칸이 아니다) */
+  const autoFocused = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const entry = useMemo<Entry>(() => ({ guards: new Map(), attempt: async () => false }), []);
@@ -141,8 +148,9 @@ export function Modal({
     stack.push(entry);
     const el = box.current;
     if (el && !el.contains(document.activeElement)) {
-      const first = el.querySelector<HTMLElement>("[autofocus]") ?? el.querySelector<HTMLElement>(".kmodal-body " + FOCUSABLE) ?? el;
-      first.focus({ preventScroll: true });
+      const auto = el.querySelector<HTMLElement>("[autofocus], [data-autofocus]");
+      autoFocused.current = auto;
+      (auto ?? el).focus({ preventScroll: true });
     }
     return () => {
       const i = stack.indexOf(entry);
@@ -159,7 +167,7 @@ export function Modal({
       // 모달 위에 뜬 메뉴·확인 창이 있으면 그쪽이 먼저
       if (document.querySelector(".menu") || document.querySelector(".ask-dialog")) return;
       const t = e.target as HTMLElement;
-      if (!escapeFromInputs && box.current?.contains(t) && t.matches?.("input, textarea, select, [contenteditable='true']")) {
+      if (!escapeFromInputs && t !== autoFocused.current && box.current?.contains(t) && t.matches?.("input, textarea, select, [contenteditable='true']")) {
         if (t instanceof HTMLInputElement && t.type === "search" && t.value) return; // 검색칸: 브라우저가 지운다
         e.preventDefault();
         t.blur();
@@ -222,11 +230,11 @@ export function Modal({
               </h2>
               <div className="kmodal-tools">{head}</div>
               {maximizable && (
-                <button type="button" className="icon-btn kmodal-max" title={max ? "원래 크기로" : "크게(화면 가득)"} aria-label={max ? "원래 크기로" : "크게"} aria-pressed={max} onClick={() => setMax((m) => !m)}>
+                <button type="button" className="icon-btn kmodal-max" {...tipProps({ label: max ? t("modal.restoreSize") : t("modal.maximize") })} aria-label={max ? t("modal.restoreSize") : t("modal.maximize")} aria-pressed={max} onClick={() => setMax((m) => !m)}>
                   {max ? <Minimize2 size={17} strokeWidth={1.75} aria-hidden /> : <Maximize2 size={17} strokeWidth={1.75} aria-hidden />}
                 </button>
               )}
-              <button type="button" className="icon-btn kmodal-close" title="닫기 (Esc)" aria-label="닫기" onClick={() => void attempt()}>
+              <button type="button" className="icon-btn kmodal-close" {...tipProps({ label: t("common.close"), keys: "Escape" })} aria-label={t("common.close")} onClick={() => void attempt()}>
                 <X size={20} strokeWidth={1.75} aria-hidden />
               </button>
             </div>

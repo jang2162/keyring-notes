@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addPdfAnnotation, cleanPdfQuote, newPdfAnnotationId, parseFrontmatter, pdfAnnotations, pdfCompanionPath, removePdfAnnotation, resolveLink, setFrontmatterField, type PdfAnnotation } from "@keyring-notes/core";
+import { addPdfAnnotation, cleanPdfQuote, newPdfAnnotationId, parseFrontmatter, pdfAnnotations, pdfCompanionPath, removePdfAnnotation, resolveLink, setFrontmatterField, translate, type PdfAnnotation } from "@keyring-notes/core";
 import { api, ApiError } from "./api";
+import { t } from "./i18n";
 import type { LinkResolver } from "./markdown";
+import { errorText } from "./toast";
+import { vaultLang } from "./vaultSettings";
+import { tipProps } from "./Tooltip";
 import type { PDFDocumentProxy } from "./render/pdf";
 
 /**
@@ -61,7 +65,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
         setBase(await m.pageSize(doc, 1, 1));
         setPdf(doc);
       })
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => alive && setError(errorText(e)));
     return () => {
       alive = false;
     };
@@ -82,12 +86,12 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     setCompanion({ path: guess, content: null, hash: null }); // 첫 주석을 남길 때 만든다
   }, [path, from?.path]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    findCompanion().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    findCompanion().catch((e) => setError(errorText(e)));
   }, [findCompanion]);
 
   const companionIsOpen = companion !== null && from?.path === companion.path;
   const companionText = companionIsOpen ? from!.draft : (companion?.content ?? "");
-  const resolve = useCallback((t: string) => resolver.resolve(t) ?? resolveLink(t, [path]), [resolver, path]);
+  const resolve = useCallback((x: string) => resolver.resolve(x, companion?.path ?? from?.path) ?? resolveLink(x, [path]), [resolver, path, companion?.path, from?.path]);
   const notes = useMemo(() => pdfAnnotations(companionText, resolve, path), [companionText, resolve, path]);
 
   // 보이는 쪽만 그린다
@@ -146,9 +150,9 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
       let joined = "";
       const owner: number[] = [];
       spans.forEach((s, i) => {
-        const t = (s.textContent ?? "").replace(/\s+/g, "").replace(/[“”]/g, '"');
-        joined += t;
-        for (let k = 0; k < t.length; k++) owner.push(i);
+        const txt = (s.textContent ?? "").replace(/\s+/g, "").replace(/[“”]/g, '"');
+        joined += txt;
+        for (let k = 0; k < txt.length; k++) owner.push(i);
       });
       for (const q of quotes) {
         const at = q ? joined.indexOf(q) : -1;
@@ -197,7 +201,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     }
     let { content, hash } = companion;
     if (content === null) {
-      content = `---\ntitle: ${JSON.stringify(stem(path).replace(/\.pdf$/i, ""))}\noriginal: '[[${path}]]'\n---\n# ${stem(path).replace(/\.pdf$/i, "")}\n\n> 원본 파일: [[${path}]]\n`;
+      content = `---\ntitle: ${JSON.stringify(stem(path).replace(/\.pdf$/i, ""))}\noriginal: '[[${path}]]'\n---\n# ${stem(path).replace(/\.pdf$/i, "")}\n\n> ${translate(vaultLang(), "pdf.companionSource")}: [[${path}]]\n`;
       hash = null;
     }
     const next = fn(content);
@@ -206,8 +210,8 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     onSaved(companion.path);
   };
 
-  const target = companion ? (resolver.resolve(stem(companion.path)) === companion.path || !resolver.resolve(stem(companion.path)) ? stem(companion.path) : companion.path.replace(/\.md$/i, "")) : "";
-  const pdfTarget = resolver.resolve(path.split("/").pop()!) === path ? path.split("/").pop()! : path;
+  const target = companion ? (resolver.resolve(stem(companion.path), from?.path) === companion.path || !resolver.resolve(stem(companion.path), from?.path) ? stem(companion.path) : companion.path.replace(/\.md$/i, "")) : "";
+  const pdfTarget = resolver.resolve(path.split("/").pop()!, companion?.path) === path ? path.split("/").pop()! : path;
 
   const save = async () => {
     if (!pick || !companion) return;
@@ -219,9 +223,9 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
       setPick(null);
       setNote("");
       window.getSelection()?.removeAllRanges();
-      setMessage(companionIsOpen ? "주석을 이 문서 초안에 더했습니다(저장해야 반영)." : `주석을 ${companion.path}에 저장했습니다.`);
+      setMessage(companionIsOpen ? t("pdf.addedToDraft") : t("pdf.savedTo", { path: companion.path }));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(errorText(e));
       if (e instanceof ApiError && e.status === 409) void findCompanion();
     } finally {
       setBusy(false);
@@ -233,7 +237,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     try {
       await editCompanion((c) => removePdfAnnotation(c, a.id));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -253,9 +257,9 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     if (fromSources.includes(link)) return;
     try {
       onEditOpenDoc(setFrontmatterField(from.draft, "sources", [...fromSources, link]));
-      setMessage(`${from.path}의 sources에 더했습니다(저장해야 반영).`);
+      setMessage(t("pdf.citedIn", { path: from.path }));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(errorText(e));
     }
   };
 
@@ -264,44 +268,44 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
   const h = base ? Math.floor(base.height * scale) : 0;
 
   return (
-    <div className="pdf-viewer" role="dialog" aria-label={`PDF 보기: ${path}`} onKeyDown={(e) => e.key === "Escape" && onClose()}>
+    <div className="pdf-viewer" role="dialog" aria-label={t("pdf.viewerLabel", { path })} onKeyDown={(e) => e.key === "Escape" && onClose()}>
       <header className="pdf-bar">
         <strong className="pdf-title" title={path}>
           {path.split("/").pop()}
         </strong>
         {pdf && (
           <span className="pdf-nav">
-            <button onClick={() => goto(current - 1)} aria-label="앞 쪽">
+            <button onClick={() => goto(current - 1)} aria-label={t("pdf.prevPage")} {...tipProps({ label: t("pdf.prevPage") })}>
               ‹
             </button>
             <input
               key={current}
               defaultValue={current}
-              aria-label="쪽"
+              aria-label={t("pdf.page")}
               inputMode="numeric"
               onKeyDown={(e) => e.key === "Enter" && goto(Number((e.target as HTMLInputElement).value))}
             />
             <span className="meta">/ {pdf.numPages}</span>
-            <button onClick={() => goto(current + 1)} aria-label="다음 쪽">
+            <button onClick={() => goto(current + 1)} aria-label={t("pdf.nextPage")} {...tipProps({ label: t("pdf.nextPage") })}>
               ›
             </button>
-            <button onClick={() => setScale((s) => Math.max(0.5, +(s - 0.2).toFixed(1)))} aria-label="작게">
+            <button onClick={() => setScale((s) => Math.max(0.5, +(s - 0.2).toFixed(1)))} aria-label={t("pdf.zoomOut")} {...tipProps({ label: t("pdf.zoomOut") })}>
               −
             </button>
-            <button onClick={() => setScale((s) => Math.min(3, +(s + 0.2).toFixed(1)))} aria-label="크게">
+            <button onClick={() => setScale((s) => Math.min(3, +(s + 0.2).toFixed(1)))} aria-label={t("pdf.zoomIn")} {...tipProps({ label: t("pdf.zoomIn") })}>
               ＋
             </button>
           </span>
         )}
         <a className="pdf-raw" href={api.rawUrl(path)} target="_blank" rel="noreferrer">
-          원본
+          {t("pdf.original")}
         </a>
-        <button onClick={onClose}>닫기</button>
+        <button onClick={onClose}>{t("common.close")}</button>
       </header>
       <div className="pdf-body">
         <div className="pdf-pages" ref={pagesRef}>
           {error && <p className="prop-error">{error}</p>}
-          {!pdf && !error && <p className="meta">PDF를 여는 중…</p>}
+          {!pdf && !error && <p className="meta">{t("pdf.opening")}</p>}
           {pages.map((n) => (
             <div key={n} className="pdf-page" data-page={n} style={{ width: w, minHeight: h }}>
               <div className="pdf-page-inner" style={{ width: w, height: h }} />
@@ -309,37 +313,37 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
           ))}
         </div>
         <aside className="pdf-notes">
-          <h4>주석 {notes.length}</h4>
+          <h4>{t("pdf.annotations", { count: notes.length })}</h4>
           {companion && (
             <p className="meta">
-              {companionIsOpen ? "이 문서" : companion.content === null ? `${companion.path}(첫 주석 때 만듦)` : companion.path}에 남깁니다.
+              {t("pdf.savesTo", { target: companionIsOpen ? t("pdf.thisNote") : companion.content === null ? t("pdf.createdOnFirst", { path: companion.path }) : companion.path })}
             </p>
           )}
-          {notes.length === 0 && <p className="meta">글을 고르면 주석을 남길 수 있습니다.</p>}
+          {notes.length === 0 && <p className="meta">{t("pdf.empty")}</p>}
           <ul>
             {notes.map((a) => (
               <li key={a.id}>
                 <button className="link-btn pdf-page-btn" onClick={() => goto(a.page)}>
-                  {a.page}쪽
+                  {t("pdf.pageShort", { page: a.page })}
                 </button>{" "}
                 <span className="pdf-quote">“{a.quote}”</span>
                 {a.note && <div className="pdf-note">{a.note}</div>}
                 <div className="pdf-actions">
                   {canCite && (
-                    <button className="link-btn" disabled={fromSources.includes(sourceLink(a))} onClick={() => cite(a)} title={`${from!.path}의 sources에 ${sourceLink(a)}`}>
-                      {fromSources.includes(sourceLink(a)) ? "출처에 있음" : "이 문서 출처로"}
+                    <button className="link-btn" disabled={fromSources.includes(sourceLink(a))} onClick={() => cite(a)} title={t("pdf.citeTip", { path: from!.path, link: sourceLink(a) })}>
+                      {fromSources.includes(sourceLink(a)) ? t("pdf.cited") : t("pdf.cite")}
                     </button>
                   )}
-                  <button className="link-btn" onClick={() => void navigator.clipboard?.writeText(sourceLink(a)).then(() => setMessage(`복사했습니다: ${sourceLink(a)}`))}>
-                    링크 복사
+                  <button className="link-btn" onClick={() => void navigator.clipboard?.writeText(sourceLink(a)).then(() => setMessage(t("pdf.copied", { link: sourceLink(a) })))}>
+                    {t("pdf.copyLink")}
                   </button>
                   {!companionIsOpen && (
                     <button className="link-btn" onClick={() => onOpenDoc(companion!.path, a.id)}>
-                      노트에서 보기
+                      {t("pdf.showInNote")}
                     </button>
                   )}
                   <button className="link-btn" disabled={busy} onClick={() => void remove(a)}>
-                    지우기
+                    {t("common.delete")}
                   </button>
                 </div>
               </li>
@@ -352,19 +356,19 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
           {pick && (
             <>
               <span className="pdf-pick-quote">
-                {pick.page}쪽 “{pick.text.length > 80 ? `${pick.text.slice(0, 80)}…` : pick.text}”
+                {t("pdf.pageShort", { page: pick.page })} “{pick.text.length > 80 ? `${pick.text.slice(0, 80)}…` : pick.text}”
               </span>
-              <input placeholder="메모(선택)" aria-label="주석 메모" value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void save()} />
+              <input placeholder={t("pdf.notePlaceholder")} aria-label={t("pdf.noteLabel")} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void save()} />
               <button className="primary" disabled={busy || !companion} onClick={() => void save()}>
-                주석 남기기
+                {t("pdf.annotate")}
               </button>
-              <button onClick={() => setPick(null)}>취소</button>
+              <button onClick={() => setPick(null)}>{t("common.cancel")}</button>
             </>
           )}
           {!pick && message && (
             <>
               <span className="meta">{message}</span>
-              <button onClick={() => setMessage(null)}>닫기</button>
+              <button onClick={() => setMessage(null)}>{t("common.close")}</button>
             </>
           )}
         </div>

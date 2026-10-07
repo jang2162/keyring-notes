@@ -3,12 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api, review, type LintKind, type LintReport, type Proposal, type ProposalSummary } from "./api";
 import { Modal, useCloseGuard } from "./Modal";
 import { promptDialog } from "./dialog";
+import { errorText } from "./toast";
+import { fmtDateTime, t } from "./i18n";
 
-function msg(e: unknown) {
-  return e instanceof Error ? e.message : String(e);
-}
-
-const CHANGE_LABEL = { add: "추가", modify: "수정", delete: "삭제" } as const;
+const msg = errorText;
 
 /** 줄 단위 diff. 바뀌지 않은 긴 구간은 앞뒤 3줄만 남기고 접는다. */
 function DiffView({ before, after }: { before: string | null; after: string | null }) {
@@ -22,7 +20,7 @@ function DiffView({ before, after }: { before: string | null; after: string | nu
       const head = i === 0 ? [] : lines.slice(0, 3);
       const tail = i === parts.length - 1 ? [] : lines.slice(-3);
       head.forEach((t) => rows.push({ kind: "ctx", text: t }));
-      rows.push({ kind: "fold", text: `… 바뀌지 않은 ${lines.length - head.length - tail.length}줄 …` });
+      rows.push({ kind: "fold", text: t("review.unchanged", { count: lines.length - head.length - tail.length }) });
       tail.forEach((t) => rows.push({ kind: "ctx", text: t }));
     } else lines.forEach((t) => rows.push({ kind: "ctx", text: t }));
   });
@@ -71,16 +69,16 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
     try {
       if (approve) await review.approve(p.id);
       else {
-        const reason = await promptDialog("거절 사유(에이전트가 my_proposals로 볼 수 있습니다)", "", "거절");
+        const reason = await promptDialog(t("review.rejectReason"), "", t("review.reject"));
         if (reason === null) return;
         await review.reject(p.id, reason);
       }
-      setNote({ ok: true, text: approve ? `승인했습니다: ${p.message}` : `거절했습니다: ${p.message}` });
+      setNote({ ok: true, text: approve ? t("review.approved", { message: p.message }) : t("review.rejected", { message: p.message }) });
       setOpen(null);
       await load();
       onChanged();
     } catch (e) {
-      setNote({ ok: false, text: approve ? `승인하지 못했습니다: ${msg(e)} — 그 사이 문서가 바뀌었다면 거절하고 에이전트에게 다시 맡기세요.` : msg(e) });
+      setNote({ ok: false, text: approve ? t("review.approveFailed", { message: msg(e) }) : msg(e) });
       await load();
     }
   };
@@ -90,18 +88,18 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
 
   return (
     <Modal
-      title="변경 검토"
+      title={t("tool.review")}
       onClose={onClose}
       head={
         <div className="kmodal-tabs" role="tablist">
           <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
-            대기 {pending.length}
+            {t("review.pending", { count: pending.length })}
           </button>
           <button className={tab === "done" ? "on" : ""} onClick={() => setTab("done")}>
-            처리됨
+            {t("review.done")}
           </button>
           <button className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}>
-            검토 대상
+            {t("review.targets")}
           </button>
         </div>
       }
@@ -115,10 +113,8 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
         )}
         {tab === "settings" && (
           <div>
-            <p className="meta">
-              여기 적은 폴더(한 줄에 하나, <code>/</code>는 볼트 전체)에 에이전트가 쓰면 바로 반영하지 않고 이 대기열에 쌓습니다. 사람이 쓰는 것은 늘 바로 반영됩니다. 권한·충돌 검사는 제안을 받을 때 이미 합니다.
-            </p>
-            <textarea className="paths-input" rows={6} value={paths} onChange={(e) => setPaths(e.target.value)} placeholder={"경제/wiki\n업무"} />
+            <p className="meta">{t("review.targetsHint")}</p>
+            <textarea className="paths-input" rows={6} value={paths} onChange={(e) => setPaths(e.target.value)} aria-label={t("review.targets")} placeholder={t("review.targetsPlaceholder")} />
             <div className="agent-actions">
               <button
                 className="on"
@@ -127,13 +123,13 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
                     const r = await review.saveSettings(paths.split("\n").map((s) => s.trim()).filter(Boolean));
                     setPaths(r.reviewPaths.join("\n"));
                     setSavedPaths(r.reviewPaths.join("\n"));
-                    setNote({ ok: true, text: r.reviewPaths.length ? `검토 대상: ${r.reviewPaths.join(", ")}` : "검토 대상이 없습니다(모두 바로 반영)." });
+                    setNote({ ok: true, text: r.reviewPaths.length ? t("review.targetsSaved", { list: r.reviewPaths.join(", ") }) : t("review.targetsNone") });
                   } catch (e) {
                     setNote({ ok: false, text: msg(e) });
                   }
                 }}
               >
-                저장
+                {t("common.save")}
               </button>
             </div>
           </div>
@@ -145,37 +141,37 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
                 <button className="proposal-item" onClick={async () => setOpen(await review.get(p.id))}>
                   <span className="proposal-msg">
                     {p.message}
-                    {p.stale && <span className="badge warn">문서가 그 사이 바뀜</span>}
-                    {p.status !== "pending" && <span className={`badge ${p.status === "approved" ? "" : "muted"}`}>{p.status === "approved" ? "승인" : "거절"}</span>}
+                    {p.stale && <span className="badge warn">{t("review.stale")}</span>}
+                    {p.status !== "pending" && <span className={`badge ${p.status === "approved" ? "" : "muted"}`}>{p.status === "approved" ? t("review.statusApproved") : t("review.statusRejected")}</span>}
                   </span>
                   <span className="meta">
-                    {p.agent} · {new Date(p.createdAt).toLocaleString()} · {p.files.map((f) => `${CHANGE_LABEL[f.change]} ${f.path.split("/").pop()}`).join(", ")}
-                    {p.reason && ` · 사유: ${p.reason}`}
+                    {p.agent} · {fmtDateTime(p.createdAt)} · {p.files.map((f) => `${t(`review.change.${f.change}`)} ${f.path.split("/").pop()}`).join(", ")}
+                    {p.reason && ` · ${t("review.reason", { reason: p.reason })}`}
                   </span>
                 </button>
               </li>
             ))}
-            {(tab === "pending" ? pending : done).length === 0 && <li className="meta">{tab === "pending" ? "검토할 제안이 없습니다." : "처리한 제안이 없습니다."}</li>}
+            {(tab === "pending" ? pending : done).length === 0 && <li className="meta">{tab === "pending" ? t("review.noPending") : t("review.noDone")}</li>}
           </ul>
         )}
         {open && (
           <div>
             <div className="agent-actions">
-              <button onClick={() => setOpen(null)}>← 목록</button>
+              <button onClick={() => setOpen(null)}>← {t("review.list")}</button>
               <span className="spacer" />
               {open.status === "pending" && (
                 <>
                   <button className="on" onClick={() => decide(open, true)}>
-                    승인하고 반영
+                    {t("review.approve")}
                   </button>
-                  <button onClick={() => decide(open, false)}>거절</button>
+                  <button onClick={() => decide(open, false)}>{t("review.reject")}</button>
                 </>
               )}
             </div>
             <h4>{open.message}</h4>
             <p className="meta">
-              {open.agent} · {new Date(open.createdAt).toLocaleString()}
-              {open.status !== "pending" && ` · ${open.status === "approved" ? "승인" : "거절"}: ${open.decidedBy} ${new Date(open.decidedAt!).toLocaleString()}`}
+              {open.agent} · {fmtDateTime(open.createdAt)}
+              {open.status !== "pending" && ` · ${open.status === "approved" ? t("review.statusApproved") : t("review.statusRejected")}: ${open.decidedBy} ${fmtDateTime(open.decidedAt!)}`}
             </p>
             {open.preview.map((f) => (
               <section key={f.path} className="diff-file">
@@ -189,9 +185,9 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
                   >
                     {f.path}
                   </a>{" "}
-                  <span className="meta">{f.beforeHash === null ? "새 파일" : f.afterHash === null ? "삭제" : "수정"}</span>
+                  <span className="meta">{f.beforeHash === null ? t("review.newFile") : f.afterHash === null ? t("review.change.delete") : t("review.change.modify")}</span>
                 </div>
-                {f.binary ? <p className="meta">첨부 파일(내용 미리보기 없음)</p> : <DiffView before={f.before} after={f.after} />}
+                {f.binary ? <p className="meta">{t("review.binary")}</p> : <DiffView before={f.before} after={f.after} />}
               </section>
             ))}
           </div>
@@ -202,24 +198,23 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
 }
 
 function PathsGuard({ dirty }: { dirty: boolean }) {
-  useCloseGuard(dirty ? { kind: "confirm", reason: "검토 대상 폴더를 바꾸고 저장하지 않았습니다." } : null);
+  useCloseGuard(dirty ? { kind: "confirm", reason: t("review.targetsUnsaved") } : null);
   return null;
 }
 
-const LINT_LABEL: Record<LintKind, string> = {
-  broken_link: "깨진 링크",
-  broken_source: "깨진 출처",
-  missing_frontmatter: "프런트매터 누락",
-  no_sources: "출처 없는 위키 페이지",
-  orphan: "고아 위키 페이지",
-  stale: "오래된 위키 페이지",
-  unprocessed_raw: "아직 반영 안 된 원본",
-  daily_mismatch: "데일리 속성과 이름 날짜가 다름",
-};
+const LINT_KINDS: LintKind[] = ["broken_link", "broken_source", "missing_frontmatter", "no_sources", "orphan", "stale", "unprocessed_raw", "daily_mismatch"];
+
+/** 정리 점검 설명: 종류와 끼워 넣을 값으로 화면 언어 글을 만든다 */
+function lintDetail(i: LintReport["issues"][number]): string {
+  const p = { ...(i.params ?? {}), target: i.target ?? "" };
+  if (i.kind === "broken_source" && i.params?.anchor) return t(String(i.params.anchor).startsWith("^") ? "lint.d.brokenBlock" : "lint.d.brokenHeading", p);
+  return t(`lint.d.${i.kind}`, p);
+}
 
 /** 구조적 정리(W7) 결과. */
-export function LintPanel({ folders, onClose, onOpen }: { folders: string[]; onClose: () => void; onOpen: (p: string) => void }) {
-  const [folder, setFolder] = useState("");
+/** initialFolder: 처음 점검할 범위(지금 워크스페이스, ""면 볼트 전체) */
+export function LintPanel({ folders, initialFolder = "", onClose, onOpen }: { folders: string[]; initialFolder?: string; onClose: () => void; onOpen: (p: string) => void }) {
+  const [folder, setFolder] = useState(initialFolder);
   const [report, setReport] = useState<LintReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -235,19 +230,19 @@ export function LintPanel({ folders, onClose, onOpen }: { folders: string[]; onC
     }
   }, []);
   useEffect(() => {
-    void run("");
-  }, [run]);
-  const groups = report ? (Object.keys(LINT_LABEL) as LintKind[]).map((k) => [k, report.issues.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length) : [];
+    void run(initialFolder);
+  }, [run, initialFolder]);
+  const groups = report ? LINT_KINDS.map((k) => [k, report.issues.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length) : [];
   return (
     <Modal
-      title="정리 점검"
+      title={t("tool.lint")}
       onClose={onClose}
       head={
         <>
-          <select value={folder} onChange={(e) => setFolder(e.target.value)}>
-            <option value="">볼트 전체</option>
+          <select value={folder} aria-label={t("lint.scope")} onChange={(e) => setFolder(e.target.value)}>
+            <option value="">{t("lint.wholeVault")}</option>
             {folders
-              .filter((f) => !f.includes("/"))
+              .filter((f) => f.split("/").length <= 2)
               .map((f) => (
                 <option key={f} value={f}>
                   {f}
@@ -255,7 +250,7 @@ export function LintPanel({ folders, onClose, onOpen }: { folders: string[]; onC
               ))}
           </select>
           <button disabled={busy} onClick={() => run(folder)}>
-            {busy ? "점검 중…" : "점검"}
+            {busy ? t("lint.running") : t("lint.run")}
           </button>
         </>
       }
@@ -264,14 +259,12 @@ export function LintPanel({ folders, onClose, onOpen }: { folders: string[]; onC
         {error && <p className="form-error">{error}</p>}
         {report && (
           <>
-            <p className="meta">
-              {new Date(report.checkedAt).toLocaleString()} · {report.folder ?? "볼트 전체"} · 문제 {report.issues.length}개. 위키 페이지 규칙(출처·고아·오래됨)은 위키 토픽의 wiki/ 폴더에만 적용합니다.
-            </p>
-            {groups.length === 0 && <p className="note-ok">문제가 없습니다.</p>}
+            <p className="meta">{t("lint.summary", { date: fmtDateTime(report.checkedAt), scope: report.folder ?? t("lint.wholeVault"), count: report.issues.length })}</p>
+            {groups.length === 0 && <p className="note-ok">{t("lint.none")}</p>}
             {groups.map(([k, issues]) => (
               <details key={k} className="lint-group" open={issues.length <= 20}>
                 <summary>
-                  {LINT_LABEL[k]} <span className="count">{issues.length}</span>
+                  {t(`lint.k.${k}`)} <span className="count">{issues.length}</span>
                 </summary>
                 <ul>
                   {issues.map((i, n) => (
@@ -285,7 +278,7 @@ export function LintPanel({ folders, onClose, onOpen }: { folders: string[]; onC
                       >
                         {i.path}
                       </a>{" "}
-                      <span className="meta">{i.detail}</span>
+                      <span className="meta">{lintDetail(i)}</span>
                     </li>
                   ))}
                 </ul>

@@ -1,62 +1,61 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Modal, useCloseGuard } from "./Modal";
 import { api, type IngestResult, type Topic } from "./api";
+import { errorText } from "./toast";
+import { alertDialog, promptDialog } from "./dialog";
+import { t } from "./i18n";
+import { tipProps } from "./Tooltip";
 
-function message(e: unknown) {
-  return e instanceof Error ? e.message : String(e);
-}
-
-/** 위키 토픽 고르기 + 새 토픽 만들기. */
-function TopicPicker({ value, onChange }: { value: string; onChange: (t: string) => void }) {
+/**
+ * 위키 토픽 고르기 + 새 토픽 만들기. 토픽은 워크스페이스 바로 아래 노드(<워크스페이스>/<이름>/SCHEMA.md).
+ * workspace: 지금 워크스페이스(그 토픽을 먼저 보이고, 새 토픽을 그 안에 만든다)
+ */
+function TopicPicker({ value, onChange, workspace }: { value: string; onChange: (t: string) => void; workspace?: string }) {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [error, setError] = useState<string | null>(null);
   const reload = () =>
     api
       .topics()
       .then((ts) => {
-        const wikis = ts.filter((t) => t.wiki);
+        const wikis = ts.filter((x) => x.wiki).sort((a, b) => Number(!(workspace && a.name.startsWith(workspace + "/"))) - Number(!(workspace && b.name.startsWith(workspace + "/"))));
         setTopics(wikis);
         if (!value && wikis[0]) onChange(wikis[0].name);
       })
-      .catch((e) => setError(message(e)));
+      .catch((e) => setError(errorText(e)));
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const create = async () => {
-    const name = prompt("새 위키 토픽 이름(최상위 폴더). 기존 폴더 이름을 쓰면 그 폴더가 위키 토픽이 됩니다.");
-    if (!name) return;
+    const name = await promptDialog(t("ingest.newTopicPrompt", { ws: workspace || "-" }), "", t("common.create"));
+    if (!name?.trim()) return;
+    const full = name.includes("/") || !workspace ? name.trim() : `${workspace}/${name.trim()}`;
     try {
-      const r = await api.createTopic(name);
+      const r = await api.createTopic(full);
       await reload();
       onChange(r.topic);
-      alert(
-        `"${r.topic}" 위키 토픽을 만들었습니다.\n\n${r.schema}에서 목적과 규칙을 채우세요.\n\n에이전트 권한(권장):\n` +
-          `npm run keyring -- agent grant <이름> ${r.topic}/raw append\n` +
-          `npm run keyring -- agent grant <이름> ${r.topic}/wiki delete\n` +
-          `npm run keyring -- agent grant <이름> ${r.topic}/SCHEMA.md read`,
-      );
+      await alertDialog(t("ingest.topicCreated", { topic: r.topic, schema: r.schema }));
     } catch (e) {
-      setError(message(e));
+      setError(errorText(e));
     }
   };
 
   return (
     <div className="topic-picker">
       <label>
-        위키 토픽{" "}
+        {t("ingest.topic")}{" "}
         <select value={value} onChange={(e) => onChange(e.target.value)}>
-          {topics.length === 0 && <option value="">(위키 토픽 없음)</option>}
-          {topics.map((t) => (
-            <option key={t.name} value={t.name}>
-              {t.name} — 페이지 {t.pages} · 원본 {t.raw}
+          {topics.length === 0 && <option value="">{t("ingest.noTopic")}</option>}
+          {topics.map((x) => (
+            <option key={x.name} value={x.name}>
+              {t("ingest.topicOption", { name: x.name, pages: x.pages, raw: x.raw })}
             </option>
           ))}
         </select>
       </label>
       <button type="button" onClick={create}>
-        새 위키 토픽
+        {t("ingest.newTopic")}
       </button>
       {error && <div className="form-error">{error}</div>}
     </div>
@@ -73,13 +72,14 @@ type Tab = "file" | "url" | "text";
 
 /** 올리는 중에는 닫지 않고, 넣다 만 글이 있으면 묻는다 */
 function IngestGuard({ busy, unsaved }: { busy: boolean; unsaved: boolean }) {
-  useCloseGuard(busy ? { kind: "block", reason: "수집(업로드·변환)하는 중입니다." } : unsaved ? { kind: "confirm", reason: "입력한 내용을 아직 수집하지 않았습니다." } : null);
+  useCloseGuard(busy ? { kind: "block", reason: t("ingest.guardBusy") } : unsaved ? { kind: "confirm", reason: t("ingest.guardUnsaved") } : null);
   return null;
 }
 
-export function IngestDialog({ onClose, onDone }: { onClose: () => void; onDone: (results: IngestResult[], openPath?: string) => void }) {
+/** 원본 수집. 처음에는 URL 칸에 포커스를 둔다(바로 붙여넣을 수 있게) */
+export function IngestDialog({ workspace, onClose, onDone }: { workspace?: string; onClose: () => void; onDone: (results: IngestResult[], openPath?: string) => void }) {
   const [topic, setTopic] = useState("");
-  const [tab, setTab] = useState<Tab>("file");
+  const [tab, setTab] = useState<Tab>("url");
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<{ ok: boolean; text: string; path?: string }[]>([]);
   const [url, setUrl] = useState("");
@@ -95,7 +95,7 @@ export function IngestDialog({ onClose, onDone }: { onClose: () => void; onDone:
   }, [tab]);
 
   const run = async (jobs: { label: string; fn: () => Promise<IngestResult> }[]) => {
-    if (!topic) return setLog([{ ok: false, text: "위키 토픽을 먼저 고르거나 만드세요." }]);
+    if (!topic) return setLog([{ ok: false, text: t("ingest.pickTopic") }]);
     setBusy(true);
     const done: IngestResult[] = [];
     for (const j of jobs) {
@@ -104,7 +104,7 @@ export function IngestDialog({ onClose, onDone }: { onClose: () => void; onDone:
         done.push(r);
         setLog((l) => [...l, { ok: true, text: `${j.label} → ${r.path}`, path: r.path }]);
       } catch (e) {
-        setLog((l) => [...l, { ok: false, text: `${j.label}: ${message(e)}` }]);
+        setLog((l) => [...l, { ok: false, text: `${j.label}: ${errorText(e)}` }]);
       }
     }
     setBusy(false);
@@ -135,72 +135,70 @@ export function IngestDialog({ onClose, onDone }: { onClose: () => void; onDone:
 
   const submitText = (e: FormEvent) => {
     e.preventDefault();
-    void run([{ label: title || "붙여넣기", fn: () => api.ingest({ kind: "text", topic, title: title || "붙여넣은 메모", text }) }]);
+    void run([{ label: title || t("ingest.pasteLabel"), fn: () => api.ingest({ kind: "text", topic, title: title || t("ingest.pasteTitle"), text }) }]);
   };
 
   return (
-    <Modal title="원본 수집" size="md" onClose={onClose}>
-        <IngestGuard busy={busy} unsaved={(tab === "text" && !!text.trim()) || (tab === "url" && !!url.trim())} />
-        <p className="meta">수집한 자료는 &lt;토픽&gt;/raw/ 에 마크다운으로 저장되고, 원본 파일(PDF·이미지)은 raw/assets/ 에 함께 남습니다.</p>
-        <TopicPicker value={topic} onChange={setTopic} />
-        <div className="tabs">
-          {(["file", "url", "text"] as const).map((t) => (
-            <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-              {{ file: "파일", url: "URL", text: "붙여넣기" }[t]}
-            </button>
-          ))}
+    <Modal title={t("tool.ingest")} size="md" onClose={onClose}>
+      <IngestGuard busy={busy} unsaved={(tab === "text" && !!text.trim()) || (tab === "url" && !!url.trim())} />
+      <p className="meta">{t("ingest.hint")}</p>
+      <TopicPicker value={topic} onChange={setTopic} workspace={workspace} />
+      <div className="tabs" role="tablist">
+        {(["url", "file", "text"] as const).map((x) => (
+          <button key={x} role="tab" aria-selected={tab === x} className={tab === x ? "on" : ""} onClick={() => setTab(x)}>
+            {t(`ingest.tab.${x}`)}
+          </button>
+        ))}
+      </div>
+      {tab === "file" && (
+        <div
+          className={`dropzone${drag ? " over" : ""}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDrag(true);
+          }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={onDrop}
+          onClick={() => fileInput.current?.click()}
+        >
+          {t("ingest.drop")}
+          <input ref={fileInput} type="file" multiple hidden onChange={(e) => files(e.target.files)} />
         </div>
-        {tab === "file" && (
-          <div
-            className={`dropzone${drag ? " over" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDrag(true);
-            }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={onDrop}
-            onClick={() => fileInput.current?.click()}
-          >
-            PDF·이미지·HTML·마크다운·텍스트 파일을 끌어다 놓거나 눌러서 고르세요(여러 개 가능, 파일당 50MB까지).
-            <input ref={fileInput} type="file" multiple hidden onChange={(e) => files(e.target.files)} />
+      )}
+      {tab === "url" && (
+        <form onSubmit={submitUrl} className="ingest-form">
+          <textarea rows={3} data-autofocus placeholder={t("ingest.urlPlaceholder")} aria-label="URL" value={url} onChange={(e) => setUrl(e.target.value)} required />
+          <input placeholder={t("ingest.urlTitle")} value={title} onChange={(e) => setTitle(e.target.value)} />
+          <button type="submit" disabled={busy}>
+            {t("ingest.fetch")}
+          </button>
+          <div className="bookmarklet">
+            <p className="meta">{t("ingest.bookmarkletHint")}</p>
+            <a ref={bm} className="bookmarklet-link" onClick={(e) => e.preventDefault()}>
+              📎 {t("ingest.bookmarklet")}
+            </a>
           </div>
-        )}
-        {tab === "url" && (
-          <form onSubmit={submitUrl} className="ingest-form">
-            <textarea rows={3} placeholder="https://… (여러 개면 줄을 바꿔서)" value={url} onChange={(e) => setUrl(e.target.value)} required />
-            <input placeholder="제목(선택, URL 하나일 때)" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <button type="submit" disabled={busy}>
-              가져오기
-            </button>
-            <div className="bookmarklet">
-              <p className="meta">
-                로그인이 필요한 페이지나 선택한 부분만 저장하려면 이 링크를 북마크바로 끌어다 놓고, 저장할 페이지에서 누르세요:
-              </p>
-              <a ref={bm} className="bookmarklet-link" onClick={(e) => e.preventDefault()}>
-                📎 Keyring 클립
-              </a>
-            </div>
-          </form>
-        )}
-        {tab === "text" && (
-          <form onSubmit={submitText} className="ingest-form">
-            <input placeholder="제목" value={title} onChange={(e) => setTitle(e.target.value)} required />
-            <textarea rows={10} placeholder="마크다운 또는 텍스트" value={text} onChange={(e) => setText(e.target.value)} required />
-            <button type="submit" disabled={busy}>
-              저장
-            </button>
-          </form>
-        )}
-        {busy && <p className="meta">처리 중…</p>}
-        {log.length > 0 && (
-          <ul className="ingest-log">
-            {log.map((l, i) => (
-              <li key={i} className={l.ok ? "ok" : "fail"}>
-                {l.ok ? "✓" : "✗"} {l.text}
-              </li>
-            ))}
-          </ul>
-        )}
+        </form>
+      )}
+      {tab === "text" && (
+        <form onSubmit={submitText} className="ingest-form">
+          <input placeholder={t("ingest.title")} value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <textarea rows={10} placeholder={t("ingest.textPlaceholder")} value={text} onChange={(e) => setText(e.target.value)} required />
+          <button type="submit" disabled={busy}>
+            {t("common.save")}
+          </button>
+        </form>
+      )}
+      {busy && <p className="meta">{t("ingest.working")}</p>}
+      {log.length > 0 && (
+        <ul className="ingest-log">
+          {log.map((l, i) => (
+            <li key={i} className={l.ok ? "ok" : "fail"}>
+              {l.ok ? "✓" : "✗"} {l.text}
+            </li>
+          ))}
+        </ul>
+      )}
     </Modal>
   );
 }
@@ -243,46 +241,44 @@ export function ClipPage() {
           });
       setState({ done });
     } catch (e) {
-      setState({ error: message(e) });
+      setState({ error: errorText(e) });
     }
   };
 
   return (
     <div className="clip-page">
-      <h1>웹 클립</h1>
+      <h1>{t("clip.title")}</h1>
       {!clip ? (
-        <p className="meta">
-          {window.opener ? "원래 페이지에서 내용을 받는 중…" : "이 창은 북마클릿(📎 Keyring 클립)으로 열어야 합니다. 수집 창의 URL 탭에서 북마클릿을 설치하세요."}
-        </p>
+        <p className="meta">{window.opener ? t("clip.waiting") : t("clip.needBookmarklet")}</p>
       ) : state.done ? (
         <div>
-          <p>✓ 저장했습니다: {state.done.path}</p>
+          <p>✓ {t("clip.saved", { path: state.done.path })}</p>
           <a href={`/#/${encodeURIComponent(state.done.path)}`} target="_blank" rel="noreferrer">
-            열기
+            {t("common.open")}
           </a>{" "}
-          <button onClick={() => window.close()}>창 닫기</button>
+          <button onClick={() => window.close()}>{t("clip.closeWindow")}</button>
         </div>
       ) : (
         <>
           <p className="meta clip-url">{clip.url}</p>
           <TopicPicker value={topic} onChange={setTopic} />
           <label className="clip-field">
-            제목 <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            {t("ingest.title")} <input value={title} onChange={(e) => setTitle(e.target.value)} />
           </label>
           {clip.selectionHtml && (
             <label className="clip-field">
-              <input type="checkbox" checked={onlySelection} onChange={(e) => setOnlySelection(e.target.checked)} /> 선택한 부분만 저장
+              <input type="checkbox" checked={onlySelection} onChange={(e) => setOnlySelection(e.target.checked)} /> {t("clip.onlySelection")}
             </label>
           )}
           <div className="clip-actions">
             <button className="on" disabled={state.busy || !topic} onClick={() => save(false)}>
-              저장
+              {t("common.save")}
             </button>
-            <button disabled={state.busy || !topic} onClick={() => save(true)} title="서버가 URL을 직접 가져옵니다(공개 페이지만)">
-              URL로 다시 가져오기
+            <button disabled={state.busy || !topic} onClick={() => save(true)} {...tipProps({ label: t("clip.byUrlTip") })}>
+              {t("clip.byUrl")}
             </button>
           </div>
-          {state.busy && <p className="meta">변환하는 중…</p>}
+          {state.busy && <p className="meta">{t("clip.converting")}</p>}
           {state.error && <p className="form-error">{state.error}</p>}
         </>
       )}

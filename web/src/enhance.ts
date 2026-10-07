@@ -2,6 +2,7 @@ import DOMPurify from "dompurify";
 import { blockText, section } from "@keyring-notes/core";
 import { api } from "./api";
 import { renderMarkdown, SAFE_URI, splitFrontmatter, type LinkResolver } from "./markdown";
+import { t } from "./i18n";
 
 /**
  * 미리보기를 그린 뒤 채우는 것들: 수식(KaTeX), 다이어그램(Mermaid), 문서 임베드(![[문서]]).
@@ -62,7 +63,7 @@ async function fillEmbed(el: HTMLElement, ctx: EnhanceContext, alive: () => bool
   const key = `${path}#${anchor ?? ""}`;
   if (depth >= MAX_EMBED_DEPTH || chain.includes(key) || (chain.includes(path) && !anchor)) {
     el.classList.add("note-embed-stop");
-    el.title = depth >= MAX_EMBED_DEPTH ? "임베드가 너무 깊어 링크로만 보입니다" : "자기 자신을 다시 임베드해 링크로만 보입니다";
+    el.title = depth >= MAX_EMBED_DEPTH ? t("embed.tooDeep") : t("embed.self");
     return;
   }
   let content: string;
@@ -95,7 +96,7 @@ async function fillEmbed(el: HTMLElement, ctx: EnhanceContext, alive: () => bool
   if (text === null) {
     el.querySelector("a")?.classList.add("unresolved");
     el.classList.add("note-embed-stop");
-    el.title = "가리키는 제목·블록이 없습니다";
+    el.title = t("embed.missingAnchor");
     return;
   }
   const r = renderMarkdown(text, { resolver: ctx.resolver, docPath: path, docId: `e${depth + 1}`, hideFrontmatter: true });
@@ -105,7 +106,7 @@ async function fillEmbed(el: HTMLElement, ctx: EnhanceContext, alive: () => bool
   // 임베드 안의 위젯·할 일 체크는 원본 문서에서 다룬다(여기서 누르면 열린 문서의 줄이 바뀌므로)
   for (const slot of body.querySelectorAll<HTMLElement>(".widget-slot")) {
     slot.className = "widget-embedded-note meta";
-    slot.textContent = "위젯은 원본 문서에서 볼 수 있습니다.";
+    slot.textContent = t("embed.widgetInSource");
   }
   for (const box of body.querySelectorAll<HTMLInputElement>("input.task")) {
     box.removeAttribute("data-task-line");
@@ -152,7 +153,7 @@ export function enhance(root: HTMLElement, ctx: EnhanceContext, parentAlive?: ()
         if (!alive()) return;
         const pre = document.createElement("pre");
         pre.className = "mermaid-error";
-        pre.textContent = `다이어그램 오류: ${e instanceof Error ? e.message : String(e)}`;
+        pre.textContent = t("embed.diagramError", { message: e instanceof Error ? e.message : String(e) });
         el.prepend(pre);
       });
   }

@@ -3,8 +3,9 @@ import MarkdownIt from "markdown-it";
 import type { StateBlock, StateCore, StateInline, Token } from "markdown-it";
 import footnote from "markdown-it-footnote";
 import mark from "markdown-it-mark";
-import { dailyLinkDate, dailyNotesOn, stripComments, type DailyConfig } from "@keyring-notes/core";
+import { LinkIndex, stripComments, type DailyLookup } from "@keyring-notes/core";
 import { api, type TreeNode } from "./api";
+import { t } from "./i18n";
 
 /**
  * DOMPurify 기본 허용 URI에 앱의 첨부 URL을 더한다: 데스크톱·모바일 앱의 파일(asset:), 브라우저 로컬 볼트의 blob:.
@@ -13,56 +14,39 @@ import { api, type TreeNode } from "./api";
 export const SAFE_URI = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|asset|blob):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
 
 /**
- * 위키링크 대상 이름 → 실제 경로. Obsidian처럼 경로 없이 파일 이름만 써도 찾는다.
- * 데일리 설정을 주면 `[[2026-10-07]]`처럼 날짜만 쓴 링크도 그날 데일리 노트로(정확한 이름이 먼저, core resolveLink와 같은 규칙).
+ * 위키링크 대상 이름 → 실제 경로. Obsidian처럼 경로 없이 파일 이름만 써도 찾는다. core의 LinkIndex(resolveLink와 같은 규칙):
+ * 링크를 쓴 문서(from)의 워크스페이스 안에서 먼저 찾고, 데일리 설정이 있으면 `[[2026-10-07]]`도 그날 데일리 노트로.
  */
 export class LinkResolver {
-  private byPath = new Map<string, string>();
-  private byName = new Map<string, string[]>();
+  private index: LinkIndex;
 
   constructor(
     tree: TreeNode[],
-    readonly daily: DailyConfig | null = null,
+    readonly daily: DailyLookup | null = null,
   ) {
+    const paths: string[] = [];
     const walk = (nodes: TreeNode[]) => {
       for (const n of nodes) {
         if (n.type === "dir") walk(n.children ?? []);
-        else {
-          const lower = n.path.toLowerCase();
-          this.byPath.set(lower, n.path);
-          const name = n.name.toLowerCase();
-          this.byName.set(name, [...(this.byName.get(name) ?? []), n.path]);
-        }
+        else paths.push(n.path);
       }
     };
     walk(tree);
+    this.index = new LinkIndex(paths);
   }
 
   /** 정확한 경로(대소문자 무시)로만 찾는다(상대 경로 마크다운 링크용) */
   exact(path: string): string | null {
-    return this.byPath.get(path.toLowerCase()) ?? null;
+    return this.index.get(path);
   }
 
   get paths(): string[] {
-    return [...this.byPath.values()];
+    return this.index.paths;
   }
 
-  resolve(target: string): string | null {
-    const t = target.trim().replace(/^\/+/, "").toLowerCase();
-    if (!t) return null;
-    const candidates = /\.[a-z0-9]+$/i.test(t) ? [t] : [`${t}.md`, t];
-    for (const c of candidates) {
-      const exact = this.byPath.get(c);
-      if (exact) return exact;
-    }
-    for (const c of candidates) {
-      const base = c.split("/").pop()!;
-      const hits = (this.byName.get(base) ?? []).filter((p) => p.toLowerCase().endsWith(c));
-      // 같은 이름이 여러 개면 가장 얕은 경로를 고른다(Obsidian의 최단 경로 규칙).
-      if (hits.length) return hits.sort((a, b) => a.split("/").length - b.split("/").length)[0];
-    }
-    const day = this.daily ? dailyLinkDate(target, this.daily) : null;
-    return day ? (dailyNotesOn(this.paths, this.daily, day)[0]?.path ?? null) : null;
+  /** from: 링크를 쓴 문서(같은 워크스페이스 먼저) */
+  resolve(target: string, from?: string | null): string | null {
+    return this.index.resolve(target, { daily: this.daily, from });
   }
 }
 
@@ -219,7 +203,7 @@ function anchorAttrs(heading?: string): string {
 md.renderer.rules.wikilink = (tokens, idx, _opts, env) => {
   const { resolver, docPath } = ctxOf(env);
   const { target, heading, alias } = tokens[idx].meta as unknown as WikiMeta;
-  const resolved = target ? resolver.resolve(target) : docPath;
+  const resolved = target ? resolver.resolve(target, docPath) : docPath;
   const label = alias || (heading ? `${target}${target ? " › " : ""}${heading.replace(/^\^/, "")}` : target);
   const cls = resolved ? "wikilink" : "wikilink unresolved";
   return `<a href="#" class="${cls}" data-wikilink="${escapeHtml(resolved ?? target)}" data-resolved="${resolved ? 1 : 0}"${anchorAttrs(heading)}>${escapeHtml(label)}</a>`;
@@ -229,7 +213,7 @@ md.renderer.rules.wikiembed = (tokens, idx, _opts, env) => {
   const { resolver, docPath } = ctxOf(env);
   const token = tokens[idx];
   const { target, heading, alias } = token.meta as unknown as WikiMeta;
-  const resolved = target ? resolver.resolve(target) : heading ? docPath : null;
+  const resolved = target ? resolver.resolve(target, docPath) : heading ? docPath : null;
   if (resolved && IMAGE_EXT.test(resolved)) {
     // Obsidian의 ![[img.png|300]] 크기 지정
     const width = alias && /^\d+$/.test(alias) ? ` width="${alias}"` : "";
@@ -284,7 +268,7 @@ md.renderer.rules.image = (tokens, idx, opts, env, self) => {
       /* 잘못된 퍼센트 인코딩은 그대로 둔다 */
     }
     const rel = joinRelative(dirname(docPath), decoded);
-    token.attrSet("src", api.rawUrl(resolver.resolve(rel) ?? rel));
+    token.attrSet("src", api.rawUrl(resolver.resolve(rel, docPath) ?? rel));
   }
   return defaultImage(tokens, idx, opts, env, self);
 };
@@ -347,11 +331,12 @@ md.core.ruler.push("callouts", (state: StateCore) => {
   }
 });
 
+/** 콜아웃 기본 제목: 종류 → 메시지 키(같은 뜻은 한 키로) */
 const CALLOUT_LABEL: Record<string, string> = {
-  note: "참고", info: "정보", todo: "할 일", abstract: "요약", summary: "요약", tldr: "요약", tip: "팁", hint: "힌트", important: "중요",
-  success: "완료", check: "완료", done: "완료", question: "질문", help: "도움", faq: "자주 묻는 질문", warning: "주의", caution: "주의",
-  attention: "주의", failure: "실패", fail: "실패", missing: "빠짐", danger: "위험", error: "오류", bug: "버그", example: "예시",
-  quote: "인용", cite: "인용",
+  note: "note", info: "info", todo: "todo", abstract: "summary", summary: "summary", tldr: "summary", tip: "tip", hint: "tip", important: "important",
+  success: "success", check: "success", done: "success", question: "question", help: "question", faq: "faq", warning: "warning", caution: "warning",
+  attention: "warning", failure: "failure", fail: "failure", missing: "missing", danger: "danger", error: "error", bug: "bug", example: "example",
+  quote: "quote", cite: "quote",
 };
 /** 콜아웃 종류 → 색 묶음(styles.css의 .callout-*) */
 const CALLOUT_GROUP: Record<string, string> = {
@@ -363,7 +348,7 @@ const CALLOUT_GROUP: Record<string, string> = {
 md.renderer.rules.blockquote_open = (tokens, idx, opts, env, self) => {
   const c = tokens[idx].meta?.callout as { kind: string; fold: string; title: Token[] } | undefined;
   if (!c) return self.renderToken(tokens, idx, opts);
-  const title = md.renderer.renderInline(c.title, opts, env).trim() || escapeHtml(CALLOUT_LABEL[c.kind] ?? c.kind);
+  const title = md.renderer.renderInline(c.title, opts, env).trim() || escapeHtml(CALLOUT_LABEL[c.kind] ? t(`callout.${CALLOUT_LABEL[c.kind]}`) : c.kind);
   const cls = `callout callout-${CALLOUT_GROUP[c.kind] ?? "blue"}`;
   const line = tokens[idx].attrGet("data-line");
   const at = line ? ` data-line="${escapeHtml(String(line))}"` : "";

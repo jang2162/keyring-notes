@@ -4,6 +4,7 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, typ
 import { enhance } from "./enhance";
 import { renderMarkdown, type LinkResolver } from "./markdown";
 import { api } from "./api";
+import { t } from "./i18n";
 
 /**
  * Live Preview에서 8단계 형식을 그린다. 커서(선택)가 그 블록 밖에 있을 때만 그리고, 들어가면 원문을 보인다.
@@ -95,7 +96,7 @@ class HiddenBlock extends WidgetType {
   toDOM() {
     const el = document.createElement("div");
     el.className = "cm-lp-hidden-comment";
-    el.textContent = `%% 주석 ${this.lines}줄 %%`;
+    el.textContent = `%% ${t("live.comment", { count: this.lines })} %%`;
     return el;
   }
   ignoreEvent() {
@@ -298,7 +299,7 @@ function buildInline(view: EditorView, getCtx: GetCtx): DecorationSet {
       if (!alone) {
         for (const m of text.matchAll(/!\[\[([^\]|#\n]+)(?:\|(\d+))?[^\]\n]*\]\]/g)) {
           const target = m[1].trim();
-          const resolved = ctx.resolver.resolve(target);
+          const resolved = ctx.resolver.resolve(target, ctx.docPath);
           if (!resolved || !IMAGE_EXT.test(resolved) || inCode(at(m.index!))) continue;
           items.push(Decoration.replace({ widget: new InlineImage(api.rawUrl(resolved), target, m[2] ?? null) }).range(at(m.index!), at(m.index! + m[0].length)));
         }
