@@ -67,6 +67,8 @@ export interface VaultText {
     originalFile: string;
     page: (n: number) => string;
     noText: string;
+    /** PDF 짝 노트의 주석 절 제목 */
+    pdfNotes: string;
   };
   /** 공통 설정 파일 본문 안내 */
   settingsBody: string;
@@ -119,6 +121,7 @@ const EN: VaultText = {
     originalFile: "Original file",
     page: (n) => `Page ${n}`,
     noText: "(no text)",
+    pdfNotes: "PDF annotations",
   },
   settingsBody: `
 # Keyring Notes settings
@@ -175,6 +178,7 @@ const KO: VaultText = {
     originalFile: "원본 파일",
     page: (n) => `${n}쪽`,
     noText: "(텍스트 없음)",
+    pdfNotes: "PDF 주석",
   },
   settingsBody: `
 # Keyring Notes 설정

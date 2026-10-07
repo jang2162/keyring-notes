@@ -6,8 +6,10 @@
  *
  *   - [[raw/assets/보고서.pdf#page=3|3쪽]] “고른 글” — 메모 ^pdf-3-k2x9
  */
+import { vaultText, type VaultLang } from "./vaultText.js";
 
-export const PDF_NOTES_HEADING = "PDF 주석";
+/** 주석 절 제목(볼트 언어) */
+export const pdfNotesHeading = (lang?: VaultLang | string | null) => vaultText(lang).ingest.pdfNotes;
 
 export interface PdfAnnotation {
   /** 블록 ID(^ 없이) */
@@ -53,22 +55,24 @@ export function newPdfAnnotationId(content: string, page: number, random: () => 
 }
 
 /** 주석 한 줄 */
-export function formatPdfAnnotation(a: { pdf: string; page: number; quote: string; note?: string; id: string }): string {
+export function formatPdfAnnotation(a: { pdf: string; page: number; quote: string; note?: string; id: string }, lang?: VaultLang | string | null): string {
   const note = a.note?.replace(/\s+/g, " ").trim();
-  return `- [[${a.pdf}#page=${a.page}|${a.page}쪽]] “${cleanPdfQuote(a.quote)}”${note ? ` — ${note}` : ""} ^${a.id}`;
+  return `- [[${a.pdf}#page=${a.page}|${vaultText(lang).ingest.page(a.page)}]] “${cleanPdfQuote(a.quote)}”${note ? ` — ${note}` : ""} ^${a.id}`;
 }
 
 /**
  * 짝 노트에 주석을 더한다. "## PDF 주석" 절이 있으면 그 절 끝(다음 같은 수준 이상 제목 앞)에, 없으면 문서 끝에 절을 만든다.
  * 같은 쪽끼리 모이도록 쪽 순서를 지켜 넣는다.
  */
-export function addPdfAnnotation(content: string, a: { pdf: string; page: number; quote: string; note?: string; id: string }): string {
-  const line = formatPdfAnnotation(a);
+/** lang: 볼트 언어(절 제목·쪽 표시) */
+export function addPdfAnnotation(content: string, a: { pdf: string; page: number; quote: string; note?: string; id: string }, lang?: VaultLang | string | null): string {
+  const line = formatPdfAnnotation(a, lang);
+  const heading = pdfNotesHeading(lang);
   const lines = content.split("\n");
-  const head = lines.findIndex((l) => new RegExp(`^##\\s+${PDF_NOTES_HEADING}\\s*$`).test(l));
+  const head = lines.findIndex((l) => new RegExp(`^##\\s+${heading}\\s*$`).test(l));
   if (head < 0) {
     const base = content.replace(/\n*$/, "");
-    return `${base}${base ? "\n\n" : ""}## ${PDF_NOTES_HEADING}\n\n${line}\n`;
+    return `${base}${base ? "\n\n" : ""}## ${heading}\n\n${line}\n`;
   }
   let end = lines.length;
   for (let i = head + 1; i < lines.length; i++) {

@@ -6,9 +6,9 @@ const PDF = "경제/raw/assets/보고서.pdf";
 describe("PDF 주석", () => {
   it("절이 없으면 끝에 만들고, 쪽 순서로 넣는다", () => {
     let doc = "---\ntitle: 보고서\n---\n# 보고서\n\n본문\n";
-    doc = addPdfAnnotation(doc, { pdf: PDF, page: 5, quote: "다섯째 쪽", id: "pdf-5-aaaa" });
-    doc = addPdfAnnotation(doc, { pdf: PDF, page: 3, quote: "셋째\n쪽의 “인용”", note: "중요", id: "pdf-3-bbbb" });
-    doc = addPdfAnnotation(doc, { pdf: PDF, page: 9, quote: "아홉", id: "pdf-9-cccc" });
+    doc = addPdfAnnotation(doc, { pdf: PDF, page: 5, quote: "다섯째 쪽", id: "pdf-5-aaaa" }, "ko");
+    doc = addPdfAnnotation(doc, { pdf: PDF, page: 3, quote: "셋째\n쪽의 “인용”", note: "중요", id: "pdf-3-bbbb" }, "ko");
+    doc = addPdfAnnotation(doc, { pdf: PDF, page: 9, quote: "아홉", id: "pdf-9-cccc" }, "ko");
     expect(doc).toBe(
       "---\ntitle: 보고서\n---\n# 보고서\n\n본문\n\n## PDF 주석\n\n" +
         `- [[${PDF}#page=3|3쪽]] “셋째 쪽의 "인용"” — 중요 ^pdf-3-bbbb\n` +
@@ -27,7 +27,7 @@ describe("PDF 주석", () => {
   });
   it("절이 중간에 있으면 그 절 안에 넣는다", () => {
     const doc = "# 글\n\n## PDF 주석\n\n## 다른 절\n내용\n";
-    const out = addPdfAnnotation(doc, { pdf: "a.pdf", page: 1, quote: "x", id: "pdf-1-zzzz" });
+    const out = addPdfAnnotation(doc, { pdf: "a.pdf", page: 1, quote: "x", id: "pdf-1-zzzz" }, "ko");
     expect(out).toBe("# 글\n\n## PDF 주석\n\n- [[a.pdf#page=1|1쪽]] “x” ^pdf-1-zzzz\n\n## 다른 절\n내용\n");
   });
   it("고른 글 다듬기·ID·짝 노트 경로", () => {

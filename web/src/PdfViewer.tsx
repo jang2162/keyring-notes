@@ -219,7 +219,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     setMessage(null);
     try {
       const id = newPdfAnnotationId(companionText, pick.page);
-      await editCompanion((c) => addPdfAnnotation(c, { pdf: pdfTarget, page: pick.page, quote: pick.text, note, id }));
+      await editCompanion((c) => addPdfAnnotation(c, { pdf: pdfTarget, page: pick.page, quote: pick.text, note, id }, vaultLang()));
       setPick(null);
       setNote("");
       window.getSelection()?.removeAllRanges();
