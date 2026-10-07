@@ -68,13 +68,13 @@ function build(lang: string) {
 export function setLanguage(lang: string) {
   wanted = lang;
   const next = lang === PSEUDO || isOfficialLang(lang) || packs[lang] ? lang : officialLangOf(lang);
+  if (typeof document !== "undefined") document.documentElement.lang = next === PSEUDO ? "en" : next;
   if (next === current && chain.length) {
     for (const l of listeners) l(current);
     return;
   }
   current = next;
   chain = build(current);
-  if (typeof document !== "undefined") document.documentElement.lang = current === PSEUDO ? "en" : current;
   for (const l of listeners) l(current);
 }
 

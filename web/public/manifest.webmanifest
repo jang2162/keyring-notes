@@ -1,7 +1,7 @@
 {
   "name": "Keyring Notes",
   "short_name": "Keyring",
-  "description": "마크다운 노트와 에이전트 위키",
+  "description": "Markdown notes and an agent-maintained wiki",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

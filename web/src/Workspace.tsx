@@ -469,6 +469,26 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   }, [propsShown, vaultVersion]);
 
   const resolver = useMemo(() => new LinkResolver(tree, daily), [tree, daily]);
+
+  // 다른 곳(다른 기기·탭·에이전트)에서 지워지거나 옮겨진 노트의 탭은 트리를 받은 뒤 정리한다(빈 노드의 탭은 폴더가 있으면 남긴다)
+  useEffect(() => {
+    if (!tree.length) return;
+    const files = new Set(resolver.paths);
+    const dirs = new Set(resolver.paths.flatMap((p) => p.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))));
+    // 지금 연 노트·저장 안 한 탭(오프라인에서 만든 것 포함)은 남긴다
+    const keep = (p: string) => p === docRef.current?.path || (tabCache.current.get(p)?.draft ?? "") !== (tabCache.current.get(p)?.saved ?? "");
+    const alive = (p: string) => files.has(p) || dirs.has(stripMd(p)) || keep(p);
+    setTabsByScope((m) => {
+      let changed = false;
+      const next: Record<string, string[]> = {};
+      for (const [k, list] of Object.entries(m)) {
+        next[k] = list.filter(alive);
+        if (next[k].length !== list.length) changed = true;
+      }
+      return changed ? next : m;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolver]);
   const resolverRef = useRef(resolver);
   resolverRef.current = resolver;
 
@@ -2125,24 +2145,25 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         <IconButton icon={Search} label={t("rail.search")} side={railSide} showLabel={rl} keys={keyOf("search")} active={prefs.leftOpen && prefs.leftView === "search"} onClick={() => showLeft("search")} />
         <IconButton icon={Tag} label={t("rail.tags")} side={railSide} showLabel={rl} active={prefs.leftOpen && prefs.leftView === "tags"} onClick={() => showLeft("tags")} />
         <span className="rail-sep" />
-        {dailyCfg && <IconButton icon={CalendarDays} label={t("cmd.daily")} side={railSide} showLabel={rl} keys={keyOf("daily")} onClick={() => void openDaily(0)} />}
-        <IconButton icon={Waypoints} label={t("tool.graph")} side={railSide} showLabel={rl} onClick={() => setGraphOpen(true)} />
-        {!local && <IconButton icon={Inbox} label={t("tool.ingestLong")} side={railSide} showLabel={rl} onClick={() => setIngestOpen(true)} />}
-        {!local && <IconButton icon={ListChecks} label={pendingCount ? t("tool.reviewWaiting", { count: pendingCount }) : t("tool.reviewLong")} side={railSide} showLabel={rl} badge={pendingCount} onClick={() => setReviewOpen(true)} />}
-        <IconButton icon={BrushCleaning} label={t("tool.lintLong")} side={railSide} showLabel={rl} onClick={() => setLintOpen(true)} />
+        {dailyCfg && <IconButton icon={CalendarDays} label={t("cmd.daily")} shortLabel={t("rail.daily")} side={railSide} showLabel={rl} keys={keyOf("daily")} onClick={() => void openDaily(0)} />}
+        <IconButton icon={Waypoints} label={t("tool.graph")} shortLabel={t("rail.graph")} side={railSide} showLabel={rl} onClick={() => setGraphOpen(true)} />
+        {!local && <IconButton icon={Inbox} label={t("tool.ingestLong")} shortLabel={t("rail.ingest")} side={railSide} showLabel={rl} onClick={() => setIngestOpen(true)} />}
+        {!local && <IconButton icon={ListChecks} label={pendingCount ? t("tool.reviewWaiting", { count: pendingCount }) : t("tool.reviewLong")} shortLabel={t("rail.review")} side={railSide} showLabel={rl} badge={pendingCount} onClick={() => setReviewOpen(true)} />}
+        <IconButton icon={BrushCleaning} label={t("tool.lintLong")} shortLabel={t("rail.lint")} side={railSide} showLabel={rl} onClick={() => setLintOpen(true)} />
       </div>
       <div className="rail-bottom">
         {local && (
           <IconButton
             icon={RefreshCw}
             label={syncStatus?.settings ? t("sync.with", { server: syncStatus.settings.server }) : t("tool.device")}
+            shortLabel={t("rail.sync")}
             side={railSide}
             showLabel={rl}
             className={`sync-button${syncStatus?.running ? " running" : ""}${syncStatus?.lastError ? " has-error" : ""}`}
             onClick={() => openSettings("device")}
           />
         )}
-        <IconButton icon={Keyboard} label={t("cmd.keys")} side={railSide} showLabel={rl} keys={keyOf("keys")} onClick={() => setKeysOpen(true)} />
+        <IconButton icon={Keyboard} label={t("cmd.keys")} shortLabel={t("rail.keys")} side={railSide} showLabel={rl} keys={keyOf("keys")} onClick={() => setKeysOpen(true)} />
         <IconButton icon={SettingsIcon} label={t("settings.title")} side={railSide} showLabel={rl} keys={keyOf("settings")} active={!!settings} onClick={() => (settings ? closeSettings() : openSettings())} />
         {!local && (
           <IconButton

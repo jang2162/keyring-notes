@@ -21,6 +21,7 @@ export function IconButton({
   size = 18,
   side,
   showLabel,
+  shortLabel,
 }: {
   icon: LucideIcon;
   label: string;
@@ -36,6 +37,8 @@ export function IconButton({
   side?: "right" | "bottom" | "top" | "left";
   /** 아이콘 옆에 이름도(레일 "아이콘 + 글자") */
   showLabel?: boolean;
+  /** 보이는 이름이 길 때 레일에 쓸 짧은 이름(툴팁·접근성 이름은 label) */
+  shortLabel?: string;
 }) {
   return (
     <button
@@ -54,7 +57,7 @@ export function IconButton({
       }}
     >
       <Icon size={size} strokeWidth={1.75} aria-hidden />
-      {showLabel && <span className="icon-btn-label">{label}</span>}
+      {showLabel && <span className="icon-btn-label">{shortLabel ?? label}</span>}
       {badge !== undefined && badge !== 0 && badge !== "" && <span className="icon-badge">{badge}</span>}
     </button>
   );
