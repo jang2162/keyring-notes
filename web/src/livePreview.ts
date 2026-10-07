@@ -1,6 +1,6 @@
 import { syntaxTree } from "@codemirror/language";
-import type { EditorState, Extension } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 
 /**
  * 편집 중 렌더링(Live Preview): 커서가 없는 줄에서는 마크업 기호를 숨기고 모양만 보인다.
@@ -156,4 +156,121 @@ const theme = EditorView.baseTheme({
 
 export function livePreview(): Extension {
   return [plugin, theme];
+}
+
+/**
+ * 코드만 고정폭: 본문 글꼴이 비례폭이어도 코드 블록 줄과 `인라인 코드`는 고정폭으로 보인다(Live Preview와 따로 늘 켠다).
+ */
+const codeLine = Decoration.line({ class: "cm-code-line" });
+const inlineCode = Decoration.mark({ class: "cm-inline-code" });
+
+function buildCode(view: EditorView): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+  for (const { from, to } of view.visibleRanges) {
+    syntaxTree(view.state).iterate({
+      from,
+      to,
+      enter: (n) => {
+        if (n.name === "FencedCode" || n.name === "CodeBlock") {
+          const a = view.state.doc.lineAt(n.from).number;
+          const b = view.state.doc.lineAt(n.to).number;
+          for (let i = a; i <= b; i++) ranges.push(codeLine.range(view.state.doc.line(i).from));
+          return false;
+        }
+        if (n.name === "InlineCode") {
+          ranges.push(inlineCode.range(n.from, n.to));
+          return false;
+        }
+        return undefined;
+      },
+    });
+  }
+  return Decoration.set(ranges, true);
+}
+
+const codePlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildCode(view);
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged || syntaxTree(u.state) !== syntaxTree(u.startState)) this.decorations = buildCode(u.view);
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
+const codeTheme = EditorView.baseTheme({
+  ".cm-code-line": { fontFamily: "var(--font-mono)", fontSize: "0.9em", backgroundColor: "var(--bg-soft)" },
+  ".cm-inline-code": { fontFamily: "var(--font-mono)", fontSize: "0.9em", backgroundColor: "var(--bg-soft)", borderRadius: "3px", padding: "0 2px" },
+});
+
+export function codeFont(): Extension {
+  return [codePlugin, codeTheme];
+}
+
+/**
+ * 속성 칸이 열려 있을 때: 맨 앞 프런트매터(--- … ---)를 한 줄 표시로 접는다. 커서가 그 안에 들어가면 원문을 보인다.
+ */
+class FrontmatterWidget extends WidgetType {
+  constructor(readonly lines: number) {
+    super();
+  }
+  eq(other: FrontmatterWidget) {
+    return other.lines === this.lines;
+  }
+  toDOM() {
+    const el = document.createElement("div");
+    el.className = "cm-fm-fold";
+    el.textContent = `프런트매터 ${this.lines}줄 — 위 속성 칸에서 고치거나, 눌러서 원문 보기`;
+    return el;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+function frontmatterEnd(state: EditorState): number | null {
+  const doc = state.doc;
+  if (doc.lines < 2 || doc.line(1).text.trimEnd() !== "---") return null;
+  for (let i = 2; i <= Math.min(doc.lines, 300); i++) {
+    const t = doc.line(i).text.trimEnd();
+    if (t === "---" || t === "...") return i;
+  }
+  return null;
+}
+
+function buildFold(state: EditorState): DecorationSet {
+  const end = frontmatterEnd(state);
+  if (end === null) return Decoration.none;
+  const to = state.doc.line(end).to;
+  const sel = state.selection.main;
+  // 문서를 막 열었을 때의 커서(맨 앞, 선택 없음)는 안으로 치지 않는다
+  if (sel.from <= to && !(sel.empty && sel.head === 0)) return Decoration.none;
+  return Decoration.set([Decoration.replace({ widget: new FrontmatterWidget(end), block: true }).range(0, to)]);
+}
+
+const foldField = StateField.define<DecorationSet>({
+  create: buildFold,
+  update: (deco, tr) => (tr.docChanged || tr.selection ? buildFold(tr.state) : deco),
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+const foldTheme = EditorView.baseTheme({
+  ".cm-fm-fold": { fontSize: "12px", color: "var(--muted)", padding: "2px 0 6px", cursor: "pointer", fontFamily: "var(--font-sans)" },
+});
+
+const foldClick = EditorView.domEventHandlers({
+  mousedown(e, view) {
+    if (!(e.target as HTMLElement).closest(".cm-fm-fold")) return false;
+    e.preventDefault();
+    view.dispatch({ selection: { anchor: 3 } });
+    view.focus();
+    return true;
+  },
+});
+
+export function frontmatterFold(): Extension {
+  return [foldField, foldTheme, foldClick];
 }

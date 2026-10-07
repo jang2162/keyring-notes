@@ -422,8 +422,9 @@ const remoteApi = {
       throw e;
     }
   },
-  write: (path: string, content: string, baseHash: string | null) =>
-    request<Doc>("PUT", "/api/file", { path, content, baseHash }),
+  /** coalesce: 자동 저장. 서버가 같은 문서의 잇단 저장을 한 커밋으로 묶는다 */
+  write: (path: string, content: string, baseHash: string | null, opts: { coalesce?: boolean } = {}) =>
+    request<Doc>("PUT", "/api/file", { path, content, baseHash, ...(opts.coalesce ? { coalesce: true } : {}) }),
   remove: (path: string, baseHash: string) => request<unknown>("DELETE", "/api/file", { path, baseHash }),
   /** 이동·이름 바꾸기. 기본으로 이 문서를 가리키던 링크도 같이 고친다(linksUpdated: 고친 문서, linkCount: 고친 링크 수) */
   move: (from: string, to: string, baseHash: string, opts: { updateLinks?: boolean } = {}) =>
