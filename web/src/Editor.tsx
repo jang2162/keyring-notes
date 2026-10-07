@@ -2,13 +2,32 @@ import { autocompletion, completionKeymap, type CompletionContext, type Completi
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import {
+  codeFolding,
+  defaultHighlightStyle,
+  ensureSyntaxTree,
+  foldable,
+  foldAll,
+  foldCode,
+  foldEffect,
+  foldedRanges,
+  foldGutter,
+  foldNodeProp,
+  HighlightStyle,
+  syntaxHighlighting,
+  syntaxTree,
+  unfoldAll,
+  unfoldCode,
+  unfoldEffect,
+} from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, type StateEffect } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { codeFont, frontmatterFold, livePreview } from "./livePreview";
+import type { LiveRenderContext } from "./liveBlocks";
+import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -29,6 +48,11 @@ export interface EditorHandle {
   /** 내용을 바꾼다(속성 입력 화면). 달라진 부분만 바꿔 커서·실행 취소 기록을 지킨다 */
   setContent(next: string): void;
   focus(): void;
+  /** 접기: 지금 위치 접기·펴기, 모두 접기·펴기, 이 수준 제목만 보기, 그 줄(1부터) 접기 바꾸기 */
+  fold(what: "here" | "unfold-here" | "all" | "unfold-all" | "level"): void;
+  toggleFoldLine(line: number): void;
+  /** 접힌 블록의 첫 줄 번호들 */
+  foldedLines(): number[];
 }
 
 /** 선택을 기호로 감싼다(이미 감싸여 있으면 벗긴다). 선택이 없으면 기호 사이에 커서 */
@@ -112,9 +136,96 @@ interface Props {
   onCursor?: (line: number, col: number) => void;
   /** 에디터에서 포커스가 빠질 때(자동 저장) */
   onBlur?: () => void;
-  /** 프런트매터를 한 줄로 접는다(속성 칸이 열려 있을 때) */
+  /** 프런트매터를 한 줄로 접는다("속성 N개 — 오른쪽 패널에서 보기") */
   foldFrontmatter?: boolean;
+  /** 접힌 프런트매터 줄을 누르면: 오른쪽 패널 속성 탭 열기 */
+  onShowProps?: () => void;
+  /** 접힌 상태를 기억할 문서 경로(이 기기). 없으면 기억하지 않는다 */
+  foldKey?: string;
+  /** Live Preview가 블록(콜아웃·수식·임베드…)을 그릴 때 쓸 링크 해석 */
+  renderContext?: () => LiveRenderContext | null;
 }
+
+/** 블록의 접힌 줄들(접힌 범위가 시작하는 줄) */
+function foldedLineNumbers(state: EditorState): number[] {
+  const out: number[] = [];
+  foldedRanges(state).between(0, state.doc.length, (from) => {
+    out.push(state.doc.lineAt(from).number);
+  });
+  return out;
+}
+
+/** 그 줄에서 시작하는 접힌 범위를 펴거나, 접을 수 있으면 접는다 */
+function toggleLine(view: EditorView, lineNo: number): boolean {
+  if (lineNo < 1 || lineNo > view.state.doc.lines) return false;
+  const line = view.state.doc.line(lineNo);
+  const effects: StateEffect<unknown>[] = [];
+  foldedRanges(view.state).between(line.from, line.to, (from, to) => {
+    if (view.state.doc.lineAt(from).number === lineNo) effects.push(unfoldEffect.of({ from, to }));
+  });
+  if (!effects.length) {
+    const r = foldable(view.state, line.from, line.to);
+    if (r) effects.push(foldEffect.of(r));
+  }
+  if (effects.length) view.dispatch({ effects });
+  return effects.length > 0;
+}
+
+/** 그 위치를 덮는 접힌 범위를 편다(검색 결과·제목 링크로 갈 때) */
+function revealPos(view: EditorView, pos: number) {
+  const effects: StateEffect<unknown>[] = [];
+  foldedRanges(view.state).between(pos, pos, (from, to) => {
+    if (from <= pos && pos <= to) effects.push(unfoldEffect.of({ from, to }));
+  });
+  if (effects.length) view.dispatch({ effects });
+}
+
+/** 이 수준 제목만 보기: 커서가 든 섹션의 제목 수준과 같은 제목을 모두 접는다 */
+function foldLevel(view: EditorView) {
+  const { state } = view;
+  ensureSyntaxTree(state, state.doc.length, 300);
+  const head = state.selection.main.head;
+  let level = 0;
+  const heads: { level: number; line: number }[] = [];
+  syntaxTree(state).iterate({
+    enter: (n) => {
+      const m = /^(?:ATX|Setext)Heading(\d)$/.exec(n.name);
+      if (!m) return;
+      heads.push({ level: Number(m[1]), line: state.doc.lineAt(n.from).number });
+      if (n.from <= head) level = Number(m[1]);
+      return false;
+    },
+  });
+  if (!level) level = Math.min(...heads.map((h) => h.level), 6);
+  const effects: StateEffect<unknown>[] = [];
+  for (const h of heads) {
+    if (h.level !== level) continue;
+    const line = state.doc.line(h.line);
+    const r = foldable(state, line.from, line.to);
+    if (r) effects.push(foldEffect.of(r));
+  }
+  if (effects.length) view.dispatch({ effects });
+}
+
+/** 코드 블록은 길 때만 접는다(짧은 블록은 단추도 없다) */
+const codeFoldProp = foldNodeProp.add({
+  FencedCode: (node, state) => {
+    const a = state.doc.lineAt(node.from);
+    const b = state.doc.lineAt(node.to);
+    return b.number - a.number + 1 >= CODE_FOLD_MIN_LINES ? { from: a.to, to: node.to } : null;
+  },
+});
+
+/** ▸/▾ 접기 단추(제목·목록·콜아웃·긴 코드·표 왼쪽) */
+const foldMarkers = foldGutter({
+  markerDOM: (open) => {
+    const el = document.createElement("span");
+    el.className = `cm-fold-marker ${open ? "open" : "closed"}`;
+    el.textContent = open ? "▾" : "▸";
+    el.title = open ? "접기" : "펴기";
+    return el;
+  },
+});
 
 /** 제목: 밑줄 없이 굵게(기본 강조 모양은 밑줄을 긋는다) */
 const headingStyle = HighlightStyle.define([
@@ -155,7 +266,7 @@ function wikilinkSource(get: () => LinkCandidate[]) {
   };
 }
 
-export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle, readOnly = false, onFiles, live = false, lineNumbers: showLines = false, onCursor, onBlur, foldFrontmatter = false }: Props) {
+export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle, readOnly = false, onFiles, live = false, lineNumbers: showLines = false, onCursor, onBlur, foldFrontmatter = false, onShowProps, foldKey, renderContext }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const liveSlot = useRef(new Compartment());
@@ -167,8 +278,14 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
   linesRef.current = showLines;
   const liveRef = useRef(live);
   liveRef.current = live;
-  const callbacks = useRef({ onChange, onSave, linkCandidates, onFiles, onCursor, onBlur });
-  callbacks.current = { onChange, onSave, linkCandidates, onFiles, onCursor, onBlur };
+  const ctxRef = useRef(renderContext);
+  ctxRef.current = renderContext;
+  const getCtx = () => ctxRef.current?.() ?? null;
+  const foldKeyRef = useRef(foldKey);
+  foldKeyRef.current = foldKey;
+  const callbacks = useRef({ onChange, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
+  callbacks.current = { onChange, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
+  const showProps = () => callbacks.current.onShowProps?.();
 
   /** 올리는 동안 자리 표시를 넣었다가 링크로 바꾼다(실패하면 지운다) */
   const insertFiles = async (view: EditorView, files: File[], from: number, to: number) => {
@@ -196,12 +313,14 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           highlightSelectionMatches(),
           syntaxHighlighting(headingStyle),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          foldSlot.current.of(foldRef.current ? frontmatterFold() : []),
-          markdown({ base: markdownLanguage, codeLanguages: languages }),
+          foldSlot.current.of(foldRef.current ? frontmatterFold(showProps) : []),
+          markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [{ props: [codeFoldProp] }] }),
+          codeFolding({ placeholderText: "…" }),
+          foldMarkers,
           autocompletion({ override: [wikilinkSource(() => callbacks.current.linkCandidates())], icons: false }),
           EditorView.lineWrapping,
           codeFont(),
-          liveSlot.current.of(liveRef.current ? livePreview() : []),
+          liveSlot.current.of(liveRef.current ? livePreview(getCtx) : []),
           EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
@@ -236,6 +355,11 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) callbacks.current.onChange(u.state.doc.toString());
+            // 접은 것을 이 기기에 기억한다(내용이 바뀌어 줄이 밀리면 새 줄로)
+            const foldChanged = u.transactions.some((t) => t.effects.some((e) => e.is(foldEffect) || e.is(unfoldEffect)));
+            if (foldKeyRef.current && (foldChanged || (u.docChanged && foldedRanges(u.state).size))) {
+              setFolds(foldKeyRef.current, anchorsOf(u.state.doc.toString().split("\n"), foldedLineNumbers(u.state)), view);
+            }
             if (u.selectionSet || u.docChanged) {
               const head = u.state.selection.main.head;
               const line = u.state.doc.lineAt(head);
@@ -273,6 +397,22 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
         focus() {
           view.focus();
         },
+        fold(what) {
+          if (what === "here") foldCode(view);
+          else if (what === "unfold-here") unfoldCode(view);
+          else if (what === "all") {
+            ensureSyntaxTree(view.state, view.state.doc.length, 300);
+            foldAll(view);
+          } else if (what === "unfold-all") unfoldAll(view);
+          else foldLevel(view);
+        },
+        toggleFoldLine(lineNo) {
+          ensureSyntaxTree(view.state, view.state.doc.length, 300);
+          toggleLine(view, lineNo);
+        },
+        foldedLines() {
+          return foldedLineNumbers(view.state);
+        },
         gotoLine(lineNo, text) {
           const n = Math.min(Math.max(lineNo, 1), view.state.doc.lines);
           const line = view.state.doc.line(n);
@@ -291,14 +431,39 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
               }
             }
           }
+          revealPos(view, sel.main.from);
           view.dispatch({ selection: sel, effects: EditorView.scrollIntoView(sel.main.from, { y: "center" }) });
           view.focus();
         },
       };
     }
+    // 이 문서에서 접어 두었던 곳을 다시 접는다. 미리보기·개요에서 바꾸면 따라간다
+    const applyFolds = () => {
+      const key = foldKeyRef.current;
+      if (!key) return;
+      ensureSyntaxTree(view.state, view.state.doc.length, 500);
+      const want = resolveFolds(view.state.doc.toString().split("\n"), getFolds(key));
+      const have = new Set(foldedLineNumbers(view.state));
+      const effects: StateEffect<unknown>[] = [];
+      foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => {
+        if (!want.has(view.state.doc.lineAt(from).number)) effects.push(unfoldEffect.of({ from, to }));
+      });
+      for (const n of want) {
+        if (have.has(n) || n > view.state.doc.lines) continue;
+        const line = view.state.doc.line(n);
+        const r = foldable(view.state, line.from, line.to);
+        if (r) effects.push(foldEffect.of(r));
+      }
+      if (effects.length) view.dispatch({ effects });
+    };
+    applyFolds();
+    const offFolds = onFoldsChange((path, source) => {
+      if (source !== view && path === foldKeyRef.current) applyFolds();
+    });
     viewRef.current = view;
     if (!readOnly) view.focus();
     return () => {
+      offFolds();
       viewRef.current = null;
       if (handle) handle.current = null;
       view.destroy();
@@ -312,12 +477,12 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
   }, [showLines]);
 
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: foldSlot.current.reconfigure(foldFrontmatter ? frontmatterFold() : []) });
+    viewRef.current?.dispatch({ effects: foldSlot.current.reconfigure(foldFrontmatter ? frontmatterFold(showProps) : []) });
   }, [foldFrontmatter]);
 
   // 편집 중 렌더링 켜고 끄기(에디터를 다시 만들지 않는다)
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview() : []) });
+    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview(getCtx) : []) });
   }, [live]);
 
   return <div className={`editor${live ? " live" : ""}${showLines ? " lines" : ""}`} ref={host} />;

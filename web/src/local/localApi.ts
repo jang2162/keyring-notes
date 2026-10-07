@@ -68,6 +68,8 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     write: (path, content, baseHash) => wrap(() => vault.write(path, content, baseHash)),
     remove: (path, baseHash) => wrap(() => vault.remove(path, baseHash)),
     move: (from, to, baseHash, opts) => wrap(() => vault.move(from, to, baseHash, opts)),
+    moveFolder: (from, to) => wrap(() => vault.moveFolder(from, to)),
+    moveFiles: (pairs, message) => wrap(() => vault.moveFiles(pairs, message)),
     history: (path) => wrap(() => vault.history(path)),
     revision: (path, rev) => wrap(() => vault.revision(path, rev)),
     rollback: (path, rev, baseHash) => wrap(() => vault.rollback(path, rev, baseHash)),

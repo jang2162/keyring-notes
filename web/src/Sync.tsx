@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { SyncReport } from "@keyring-notes/core";
 import { confirmDialog } from "./dialog";
+import { useCloseGuard } from "./Modal";
 import type { LocalContext } from "./local/boot";
 import { defaultDeviceName, type SyncStatus } from "./local/syncController";
 
@@ -76,8 +77,8 @@ function Report({ r, onOpen }: { r: SyncReport; onOpen: (p: string) => void }) {
   );
 }
 
-/** 이 기기의 볼트와 (선택) 서버 동기화 설정. */
-export function SyncPanel({ ctx, onClose, onOpen }: { ctx: LocalContext; onClose: () => void; onOpen: (p: string) => void }) {
+/** 이 기기의 볼트와 (선택) 서버 동기화 설정(설정 모달의 "이 기기·동기화" 묶음). */
+export function SyncSettings({ ctx, onOpen }: { ctx: LocalContext; onOpen: (p: string) => void }) {
   const status = useSyncStatus(ctx)!;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -99,15 +100,8 @@ export function SyncPanel({ ctx, onClose, onOpen }: { ctx: LocalContext; onClose
   };
 
   return (
-    <div className="admin" role="dialog" aria-label="이 기기와 동기화">
-      <div className="admin-head">
-        <strong>이 기기 · 동기화</strong>
-        <nav />
-        <button onClick={onClose} aria-label="닫기">
-          ✕
-        </button>
-      </div>
-      <div className="admin-body">
+      <div className="sync-settings">
+        <SyncGuard busy={busy} />
         <section>
           <h3>이 기기의 볼트</h3>
           <p className="meta">
@@ -182,6 +176,11 @@ export function SyncPanel({ ctx, onClose, onOpen }: { ctx: LocalContext; onClose
           )}
         </section>
       </div>
-    </div>
   );
+}
+
+/** 서버에 처음 연결하는 동안은 닫지 않는다 */
+function SyncGuard({ busy }: { busy: boolean }) {
+  useCloseGuard(busy ? { kind: "block", reason: "서버에 연결하는 중입니다." } : null);
+  return null;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   BrushCleaning,
@@ -28,6 +28,8 @@ import {
   RefreshCw,
   Search,
   Settings as SettingsIcon,
+  SmilePlus,
+  ChevronLeft,
   SlidersHorizontal,
   Tag,
   Trash2,
@@ -37,7 +39,6 @@ import {
 } from "lucide-react";
 import { api, ApiError, appMode, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
 import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
-import { AdminPanel } from "./Admin";
 import { LintPanel, ReviewPanel } from "./Curation";
 import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
@@ -46,20 +47,46 @@ import { isNetworkError, offline } from "./offline";
 import { LinkResolver, renderMarkdown } from "./markdown";
 import { enhance, invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
-import { applyTemplate, dailyNotePath, headings, merge3, type PropertyStat } from "@keyring-notes/core";
-import { loadNoteSettings, saveNoteSettings, type NoteSettings } from "./noteSettings";
+import {
+  applyTemplate,
+  blockRange,
+  sha256Hex,
+  dailyConfigOf,
+  dailyNotePath,
+  dailyNotes,
+  DAILY_PROP_KEYS,
+  friendlyDate,
+  headings,
+  isVaultSettingsPath,
+  merge3,
+  parseDailyPath,
+  parseFrontmatter,
+  planDailyMigration,
+  setFrontmatterField,
+  shiftDays,
+  updateDailyProps,
+  withDailyProps,
+  ymd,
+  type DailyNote,
+  type PropertyStat,
+} from "@keyring-notes/core";
 import { Properties } from "./Properties";
 import { PdfViewer } from "./PdfViewer";
 import { localContext } from "./local/boot";
-import { SyncPanel, useSyncStatus } from "./Sync";
+import { useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
 import { mentionTarget, References, UnlinkedMentions } from "./Links";
 import { applyTheme, DEFAULT_PREFS, setPrefs, usePrefs, type Prefs } from "./prefs";
 import { toast, toastError, Toasts } from "./toast";
 import { commandKey, formatCombo, keyCapture, matchCommand, type Command } from "./shortcuts";
 import { IconButton, Menu, Resizer, Segmented, type MenuEntry } from "./ui";
-import { invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeHandle } from "./Tree";
-import { SettingsPage, KeySettings, type SettingsSection } from "./Settings";
+import { invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
+import { SettingsModal, KeySettings, type SettingsSection } from "./Settings";
+import { attemptCloseTopModal, Modal } from "./Modal";
+import { getVaultSettings, reloadVaultSettings, updateVaultSetting, useVaultSettings, vaultSettingsReady } from "./vaultSettings";
+import { DocIcon, IconLookup, IconPicker } from "./IconPicker";
+import { getFolds, moveFolds, onFoldsChange, resolveFolds } from "./folds";
+import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
 import { AsidePreview, FileViewer } from "./Aside";
 
 type ViewMode = "split" | "edit" | "preview";
@@ -185,11 +212,17 @@ function timeAgo(at: number, now: number) {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** 문서 위 큰 제목 칸: 고치고 Enter나 포커스 이탈 때 파일 이름을 바꾼다 */
+/**
+ * 문서 위 큰 제목 칸: 고치고 Enter나 포커스 이탈 때 파일 이름을 바꾼다. 앞에 아이콘(누르면 고르기).
+ * 데일리 노트는 날짜 부분을 고정된 앞머리(흐린 글자)로 보이고 그 뒤 제목만 고친다. 날짜를 누르면 전체 이름을 고친다.
+ */
 function InlineTitle({
   path,
   readOnly,
   focusSignal,
+  daily,
+  icon,
+  onIcon,
   onFocused,
   onRename,
   onDone,
@@ -197,15 +230,22 @@ function InlineTitle({
   path: string;
   readOnly: boolean;
   focusSignal: number;
+  daily: DailyNote | null;
+  icon: string | null;
+  onIcon?: (at: { x: number; y: number }) => void;
   onFocused: () => void;
   onRename: (stem: string) => Promise<boolean>;
   onDone: () => void;
 }) {
   const stem = stemOf(path);
-  const [v, setV] = useState(stem);
+  const [full, setFull] = useState(false);
+  const split = !!daily && !full;
+  const initial = split ? daily!.title : stem;
+  const [v, setV] = useState(initial);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => setV(stem), [stem]);
+  useEffect(() => setV(initial), [initial]);
+  useEffect(() => setFull(false), [path]);
   useEffect(() => {
     if (!focusSignal) return;
     // 에디터가 열리며 포커스를 가져간 뒤에 잡는다
@@ -216,43 +256,86 @@ function InlineTitle({
     }, 30);
     return () => clearTimeout(t);
   }, [focusSignal]);
-  const err = v.trim() === stem ? null : invalidNameReason(v);
+  /** 칸의 글 → 새 파일 이름(확장자 없이) */
+  const nameOf = (text: string) => (split ? (text.trim() ? `${daily!.datePart}${daily!.sep || " "}${text.trim()}` : daily!.datePart) : text.trim());
+  const next = nameOf(v);
+  const err = next === stem ? null : invalidNameReason(next);
+  // 전체 이름을 고치다 날짜를 지우면 데일리 노트가 아니게 된다
+  const warn = daily && full && !next.startsWith(daily.datePart) ? "날짜를 지우거나 바꾸면 이 문서는 그날 데일리 노트가 아니게 됩니다(다른 날짜면 그날 노트가 되고 날짜 속성도 따라 고칩니다)." : null;
   const commit = async () => {
-    const name = v.trim();
-    if (busy || name === stem) return setV(stem);
+    if (busy || next === stem) {
+      setV(initial);
+      setFull(false);
+      return;
+    }
     if (err) return;
     setBusy(true);
-    const ok = await onRename(name);
+    const ok = await onRename(next);
     setBusy(false);
-    if (!ok) setV(stem);
+    if (!ok) setV(initial);
+    setFull(false);
   };
   return (
     <div className="inline-title-wrap">
-      <input
-        ref={ref}
-        className="inline-title"
-        value={v}
-        readOnly={readOnly}
-        aria-label="문서 제목(파일 이름)"
-        aria-invalid={!!err}
-        spellCheck={false}
-        onChange={(e) => setV(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return;
-          if (e.key === "Enter" || (e.key === "ArrowDown" && !err)) {
-            e.preventDefault();
-            void commit().then(onDone);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            setV(stem);
-            onDone();
-          }
-        }}
-      />
-      {err && (
-        <p className="inline-title-error" role="alert">
-          {err}
+      <div className="inline-title-row">
+        {onIcon || icon ? (
+          <button
+            type="button"
+            className={`title-icon${icon ? "" : " empty"}`}
+            disabled={!onIcon}
+            title={icon ? "아이콘 바꾸기" : "아이콘 더하기"}
+            aria-label={icon ? `아이콘 ${icon} 바꾸기` : "아이콘 더하기"}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onIcon?.({ x: r.left, y: r.bottom + 4 });
+            }}
+          >
+            {icon ?? <SmilePlus size={22} strokeWidth={1.5} aria-hidden />}
+          </button>
+        ) : null}
+        {split && (
+          <button
+            type="button"
+            className="title-date"
+            disabled={readOnly}
+            title="데일리 노트 날짜(누르면 전체 이름 고치기)"
+            onClick={() => {
+              setFull(true);
+              setTimeout(() => ref.current?.focus(), 0);
+            }}
+          >
+            {daily!.datePart}
+          </button>
+        )}
+        <input
+          ref={ref}
+          className="inline-title"
+          value={v}
+          readOnly={readOnly}
+          placeholder={split ? "제목(선택)" : undefined}
+          aria-label={split ? "데일리 노트 제목(날짜 뒤)" : "문서 제목(파일 이름)"}
+          aria-invalid={!!err}
+          spellCheck={false}
+          onChange={(e) => setV(e.target.value)}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "Enter" || (e.key === "ArrowDown" && !err)) {
+              e.preventDefault();
+              void commit().then(onDone);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              setV(initial);
+              setFull(false);
+              onDone();
+            }
+          }}
+        />
+      </div>
+      {(err || warn) && (
+        <p className={err ? "inline-title-error" : "inline-title-warn"} role="alert">
+          {err ?? warn}
         </p>
       )}
     </div>
@@ -278,6 +361,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return () => mq.removeEventListener("change", on);
   }, []);
   const [mode, setMode] = useState<ViewMode>(() => (narrow() ? "preview" : "edit"));
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  /** 접힌 상태가 바뀔 때 올린다(미리보기·개요를 다시 맞춘다) */
+  const [foldVersion, setFoldVersion] = useState(0);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const saveStateRef = useRef(saveState);
@@ -306,8 +393,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const searchInput = useRef<HTMLInputElement>(null);
   const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
   const [ingestOpen, setIngestOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [syncOpen, setSyncOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsSection | null>(settingsFromLocation);
   const [keysOpen, setKeysOpen] = useState(false);
   const [aside, setAside] = useState<string | null>(null);
@@ -327,9 +412,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [recent, setRecent] = useStored<string[]>("keyring:recent", []);
   /** 열어 본 문서 기록(뒤로·앞으로) */
   const nav = useRef<{ list: string[]; i: number }>({ list: [], i: -1 });
-  const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | null>(null);
+  const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | null>(null);
   const [moveTarget, setMoveTarget] = useState<{ path: string; kind: "dir" | "file" } | null>(null);
-  const [noteSettings, setNoteSettings] = useState<NoteSettings>(loadNoteSettings);
+  const shared = useVaultSettings();
+  const daily = useMemo(() => dailyConfigOf(shared), [shared]);
   const [propStats, setPropStats] = useState<PropertyStat[]>([]);
   const [pendingAnchor, setPendingAnchor] = useState<{ path: string; heading?: string; block?: string; line?: number; text?: string } | null>(null);
   // 앱 안 PDF 보기(주석 달기)
@@ -345,9 +431,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   revisionRef.current = revision;
 
   const live = prefs.live;
-  const propsOpen = prefs.props;
   const rightTab = prefs.rightTab;
   const rightOpen = prefs.rightOpen;
+  const propsShown = ((rightOpen && !isNarrow) || drawer === "right") && rightTab === "props";
 
   useEffect(() => applyTheme(prefs.theme), [prefs.theme]);
   useEffect(() => {
@@ -356,11 +442,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   useEffect(() => {
-    if (!propsOpen) return;
+    if (!propsShown) return;
     api.properties().then(setPropStats).catch(() => undefined);
-  }, [propsOpen, vaultVersion]);
+  }, [propsShown, vaultVersion]);
 
-  const resolver = useMemo(() => new LinkResolver(tree), [tree]);
+  const resolver = useMemo(() => new LinkResolver(tree, daily), [tree, daily]);
+  const resolverRef = useRef(resolver);
+  resolverRef.current = resolver;
 
   const linkCandidates = useMemo<LinkCandidate[]>(() => {
     const paths = resolver.paths;
@@ -380,12 +468,86 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   }, [resolver]);
   const dirty = doc !== null && doc.draft !== doc.saved;
 
+  // 지금 문서의 속성: 개수(오른쪽 패널 탭·접힌 프런트매터 줄)와 아이콘. 저장 전 초안 기준
+  const docFm = useMemo(() => {
+    const t = doc?.draft ?? "";
+    const block = /^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(t)?.[0] ?? "";
+    return block ? parseFrontmatter(block).data : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.draft]);
+  const propCount = docFm ? Object.keys(docFm).length : 0;
+  const docIcon = typeof docFm?.icon === "string" && docFm.icon.trim() ? docFm.icon.trim() : null;
+  const docDaily = doc ? parseDailyPath(doc.path, daily) : null;
+
+  /** 문서 아이콘(트리에서 받은 것, 지금 문서는 초안의 icon) */
+  const iconMap = useMemo(() => {
+    const m = new Map<string, string>();
+    const walk = (ns: TreeNode[]) => {
+      for (const n of ns) {
+        if (n.type === "dir") walk(n.children ?? []);
+        else if (n.icon) m.set(n.path, n.icon);
+      }
+    };
+    walk(tree);
+    return m;
+  }, [tree]);
+  const iconOf = (path: string): string | null => {
+    if (!prefs.showIcons) return null;
+    if (doc && path === doc.path) return docIcon;
+    return iconMap.get(path) ?? shared.folderIcons[path] ?? null;
+  };
+  const [iconPick, setIconPick] = useState<{ x: number; y: number; path: string; kind: "dir" | "file" } | null>(null);
+
+  /** 문서 이름 보이기: 데일리 노트는 날짜를 흐리게·제목을 진하게(제목이 없으면 읽기 좋은 날짜) */
+  const docLabel = (path: string, opts: { plain?: boolean } = {}): ReactNode => {
+    if (!/\.md$/i.test(path)) return path.split("/").pop();
+    const d = parseDailyPath(path, daily);
+    if (!d) return stemOf(path);
+    if (!d.title) return prefs.dailyFriendly && !opts.plain ? <span title={d.datePart}>{friendlyDate(d.date)}</span> : d.datePart;
+    return (
+      <>
+        <span className="daily-date">{d.datePart}</span>
+        {d.sep.trim() ? ` ${d.sep.trim()} ` : " "}
+        <span className="daily-title">{d.title}</span>
+      </>
+    );
+  };
+
+  /** 아이콘 바꾸기: 문서는 프런트매터 icon, 폴더는 공통 설정 파일 */
+  const setIcon = async (path: string, kind: "dir" | "file", icon: string | null) => {
+    if (kind === "dir") {
+      const next = { ...getVaultSettings().folderIcons };
+      if (icon) next[path] = icon;
+      else delete next[path];
+      return updateVaultSetting("folderIcons", next).catch(toastError);
+    }
+    const cur = docRef.current;
+    if (cur?.path === path) {
+      try {
+        editorHandle.current?.setContent(setFrontmatterField(cur.draft, "icon", icon));
+      } catch (e) {
+        toastError(e);
+      }
+      return;
+    }
+    try {
+      const d = await api.read(path, { fresh: true });
+      await api.write(path, setFrontmatterField(d.content, "icon", icon), d.hash);
+      vaultChanged();
+      await refreshTree();
+    } catch (e) {
+      toastError(e);
+    }
+  };
+
   const refreshTree = useCallback(() => api.tree().then(setTree).catch(toastError), []);
 
   const vaultChanged = useCallback(() => {
     invalidateWidgets();
     invalidateEmbeds();
     setVaultVersion((v) => v + 1);
+    // 공통 설정 파일이 바뀌었을 수 있다(다른 탭·동기화·직접 고침)
+    void reloadVaultSettings();
     // 위키 index·log를 열어 두었다면 서버가 새로 만든 내용으로 바꾼다.
     const cur = docRef.current;
     if (cur?.generated) setTimeout(() => void load(cur.path), 0);
@@ -692,9 +854,23 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTree, load]);
 
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   useEffect(() => {
-    const onHash = () => {
-      setSettings(settingsFromLocation());
+    const onHash = async () => {
+      const next = settingsFromLocation();
+      const was = settingsRef.current;
+      if (was && !next) {
+        // 뒤로 가기로 설정을 닫을 때도 토큰 화면·저장 안 한 입력을 지킨다
+        const leaving = location.hash;
+        if (!(await attemptCloseTopModal())) {
+          history.pushState(null, "", `${SETTINGS_HASH}/${was}`);
+          return;
+        }
+        if (location.hash !== leaving) return;
+        history.replaceState(null, "", leaving);
+      }
+      setSettings(next);
       const p = pathFromLocation();
       if (p && p !== docRef.current?.path) void openRef.current(p);
     };
@@ -809,6 +985,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     if (!localContext) return;
     const onAsset = () => setAssetVersion((v) => v + 1);
+    // 다른 기기에서 동기화로 공통 설정이 바뀌면 다시 읽는다(vaultChanged가 부른다)
     window.addEventListener("keyring:asset-loaded", onAsset);
     const off = localContext.vault.onChange((paths, source) => {
       if (source === "local") return;
@@ -832,7 +1009,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    */
   const uploadFiles = async (files: File[]): Promise<string[]> => {
     if (!doc) return [];
-    const dir = doc.path.includes("/") ? `${doc.path.slice(0, doc.path.lastIndexOf("/"))}/attachments` : "attachments";
+    // 첨부 위치(공통 설정): "./이름" 문서 옆 폴더, "." 문서와 같은 폴더, 그 밖은 볼트 기준 폴더
+    const where = shared.attachmentFolder;
+    const here = parentOf(doc.path);
+    const dir = where === "." ? here : where.startsWith("./") ? join(here, where.slice(2).replace(/^\/+|\/+$/g, "") || "attachments") : where.replace(/^\/+|\/+$/g, "");
     const taken = new Set(resolver.paths.map((p) => p.toLowerCase()));
     const out: string[] = [];
     for (const f of files) {
@@ -842,7 +1022,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       const stem = !f.name || /^image\.\w+$/i.test(f.name) ? `붙여넣은 이미지 ${stamp}` : f.name.replace(/\.[A-Za-z0-9]+$/, "").replace(/[\\/:*?"<>|#^[\]]/g, " ").trim() || "첨부";
       let path = "";
       for (let i = 1; ; i++) {
-        const cand = `${dir}/${stem}${i > 1 ? ` ${i}` : ""}${ext}`;
+        const cand = join(dir, `${stem}${i > 1 ? ` ${i}` : ""}${ext}`);
         if (taken.has(cand.toLowerCase())) continue;
         try {
           path = (await api.uploadAttachment(cand, f)).path;
@@ -856,7 +1036,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       taken.add(path.toLowerCase());
       const name = path.split("/").pop()!;
       const unique = resolver.paths.filter((p) => p.split("/").pop()!.toLowerCase() === name.toLowerCase()).length === 0;
-      const target = unique ? name : path;
+      const target = unique && shared.linkFormat !== "full" ? name : path;
       out.push(/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(path) ? `![[${target}]]` : `[[${target}]]`);
     }
     vaultChanged();
@@ -876,6 +1056,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     } catch (e) {
       toastError(e);
     }
+  };
+
+  /** 새로 넣는 링크의 대상 이름(공통 설정의 링크 모양: 가장 짧은 이름 또는 전체 경로) */
+  const linkTo = (p: string) => {
+    const md = /\.md$/i.test(p);
+    if (shared.linkFormat === "full") return md ? p.replace(/\.md$/i, "") : p;
+    return md ? mentionTarget(p, resolver) : resolver.resolve(p.split("/").pop()!) === p ? p.split("/").pop()! : p;
   };
 
   /** 지금 폴더: 지금 문서의 폴더(없으면 맨 위) */
@@ -917,29 +1104,93 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  /** 데일리 노트 열기(없으면 템플릿으로 만든다). offset: 0 오늘, -1 어제, 1 내일 */
-  const openDaily = async (offset = 0) => {
-    const day = new Date();
-    day.setDate(day.getDate() + offset);
-    const path = dailyNotePath(noteSettings.dailyFolder, noteSettings.dailyFormat, day);
-    if (!resolver.paths.includes(path)) {
-      const title = path.split("/").pop()!.replace(/\.md$/i, "");
-      const tpl = noteSettings.dailyTemplate ? await readTemplate(noteSettings.dailyTemplate) : null;
-      try {
-        await api.write(path, applyTemplate(tpl ?? "# {{date:YYYY년 M월 D일 dddd}}\n\n", { title, date: day }), null);
-        vaultChanged();
-        await refreshTree();
-      } catch (e) {
-        // 그 사이 다른 곳에서 만들었으면 그것을 연다
-        if (!(e instanceof ApiError && e.status === 409)) return toastError(e);
-      }
+  /** 데일리 노트 목록(판정 규칙: 경로·이름. 날짜순) */
+  const dailyList = useMemo(() => dailyNotes(resolver.paths, daily), [resolver, daily]);
+  const [dailyChoices, setDailyChoices] = useState<DailyNote[]>([]);
+
+  /**
+   * 그날 데일리 노트 열기. 그날 날짜로 시작하는 노트가 있으면 그것(제목이 붙어 있어도), 둘 이상이면 고르는 목록,
+   * 없으면 날짜만으로 새로 만들고(템플릿 + 자동 속성) 제목 칸에 커서를 둔다.
+   */
+  const openDailyOn = async (day: Date) => {
+    await vaultSettingsReady();
+    const s = getVaultSettings();
+    const cfg = dailyConfigOf(s);
+    const found = dailyNotes(resolver.paths, cfg).filter((n) => n.ymd === ymd(day));
+    if (found.length === 1) return void open(found[0].path);
+    if (found.length > 1) {
+      setDailyChoices(found);
+      setPalette("daily");
+      return;
     }
-    void open(path);
+    const path = dailyNotePath(cfg.folder, cfg.format, day, { weekStart: cfg.weekStart });
+    const tpl = s.dailyTemplate ? await readTemplate(s.dailyTemplate) : null;
+    const body = tpl ? applyTemplate(tpl, { title: stemOf(path), date: day, weekStart: cfg.weekStart }) : "";
+    let content = body;
+    try {
+      content = withDailyProps(body, day, { weekStart: cfg.weekStart, icon: s.dailyIcon || undefined });
+    } catch (e) {
+      // 템플릿의 프런트매터가 깨져 있으면 속성 없이 만든다
+      toast(`데일리 속성을 넣지 못했습니다(템플릿 프런트매터 오류): ${e instanceof Error ? e.message : e}`, { kind: "warn" });
+    }
+    try {
+      await api.write(path, content, null);
+      vaultChanged();
+      await refreshTree();
+      focusTitle(path);
+    } catch (e) {
+      // 그 사이 다른 곳에서 만들었으면 그것을 연다
+      if (!(e instanceof ApiError && e.status === 409)) return toastError(e);
+    }
+    await open(path);
+    setMode((m) => (m === "preview" ? "edit" : m));
+  };
+  const openDaily = (offset = 0) => openDailyOn(shiftDays(new Date(), offset));
+
+  /** 바로 앞·뒤 데일리 노트(빠진 날은 건너뛴다). 지금 문서가 데일리 노트가 아니면 오늘 기준 */
+  const dailyStep = (dir: -1 | 1) => {
+    const cur = docRef.current ? parseDailyPath(docRef.current.path, daily) : null;
+    const base = cur?.ymd ?? ymd(new Date());
+    const target = dir < 0 ? [...dailyList].reverse().find((n) => n.ymd < base) : dailyList.find((n) => n.ymd > base);
+    if (target) void open(target.path);
+    else toast(dir < 0 ? "이전 데일리 노트가 없습니다." : "다음 데일리 노트가 없습니다.", { kind: "info", duration: 2500 });
+  };
+
+  /** 기존 데일리 노트를 지금 형식으로 옮기기: 계획을 보이고 확인하면 한 번에(한 커밋·한 기록, 링크 자동 갱신) */
+  const [migration, setMigration] = useState<ReturnType<typeof planDailyMigration> | null>(null);
+  const migrateDaily = async () => {
+    await flush();
+    await vaultSettingsReady();
+    setMigration(planDailyMigration(resolver.paths, dailyConfigOf(getVaultSettings())));
+  };
+  const runMigration = async () => {
+    if (!migration) return;
+    const moves = migration.moves;
+    const dirty = moves.find((m) => {
+      const d = m.from === docRef.current?.path ? docRef.current : tabCache.current.get(m.from);
+      return d && d.draft !== d.saved;
+    });
+    if (dirty) return toast(`"${stemOf(dirty.from)}"에 저장하지 않은 변경이 있습니다. 먼저 저장하세요.`, { kind: "error" });
+    try {
+      const r = await api.moveFiles(
+        moves.map((m) => [m.from, m.to]),
+        `데일리 노트 형식 옮기기(${moves.length}개)`,
+      );
+      for (const m of moves) await afterMove(m.from, m.to, null, null);
+      setMigration(null);
+      vaultChanged();
+      await refreshTree();
+      const cur = docRef.current;
+      if (cur && moves.some((m) => m.to === cur.path)) await load(cur.path);
+      toast(`데일리 노트 ${moves.length}개를 옮겼습니다.${r.linkCount ? ` 링크 ${r.linkCount}곳을 고쳤습니다.` : ""}`, { kind: "success" });
+    } catch (e) {
+      toastError(e);
+    }
   };
 
   /** 템플릿 폴더의 문서들 */
   const templatePaths = resolver.paths.filter((p) => {
-    const f = noteSettings.templateFolder.replace(/^\/+|\/+$/g, "");
+    const f = shared.templateFolder.replace(/^\/+|\/+$/g, "");
     return /\.md$/i.test(p) && !!f && p.startsWith(f + "/");
   });
 
@@ -987,22 +1238,24 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return (await api.read(path, { fresh: true })).hash;
   };
 
-  /** 이동이 끝난 뒤: 탭·열린 문서·기록의 경로를 바꾼다 */
-  const afterMove = async (from: string, to: string, content: string, hash: string) => {
+  /** 이동이 끝난 뒤: 탭·열린 문서·기록의 경로를 바꾼다. content가 null이면(여러 개를 옮김) 그 문서를 다시 읽는다 */
+  const afterMove = async (from: string, to: string, content: string | null, hash: string | null) => {
+    moveFolds(from, to);
     setTabs((t) => t.map((p) => (p === from ? to : p)));
     setRecent((r) => r.map((p) => (p === from ? to : p)));
     nav.current.list = nav.current.list.map((p) => (p === from ? to : p));
     const cached = tabCache.current.get(from);
     if (cached) {
       tabCache.current.delete(from);
-      tabCache.current.set(to, { ...cached, path: to, saved: content, draft: content, hash, seq: cached.seq + 1 });
+      if (content !== null && hash !== null) tabCache.current.set(to, { ...cached, path: to, saved: content, draft: content, hash, seq: cached.seq + 1 });
     }
     const cur = docRef.current;
     if (cur?.path === from) {
-      // 내용이 그대로면(상대 링크를 고치지 않았으면) 에디터를 다시 만들지 않는다
-      if (cur.draft === content) setDoc({ ...cur, path: to, saved: content, hash });
-      else setDoc({ ...cur, path: to, saved: content, draft: content, hash, seq: cur.seq + 1 });
       history.replaceState(null, "", `#/${encodeURIComponent(to)}`);
+      if (content === null || hash === null) await load(to);
+      // 내용이 그대로면(상대 링크를 고치지 않았으면) 에디터를 다시 만들지 않는다
+      else if (cur.draft === content) setDoc({ ...cur, path: to, saved: content, hash });
+      else setDoc({ ...cur, path: to, saved: content, draft: content, hash, seq: cur.seq + 1 });
     }
     if (aside === from) setAside(to);
   };
@@ -1014,18 +1267,20 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       toast(`같은 이름의 문서가 이미 있습니다: ${to}`, { kind: "error" });
       return false;
     }
-    const hash = await hashOf(from);
+    const md = /\.md$/i.test(from);
+    const hash = md ? await hashOf(from) : await sha256Hex(await api.readBytes(from));
     if (hash === null) return false;
     try {
       const d = await api.move(from, to, hash);
-      await afterMove(from, d.path, d.content, d.hash);
+      if (md) await afterMove(from, d.path, d.content, d.hash);
+      else if (fileView === from) setFileView(d.path);
       vaultChanged();
       await refreshTree();
       if (!opts.quiet) {
         const others = (d.linksUpdated ?? []).filter((p) => p !== d.path).length;
         const renamed = parentOf(from) === parentOf(d.path);
         toast(
-          `${renamed ? `"${stemOf(d.path)}"(으)로 이름을 바꿨습니다` : `${parentOf(d.path) || "맨 위"}(으)로 옮겼습니다`}.` + (d.linkCount ? ` 링크 ${d.linkCount}곳을 고쳤습니다(다른 문서 ${others}개).` : ""),
+          `${renamed ? `"${md ? stemOf(d.path) : d.path.split("/").pop()}"(으)로 이름을 바꿨습니다` : `${parentOf(d.path) || "맨 위"}(으)로 옮겼습니다`}.` + (d.linkCount ? ` 링크 ${d.linkCount}곳을 고쳤습니다(다른 문서 ${others}개).` : ""),
           { kind: "success", action: opts.undo === false ? undefined : { label: "되돌리기", run: () => void moveFile(d.path, from, { undo: false }) } },
         );
       }
@@ -1037,31 +1292,72 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  /** 폴더 옮기기·이름 바꾸기: 안의 문서를 하나씩 옮긴다(첨부가 있으면 아직 못 옮긴다) */
-  const moveFolder = async (from: string, to: string): Promise<boolean> => {
+  /** 폴더 옮기기·이름 바꾸기: 안의 문서·첨부를 한 번에(서버는 한 커밋, 앱은 한 기록) 옮기고 링크를 고친다 */
+  const moveFolder = async (from: string, to: string, opts: { undo?: boolean } = {}): Promise<boolean> => {
     if (from === to) return true;
     if (folderPaths(tree).some((p) => p.toLowerCase() === to.toLowerCase())) {
       toast(`같은 이름의 폴더가 이미 있습니다: ${to}`, { kind: "error" });
       return false;
     }
-    const files = filesUnder(tree, from);
-    const attachments = files.filter((p) => !/\.md$/i.test(p));
-    if (attachments.length) {
-      toast(`폴더에 첨부 파일 ${attachments.length}개가 있어 옮길 수 없습니다(첨부는 아직 옮기기를 지원하지 않습니다).`, { kind: "error" });
+    // 저장 안 한 변경이 있는 탭이 그 폴더 안에 있으면 먼저 저장한다
+    await flush();
+    const inside = (p: string) => p.startsWith(from + "/");
+    const dirty = [docRef.current, ...tabCache.current.values()].find((d) => d && inside(d.path) && d.draft !== d.saved);
+    if (dirty) {
+      toast(`"${stemOf(dirty.path)}"에 저장하지 않은 변경이 있어 옮기지 않았습니다. 먼저 저장하세요.`, { kind: "error" });
       return false;
     }
-    let moved = 0;
-    for (const f of files) {
-      const ok = await moveFile(f, to + f.slice(from.length), { quiet: true });
-      if (!ok) break;
-      moved++;
+    try {
+      const r = await api.moveFolder(from, to);
+      for (const [a, b] of r.moved) if (/\.md$/i.test(a)) await afterMove(a, b, null, null);
+      if (fileView && inside(fileView)) setFileView(to + fileView.slice(from.length));
+      // 폴더 아이콘도 따라간다
+      const icons = getVaultSettings().folderIcons;
+      const moved = Object.keys(icons).filter((f) => f === from || inside(f));
+      if (moved.length) {
+        const next = { ...icons };
+        for (const f of moved) {
+          next[to + f.slice(from.length)] = icons[f];
+          delete next[f];
+        }
+        void updateVaultSetting("folderIcons", next).catch(toastError);
+      }
+      vaultChanged();
+      await refreshTree();
+      const docs = r.moved.filter(([a]) => /\.md$/i.test(a)).length;
+      const others = r.linksUpdated.filter((p) => !r.moved.some(([, b]) => b === p)).length;
+      toast(
+        `폴더를 옮겼습니다: ${from} → ${to} (문서 ${docs}개${r.moved.length > docs ? `, 첨부 ${r.moved.length - docs}개` : ""}).` + (r.linkCount ? ` 링크 ${r.linkCount}곳을 고쳤습니다(다른 문서 ${others}개).` : ""),
+        { kind: "success", action: opts.undo === false ? undefined : { label: "되돌리기", run: () => void moveFolder(to, from, { undo: false }) } },
+      );
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) toast(`옮기지 못했습니다: ${e.message}`, { kind: "error" });
+      else toastError(e);
+      return false;
     }
-    if (moved === files.length) toast(`폴더를 옮겼습니다: ${from} → ${to} (문서 ${moved}개)`, { kind: "success" });
-    else toast(`${files.length}개 중 ${moved}개만 옮겼습니다.`, { kind: "error" });
-    return moved === files.length;
   };
 
-  const renameDoc = (path: string, stem: string) => moveFile(path, join(parentOf(path), `${stem}.md`));
+  /** 이름 바꾸기. 데일리 노트의 날짜가 바뀌면 날짜 속성(있는 것만)도 같이 고친다 */
+  const renameDoc = async (path: string, stem: string) => {
+    const before = parseDailyPath(path, daily);
+    const to = join(parentOf(path), `${stem}.md`);
+    if (!(await moveFile(path, to))) return false;
+    const after = parseDailyPath(to, daily);
+    const cur = docRef.current;
+    if (after && before?.ymd !== after.ymd && cur?.path === to) {
+      try {
+        const next = updateDailyProps(cur.draft, after.date, daily.weekStart);
+        if (next) {
+          editorHandle.current?.setContent(next);
+          toast(`날짜 속성을 ${after.ymd}로 고쳤습니다.`, { kind: "info", duration: 3000 });
+        }
+      } catch {
+        /* 프런트매터가 깨져 있으면 그대로 */
+      }
+    }
+    return true;
+  };
 
   const deleteFile = async (path: string) => {
     if (!(await confirmDialog(`"${stemOf(path)}" 문서를 삭제할까요?\n${path}`, "삭제"))) return;
@@ -1156,6 +1452,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  const followLinkRef = useRef<(target: string, anchor: { heading?: string; block?: string } | null, aside: boolean, page?: string) => void>(() => undefined);
   /** 링크 대상 열기: Mod+클릭이면 옆 칸 */
   const followLink = (target: string, anchor: { heading?: string; block?: string } | null, aside: boolean, page?: string) => {
     if (target.toLowerCase().endsWith(".md")) {
@@ -1171,8 +1468,31 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       setPdfView({ path: target, ...(p ? { page: Number(p) } : {}) });
     } else setFileView(target);
   };
+  followLinkRef.current = followLink;
+
+  /** 그린 블록·미리보기의 링크 하나를 따라간다(없는 문서면 만들지 묻는다) */
+  const followLinkEl = (a: HTMLAnchorElement, mod: boolean) => {
+    const target = a.dataset.wikilink!;
+    const anchor = a.dataset.block ? { block: a.dataset.block } : a.dataset.heading ? { heading: a.dataset.heading } : null;
+    if (a.dataset.resolved === "1") return followLinkRef.current(target, anchor, mod, a.dataset.heading);
+    void confirmDialog(`"${target}" 문서가 없습니다. 새로 만들까요?`, "만들기").then((yes) => {
+      if (!yes) return;
+      const path = /\.md$/i.test(target) ? target : `${target}.md`;
+      api
+        .write(path, "", null)
+        .then(refreshTree)
+        .then(() => openRef.current(path))
+        .catch(toastError);
+    });
+  };
 
   const onPreviewClick = (e: MouseEvent<HTMLDivElement>) => {
+    const fold = (e.target as HTMLElement).closest<HTMLElement>(".pv-fold");
+    if (fold && doc && !revision) {
+      e.preventDefault();
+      togglePreviewFold(doc.path, doc.draft, Number(fold.dataset.foldLine));
+      return;
+    }
     const box = (e.target as HTMLElement).closest<HTMLInputElement>("input.task[data-task-line]");
     if (box) {
       // 체크박스는 편집 중인 초안을 바꾼다(저장해야 반영). 과거 버전 보기에서는 바꾸지 않는다.
@@ -1197,47 +1517,58 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-wikilink]");
     if (!a) return;
     e.preventDefault();
-    const target = a.dataset.wikilink!;
-    const anchor = a.dataset.block ? { block: a.dataset.block } : a.dataset.heading ? { heading: a.dataset.heading } : null;
-    if (a.dataset.resolved === "1") followLink(target, anchor, e.ctrlKey || e.metaKey, a.dataset.heading);
-    else {
-      void confirmDialog(`"${target}" 문서가 없습니다. 새로 만들까요?`, "만들기").then((yes) => {
-        if (!yes) return;
-        const path = /\.md$/i.test(target) ? target : `${target}.md`;
-        api
-          .write(path, "", null)
-          .then(refreshTree)
-          .then(() => open(path))
-          .catch(toastError);
-      });
-    }
+    followLinkEl(a, e.ctrlKey || e.metaKey);
   };
 
-  /** [[문서#제목]]·[[문서#^블록]]: 그 위치로 스크롤하고 잠깐 표시한다 */
+  /**
+   * [[문서#제목]]·[[문서#^블록]]: 그 위치로 가서 잠깐 표시한다. 접혀 있으면 편다.
+   * 편집 화면이면 에디터의 그 줄로, 미리보기면 미리보기의 그 블록으로.
+   */
   const scrollToAnchor = (anchor: { heading?: string; block?: string }) => {
+    const cur = docRef.current;
+    if (!cur) return;
+    if (modeRef.current !== "preview" && !revisionRef.current) {
+      let line = 0;
+      if (anchor.block) line = blockRange(cur.draft, anchor.block)?.start ?? 0;
+      else line = headings(cur.draft).find((h) => h.text.toLowerCase() === (anchor.heading ?? "").toLowerCase())?.line ?? 0;
+      if (line) return editorHandle.current?.gotoLine(line);
+    }
     const root = previewRef.current;
     if (!root) return;
-    const el = anchor.block
-      ? root.querySelector<HTMLElement>(`[data-block="${CSS.escape(anchor.block)}"]`)
-      : root.querySelector<HTMLElement>(`[data-heading="${CSS.escape(anchor.heading ?? "")}"]`);
+    const find = () =>
+      anchor.block
+        ? root.querySelector<HTMLElement>(`[data-block="${CSS.escape(anchor.block)}"]`)
+        : root.querySelector<HTMLElement>(`[data-heading="${CSS.escape(anchor.heading ?? "")}"]`);
+    let el = find();
     if (!el) return;
+    // 접힌 곳 안이면 편다(겹쳐 접힌 것까지)
+    for (let i = 0; i < 6 && !revisionRef.current && revealInPreview(el, cur.path, cur.draft); i++) {
+      applyPreviewFolds(root, cur.path, cur.draft);
+      el = find() ?? el;
+    }
     el.scrollIntoView({ block: "start" });
     el.classList.add("anchor-flash");
-    setTimeout(() => el.classList.remove("anchor-flash"), 1600);
+    setTimeout(() => el!.classList.remove("anchor-flash"), 1600);
   };
 
   const previewSource = revision ? (revision.content ?? "") : (doc?.draft ?? "");
   const rendered = useMemo(
     // 속성 화면이 열려 있으면 미리보기에서는 프런트매터 상자를 빼고 본다(같은 내용을 두 번 보이지 않게)
-    () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: propsOpen && !revision }) : { html: "", widgets: [] }),
+    () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc }) : { html: "", widgets: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [previewSource, resolver, doc?.path, assetVersion, propsOpen, revision],
+    [previewSource, resolver, doc?.path, assetVersion, prefs.propsInDoc],
   );
 
   // ── 패널
   const toggleLeft = () => {
     if (narrow()) return setDrawer((d) => (d === "left" ? null : "left"));
     setPrefs((p) => ({ leftOpen: !p.leftOpen }));
+  };
+  /** 오른쪽 패널을 그 탭으로 연다(이미 열려 있으면 탭만 바꾼다) */
+  const showRight = (tab: Prefs["rightTab"]) => {
+    setPrefs({ rightTab: tab });
+    if (narrow()) setDrawer("right");
+    else setPrefs({ rightOpen: true });
   };
   const toggleRight = (tab?: Prefs["rightTab"]) => {
     if (narrow()) {
@@ -1257,7 +1588,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const openSettings = (s: SettingsSection = "general") => {
     void flush();
     setDrawer(null);
-    history.pushState(null, "", `${SETTINGS_HASH}/${s}`);
+    if (settingsFromLocation()) history.replaceState(null, "", `${SETTINGS_HASH}/${s}`);
+    else history.pushState(null, "", `${SETTINGS_HASH}/${s}`);
     setSettings(s);
   };
   /** restore: 지금 문서 주소로 되돌린다(아니면 곧 다른 문서를 여는 중이라 비워 둔다) */
@@ -1265,6 +1597,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     setSettings(null);
     const cur = docRef.current;
     history.replaceState(null, "", restore && cur ? `#/${encodeURIComponent(cur.path)}` : "#");
+    // 복원·동기화 등으로 볼트가 바뀌었을 수 있다: 트리·문서·공통 설정을 다시 읽는다
+    vaultChanged();
+    void refreshTree();
+    void reloadVaultSettings();
+    const d = docRef.current;
+    if (d && d.draft === d.saved) void load(d.path);
   };
 
   const toggleMode = () => setMode((m) => (m === "preview" ? "edit" : "preview"));
@@ -1281,8 +1619,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { id: "new", group: "문서", label: "새 문서", keys: "Mod+N", webKeys: "Alt+N", run: () => void createDoc() },
     { id: "new-folder", group: "문서", label: "새 폴더", run: () => void createFolder() },
     { id: "daily", group: "문서", label: "오늘 노트", keys: "Mod+Shift+D", run: () => void openDaily(0) },
-    { id: "daily-prev", group: "문서", label: "어제 노트", run: () => void openDaily(-1) },
-    { id: "daily-next", group: "문서", label: "내일 노트", run: () => void openDaily(1) },
+    { id: "daily-prev", group: "문서", label: "이전 데일리 노트(빠진 날 건너뜀)", run: () => dailyStep(-1) },
+    { id: "daily-next", group: "문서", label: "다음 데일리 노트(빠진 날 건너뜀)", run: () => dailyStep(1) },
+    { id: "daily-yesterday", group: "문서", label: "어제 노트 열기·만들기", run: () => void openDaily(-1) },
+    { id: "daily-tomorrow", group: "문서", label: "내일 노트 열기·만들기", run: () => void openDaily(1) },
+    { id: "daily-migrate", group: "문서", label: "기존 데일리 노트를 새 형식으로 옮기기…", run: () => void migrateDaily() },
     { id: "tpl-new", group: "문서", label: "템플릿으로 새 문서", run: () => setPalette("new-from-template") },
     ...(doc && !doc.generated
       ? [
@@ -1297,7 +1638,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     ...(doc
       ? [
           { id: "copy-path", group: "문서", label: "경로 복사", run: () => void copyText(doc.path, "경로") },
-          { id: "copy-link", group: "문서", label: "링크 복사", run: () => void copyText(`[[${mentionTarget(doc.path, resolver)}]]`, "링크") },
+          { id: "copy-link", group: "문서", label: "링크 복사", run: () => void copyText(`[[${linkTo(doc.path)}]]`, "링크") },
           { id: "reveal", group: "탐색", label: "트리에서 지금 문서 찾기", run: () => (setPrefs({ leftOpen: true, leftView: "files" }), setTimeout(() => treeRef.current?.reveal(), 0)) },
         ]
       : []),
@@ -1319,28 +1660,35 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       },
     })),
     { id: "toggle-mode", group: "보기", label: "편집 ↔ 미리보기", keys: "Mod+E", run: toggleMode },
+    // 접기: CodeMirror 기본 키(foldKeymap). 설정에서 바꿀 수 있다
+    { id: "fold", group: "접기", label: "지금 위치 접기", keys: "Mod+Shift+[", macKeys: "Mod+Alt+[", run: () => editorHandle.current?.fold("here") },
+    { id: "unfold", group: "접기", label: "지금 위치 펴기", keys: "Mod+Shift+]", macKeys: "Mod+Alt+]", run: () => editorHandle.current?.fold("unfold-here") },
+    { id: "fold-all", group: "접기", label: "모두 접기", keys: "Ctrl+Alt+[", run: () => editorHandle.current?.fold("all") },
+    { id: "unfold-all", group: "접기", label: "모두 펴기", keys: "Ctrl+Alt+]", run: () => editorHandle.current?.fold("unfold-all") },
+    { id: "fold-level", group: "접기", label: "이 수준 제목만 보기", run: () => editorHandle.current?.fold("level") },
     { id: "mode-edit", group: "보기", label: "보기: 편집", run: () => setMode("edit") },
     { id: "mode-split", group: "보기", label: "보기: 원문과 미리보기 나란히", run: () => setMode("split") },
     { id: "mode-preview", group: "보기", label: "보기: 미리보기", run: () => setMode("preview") },
     { id: "aside", group: "보기", label: aside ? "옆 칸 닫기" : "옆 칸에 미리보기 띄우기", keys: "Mod+\\", run: () => setAside((a) => (a ? null : (doc?.path ?? null))) },
-    { id: "left", group: "보기", label: "왼쪽 패널 접기·펴기", keys: "Mod+Alt+[", run: toggleLeft },
-    { id: "right", group: "보기", label: "오른쪽 패널 접기·펴기", keys: "Mod+Alt+]", run: () => toggleRight() },
+    // 패널 키는 접기 기본 키(Ctrl+Alt+[ 등, CodeMirror foldKeymap)와 겹치지 않게
+    { id: "left", group: "보기", label: "왼쪽 패널 접기·펴기", keys: "Mod+Shift+E", run: toggleLeft },
+    { id: "right", group: "보기", label: "오른쪽 패널 접기·펴기", keys: "Mod+Alt+B", run: () => toggleRight() },
     { id: "outline", group: "보기", label: "개요", run: () => toggleRight("outline") },
     { id: "links", group: "보기", label: "백링크·출처", run: () => toggleRight("links") },
     { id: "history", group: "보기", label: "변경 이력", run: () => toggleRight("history") },
     { id: "live", group: "보기", label: live ? "Live Preview 끄기" : "Live Preview 켜기", run: () => setPrefs({ live: !live }) },
-    { id: "props", group: "보기", label: propsOpen ? "속성 칸 닫기" : "속성 칸 열기", run: () => setPrefs({ props: !propsOpen }) },
+    { id: "props", group: "보기", label: "속성(오른쪽 패널)", run: () => toggleRight("props") },
     { id: "lines", group: "보기", label: prefs.lineNumbers ? "줄 번호 끄기" : "줄 번호 켜기", run: () => setPrefs({ lineNumbers: !prefs.lineNumbers }) },
     { id: "width", group: "보기", label: prefs.readableWidth ? "넓게 보기" : "읽기 폭으로 보기", run: () => setPrefs({ readableWidth: !prefs.readableWidth }) },
     { id: "theme", group: "보기", label: "테마 바꾸기(시스템 → 밝게 → 어둡게)", run: () => setPrefs((p) => ({ theme: p.theme === "system" ? "light" : p.theme === "light" ? "dark" : "system" })) },
     { id: "graph", group: "도구", label: "그래프 뷰", run: () => setGraphOpen(true) },
     { id: "lint", group: "도구", label: "정리 점검", run: () => setLintOpen(true) },
     ...(local
-      ? [{ id: "sync", group: "도구", label: "이 기기·동기화", run: () => setSyncOpen(true) }]
+      ? [{ id: "sync", group: "도구", label: "이 기기·동기화", run: () => openSettings("device") }]
       : [
           { id: "ingest", group: "도구", label: "원본 수집", run: () => setIngestOpen(true) },
           { id: "review", group: "도구", label: "변경 검토", run: () => setReviewOpen(true) },
-          { id: "admin", group: "도구", label: "관리 콘솔", run: () => setAdminOpen(true) },
+          { id: "admin", group: "도구", label: "서버 관리(설정)", run: () => openSettings("server-status") },
         ]),
     { id: "settings", group: "도구", label: "설정", keys: "Mod+,", run: () => openSettings() },
     { id: "keys", group: "도구", label: "단축키 목록", keys: "Mod+/", run: () => setKeysOpen(true) },
@@ -1366,7 +1714,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       // 대화상자(확인·입력·팔레트) 안에서는 Mod 조합만
       const c = matchCommand(e, commandsRef.current, prefsRef.current.keys);
       if (!c) return;
-      if ((e.target as HTMLElement).closest?.(".modal-backdrop") && !/^(palette|quick-open)/.test(c.id)) return;
+      if ((e.target as HTMLElement).closest?.(".modal-backdrop, .kmodal-backdrop") && !/^(palette|quick-open)/.test(c.id)) return;
       e.preventDefault();
       e.stopPropagation();
       c.run();
@@ -1379,18 +1727,25 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   // 빠른 전환: 열린 탭, 최근 문서를 먼저
   const fileItems = useMemo<PaletteItem[]>(() => {
-    const docs = resolver.paths.filter((p) => /\.md$/i.test(p));
+    const docs = resolver.paths.filter((p) => /\.md$/i.test(p) && !isVaultSettingsPath(p));
     const order = (p: string) => (tabs.includes(p) ? 0 : recent.includes(p) ? 1 + recent.indexOf(p) / 100 : 2);
     return docs
       .sort((a, b) => order(a) - order(b) || a.localeCompare(b, "ko"))
-      .map((p) => ({
-        id: p,
-        label: stemOf(p),
-        detail: p.includes("/") ? parentOf(p) : undefined,
-        run: (alt: boolean) => void open(p, { newTab: alt }),
-      }));
+      .map((p) => {
+        const d = parseDailyPath(p, daily);
+        const icon = iconOf(p);
+        return {
+          id: p,
+          // 데일리 노트는 읽기 좋은 날짜로도 찾을 수 있게
+          label: d && !d.title && prefs.dailyFriendly ? `${stemOf(p)} ${friendlyDate(d.date)}` : stemOf(p),
+          display: d ? docLabel(p) : undefined,
+          icon: icon ? <DocIcon icon={icon} /> : undefined,
+          detail: p.includes("/") ? parentOf(p) : undefined,
+          run: (alt: boolean) => void open(p, { newTab: alt }),
+        };
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolver, tabs, recent]);
+  }, [resolver, tabs, recent, daily, iconMap, prefs.showIcons, prefs.dailyFriendly]);
 
   const commandItems: PaletteItem[] = commands
     .filter((c) => !c.hidden)
@@ -1410,6 +1765,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moveTarget, tree]);
 
+  /** 개요에서 접힌 제목(본문과 같은 기억) */
+  const outlineFolded = useMemo(
+    () => (doc && rightTab === "outline" ? resolveFolds(doc.draft.split("\n"), getFolds(doc.path)) : new Set<number>()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doc?.path, doc?.draft, rightTab, foldVersion],
+  );
   const outline = useMemo(() => (doc && ((rightOpen && !isNarrow) || drawer === "right") && rightTab === "outline" ? headings(doc.draft) : []), [rightOpen, drawer, rightTab, doc?.draft]);
 
   // 수식·다이어그램·문서 임베드는 그린 뒤에 채운다(enhance.ts)
@@ -1418,6 +1779,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return enhance(previewRef.current, { resolver, docPath: doc.path });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rendered.html, mode]);
+
+  // 접기: 미리보기에 단추를 달고 기억한 대로 접는다. 에디터·개요에서 바꾸면 따라간다
+  useEffect(() => onFoldsChange((path) => path === docRef.current?.path && setFoldVersion((v) => v + 1)), []);
+  useLayoutEffect(() => {
+    if (!previewRef.current || !doc || revision) return;
+    applyPreviewFolds(previewRef.current, doc.path, doc.draft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rendered.html, mode, foldVersion, revision]);
 
   // 다른 문서의 제목·블록 링크나 검색 결과로 왔으면 그 위치로
   useEffect(() => {
@@ -1442,15 +1811,27 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     openAttachment: (p) => (/\.pdf$/i.test(p) ? setPdfView({ path: p }) : setFileView(p)),
     newDoc: (f) => void createDoc(f),
     newFolder: (f) => void createFolder(f),
-    rename: (p, kind, name) => (kind === "dir" ? moveFolder(p, join(parentOf(p), name)) : renameDoc(p, name)),
+    rename: (p, kind, name) => (kind === "dir" ? moveFolder(p, join(parentOf(p), name)) : /\.md$/i.test(p) ? renameDoc(p, name) : moveFile(p, join(parentOf(p), name))),
     move: (p, kind, folder) => void (kind === "dir" ? moveFolder(p, join(folder, p.split("/").pop()!)) : moveFile(p, join(folder, p.split("/").pop()!))),
     moveTo: startMove,
     duplicate: (p) => void duplicateFile(p),
     remove: (p) => void deleteFile(p),
     copyPath: (p) => void copyText(p, "경로"),
-    copyLink: (p) => void copyText(/\.md$/i.test(p) ? `[[${mentionTarget(p, resolver)}]]` : `[[${p.split("/").pop()}]]`, "링크"),
+    copyLink: (p) => void copyText(`[[${linkTo(p)}]]`, "링크"),
     openAside: (p) => setAside(p),
+    pickIcon: (p, kind, at) => setIconPick({ ...at, path: p, kind }),
   };
+
+  const treeDecor = useMemo<TreeDecor>(() => {
+    const dir = daily.folder.replace(/^\/+|\/+$/g, "");
+    return {
+      label: (p) => docLabel(p),
+      icon: (n) => (n.type === "dir" ? (prefs.showIcons ? (shared.folderIcons[n.path] ?? null) : null) : iconOf(n.path)),
+      hidden: isVaultSettingsPath,
+      descending: (d) => prefs.dailySortDesc && !!dir && (d === dir || d.startsWith(dir + "/")),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [daily, prefs.showIcons, prefs.dailySortDesc, prefs.dailyFriendly, shared.folderIcons, iconMap, docIcon, doc?.path]);
 
   const words = useMemo(() => {
     const t = doc?.draft ?? "";
@@ -1479,7 +1860,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             icon={RefreshCw}
             label={syncStatus?.settings ? `동기화: ${syncStatus.settings.server}` : "이 기기 · 서버 동기화(선택)"}
             className={`sync-button${syncStatus?.running ? " running" : ""}${syncStatus?.lastError ? " has-error" : ""}`}
-            onClick={() => setSyncOpen(true)}
+            onClick={() => openSettings("device")}
           />
         )}
         <IconButton icon={Keyboard} label="단축키 목록" keys={keyOf("keys")} onClick={() => setKeysOpen(true)} />
@@ -1513,7 +1894,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               <TreeOptions prefs={prefs} />
             </span>
           </div>
-          <Tree ref={treeRef} nodes={tree} current={doc?.path ?? null} prefs={prefs} actions={treeActions} />
+          <Tree ref={treeRef} nodes={tree} current={doc?.path ?? null} prefs={prefs} actions={treeActions} decor={treeDecor} />
         </>
       )}
       {prefs.leftView === "search" && (
@@ -1556,6 +1937,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                     }}
                   >
                     <span className="hit-title">
+                      <DocIcon icon={iconOf(h.path)} />
                       {h.title} {h.score !== undefined && <span className="hit-score">{h.score.toFixed(2)}</span>}
                     </span>
                     <span className="hit-path">
@@ -1606,16 +1988,38 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           options={[
             { value: "outline", label: "개요" },
             { value: "links", label: `연결${linkCount ? ` ${linkCount}` : ""}`, title: "백링크·출처·연결되지 않은 언급" },
+            { value: "props", label: `속성${propCount ? ` ${propCount}` : ""}`, title: "속성(프런트매터)" },
             { value: "history", label: "이력" },
           ]}
         />
         <IconButton size={16} icon={X} label="오른쪽 패널 닫기" keys={keyOf("right")} onClick={() => (narrow() ? setDrawer(null) : setPrefs({ rightOpen: false }))} />
       </div>
       <div className="panel-body">
+        {rightTab === "props" && (
+          <Properties
+            content={revision ? (revision.content ?? "") : doc.draft}
+            stats={propStats}
+            readOnly={doc.generated || !!revision}
+            autoKeys={docDaily ? DAILY_PROP_KEYS : undefined}
+            onChange={(next) => editorHandle.current?.setContent(next)}
+          />
+        )}
         {rightTab === "outline" && (
           <ol className="outline-list">
             {outline.map((h) => (
-              <li key={h.line} style={{ paddingLeft: `${(h.level - 1) * 12}px` }}>
+              <li key={h.line} style={{ paddingLeft: `${(h.level - 1) * 12}px` }} className={outlineFolded.has(h.line) ? "folded" : undefined}>
+                {h.endLine > h.line ? (
+                  <button
+                    className="outline-fold"
+                    aria-label={outlineFolded.has(h.line) ? `${h.text} 펴기` : `${h.text} 접기`}
+                    title={outlineFolded.has(h.line) ? "본문에서 펴기" : "본문에서 접기"}
+                    onClick={() => editorHandle.current?.toggleFoldLine(h.line)}
+                  >
+                    {outlineFolded.has(h.line) ? "▸" : "▾"}
+                  </button>
+                ) : (
+                  <span className="outline-fold-space" />
+                )}
                 <button
                   onClick={() => {
                     editorHandle.current?.gotoLine(h.line);
@@ -1680,7 +2084,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         { label: "트리에서 찾기", icon: LocateFixed, run: () => (setPrefs({ leftOpen: true, leftView: "files" }), setTimeout(() => treeRef.current?.reveal(), 0)) },
         "-",
         { label: "경로 복사", run: () => void copyText(doc.path, "경로") },
-        { label: "링크 복사", icon: Link, run: () => void copyText(`[[${mentionTarget(doc.path, resolver)}]]`, "링크") },
+        { label: "링크 복사", icon: Link, run: () => void copyText(`[[${linkTo(doc.path)}]]`, "링크") },
         { label: "변경 이력", icon: History, run: () => toggleRight("history") },
         "-",
         { label: "삭제", icon: Trash2, danger: true, disabled: doc.generated, run: () => void deleteFile(doc.path) },
@@ -1718,7 +2122,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         </button>
       )}
       {local && syncStatus?.settings && (
-        <button className={`status-item${syncStatus.lastError ? " error" : ""}`} onClick={() => setSyncOpen(true)} title={syncStatus.lastError ?? `동기화: ${syncStatus.settings.server}`}>
+        <button className={`status-item${syncStatus.lastError ? " error" : ""}`} onClick={() => openSettings("device")} title={syncStatus.lastError ?? `동기화: ${syncStatus.settings.server}`}>
           {syncStatus.running ? "동기화 중…" : syncStatus.lastError ? "동기화 실패" : syncStatus.lastSync ? `동기화 ${timeAgo(new Date(syncStatus.lastSync).getTime(), now)}` : "동기화 대기"}
         </button>
       )}
@@ -1756,7 +2160,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           return (
             <span key={t} className={`tab${t === doc?.path ? " on" : ""}`} title={t} role="tab" aria-selected={t === doc?.path}>
               <button className="tab-name" onClick={() => void open(t)} onAuxClick={(e) => e.button === 1 && void closeTab(t)}>
-                {stemOf(t)}
+                <DocIcon icon={iconOf(t)} />
+                {docLabel(t)}
               </button>
               {isDirty ? (
                 <span className="tab-dirty" aria-label="저장 안 함" title="저장 안 함" />
@@ -1792,6 +2197,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           ))}
           <span className="crumb current">{stemOf(doc.path)}</span>
         </nav>
+        {docDaily && (
+          <span className="daily-nav" aria-label="데일리 노트 이동">
+            <IconButton icon={ChevronLeft} label="이전 데일리 노트" onClick={() => dailyStep(-1)} size={16} />
+            <button type="button" className="daily-nav-date" title="오늘 노트" onClick={() => void openDaily(0)}>
+              {friendlyDate(docDaily.date)}
+            </button>
+            <IconButton icon={ChevronRight} label="다음 데일리 노트" onClick={() => dailyStep(1)} size={16} />
+          </span>
+        )}
         <div className="doc-tools">
           <Segmented
             label="보기"
@@ -1803,7 +2217,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               { value: "preview", label: <Eye size={15} aria-label="미리보기" />, title: `미리보기 (${formatCombo(keyOf("toggle-mode"))})` },
             ]}
           />
-          <IconButton icon={SlidersHorizontal} label="속성 칸" active={propsOpen} onClick={() => setPrefs({ props: !propsOpen })} size={16} />
+          <IconButton icon={SlidersHorizontal} label={`속성${propCount ? ` ${propCount}개` : ""}(오른쪽 패널)`} active={propsShown} badge={!propsShown && propCount ? propCount : undefined} onClick={() => toggleRight("props")} size={16} />
           <IconButton icon={ListTree} label="개요·백링크·이력" keys={keyOf("right")} active={rightOpen} badge={!rightOpen && linkCount ? linkCount : undefined} onClick={() => toggleRight()} size={16} />
           <IconButton
             icon={Ellipsis}
@@ -1844,9 +2258,17 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         <div className={`panes mode-${revision ? "preview" : mode}${prefs.readableWidth ? " readable" : ""} font-${prefs.editorFont}`} style={{ ["--editor-size" as string]: `${prefs.editorSize}px` }}>
           <div className="pane edit-pane">
             <div className="page">
-              <InlineTitle path={doc.path} readOnly={doc.generated || !!revision} focusSignal={titleFocus?.path === doc.path ? titleFocus.n : 0}
-                onFocused={() => setTitleFocus(null)} onRename={(stem) => renameDoc(doc.path, stem)} onDone={() => editorHandle.current?.focus()} />
-              {propsOpen && !revision && <Properties content={doc.draft} stats={propStats} readOnly={doc.generated} onChange={(next) => editorHandle.current?.setContent(next)} />}
+              <InlineTitle
+                path={doc.path}
+                readOnly={doc.generated || !!revision}
+                focusSignal={titleFocus?.path === doc.path ? titleFocus.n : 0}
+                daily={docDaily}
+                icon={docIcon}
+                onIcon={doc.generated || revision ? undefined : (at) => setIconPick({ ...at, path: doc.path, kind: "file" })}
+                onFocused={() => setTitleFocus(null)}
+                onRename={(stem) => renameDoc(doc.path, stem)}
+                onDone={() => editorHandle.current?.focus()}
+              />
               <Editor
                 docKey={`${doc.path}#${doc.seq}`}
                 initial={doc.draft}
@@ -1857,7 +2279,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 onFiles={uploadFiles}
                 live={live}
                 lineNumbers={prefs.lineNumbers}
-                foldFrontmatter={propsOpen && !revision}
+                foldFrontmatter
+                onShowProps={() => showRight("props")}
+                foldKey={revision ? undefined : doc.path}
+                renderContext={() => (docRef.current ? { resolver: resolverRef.current, docPath: docRef.current.path, onLink: followLinkEl } : null)}
                 readOnly={doc.generated}
                 onCursor={(line, col) => setCursor({ line, col })}
                 onBlur={() => prefs.autosave && void saveRef.current({ auto: true })}
@@ -1866,7 +2291,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           </div>
           <div className="pane preview-pane" onClick={onPreviewClick}>
             <div className="page">
-              {(mode === "preview" || revision) && <h1 className="inline-title static">{stemOf(doc.path)}</h1>}
+              {(mode === "preview" || revision) && (
+                <h1 className="inline-title static">
+                  {prefs.showIcons && <DocIcon icon={docIcon} />}
+                  {docLabel(doc.path, { plain: true })}
+                </h1>
+              )}
               <div className="markdown-body" ref={previewRef} dangerouslySetInnerHTML={{ __html: rendered.html }} />
               {widgetSlots.map((el, i) =>
                 rendered.widgets[i] === undefined ? null : createPortal(<Widget source={rendered.widgets[i]} onOpen={open} onChanged={onWidgetChanged} />, el, `${i}:${rendered.widgets[i]}`),
@@ -1917,8 +2347,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   );
 
   return (
+    <IconLookup.Provider value={iconOf}>
     <div
-      className={`shell${prefs.leftOpen ? " left-open" : ""}${rightOpen && doc && !settings && !isNarrow ? " right-open" : ""}${drawer ? ` drawer-${drawer}` : ""}`}
+      className={`shell${prefs.leftOpen ? " left-open" : ""}${rightOpen && doc && !isNarrow ? " right-open" : ""}${drawer ? ` drawer-${drawer}` : ""}`}
       style={{ ["--left-w" as string]: `${prefs.leftWidth}px`, ["--right-w" as string]: `${prefs.rightWidth}px` }}
     >
       {drawer && <div className="nav-backdrop" onClick={() => setDrawer(null)} />}
@@ -1930,32 +2361,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         <Resizer side="left" label="왼쪽 패널 폭" width={prefs.leftWidth} min={180} max={520} onChange={(w) => setPrefs({ leftWidth: w })} onReset={() => setPrefs({ leftWidth: DEFAULT_PREFS.leftWidth })} />
       )}
       <main className="center">
-        {settings ? (
-          <SettingsPage
-            section={settings}
-            onSection={(s) => {
-              history.replaceState(null, "", `${SETTINGS_HASH}/${s}`);
-              setSettings(s);
-            }}
-            onClose={() => closeSettings()}
-            noteSettings={noteSettings}
-            onNoteSettings={(v) => {
-              setNoteSettings(v);
-              saveNoteSettings(v);
-            }}
-            commands={commands}
-            local={local}
-            onOpenAdmin={() => setAdminOpen(true)}
-            onOpenSync={() => setSyncOpen(true)}
-          />
-        ) : (
-          <>
-            {tabBar}
-            {center}
-          </>
-        )}
+        {tabBar}
+        {center}
       </main>
-      {doc && !settings && ((rightOpen && !isNarrow) || drawer === "right") && (
+      {doc && ((rightOpen && !isNarrow) || drawer === "right") && (
         <>
           {rightOpen && !isNarrow && (
             <Resizer side="right" label="오른쪽 패널 폭" width={prefs.rightWidth} min={200} max={560} onChange={(w) => setPrefs({ rightWidth: w })} onReset={() => setPrefs({ rightWidth: DEFAULT_PREFS.rightWidth })} />
@@ -2003,27 +2412,22 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         />
       )}
 
-      {syncOpen && localContext && (
-        <SyncPanel
-          ctx={localContext}
-          onClose={() => setSyncOpen(false)}
+      {settings && (
+        <SettingsModal
+          section={settings}
+          onSection={(sec) => {
+            history.replaceState(null, "", `${SETTINGS_HASH}/${sec}`);
+            setSettings(sec);
+          }}
+          onClose={() => closeSettings()}
+          commands={commands}
+          local={local}
+          folders={folderPaths(tree)}
           onOpen={(p) => {
-            setSyncOpen(false);
+            closeSettings(false);
             void open(p);
           }}
-        />
-      )}
-
-      {adminOpen && (
-        <AdminPanel
-          folders={folderPaths(tree)}
-          onClose={() => {
-            setAdminOpen(false);
-            // 복원 등으로 볼트가 바뀌었을 수 있다
-            vaultChanged();
-            void refreshTree();
-            if (doc && doc.draft === doc.saved) void load(doc.path);
-          }}
+          onMigrateDaily={() => void migrateDaily()}
         />
       )}
 
@@ -2062,6 +2466,54 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         />
       )}
       {fileView && <FileViewer path={fileView} onClose={() => setFileView(null)} />}
+      {iconPick && (
+        <IconPicker
+          at={iconPick}
+          title={iconPick.kind === "dir" ? `${iconPick.path} 폴더 아이콘` : "문서 아이콘"}
+          value={iconPick.kind === "dir" ? shared.folderIcons[iconPick.path] : iconPick.path === doc?.path ? docIcon : iconMap.get(iconPick.path)}
+          onClose={() => setIconPick(null)}
+          onPick={(icon) => void setIcon(iconPick.path, iconPick.kind, icon)}
+        />
+      )}
+      {migration && (
+        <Modal title="데일리 노트 형식 옮기기" size="md" onClose={() => setMigration(null)}>
+          <p className="meta">
+            지금 형식: <code>{dailyNotePath(daily.folder, daily.format, new Date(), { weekStart: daily.weekStart })}</code> · 데일리 폴더 안에서 이름 앞의 날짜를 읽어 옮깁니다. 날짜 뒤 제목은 그대로이고, 이 노트들을 가리키던 링크도 같이 고칩니다(한 커밋).
+          </p>
+          {migration.moves.length === 0 ? (
+            <p className="note-ok">옮길 데일리 노트가 없습니다(모두 지금 형식입니다).</p>
+          ) : (
+            <ul className="migration-list">
+              {migration.moves.slice(0, 300).map((m) => (
+                <li key={m.from}>
+                  <code>{m.from}</code> → <code>{m.to}</code>
+                </li>
+              ))}
+              {migration.moves.length > 300 && <li className="meta">… 그리고 {migration.moves.length - 300}개</li>}
+            </ul>
+          )}
+          {migration.skipped.length > 0 && (
+            <details>
+              <summary className="meta">건너뜀 {migration.skipped.length}개</summary>
+              <ul className="migration-list">
+                {migration.skipped.map((x) => (
+                  <li key={x.path}>
+                    <code>{x.path}</code> <span className="meta">{x.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <div className="ask-actions">
+            <button onClick={() => setMigration(null)}>닫기</button>
+            {migration.moves.length > 0 && (
+              <button className="on" onClick={() => void runMigration()} disabled={migration.moves.length > 500} title={migration.moves.length > 500 ? "한 번에 500개까지 옮길 수 있습니다" : undefined}>
+                {migration.moves.length}개 옮기기
+              </button>
+            )}
+          </div>
+        </Modal>
+      )}
       {palette && (
         <Palette
           key={palette}
@@ -2072,7 +2524,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 ? "명령"
                 : palette === "move"
                   ? `"${moveTarget ? moveTarget.path.split("/").pop() : ""}"을(를) 옮길 폴더`
-                  : `템플릿 (${noteSettings.templateFolder} 폴더)`
+                  : palette === "daily"
+                    ? "같은 날 데일리 노트가 여럿입니다. 열 것을 고르세요"
+                    : `템플릿 (${shared.templateFolder} 폴더)`
           }
           items={
             palette === "files"
@@ -2081,7 +2535,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 ? commandItems
                 : palette === "move"
                   ? moveItems
-                  : templatePaths.map((p) => ({
+                  : palette === "daily"
+                    ? dailyChoices.map((n) => ({ id: n.path, label: stemOf(n.path), display: docLabel(n.path), detail: parentOf(n.path), run: (alt: boolean) => void open(n.path, { newTab: alt }) }))
+                    : templatePaths.map((p) => ({
                       id: p,
                       label: stemOf(p),
                       detail: p,
@@ -2095,38 +2551,22 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       {keysOpen && <KeysDialog commands={commands} onClose={() => setKeysOpen(false)} onEdit={() => (setKeysOpen(false), openSettings("keys"))} />}
       <Toasts />
     </div>
+    </IconLookup.Provider>
   );
 }
 
 function KeysDialog({ commands, onClose, onEdit }: { commands: Command[]; onClose: () => void; onEdit: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal keys-dialog" role="dialog" aria-label="단축키">
-        <div className="modal-head">
-          <strong>단축키</strong>
-          <span>
-            <button onClick={onEdit}>바꾸기…</button> <IconButton icon={X} label="닫기" onClick={onClose} size={16} />
-          </span>
-        </div>
-        <KeySettings commands={commands} query="" readOnly />
-        <p className="meta">
-          편집기: 굵게 {formatCombo("Mod+B")} · 기울임 {formatCombo("Mod+I")} · 링크 {formatCombo("Mod+K")} · 형광펜 {formatCombo("Mod+Shift+H")} · 할 일 체크 {formatCombo("Mod+Enter")} · 문서 안 찾기 {formatCombo("Mod+F")}
-          <br />
-          트리: ↑↓ 이동 · ←→ 접기·펴기 · Enter 열기 · F2 이름 바꾸기 · Delete 삭제 · 오른쪽 클릭 메뉴 · 끌어서 옮기기
-          <br />
-          링크를 {formatCombo("Mod")}+클릭하면 옆 칸에서 엽니다.
-        </p>
-      </div>
-    </div>
+    <Modal title="단축키" size="md" onClose={onClose} className="keys-dialog" head={<button onClick={onEdit}>바꾸기…</button>}>
+      <KeySettings commands={commands} query="" readOnly />
+      <p className="meta">
+        편집기: 굵게 {formatCombo("Mod+B")} · 기울임 {formatCombo("Mod+I")} · 링크 {formatCombo("Mod+K")} · 형광펜 {formatCombo("Mod+Shift+H")} · 할 일 체크 {formatCombo("Mod+Enter")} · 문서 안 찾기 {formatCombo("Mod+F")}
+        <br />
+        트리: ↑↓ 이동 · ←→ 접기·펴기 · Enter 열기 · F2 이름 바꾸기 · Delete 삭제 · 오른쪽 클릭 메뉴 · 끌어서 옮기기
+        <br />
+        링크를 {formatCombo("Mod")}+클릭하면 옆 칸에서 엽니다. 제목 왼쪽의 ▸/▾(또는 접기 단축키)로 내용을 접습니다.
+      </p>
+    </Modal>
   );
 }
 

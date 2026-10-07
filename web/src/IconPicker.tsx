@@ -1,0 +1,173 @@
+import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+/**
+ * 이모지 고르기 창(문서·폴더·데일리 기본 아이콘). 검색(한글·영어 낱말), 최근 쓴 것(이 기기), 지우기.
+ * 목록에 없는 이모지는 검색칸에 직접 붙여 넣고 Enter.
+ */
+const EMOJI: [string, string][] = [
+  ["📅", "달력 날짜 일기 데일리 calendar date"], ["🗓️", "달력 일정 계획 calendar"], ["📆", "달력 calendar"], ["📝", "메모 노트 쓰기 memo note"], ["📓", "공책 노트 notebook"],
+  ["📔", "공책 일기 diary"], ["📒", "장부 노트 ledger"], ["📕", "책 빨강 book"], ["📗", "책 초록 book"], ["📘", "책 파랑 book"], ["📙", "책 주황 book"], ["📚", "책 공부 독서 books"],
+  ["📖", "책 읽기 독서 read"], ["🔖", "책갈피 북마크 bookmark"], ["🏷️", "태그 라벨 tag"], ["📌", "고정 핀 pin"], ["📍", "위치 핀 장소 place"], ["📎", "클립 첨부 clip"],
+  ["🖇️", "클립 연결 link"], ["✂️", "가위 자르기 cut"], ["🗂️", "분류 폴더 정리 index"], ["📁", "폴더 folder"], ["📂", "열린 폴더 folder"], ["🗃️", "상자 보관 archive"],
+  ["🗄️", "서랍 보관 cabinet"], ["🗑️", "휴지통 trash"], ["📦", "상자 패키지 box"], ["📥", "받은 편지 수집 inbox"], ["📤", "보낸 outbox"], ["📨", "편지 메일 mail"],
+  ["✉️", "편지 봉투 mail"], ["📮", "우체통 post"], ["📰", "신문 뉴스 기사 news"], ["🗞️", "신문 news"], ["📄", "문서 페이지 page"], ["📃", "문서 page"],
+  ["📑", "탭 문서 tabs"], ["📊", "차트 막대 통계 chart"], ["📈", "증가 상승 차트 up"], ["📉", "감소 하락 차트 down"], ["🧾", "영수증 receipt"], ["💰", "돈 재무 money"],
+  ["💵", "돈 지폐 dollar"], ["💳", "카드 결제 card"], ["🏦", "은행 금융 bank"], ["💹", "주식 투자 경제 stock"], ["🪙", "동전 coin"], ["💼", "가방 업무 일 회사 work"],
+  ["🏢", "회사 건물 office"], ["🏠", "집 가정 home"], ["🏡", "집 정원 house"], ["🏫", "학교 school"], ["🏥", "병원 건강 hospital"], ["🏛️", "기관 정부 법 institution"],
+  ["⚖️", "법 저울 정의 law"], ["🧑‍💻", "개발자 코딩 developer"], ["💻", "노트북 컴퓨터 개발 laptop"], ["🖥️", "컴퓨터 데스크톱 computer"], ["⌨️", "키보드 keyboard"], ["🖱️", "마우스 mouse"],
+  ["📱", "휴대폰 모바일 phone"], ["☎️", "전화 phone"], ["🔌", "플러그 연결 plug"], ["🔋", "배터리 battery"], ["💾", "저장 디스크 save"], ["💿", "디스크 cd"],
+  ["🧠", "뇌 생각 지식 brain"], ["💡", "아이디어 전구 idea"], ["🔍", "검색 돋보기 search"], ["🔎", "검색 search"], ["🔬", "현미경 연구 과학 science"], ["🔭", "망원경 관찰 telescope"],
+  ["🧪", "실험 시험관 test"], ["🧬", "유전자 생물 dna"], ["⚗️", "실험 화학 chemistry"], ["🧮", "주판 계산 수학 math"], ["📐", "자 삼각 설계 ruler"], ["📏", "자 측정 ruler"],
+  ["🛠️", "도구 수리 tools"], ["🔧", "렌치 설정 wrench"], ["🔨", "망치 만들기 hammer"], ["⚙️", "설정 톱니 gear"], ["🧰", "도구상자 toolbox"], ["🔩", "볼트 bolt"],
+  ["🔒", "잠금 비밀 보안 lock"], ["🔓", "열림 unlock"], ["🔑", "열쇠 키 key"], ["🛡️", "방패 보안 shield"], ["🚨", "경고 사이렌 alert"], ["⚠️", "주의 경고 warning"],
+  ["❗", "중요 느낌표 important"], ["❓", "질문 물음표 question"], ["✅", "완료 체크 done"], ["☑️", "체크 할일 check"], ["✔️", "확인 check"], ["❌", "취소 실패 x"],
+  ["⭐", "별 즐겨찾기 star"], ["🌟", "빛나는 별 star"], ["✨", "반짝 새 sparkle"], ["🔥", "불 인기 급함 fire"], ["⚡", "번개 빠름 flash"], ["🎯", "목표 과녁 target goal"],
+  ["🏆", "트로피 성과 trophy"], ["🥇", "금메달 1등 medal"], ["🎉", "축하 파티 party"], ["🎁", "선물 gift"], ["🎂", "생일 케이크 birthday"], ["🎈", "풍선 balloon"],
+  ["❤️", "하트 사랑 heart"], ["💙", "파랑 하트 heart"], ["💚", "초록 하트 heart"], ["💛", "노랑 하트 heart"], ["💜", "보라 하트 heart"], ["🧡", "주황 하트 heart"],
+  ["🖤", "검정 하트 heart"], ["🤍", "흰 하트 heart"], ["💬", "말풍선 대화 chat"], ["🗨️", "말풍선 comment"], ["💭", "생각 풍선 thought"], ["🗣️", "말하기 발표 speak"],
+  ["👥", "사람들 팀 people"], ["👤", "사람 프로필 person"], ["🤝", "악수 협업 계약 handshake"], ["👋", "인사 손 hello"], ["👍", "좋아요 like"], ["🙏", "감사 부탁 pray"],
+  ["😀", "웃음 기쁨 smile"], ["😊", "미소 happy"], ["😎", "멋짐 cool"], ["🤔", "생각 고민 thinking"], ["😴", "잠 sleep"], ["😢", "슬픔 sad"],
+  ["😡", "화남 angry"], ["🥳", "축하 party"], ["🤖", "로봇 에이전트 ai bot"], ["👾", "게임 game"], ["🎮", "게임 game"], ["🎲", "주사위 놀이 dice"],
+  ["🎨", "그림 디자인 미술 art"], ["🖌️", "붓 그리기 brush"], ["✏️", "연필 쓰기 pencil"], ["🖊️", "펜 pen"], ["🖋️", "만년필 pen"], ["📷", "사진 카메라 photo"],
+  ["🎬", "영화 촬영 movie"], ["🎵", "음악 music"], ["🎧", "헤드폰 음악 headphone"], ["🎤", "마이크 발표 mic"], ["📻", "라디오 radio"], ["📺", "티비 tv"],
+  ["🏃", "달리기 운동 run"], ["🚴", "자전거 운동 bike"], ["🏋️", "운동 헬스 gym"], ["🧘", "명상 요가 meditation"], ["⚽", "축구 soccer"], ["🏀", "농구 basketball"],
+  ["🍎", "사과 과일 apple"], ["🍞", "빵 bread"], ["🍚", "밥 rice"], ["🍜", "라면 국수 noodle"], ["☕", "커피 coffee"], ["🍵", "차 tea"],
+  ["🍺", "맥주 beer"], ["🍷", "와인 wine"], ["🍳", "요리 cooking"], ["🥗", "샐러드 건강 salad"], ["🍰", "케이크 cake"], ["🍽️", "식사 접시 meal"],
+  ["✈️", "비행기 여행 travel"], ["🚗", "자동차 car"], ["🚆", "기차 train"], ["🚌", "버스 bus"], ["🚀", "로켓 출시 launch"], ["🛫", "출발 departure"],
+  ["🗺️", "지도 map"], ["🧭", "나침반 방향 compass"], ["🏔️", "산 mountain"], ["🏖️", "해변 휴가 beach"], ["🏕️", "캠핑 camp"], ["🌍", "지구 세계 world"],
+  ["☀️", "해 맑음 sun"], ["🌙", "달 밤 moon"], ["⛅", "구름 cloud"], ["🌧️", "비 rain"], ["❄️", "눈 겨울 snow"], ["🌈", "무지개 rainbow"],
+  ["🌱", "새싹 성장 시작 sprout"], ["🌿", "잎 식물 herb"], ["🌳", "나무 tree"], ["🌸", "벚꽃 봄 blossom"], ["🌻", "해바라기 sunflower"], ["🍁", "단풍 가을 maple"],
+  ["🐶", "강아지 dog"], ["🐱", "고양이 cat"], ["🐻", "곰 bear"], ["🐼", "판다 panda"], ["🦊", "여우 fox"], ["🐢", "거북 turtle"],
+  ["⏰", "알람 시간 alarm"], ["⏳", "모래시계 기다림 hourglass"], ["⌛", "시간 끝 hourglass"], ["⏱️", "스톱워치 stopwatch"], ["🕒", "시계 clock"], ["🔔", "알림 종 bell"],
+  ["🔗", "링크 연결 link"], ["🧩", "퍼즐 조각 puzzle"], ["🪄", "마법 magic"], ["🧲", "자석 magnet"], ["🔄", "반복 순환 sync"], ["♻️", "재활용 recycle"],
+  ["➕", "더하기 plus"], ["➖", "빼기 minus"], ["🔴", "빨강 원 red"], ["🟠", "주황 원 orange"], ["🟡", "노랑 원 yellow"], ["🟢", "초록 원 green"],
+  ["🔵", "파랑 원 blue"], ["🟣", "보라 원 purple"], ["⚫", "검정 원 black"], ["⚪", "흰 원 white"], ["🟥", "빨강 네모 red"], ["🟦", "파랑 네모 blue"],
+  ["🇰🇷", "한국 korea"], ["🇺🇸", "미국 usa"], ["🇯🇵", "일본 japan"], ["🇨🇳", "중국 china"], ["🇬🇧", "영국 uk"], ["🇪🇺", "유럽 eu"],
+];
+
+const RECENT_KEY = "keyring:recent-icons";
+
+function loadRecent(): string[] {
+  try {
+    return (JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as string[]).slice(0, 16);
+  } catch {
+    return [];
+  }
+}
+
+function remember(icon: string) {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify([icon, ...loadRecent().filter((x) => x !== icon)].slice(0, 16)));
+  } catch {
+    /* 저장소를 못 쓰는 환경 */
+  }
+}
+
+/** 이모지처럼 보이는 글(글자·숫자만이 아닌 짧은 것) */
+const looksLikeEmoji = (s: string) => {
+  const t = s.trim();
+  return !!t && [...t].length <= 8 && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(t);
+};
+
+export function IconPicker({ at, value, onPick, onClose, title = "아이콘" }: { at: { x: number; y: number }; value?: string | null; onPick: (icon: string | null) => void; onClose: () => void; title?: string }) {
+  const [q, setQ] = useState("");
+  const [recent] = useState(loadRecent);
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState(at);
+  const shown = useMemo(() => {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return EMOJI.map(([e]) => e);
+    return EMOJI.filter(([e, k]) => words.every((w) => k.includes(w) || e === w)).map(([e]) => e);
+  }, [q]);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ x: Math.max(8, Math.min(at.x, window.innerWidth - r.width - 8)), y: Math.max(8, Math.min(at.y, window.innerHeight - r.height - 8)) });
+  }, [at.x, at.y]);
+
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("mousedown", down, true);
+    window.addEventListener("keydown", key, true);
+    return () => {
+      window.removeEventListener("mousedown", down, true);
+      window.removeEventListener("keydown", key, true);
+    };
+  }, [onClose]);
+
+  const pick = (icon: string | null) => {
+    if (icon) remember(icon);
+    onPick(icon);
+    onClose();
+  };
+
+  return createPortal(
+    <div ref={ref} className="icon-picker menu" role="dialog" aria-label={`${title} 고르기`} style={{ left: pos.x, top: pos.y }}>
+      <div className="icon-picker-head">
+        <input
+          autoFocus
+          type="text"
+          placeholder="검색(예: 책, 일기, star) 또는 이모지 붙여넣기"
+          aria-label="이모지 검색"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+            e.preventDefault();
+            if (looksLikeEmoji(q)) pick(q.trim());
+            else if (shown[0]) pick(shown[0]);
+          }}
+        />
+        <button type="button" onClick={() => pick(null)} disabled={!value} title="아이콘 지우기">
+          지우기
+        </button>
+      </div>
+      {!q && recent.length > 0 && (
+        <>
+          <div className="icon-picker-label">최근</div>
+          <div className="icon-grid">
+            {recent.map((e) => (
+              <button key={e} type="button" className={e === value ? "on" : ""} onClick={() => pick(e)} aria-label={e}>
+                {e}
+              </button>
+            ))}
+          </div>
+          <div className="icon-picker-label">전체</div>
+        </>
+      )}
+      <div className="icon-grid">
+        {shown.map((e) => (
+          <button key={e} type="button" className={e === value ? "on" : ""} onClick={() => pick(e)} aria-label={e}>
+            {e}
+          </button>
+        ))}
+        {shown.length === 0 && <p className="meta">맞는 이모지가 없습니다. 이모지를 직접 붙여 넣고 Enter.</p>}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** 문서·폴더 이름 앞의 아이콘(없으면 아무것도 안 그린다) */
+export function DocIcon({ icon, className }: { icon?: string | null; className?: string }) {
+  if (!icon) return null;
+  return (
+    <span className={`doc-icon${className ? ` ${className}` : ""}`} aria-hidden>
+      {icon}
+    </span>
+  );
+}
+
+/** 경로 → 문서 아이콘(위젯 목록처럼 Workspace 밖에서 그리는 곳이 쓴다) */
+export const IconLookup = createContext<(path: string) => string | null>(() => null);

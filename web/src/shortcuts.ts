@@ -10,6 +10,8 @@ export interface Command {
   group: string;
   /** 기본 키(데스크톱 앱) */
   keys?: string;
+  /** macOS 기본 키(다르면). CodeMirror 접기 키처럼 플랫폼마다 다른 것 */
+  macKeys?: string;
   /** 브라우저가 가로채는 키(Mod+W·N·T…) 대신 웹에서 쓸 키 */
   webKeys?: string;
   run: () => void;
@@ -74,9 +76,10 @@ export function normalizeCombo(combo: string): string {
 }
 
 /** 이 명령에 지금 걸린 키(바꾼 것 → 앱/웹 기본) */
-export function commandKey(c: Pick<Command, "id" | "keys" | "webKeys">, overrides: Record<string, string>): string | undefined {
+export function commandKey(c: Pick<Command, "id" | "keys" | "webKeys" | "macKeys">, overrides: Record<string, string>): string | undefined {
   if (c.id in overrides) return overrides[c.id] || undefined;
-  return (inApp ? c.keys : (c.webKeys ?? c.keys)) || undefined;
+  const keys = isMac && c.macKeys ? c.macKeys : c.keys;
+  return (inApp ? keys : (c.webKeys ?? keys)) || undefined;
 }
 
 const MAC_SYMBOL: Record<string, string> = { Mod: "⌘", Ctrl: "⌃", Alt: "⌥", Shift: "⇧", Meta: "⌘" };

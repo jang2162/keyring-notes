@@ -16,6 +16,7 @@ import {
   type UpdateInfo,
   type WebhookInfo,
 } from "./api";
+import { useCloseGuard } from "./Modal";
 
 const LEVELS: { value: Level; label: string }[] = [
   { value: "hidden", label: "숨김" },
@@ -55,46 +56,35 @@ function duration(sec: number): string {
   return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${m}분` : `${m}분`;
 }
 
-type Section = "status" | "agents" | "devices" | "backups" | "automation" | "update" | "security";
+/** 설정 모달의 "서버" 묶음(소유자만, 로컬 모드에서는 숨김). keywords: 설정 검색이 이 묶음을 찾는 말 */
+export const SERVER_SECTIONS = [
+  { id: "server-status", label: "서버 상태", keywords: "상태 버전 디스크 용량 문서 수 이력 S3 경고" },
+  { id: "server-agents", label: "에이전트·권한", keywords: "에이전트 토큰 권한 MCP 규칙 재발급 agent" },
+  { id: "server-devices", label: "앱·기기", keywords: "기기 앱 동기화 연결 끊기 device" },
+  { id: "server-backups", label: "백업·복원", keywords: "백업 복원 S3 내려받기 올리기 자동 백업 backup" },
+  { id: "server-automation", label: "자동화", keywords: "웹훅 정기 작업 cron schedule webhook doc.changed raw.added secret" },
+  { id: "server-update", label: "업데이트", keywords: "업데이트 버전 릴리스 docker" },
+  { id: "server-security", label: "보안", keywords: "보안 비밀번호 패스키 원격 접속 HTTPS" },
+] as const;
+export type ServerSection = (typeof SERVER_SECTIONS)[number]["id"];
 
-export function AdminPanel({ folders, onClose }: { folders: string[]; onClose: () => void }) {
-  const [section, setSection] = useState<Section>("status");
-  return (
-    <div className="admin" role="dialog" aria-label="관리 콘솔">
-      <div className="admin-head">
-        <strong>관리 콘솔</strong>
-        <nav>
-          {(
-            [
-              ["status", "서버 상태"],
-              ["agents", "에이전트·권한"],
-              ["devices", "앱·기기"],
-              ["backups", "백업·복원"],
-              ["automation", "자동화"],
-              ["update", "업데이트"],
-              ["security", "보안"],
-            ] as const
-          ).map(([k, label]) => (
-            <button key={k} className={section === k ? "on" : ""} onClick={() => setSection(k)}>
-              {label}
-            </button>
-          ))}
-        </nav>
-        <button onClick={onClose} aria-label="닫기">
-          ✕
-        </button>
-      </div>
-      <div className="admin-body">
-        {section === "status" && <StatusView />}
-        {section === "agents" && <AgentsView folders={folders} />}
-        {section === "devices" && <DevicesView />}
-        {section === "backups" && <BackupsView />}
-        {section === "automation" && <AutomationView />}
-        {section === "update" && <UpdateView />}
-        {section === "security" && <SecurityView />}
-      </div>
-    </div>
-  );
+export function ServerSettings({ section, folders }: { section: ServerSection; folders: string[] }) {
+  switch (section) {
+    case "server-status":
+      return <StatusView />;
+    case "server-agents":
+      return <AgentsView folders={folders} />;
+    case "server-devices":
+      return <DevicesView />;
+    case "server-backups":
+      return <BackupsView />;
+    case "server-automation":
+      return <AutomationView />;
+    case "server-update":
+      return <UpdateView />;
+    case "server-security":
+      return <SecurityView />;
+  }
 }
 
 function StatusView() {
@@ -268,6 +258,8 @@ function AgentsView({ folders }: { folders: string[] }) {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [token, setToken] = useState<{ name: string; token: string } | null>(null);
+  // 토큰은 지금만 볼 수 있다: 모르고 닫지 않게
+  useCloseGuard(token ? { kind: "confirm", reason: `"${token.name}" 토큰은 지금만 볼 수 있습니다. 닫으면 다시 볼 수 없습니다(재발급해야 합니다).` } : null);
   const load = useCallback(() => admin.agents().then(setAgents).catch((e) => setError(msg(e))), []);
   useEffect(() => {
     void load();
@@ -335,6 +327,7 @@ function AgentCard({
   const initial = useMemo(() => Object.entries(agent.rules).map(([path, level]) => ({ path, level })), [agent.rules]);
   const [rows, setRows] = useState(initial);
   const [saved, setSaved] = useState(true);
+  useCloseGuard(saved ? null : { kind: "confirm", reason: `"${agent.name}" 권한 표를 고치고 저장하지 않았습니다.` });
   useEffect(() => {
     setRows(initial);
     setSaved(true);
@@ -457,6 +450,7 @@ function BackupsView() {
   const [list, setList] = useState<BackupInfo[]>([]);
   const [settings, setSettings] = useState<BackupSettings | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  useCloseGuard(busy ? { kind: "block", reason: busy === "restore" ? "백업을 복원하는 중입니다." : busy === "upload" ? "백업 파일을 올리는 중입니다." : "백업 작업이 진행 중입니다." } : null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [remote, setRemote] = useState<{ configured: boolean; location?: string; backups: RemoteBackupInfo[]; lastError?: string | null } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -845,6 +839,9 @@ const EVENT_LABEL: Record<string, string> = {
   ping: "시험",
 };
 
+/** 고칠 수 있는 칸만(정기 작업의 다음·마지막 실행 같은 상태 값은 빼고) 비교용 글로 */
+const editable = (list: object[]) => JSON.stringify(list.map((x) => Object.fromEntries(Object.entries(x).filter(([k]) => !["next", "lastRun", "lastResult", "error"].includes(k)))));
+
 /** 웹훅·정기 작업(W8). */
 function AutomationView() {
   const [events, setEvents] = useState<string[]>([]);
@@ -853,12 +850,25 @@ function AutomationView() {
   const [deliveries, setDeliveries] = useState<DeliveryInfo[]>([]);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
+  // 저장한 상태(고친 것이 있는지 보려고)
+  const [savedHooks, setSavedHooks] = useState("[]");
+  const [savedJobs, setSavedJobs] = useState("[]");
+  const dirty = editable(hooks) !== savedHooks || editable(jobs) !== savedJobs;
+  useCloseGuard(
+    Object.keys(secrets).length
+      ? { kind: "confirm", reason: "새 웹훅 secret은 지금만 볼 수 있습니다. 받는 쪽에 넣었는지 확인하세요." }
+      : dirty
+        ? { kind: "confirm", reason: "웹훅·정기 작업을 고치고 저장하지 않았습니다." }
+        : null,
+  );
   const load = useCallback(async () => {
     try {
       const r = await automation.get();
       setEvents(r.events);
       setHooks(r.webhooks);
       setJobs(r.jobs);
+      setSavedHooks(editable(r.webhooks));
+      setSavedJobs(editable(r.jobs));
       setDeliveries(r.deliveries);
     } catch (e) {
       setNote({ ok: false, text: msg(e) });
@@ -927,6 +937,17 @@ function AutomationView() {
             <div className="token-row">
               <span className="meta">secret(지금만 보임)</span>
               <code>{secrets[h.id]}</code>
+              <button
+                onClick={() =>
+                  setSecrets((x) => {
+                    const next = { ...x };
+                    delete next[h.id];
+                    return next;
+                  })
+                }
+              >
+                넣었음(숨기기)
+              </button>
             </div>
           )}
           <div className="agent-actions">

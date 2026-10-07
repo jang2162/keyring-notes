@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Modal } from "./Modal";
 
 /** 빠른 전환(문서)·명령 팔레트 공용 항목 */
 export interface PaletteItem {
@@ -6,6 +7,10 @@ export interface PaletteItem {
   label: string;
   /** 보조 설명(폴더, 단축키 등) */
   detail?: string;
+  /** 앞에 붙는 아이콘(문서 아이콘) */
+  icon?: ReactNode;
+  /** 이름 대신 보일 것(데일리 노트: 날짜 흐리게·제목 진하게). 검색은 label로 한다 */
+  display?: ReactNode;
   /** Enter(또는 Ctrl/Cmd+Enter면 alt=true) */
   run: (alt: boolean) => void;
 }
@@ -75,15 +80,11 @@ export function Palette({ placeholder, items, onClose, hint }: { placeholder: st
     } else if (e.key === "Enter") {
       e.preventDefault();
       choose(sel, e.ctrlKey || e.metaKey);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      onClose();
     }
   };
 
   return (
-    <div className="modal-backdrop palette-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal palette" role="dialog" aria-label={placeholder}>
+    <Modal title={placeholder} label={placeholder} size="palette" hideHead escapeFromInputs onClose={onClose} className="palette">
         <input autoFocus placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey} aria-label={placeholder} />
         <ul ref={listRef} role="listbox">
           {shown.map((it, i) => (
@@ -99,14 +100,16 @@ export function Palette({ placeholder, items, onClose, hint }: { placeholder: st
                 choose(i, e.ctrlKey || e.metaKey);
               }}
             >
-              <span className="palette-label">{it.label}</span>
+              <span className="palette-label">
+                {it.icon}
+                {it.display ?? it.label}
+              </span>
               {it.detail && <span className="palette-detail">{it.detail}</span>}
             </li>
           ))}
           {shown.length === 0 && <li className="meta">맞는 항목이 없습니다.</li>}
         </ul>
         {hint && <p className="meta palette-hint">{hint}</p>}
-      </div>
-    </div>
+    </Modal>
   );
 }

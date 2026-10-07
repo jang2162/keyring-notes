@@ -449,7 +449,7 @@ export class ScopedVault {
     if (!this.semanticIndex) throw new PathError("의미 검색이 꺼져 있습니다(KEYRING_EMBED_URL·KEYRING_EMBED_MODEL 설정 필요)");
     const f = normalizeFolder(opts.folder);
     const limit = Math.min(Math.max(opts.limit ?? 10, 1), 50);
-    return this.semanticIndex.search(query, (p) => this.canRead(p) && !this.wiki?.isGenerated(p) && (!f || p.startsWith(f + "/")), limit);
+    return this.semanticIndex.search(query, (p) => this.canRead(p) && !this.wiki?.isGenerated(p) && !isVaultSettingsPath(p) && (!f || p.startsWith(f + "/")), limit);
   }
 
   /** 읽을 수 있는 문서에 쓰인 태그와 개수. */

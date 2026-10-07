@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 /**
  * 이 기기에만 두는 화면 설정(테마·패널 폭·편집기 모양·자동 저장·단축키). 다른 기기와 나누지 않는다.
- * 데일리 노트·템플릿은 noteSettings.ts.
+ * 모든 기기가 같아야 하는 값(데일리·템플릿·첨부 폴더·링크 형식·폴더 아이콘)은 볼트의 공통 설정 파일(vaultSettings.ts).
  */
 export interface Prefs {
   theme: "system" | "light" | "dark";
@@ -12,7 +12,7 @@ export interface Prefs {
   rightOpen: boolean;
   /** 왼쪽 패널 내용(레일에서 고른 것) */
   leftView: "files" | "search" | "tags";
-  rightTab: "outline" | "links" | "history";
+  rightTab: "outline" | "links" | "props" | "history";
   autosave: boolean;
   /** 입력이 멈춘 뒤 저장까지(ms) */
   autosaveDelay: number;
@@ -22,7 +22,14 @@ export interface Prefs {
   editorSize: number;
   lineNumbers: boolean;
   live: boolean;
-  props: boolean;
+  /** 미리보기에서 속성(프런트매터)을 본문 위에도 보이기(기본은 오른쪽 패널 "속성" 탭만) */
+  propsInDoc: boolean;
+  /** 문서·폴더 아이콘 보이기 */
+  showIcons: boolean;
+  /** 데일리 노트에 제목이 없으면 "10월 7일 (수)"처럼 읽기 좋은 날짜로 보이기 */
+  dailyFriendly: boolean;
+  /** 트리에서 데일리 폴더는 최신이 위로 */
+  dailySortDesc: boolean;
   /** 트리: 첨부(마크다운이 아닌 파일) 보이기 */
   treeAttachments: "show" | "bottom" | "hide";
   /** 트리: attachments 폴더 숨기기 */
@@ -48,7 +55,10 @@ export const DEFAULT_PREFS: Prefs = {
   editorSize: 16,
   lineNumbers: false,
   live: true,
-  props: true,
+  propsInDoc: false,
+  showIcons: true,
+  dailyFriendly: true,
+  dailySortDesc: true,
   treeAttachments: "bottom",
   treeHideAttachmentFolders: false,
   backlinksInDoc: false,
@@ -60,14 +70,7 @@ const KEY = "keyring:prefs";
 function load(): Prefs {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Prefs> | null;
-    if (saved) return { ...DEFAULT_PREFS, ...saved, keys: { ...(saved.keys ?? {}) } };
-    // 예전 낱개 저장값(편집 중 렌더링·속성 화면)을 이어받는다
-    const old: Partial<Prefs> = {};
-    const live = localStorage.getItem("keyring:live");
-    if (live !== null) old.live = live === "1";
-    const props = localStorage.getItem("keyring:props");
-    if (props !== null) old.props = props !== "0";
-    return { ...DEFAULT_PREFS, ...old };
+    return saved ? { ...DEFAULT_PREFS, ...saved, keys: { ...(saved.keys ?? {}) } } : DEFAULT_PREFS;
   } catch {
     return DEFAULT_PREFS;
   }

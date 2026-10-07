@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronRight, File, FileImage, FileText, FileType, Folder, FolderOpen } from "lucide-react";
 import type { TreeNode } from "./api";
 import type { Prefs } from "./prefs";
@@ -38,6 +38,20 @@ export interface TreeActions {
   copyPath: (path: string) => void;
   copyLink: (path: string) => void;
   openAside: (path: string) => void;
+  /** 아이콘 고르기(문서: 프런트매터 icon, 폴더: 공통 설정) */
+  pickIcon: (path: string, kind: "dir" | "file", at: { x: number; y: number }) => void;
+}
+
+/** 트리 표시를 바꾸는 것들(모두 선택) */
+export interface TreeDecor {
+  /** 이름 대신 보일 것(데일리 노트: 날짜 흐리게·제목 진하게) */
+  label?: (path: string) => ReactNode;
+  /** 문서·폴더 아이콘(이모지) */
+  icon?: (node: TreeNode) => string | null;
+  /** 트리에서 숨길 파일(공통 설정 파일) */
+  hidden?: (path: string) => boolean;
+  /** 이 폴더 안은 이름 내림차순(데일리 폴더: 최신이 위로) */
+  descending?: (dir: string) => boolean;
 }
 
 export interface TreeHandle {
@@ -65,8 +79,9 @@ function loadOpen(): Set<string> {
 }
 
 /** 트리 표시 옵션을 적용한 자식 순서: 폴더 → 문서 → (아래로 모으기면) 첨부 */
-function visibleChildren(nodes: TreeNode[], prefs: Pick<Prefs, "treeAttachments" | "treeHideAttachmentFolders">): TreeNode[] {
-  let out = nodes.filter((n) => !(n.type === "dir" && prefs.treeHideAttachmentFolders && n.name.toLowerCase() === "attachments"));
+function visibleChildren(nodes: TreeNode[], prefs: Pick<Prefs, "treeAttachments" | "treeHideAttachmentFolders">, decor: TreeDecor, dir: string): TreeNode[] {
+  let out = nodes.filter((n) => !(n.type === "dir" && prefs.treeHideAttachmentFolders && n.name.toLowerCase() === "attachments") && !(n.type === "file" && decor.hidden?.(n.path)));
+  if (decor.descending?.(dir)) out = [...out].sort((a, b) => (a.type !== b.type ? (a.type === "dir" ? -1 : 1) : b.name.localeCompare(a.name, "ko")));
   if (prefs.treeAttachments === "hide") out = out.filter((n) => n.type === "dir" || isMd(n.path));
   if (prefs.treeAttachments === "bottom") {
     const rank = (n: TreeNode) => (n.type === "dir" ? 0 : isMd(n.path) ? 1 : 2);
@@ -75,7 +90,8 @@ function visibleChildren(nodes: TreeNode[], prefs: Pick<Prefs, "treeAttachments"
   return out;
 }
 
-function NodeIcon({ node, open }: { node: TreeNode; open: boolean }) {
+function NodeIcon({ node, open, emoji }: { node: TreeNode; open: boolean; emoji?: string | null }) {
+  if (emoji) return <span className="doc-icon tree-emoji" aria-hidden>{emoji}</span>;
   const props = { size: 16, strokeWidth: 1.75, "aria-hidden": true, className: "tree-icon" } as const;
   if (node.type === "dir") return open ? <FolderOpen {...props} /> : <Folder {...props} />;
   if (isMd(node.path)) return <FileText {...props} />;
@@ -84,8 +100,8 @@ function NodeIcon({ node, open }: { node: TreeNode; open: boolean }) {
   return <File {...props} />;
 }
 
-export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string | null; prefs: Prefs; actions: TreeActions; readOnly?: (path: string) => boolean }>(function Tree(
-  { nodes, current, prefs, actions, readOnly = () => false },
+export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string | null; prefs: Prefs; actions: TreeActions; readOnly?: (path: string) => boolean; decor?: TreeDecor }>(function Tree(
+  { nodes, current, prefs, actions, readOnly = () => false, decor = {} },
   ref,
 ) {
   const [open, setOpen] = useState(loadOpen);
@@ -127,15 +143,15 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
 
   const rows = useMemo(() => {
     const out: Row[] = [];
-    const walk = (ns: TreeNode[], depth: number) => {
-      for (const n of visibleChildren(ns, prefs)) {
+    const walk = (ns: TreeNode[], depth: number, dir: string) => {
+      for (const n of visibleChildren(ns, prefs, decor, dir)) {
         out.push({ node: n, depth });
-        if (n.type === "dir" && open.has(n.path)) walk(n.children ?? [], depth + 1);
+        if (n.type === "dir" && open.has(n.path)) walk(n.children ?? [], depth + 1, n.path);
       }
     };
-    walk(nodes, 0);
+    walk(nodes, 0, "");
     return out;
-  }, [nodes, open, prefs]);
+  }, [nodes, open, prefs, decor]);
 
   const scrollTo = (path: string) => {
     requestAnimationFrame(() => box.current?.querySelector(`[data-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: "nearest" }));
@@ -177,6 +193,9 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
     else actions.openAttachment(n.path);
   };
 
+  /** 메뉴를 연 자리(아이콘 고르기 창을 그 근처에) */
+  const menuAt = () => ({ x: menu?.x ?? 40, y: menu?.y ?? 40 });
+
   const menuFor = (n: TreeNode | null): MenuEntry[] => {
     if (!n) return [
       { label: "새 문서", run: () => actions.newDoc("") },
@@ -189,12 +208,16 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
         "-",
         { label: "이름 바꾸기", keys: "F2", run: () => setRenaming(n.path) },
         { label: "다른 폴더로 옮기기…", run: () => actions.moveTo(n.path, "dir") },
+        { label: "아이콘 바꾸기…", run: () => actions.pickIcon(n.path, "dir", menuAt()) },
         "-",
         { label: "경로 복사", run: () => actions.copyPath(n.path) },
       ];
     if (!isMd(n.path))
       return [
         { label: "열기", run: () => actions.openAttachment(n.path) },
+        "-",
+        { label: "이름 바꾸기", keys: "F2", run: () => setRenaming(n.path) },
+        { label: "다른 폴더로 옮기기…", run: () => actions.moveTo(n.path, "file") },
         "-",
         { label: "경로 복사", run: () => actions.copyPath(n.path) },
         { label: "링크 복사", run: () => actions.copyLink(n.path) },
@@ -208,6 +231,7 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
       { label: "이름 바꾸기", keys: "F2", disabled: ro, run: () => setRenaming(n.path) },
       { label: "다른 폴더로 옮기기…", disabled: ro, run: () => actions.moveTo(n.path, "file") },
       { label: "복제", run: () => actions.duplicate(n.path) },
+      { label: "아이콘 바꾸기…", disabled: ro, run: () => actions.pickIcon(n.path, "file", menuAt()) },
       "-",
       { label: "경로 복사", run: () => actions.copyPath(n.path) },
       { label: "링크 복사", run: () => actions.copyLink(n.path) },
@@ -270,7 +294,7 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
         activate(row.node, e.ctrlKey || e.metaKey);
         break;
       case "F2":
-        if (!row || (row.node.type === "file" && (!isMd(row.node.path) || readOnly(row.node.path)))) return;
+        if (!row || (row.node.type === "file" && readOnly(row.node.path))) return;
         e.preventDefault();
         setRenaming(row.node.path);
         break;
@@ -369,7 +393,7 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
             aria-selected={n.path === current}
             className={cls}
             style={{ paddingLeft: 6 + depth * 14 }}
-            draggable={renaming !== n.path && (n.type === "dir" || (md && !readOnly(n.path)))}
+            draggable={renaming !== n.path && (n.type === "dir" || !readOnly(n.path))}
             onDragStart={(e) => {
               dragging.current = n;
               e.dataTransfer.effectAllowed = "move";
@@ -401,7 +425,7 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
             <span className={`tree-chevron${isOpen ? " open" : ""}`} aria-hidden>
               {n.type === "dir" && <ChevronRight size={14} strokeWidth={2} />}
             </span>
-            <NodeIcon node={n} open={isOpen} />
+            <NodeIcon node={n} open={isOpen} emoji={decor.icon?.(n)} />
             {renaming === n.path ? (
               <RenameInput
                 initial={n.type === "dir" ? n.name : md ? stemOf(n.path) : n.name}
@@ -419,7 +443,7 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
                 }}
               />
             ) : (
-              <span className="tree-name">{md ? stemOf(n.path) : n.name}</span>
+              <span className="tree-name">{md ? (decor.label?.(n.path) ?? stemOf(n.path)) : n.name}</span>
             )}
           </div>
         );
@@ -430,7 +454,7 @@ export const Tree = forwardRef<TreeHandle, { nodes: TreeNode[]; current: string 
   );
 });
 
-function RenameInput({ initial, onDone }: { initial: string; onDone: (name: string | null) => void }) {
+function RenameInput({ initial, onDone }: { initial: string; onDone: (name: string | null) => Promise<void> | void }) {
   const [v, setV] = useState(initial);
   const err = v.trim() === initial ? null : invalidNameReason(v);
   const done = useRef(false);
@@ -439,9 +463,8 @@ function RenameInput({ initial, onDone }: { initial: string; onDone: (name: stri
     const n = name?.trim() ?? null;
     if (n !== null && n !== initial && invalidNameReason(n)) return; // 고칠 때까지 그대로
     done.current = true;
-    onDone(n === null || n === initial ? null : n);
-    // 실패해서 이 칸이 남으면 다시 고칠 수 있게
-    setTimeout(() => (done.current = false), 0);
+    // Enter 뒤 칸이 사라지며 생기는 blur로 두 번 부르지 않는다. 실패해서 칸이 남으면 다시 고칠 수 있게 푼다
+    void Promise.resolve(onDone(n === null || n === initial ? null : n)).finally(() => (done.current = false));
   };
   return (
     <span className="tree-rename">

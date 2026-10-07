@@ -3,7 +3,7 @@ import MarkdownIt from "markdown-it";
 import type { StateBlock, StateCore, StateInline, Token } from "markdown-it";
 import footnote from "markdown-it-footnote";
 import mark from "markdown-it-mark";
-import { stripComments } from "@keyring-notes/core";
+import { dailyLinkDate, dailyNotesOn, stripComments, type DailyConfig } from "@keyring-notes/core";
 import { api, type TreeNode } from "./api";
 
 /**
@@ -12,12 +12,18 @@ import { api, type TreeNode } from "./api";
  */
 export const SAFE_URI = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|asset|blob):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
 
-/** 위키링크 대상 이름 → 실제 경로. Obsidian처럼 경로 없이 파일 이름만 써도 찾는다. */
+/**
+ * 위키링크 대상 이름 → 실제 경로. Obsidian처럼 경로 없이 파일 이름만 써도 찾는다.
+ * 데일리 설정을 주면 `[[2026-10-07]]`처럼 날짜만 쓴 링크도 그날 데일리 노트로(정확한 이름이 먼저, core resolveLink와 같은 규칙).
+ */
 export class LinkResolver {
   private byPath = new Map<string, string>();
   private byName = new Map<string, string[]>();
 
-  constructor(tree: TreeNode[]) {
+  constructor(
+    tree: TreeNode[],
+    readonly daily: DailyConfig | null = null,
+  ) {
     const walk = (nodes: TreeNode[]) => {
       for (const n of nodes) {
         if (n.type === "dir") walk(n.children ?? []);
@@ -55,7 +61,8 @@ export class LinkResolver {
       // 같은 이름이 여러 개면 가장 얕은 경로를 고른다(Obsidian의 최단 경로 규칙).
       if (hits.length) return hits.sort((a, b) => a.split("/").length - b.split("/").length)[0];
     }
-    return null;
+    const day = this.daily ? dailyLinkDate(target, this.daily) : null;
+    return day ? (dailyNotesOn(this.paths, this.daily, day)[0]?.path ?? null) : null;
   }
 }
 
@@ -358,8 +365,10 @@ md.renderer.rules.blockquote_open = (tokens, idx, opts, env, self) => {
   if (!c) return self.renderToken(tokens, idx, opts);
   const title = md.renderer.renderInline(c.title, opts, env).trim() || escapeHtml(CALLOUT_LABEL[c.kind] ?? c.kind);
   const cls = `callout callout-${CALLOUT_GROUP[c.kind] ?? "blue"}`;
+  const line = tokens[idx].attrGet("data-line");
+  const at = line ? ` data-line="${escapeHtml(String(line))}"` : "";
   if (c.fold) return `<details class="${cls}" data-callout="${escapeHtml(c.kind)}"${c.fold === "+" ? " open" : ""}><summary class="callout-title">${title}</summary><div class="callout-body">\n`;
-  return `<div class="${cls}" data-callout="${escapeHtml(c.kind)}"><div class="callout-title">${title}</div><div class="callout-body">\n`;
+  return `<div class="${cls}" data-callout="${escapeHtml(c.kind)}"${at}><div class="callout-title">${title}</div><div class="callout-body">\n`;
 };
 md.renderer.rules.blockquote_close = (tokens, idx, opts, _env, self) => {
   const c = tokens[idx].meta?.callout as { fold: string } | undefined;
@@ -411,6 +420,17 @@ md.core.ruler.push("blocks", (state: StateCore) => {
         const owner = tokens[i - 2]?.type === "list_item_open" ? tokens[i - 2] : open;
         owner.attrSet("data-block", m[1]);
       }
+    }
+  }
+});
+
+// 접기(folds.ts)에 쓰는 줄 번호: 제목·목록 항목·표·코드 블록·인용(콜아웃)의 첫 줄(문서 전체 기준, 1부터)
+md.core.ruler.push("fold_lines", (state: StateCore) => {
+  const offset = ctxOf(state.env).lineOffset;
+  for (const t of state.tokens) {
+    if (!t.map) continue;
+    if (t.type === "heading_open" || t.type === "list_item_open" || t.type === "table_open" || t.type === "fence" || t.type === "blockquote_open") {
+      t.attrSet("data-line", String(offset + t.map[0] + 1));
     }
   }
 });

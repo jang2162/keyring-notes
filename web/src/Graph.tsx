@@ -1,4 +1,5 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
+import { Modal } from "./Modal";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent } from "react";
 import { api, type GraphData } from "./api";
 
@@ -165,17 +166,22 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
       .on("tick", draw);
     sim.current = { nodes, links, draw };
     const onResize = () => {
+      const keep = { w: rect.width, h: rect.height };
       rect = size();
+      // 크게·원래 크기로 바꿀 때 가운데를 유지한다
+      view.current.x += (rect.width - keep.w) / 2;
+      view.current.y += (rect.height - keep.h) / 2;
       draw();
     };
-    window.addEventListener("resize", onResize);
+    const ro = new ResizeObserver(onResize);
+    ro.observe(wrap.current);
     highlight.current = (id) => {
       hoverId = id;
       draw();
     };
     return () => {
       simulation.stop();
-      window.removeEventListener("resize", onResize);
+      ro.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, local, current, legend]);
@@ -219,10 +225,13 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
   };
 
   return (
-    <div className="admin" role="dialog" aria-label="그래프">
-      <div className="admin-head">
-        <strong>그래프</strong>
-        <nav>
+    <Modal
+      title="그래프"
+      onClose={onClose}
+      maximizable
+      bodyClassName="flush"
+      head={
+        <>
           <select value={folder} onChange={(e) => setFolder(e.target.value)} aria-label="폴더">
             <option value="">볼트 전체</option>
             {folders
@@ -238,11 +247,9 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
             <option value={1}>현재 문서와 바로 이웃</option>
             <option value={2}>현재 문서에서 두 단계</option>
           </select>
-        </nav>
-        <button onClick={onClose} aria-label="닫기">
-          ✕
-        </button>
-      </div>
+        </>
+      }
+    >
       <div className="graph-legend">
         {legend.map((l) => (
           <span key={l.topic}>
@@ -283,6 +290,6 @@ export function GraphView({ current, folders, onClose, onOpen }: { current: stri
         )}
         {data && data.nodes.length === 0 && <p className="graph-empty meta">보여 줄 문서가 없습니다.</p>}
       </div>
-    </div>
+    </Modal>
   );
 }

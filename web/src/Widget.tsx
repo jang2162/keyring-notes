@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
+import { DocIcon, IconLookup } from "./IconPicker";
 import { BUILTIN_FIELDS, parseFieldInput, setFrontmatterField } from "@keyring-notes/core";
 import { api, ApiError, appMode, type ListWidgetResult, type WidgetResult, type WidgetRow } from "./api";
 
@@ -76,6 +77,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
     };
   }, [source, currentEpoch]);
 
+  const iconOf = useContext(IconLookup);
   const link = (path: string, label: string) => (
     <a
       href={`#/${encodeURIComponent(path)}`}
@@ -85,6 +87,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
         onOpen(path);
       }}
     >
+      <DocIcon icon={iconOf(path)} />
       {label}
     </a>
   );

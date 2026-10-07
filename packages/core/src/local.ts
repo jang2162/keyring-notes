@@ -660,6 +660,15 @@ export class LocalVault {
     return this.moveMany(pairs, opts, `폴더 이동: ${from} → ${to}`);
   }
 
+  /** 여러 파일을 한 기록으로 옮긴다(데일리 노트 형식 옮기기 등). 링크도 같이 고친다 */
+  moveFiles(pairs: [string, string][], message: string, opts: { updateLinks?: boolean } = {}): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
+    return this.moveMany(
+      pairs.map(([f, t]) => [normalizeVaultPath(f), normalizeVaultPath(t), null]),
+      opts,
+      message,
+    );
+  }
+
   private moveMany(pairs: [string, string, string | null][], opts: { updateLinks?: boolean }, message: string | null): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
     return this.exclusive(async () => {
       const targets = new Set<string>();

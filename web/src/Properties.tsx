@@ -33,9 +33,12 @@ interface Props {
   onChange: (next: string) => void;
   stats: PropertyStat[];
   readOnly?: boolean;
+  /** 앱이 정하는 속성(데일리 노트의 날짜 속성): "자동" 표시, 읽기 전용 */
+  autoKeys?: readonly string[];
 }
 
-export function Properties({ content, onChange, stats, readOnly }: Props) {
+export function Properties({ content, onChange, stats, readOnly: readOnlyAll, autoKeys = [] }: Props) {
+  const readOnly = readOnlyAll;
   const fm = useMemo(() => parseFrontmatter(content), [content]);
   const [error, setError] = useState<string | null>(null);
   // 값이 비어 종류를 알 수 없는 필드에 사람이 고른 종류
@@ -95,8 +98,10 @@ export function Properties({ content, onChange, stats, readOnly }: Props) {
           <tbody>
             {entries.map(([key, value]) => {
               const type = typeOf(key, value);
+              const auto = autoKeys.includes(key);
+              const readOnly = readOnlyAll || auto;
               return (
-                <tr key={key}>
+                <tr key={key} className={auto ? "prop-auto" : undefined} title={auto ? "데일리 노트 자동 속성: 날짜를 바꾸려면 제목 칸의 날짜 부분이나 이동으로" : undefined}>
                   <th>
                     <input
                       className="prop-key"
@@ -135,6 +140,7 @@ export function Properties({ content, onChange, stats, readOnly }: Props) {
                     <ValueInput name={key} type={type} value={value} suggestions={statOf.get(key)?.values ?? []} readOnly={readOnly} onSet={(v) => set(key, v)} />
                   </td>
                   <td>
+                    {auto && <span className="prop-auto-badge">자동</span>}
                     {!readOnly && (
                       <button className="link-btn" title={`${key} 지우기`} aria-label={`${key} 지우기`} onClick={() => remove(key)}>
                         ×

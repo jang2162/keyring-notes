@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { Modal, useCloseGuard } from "./Modal";
 import { api, type IngestResult, type Topic } from "./api";
 
 function message(e: unknown) {
@@ -70,6 +71,12 @@ function bookmarklet(origin: string): string {
 
 type Tab = "file" | "url" | "text";
 
+/** 올리는 중에는 닫지 않고, 넣다 만 글이 있으면 묻는다 */
+function IngestGuard({ busy, unsaved }: { busy: boolean; unsaved: boolean }) {
+  useCloseGuard(busy ? { kind: "block", reason: "수집(업로드·변환)하는 중입니다." } : unsaved ? { kind: "confirm", reason: "입력한 내용을 아직 수집하지 않았습니다." } : null);
+  return null;
+}
+
 export function IngestDialog({ onClose, onDone }: { onClose: () => void; onDone: (results: IngestResult[], openPath?: string) => void }) {
   const [topic, setTopic] = useState("");
   const [tab, setTab] = useState<Tab>("file");
@@ -101,6 +108,11 @@ export function IngestDialog({ onClose, onDone }: { onClose: () => void; onDone:
       }
     }
     setBusy(false);
+    if (done.length === jobs.length) {
+      setText("");
+      setUrl("");
+      setTitle("");
+    }
     if (done.length) onDone(done, jobs.length === 1 ? done[0].path : undefined);
   };
 
@@ -127,14 +139,8 @@ export function IngestDialog({ onClose, onDone }: { onClose: () => void; onDone:
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="원본 수집">
-        <div className="modal-head">
-          <strong>원본 수집</strong>
-          <button onClick={onClose} aria-label="닫기">
-            ✕
-          </button>
-        </div>
+    <Modal title="원본 수집" size="md" onClose={onClose}>
+        <IngestGuard busy={busy} unsaved={(tab === "text" && !!text.trim()) || (tab === "url" && !!url.trim())} />
         <p className="meta">수집한 자료는 &lt;토픽&gt;/raw/ 에 마크다운으로 저장되고, 원본 파일(PDF·이미지)은 raw/assets/ 에 함께 남습니다.</p>
         <TopicPicker value={topic} onChange={setTopic} />
         <div className="tabs">
@@ -195,8 +201,7 @@ export function IngestDialog({ onClose, onDone }: { onClose: () => void; onDone:
             ))}
           </ul>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 

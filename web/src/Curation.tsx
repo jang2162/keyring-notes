@@ -1,6 +1,8 @@
 import { diffLines } from "diff";
 import { useCallback, useEffect, useState } from "react";
 import { api, review, type LintKind, type LintReport, type Proposal, type ProposalSummary } from "./api";
+import { Modal, useCloseGuard } from "./Modal";
+import { promptDialog } from "./dialog";
 
 function msg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -43,6 +45,8 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
   const [open, setOpen] = useState<Proposal | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [paths, setPaths] = useState("");
+  const [savedPaths, setSavedPaths] = useState("");
+  const pathsDirty = paths.trim() !== savedPaths.trim();
 
   const load = useCallback(async () => {
     try {
@@ -56,7 +60,10 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
     void load();
     review
       .settings()
-      .then((s) => setPaths(s.reviewPaths.join("\n")))
+      .then((s) => {
+        setPaths(s.reviewPaths.join("\n"));
+        setSavedPaths(s.reviewPaths.join("\n"));
+      })
       .catch(() => undefined);
   }, [load]);
 
@@ -64,8 +71,8 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
     try {
       if (approve) await review.approve(p.id);
       else {
-        const reason = prompt("거절 사유(에이전트가 my_proposals로 볼 수 있습니다)", "") ?? undefined;
-        if (reason === undefined) return;
+        const reason = await promptDialog("거절 사유(에이전트가 my_proposals로 볼 수 있습니다)", "", "거절");
+        if (reason === null) return;
         await review.reject(p.id, reason);
       }
       setNote({ ok: true, text: approve ? `승인했습니다: ${p.message}` : `거절했습니다: ${p.message}` });
@@ -82,10 +89,11 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
   const done = list.filter((p) => p.status !== "pending");
 
   return (
-    <div className="admin" role="dialog" aria-label="변경 검토">
-      <div className="admin-head">
-        <strong>변경 검토</strong>
-        <nav>
+    <Modal
+      title="변경 검토"
+      onClose={onClose}
+      head={
+        <div className="kmodal-tabs" role="tablist">
           <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
             대기 {pending.length}
           </button>
@@ -95,11 +103,10 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
           <button className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}>
             검토 대상
           </button>
-        </nav>
-        <button onClick={onClose} aria-label="닫기">
-          ✕
-        </button>
-      </div>
+        </div>
+      }
+    >
+      <PathsGuard dirty={pathsDirty} />
       <div className="admin-body">
         {note && (
           <p className={note.ok ? "note-ok" : "form-error"} onClick={() => setNote(null)}>
@@ -119,6 +126,7 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
                   try {
                     const r = await review.saveSettings(paths.split("\n").map((s) => s.trim()).filter(Boolean));
                     setPaths(r.reviewPaths.join("\n"));
+                    setSavedPaths(r.reviewPaths.join("\n"));
                     setNote({ ok: true, text: r.reviewPaths.length ? `검토 대상: ${r.reviewPaths.join(", ")}` : "검토 대상이 없습니다(모두 바로 반영)." });
                   } catch (e) {
                     setNote({ ok: false, text: msg(e) });
@@ -189,8 +197,13 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
+}
+
+function PathsGuard({ dirty }: { dirty: boolean }) {
+  useCloseGuard(dirty ? { kind: "confirm", reason: "검토 대상 폴더를 바꾸고 저장하지 않았습니다." } : null);
+  return null;
 }
 
 const LINT_LABEL: Record<LintKind, string> = {
@@ -201,6 +214,7 @@ const LINT_LABEL: Record<LintKind, string> = {
   orphan: "고아 위키 페이지",
   stale: "오래된 위키 페이지",
   unprocessed_raw: "아직 반영 안 된 원본",
+  daily_mismatch: "데일리 속성과 이름 날짜가 다름",
 };
 
 /** 구조적 정리(W7) 결과. */
@@ -225,10 +239,11 @@ export function LintPanel({ folders, onClose, onOpen }: { folders: string[]; onC
   }, [run]);
   const groups = report ? (Object.keys(LINT_LABEL) as LintKind[]).map((k) => [k, report.issues.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length) : [];
   return (
-    <div className="admin" role="dialog" aria-label="정리 점검">
-      <div className="admin-head">
-        <strong>정리 점검</strong>
-        <nav>
+    <Modal
+      title="정리 점검"
+      onClose={onClose}
+      head={
+        <>
           <select value={folder} onChange={(e) => setFolder(e.target.value)}>
             <option value="">볼트 전체</option>
             {folders
@@ -242,11 +257,9 @@ export function LintPanel({ folders, onClose, onOpen }: { folders: string[]; onC
           <button disabled={busy} onClick={() => run(folder)}>
             {busy ? "점검 중…" : "점검"}
           </button>
-        </nav>
-        <button onClick={onClose} aria-label="닫기">
-          ✕
-        </button>
-      </div>
+        </>
+      }
+    >
       <div className="admin-body">
         {error && <p className="form-error">{error}</p>}
         {report && (
@@ -281,6 +294,6 @@ export function LintPanel({ folders, onClose, onOpen }: { folders: string[]; onC
           </>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }

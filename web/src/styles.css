@@ -200,7 +200,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 
 /* ── 수집 ── */
 .banner.generated { background: var(--info-bg); }
-.modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / 0.35); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px; overflow: auto; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 70; background: rgb(0 0 0 / 0.35); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px; overflow: auto; }
 .modal { width: min(560px, 100%); background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.2); }
 .modal-head { display: flex; justify-content: space-between; align-items: center; }
 .modal p { margin: 0; }
@@ -228,9 +228,6 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .clip-actions { display: flex; gap: 8px; }
 
 /* ── 관리 콘솔 ── */
-.admin { position: fixed; inset: 0; z-index: 40; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
-.admin-head { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.admin-head nav { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
 .admin-body { flex: 1; overflow: auto; padding: 16px; max-width: 960px; width: 100%; margin: 0 auto; font-size: 14px; }
 .admin-body h4 { margin: 20px 0 8px; }
 .admin-warnings { list-style: none; margin: 0 0 12px; padding: 8px 12px; background: var(--warn-bg); color: var(--warn-fg); border-radius: 8px; font-size: 13px; }
@@ -242,7 +239,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .admin-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 13px; margin: 0 0 12px; }
 .admin-dl dt { color: var(--muted); }
 .admin-dl dd { margin: 0; word-break: break-all; }
-.admin pre { background: var(--bg-soft); padding: 8px 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+.kmodal pre { background: var(--bg-soft); padding: 8px 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
 .inline-form { display: flex; gap: 8px; margin: 10px 0; }
 .inline-form input, .rules input, .rules select, .backup-settings input[type="number"], .password-form input {
   font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg);
@@ -286,7 +283,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .diff-file { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden; }
 .diff-head { padding: 6px 10px; background: var(--bg-soft); border-bottom: 1px solid var(--border); font-size: 13px; }
 .diff-head a { color: var(--accent); }
-.admin pre.diff { margin: 0; border-radius: 0; padding: 4px 0; font-size: 12px; line-height: 1.55; }
+.kmodal pre.diff { margin: 0; border-radius: 0; padding: 4px 0; font-size: 12px; line-height: 1.55; }
 .diff > div { padding: 0 10px; white-space: pre-wrap; word-break: break-word; }
 .diff-sign { display: inline-block; width: 1.2em; color: var(--muted); user-select: none; }
 .diff-add { background: rgb(46 160 67 / 0.15); }
@@ -298,7 +295,6 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .lint-group .count { color: var(--muted); font-weight: 400; }
 .lint-group ul { margin: 6px 0; padding-left: 18px; font-size: 13px; }
 .lint-group a { color: var(--accent); }
-.admin-head select { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .backlinks .broken { color: #c0392b; text-decoration: line-through; }
 .agent-actions .spacer { flex: 1; }
 .hook-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 10px; font-size: 13px; }
@@ -773,19 +769,17 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .home-nav { margin: var(--sp-3); align-self: flex-start; }
 
 /* 설정 */
-.settings { flex: 1; display: flex; min-height: 0; }
-.settings-nav { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3) var(--sp-2); border-right: 1px solid var(--border); background: var(--bg-soft); overflow: auto; }
-.settings-back { display: flex; align-items: center; gap: 6px; border: none; background: none; color: var(--muted); padding: 6px 8px; margin-bottom: var(--sp-2); }
-.settings-back:hover { color: var(--fg); border: none; }
 .settings-search { display: flex; align-items: center; gap: 6px; padding: 0 8px; margin-bottom: var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--muted); }
 .settings-search input { flex: 1; min-width: 0; border: none; background: transparent; padding: 6px 0; font: inherit; font-size: var(--fs-md); color: var(--fg); }
 .settings-search input:focus { outline: none; }
 .settings-tab { text-align: left; border: none; background: none; padding: 6px 10px; border-radius: var(--radius); font-size: var(--fs-base); }
 .settings-tab:hover { background: var(--hover); border: none; }
 .settings-tab.on { background: var(--active); color: var(--accent); }
-.settings-body { flex: 1; overflow: auto; padding: var(--sp-6) var(--sp-8) var(--sp-8); }
+.kmodal-body.settings-body { padding: var(--sp-6) var(--sp-8) var(--sp-8); }
+.kmodal-body .admin-body { padding: 0; max-width: none; overflow: visible; flex: none; }
 .settings-section { max-width: 760px; }
-.settings-section + .settings-section { margin-top: var(--sp-8); }
+.kmodal-body.settings-body { display: flex; flex-direction: column; gap: var(--sp-8); }
+.settings-search input::-webkit-search-cancel-button { display: none; }
 .settings-section h2 { font-size: var(--fs-xl); margin: 0 0 var(--sp-3); }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
 .setting-label { font-size: var(--fs-base); }
@@ -835,10 +829,8 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
   .panes.mode-split .edit-pane { display: none; }
   .inline-title { font-size: 24px; }
   .aside-pane { position: fixed; inset: 0 0 var(--status-h) 0; z-index: 25; min-width: 0; }
-  .settings { flex-direction: column; }
-  .settings-nav { width: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); }
   .settings-search { flex-basis: 100%; }
-  .settings-body { padding: var(--sp-4); }
+  .kmodal-body.settings-body { padding: var(--sp-4); }
   .setting-row { flex-direction: column; align-items: flex-start; }
   .setting-control input { width: 100%; }
   .statusbar .status-item.muted { display: none; }
@@ -854,3 +846,148 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .properties-empty { padding: 0 !important; border-bottom: none !important; margin-bottom: var(--sp-2) !important; }
 .prop-add-btn { border: none; background: none; padding: 2px 0; font-size: var(--fs-sm); color: var(--muted); }
 .prop-add-btn:hover { color: var(--accent); border: none !important; }
+
+/* ── 모달 틀(설정·그래프·검토·정리 점검·수집·팔레트) ── */
+.kmodal-backdrop { position: fixed; inset: 0; z-index: 60; background: rgb(0 0 0 / 0.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.kmodal { position: relative; display: flex; flex-direction: column; min-height: 0; max-height: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); outline: none; overflow: hidden; }
+.kmodal-lg .kmodal { width: min(1200px, 85vw); height: min(860px, 85vh); }
+.kmodal-md .kmodal { width: min(720px, 100%); max-height: 85vh; }
+.kmodal-sm .kmodal { width: min(480px, 100%); }
+.kmodal-palette { align-items: flex-start; padding-top: 12vh; }
+.kmodal-palette .kmodal { width: min(620px, 100%); max-height: 70vh; padding: 10px; }
+.kmodal-backdrop.max { padding: 0; }
+.kmodal-backdrop.max .kmodal { width: 100vw; height: 100vh; max-height: none; border-radius: 0; border: none; }
+.kmodal-head { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: 6px 8px 6px var(--sp-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.kmodal-title { margin: 0; font-size: var(--fs-lg); font-weight: 600; white-space: nowrap; }
+.kmodal-tools { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kmodal-tools select { font: inherit; font-size: var(--fs-md); padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--fg); }
+.kmodal-close, .kmodal-max { width: 36px; height: 36px; flex-shrink: 0; }
+.kmodal-main { flex: 1; min-height: 0; display: flex; }
+.kmodal-nav { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3) var(--sp-2); border-right: 1px solid var(--border); background: var(--bg-soft); overflow: auto; }
+.kmodal-body { flex: 1; min-width: 0; overflow: auto; padding: var(--sp-4) var(--sp-6) var(--sp-6); font-size: var(--fs-base); }
+.kmodal-body.flush { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.kmodal-sm .kmodal-body, .kmodal-md .kmodal-body { padding: var(--sp-4); display: flex; flex-direction: column; gap: 10px; }
+.kmodal-palette .kmodal-body { padding: 0; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+.kmodal-body h4 { margin: 20px 0 8px; }
+.kmodal-body pre { background: var(--bg-soft); padding: 8px 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+.kmodal-body section + section { margin-top: 18px; }
+.kmodal-body h3 { margin: 0 0 6px; font-size: 15px; }
+.kmodal-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.nav-group { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: var(--sp-3) 10px 2px; }
+@media (max-width: 640px) {
+  .kmodal-backdrop { padding: 0; align-items: stretch; }
+  .kmodal-backdrop .kmodal { width: 100vw !important; height: 100dvh !important; max-height: none; border-radius: 0; border: none; }
+  .kmodal-palette .kmodal { padding: 8px; }
+  .kmodal-max { display: none; }
+  .kmodal-head { position: sticky; top: 0; background: var(--bg); z-index: 2; padding-left: var(--sp-3); flex-wrap: wrap; }
+  .kmodal-tools { order: 3; flex-basis: 100%; padding-bottom: 4px; }
+  .kmodal-close { order: 2; margin-left: auto; }
+  .kmodal-main.with-nav { flex-direction: column; }
+  .kmodal-nav { width: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
+  .kmodal-nav .nav-group { flex-basis: 100%; padding-top: var(--sp-1); }
+  .kmodal-body { padding: var(--sp-4); }
+}
+
+/* 이모지 고르기·문서 아이콘 */
+.icon-picker { width: min(340px, calc(100vw - 16px)); max-height: min(420px, 70vh); display: flex; flex-direction: column; padding: 8px; z-index: 100; overflow: hidden; }
+.icon-picker-head { display: flex; gap: 6px; margin-bottom: 6px; }
+.icon-picker-head input { flex: 1; min-width: 0; font: inherit; font-size: var(--fs-md); padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--fg); }
+.icon-picker-label { font-size: var(--fs-xs); color: var(--muted); margin: 4px 2px 2px; }
+.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 2px; overflow: auto; min-height: 0; }
+.icon-grid button { font-size: 20px; line-height: 1; padding: 5px 0; border: 1px solid transparent; background: transparent; border-radius: var(--radius); }
+.icon-grid button:hover { background: var(--hover); border-color: transparent; }
+.icon-grid button.on { background: var(--active); }
+.icon-grid .meta { grid-column: 1 / -1; padding: 8px; }
+.doc-icon { display: inline-block; flex-shrink: 0; width: 1.25em; text-align: center; font-style: normal; line-height: 1; margin-right: 4px; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.tree-row .doc-icon { font-size: 15px; margin-right: 0; }
+.tab .doc-icon { font-size: 13px; margin-right: 2px; }
+.daily-date { color: var(--muted); font-weight: normal; }
+.daily-title { font-weight: 500; }
+.badge-shared { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: var(--fs-xs); font-weight: normal; color: var(--accent); background: var(--active); vertical-align: 1px; }
+
+/* 제목 줄: 아이콘 · (데일리) 날짜 앞머리 · 제목 */
+.inline-title-row { display: flex; align-items: center; gap: 6px; }
+.inline-title-row .inline-title { flex: 1; min-width: 0; }
+.title-icon { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; font-size: 30px; line-height: 1; border: none; background: transparent; border-radius: var(--radius); font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.title-icon:hover:not(:disabled) { background: var(--hover); border: none; }
+.title-icon.empty { color: var(--muted); opacity: 0; transition: opacity 0.12s; margin-left: -50px; }
+.inline-title-wrap:hover .title-icon.empty, .title-icon.empty:focus-visible { opacity: 0.7; }
+.title-date { flex-shrink: 0; font: inherit; font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; color: var(--muted); padding: 2px 0; border: none; background: transparent; }
+.title-date:hover:not(:disabled) { color: var(--fg); border: none; text-decoration: underline dotted; }
+.inline-title-warn { margin: 2px 0 0; font-size: var(--fs-sm); color: var(--warn-fg); }
+h1.inline-title.static { display: flex; align-items: center; gap: 6px; }
+h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
+@media (max-width: 800px) { .title-date { font-size: 24px; } .title-icon { font-size: 24px; width: 36px; height: 36px; } }
+
+/* 데일리 노트 머리 이동 */
+.daily-nav { display: inline-flex; align-items: center; gap: 0; margin-right: var(--sp-2); }
+.daily-nav-date { border: none; background: none; font-size: var(--fs-md); color: var(--fg); padding: 2px 6px; white-space: nowrap; }
+.daily-nav-date:hover { background: var(--hover); border: none; }
+
+/* 오른쪽 패널의 속성 탭: 이름 위·값 아래로 쌓는다 */
+.right-panel .properties { padding: var(--sp-2) var(--sp-3); border: none; background: transparent; max-height: none; }
+.right-panel .properties table, .right-panel .properties tbody { display: block; width: 100%; }
+.right-panel .properties tr { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "key type del" "val val val"; align-items: center; gap: 0 4px; padding: 4px 0; border-bottom: 1px solid var(--grid); }
+.right-panel .properties th { grid-area: key; width: auto; padding: 0; }
+.right-panel .properties td.prop-type { grid-area: type; width: auto; padding: 0; }
+.right-panel .properties td.prop-value { grid-area: val; padding: 2px 0 0; }
+.right-panel .properties td:last-child { grid-area: del; padding: 0; display: flex; align-items: center; gap: 4px; }
+.right-panel .properties .prop-key { font-size: var(--fs-sm); }
+.right-panel .properties td.prop-type select { font-size: var(--fs-xs); color: var(--muted); padding: 1px 2px; }
+.right-panel .properties td.prop-value input[type="text"], .right-panel .properties td.prop-value input[type="number"], .right-panel .properties td.prop-value input[type="date"], .right-panel .properties td.prop-value input[type="datetime-local"] { width: 100%; }
+.right-panel .properties .prop-add { max-width: none; }
+.prop-auto .prop-key, .prop-auto input, .prop-auto select { color: var(--muted); }
+.prop-auto-badge { font-size: var(--fs-xs); color: var(--accent); background: var(--active); border-radius: 999px; padding: 0 6px; }
+
+/* 설정 모달 안 */
+.settings-body .settings-section:not(.keep):not(:has(.setting-row, .daily-preview)) { display: none; }
+.settings-noresult { display: none; }
+.settings-body:not(:has(.settings-section.keep, .settings-section .setting-row)) .settings-noresult { display: block; }
+.settings-nav-item { display: contents; }
+.kmodal-nav .settings-search { margin-bottom: var(--sp-2); }
+.kmodal-nav .settings-search .icon-btn { width: 22px; height: 22px; }
+.setting-error { display: block; font-size: var(--fs-sm); color: var(--danger); margin-top: 2px; }
+.shared-text { display: inline-flex; flex-direction: column; }
+.daily-preview { margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); background: var(--bg-soft); border-radius: var(--radius); font-size: var(--fs-md); overflow-x: auto; }
+.daily-preview table { border-collapse: collapse; }
+.daily-preview th { text-align: left; font-weight: normal; color: var(--muted); padding: 2px 12px 2px 0; white-space: nowrap; }
+.daily-preview td { padding: 2px 12px 2px 0; white-space: nowrap; }
+.icon-choice { font-size: 18px; min-width: 44px; }
+.folder-icons { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; max-width: 360px; }
+.folder-icon-chip { font-size: var(--fs-md); padding: 2px 8px; border-radius: 999px; }
+.migration-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow: auto; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 2px; }
+.migration-list code { font-size: var(--fs-sm); }
+.sync-settings section + section { margin-top: 18px; }
+
+/* 접기: 에디터 ▸/▾(마우스를 올리면 보임), 접힌 자리 …, 미리보기 단추, 개요 */
+.editor .cm-gutters { margin-left: -22px; }
+.editor.lines .cm-gutters { margin-left: 0; }
+.cm-foldGutter .cm-gutterElement { width: 20px; display: flex; justify-content: center; }
+.cm-fold-marker { cursor: pointer; color: var(--muted); font-size: 14px; line-height: inherit; user-select: none; }
+.cm-fold-marker.open { opacity: 0; transition: opacity 0.12s; }
+.editor:hover .cm-fold-marker.open { opacity: 0.55; }
+.cm-fold-marker:hover { color: var(--accent); opacity: 1 !important; }
+.cm-foldPlaceholder { background: var(--bg-soft) !important; border: 1px solid var(--border) !important; color: var(--muted) !important; border-radius: var(--radius-sm); padding: 0 6px !important; margin: 0 4px; cursor: pointer; }
+.markdown-body .pv-foldable { position: relative; }
+.pv-fold { position: absolute; left: -24px; top: 0.15em; width: 20px; height: 1.4em; padding: 0; border: none !important; background: transparent; color: var(--muted); font-size: 14px; line-height: 1; opacity: 0; transition: opacity 0.12s; }
+.markdown-body .pv-foldable:hover > .pv-fold, .markdown-body .callout:hover .pv-fold, .pv-fold:focus-visible, .pv-folded > .pv-fold, .pv-folded .pv-fold { opacity: 0.8; }
+.pv-fold:hover { color: var(--accent); }
+.markdown-body h1 > .pv-fold { top: 0.35em; }
+.markdown-body li > .pv-fold { left: -2.6em; }
+.markdown-body .callout .callout-title { position: relative; }
+.markdown-body .callout .pv-fold { left: -22px; }
+.markdown-body pre > .pv-fold { left: -24px; top: 8px; }
+.fold-hidden { display: none !important; }
+.markdown-body li.pv-folded > ul, .markdown-body li.pv-folded > ol { display: none; }
+.markdown-body li.pv-folded::after, .markdown-body h1.pv-folded::after, .markdown-body h2.pv-folded::after, .markdown-body h3.pv-folded::after, .markdown-body h4.pv-folded::after, .markdown-body h5.pv-folded::after, .markdown-body h6.pv-folded::after { content: " …"; color: var(--muted); font-weight: normal; }
+.markdown-body .callout.pv-folded > .callout-body { display: none; }
+.markdown-body pre.pv-folded { max-height: 2.6em; overflow: hidden; }
+.markdown-body pre.pv-folded::after { content: "…"; position: absolute; right: 10px; bottom: 4px; color: var(--muted); }
+.markdown-body table.pv-folded > tbody { display: none; }
+.outline-list li { display: flex; align-items: flex-start; }
+.outline-list li > button:last-child { flex: 1; min-width: 0; }
+.outline-list .outline-fold { flex: 0 0 20px; width: 20px; padding: 5px 0; flex-direction: row; justify-content: center; align-items: center; color: var(--muted); font-size: 12px; border: none !important; background: none; }
+.outline-list .outline-fold:hover { color: var(--accent); background: var(--hover); }
+.outline-fold-space { flex: 0 0 20px; }
+.outline-list li.folded > button:last-child { color: var(--muted); }
+@media (max-width: 800px) { .editor .cm-gutters { margin-left: -14px; } .pv-fold { left: -18px; } }

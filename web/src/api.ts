@@ -3,6 +3,8 @@ export interface TreeNode {
   path: string;
   type: "dir" | "file";
   children?: TreeNode[];
+  /** 문서 아이콘(프런트매터 icon) */
+  icon?: string;
 }
 
 import type { Mention, PropertyStat } from "@keyring-notes/core";
@@ -263,7 +265,7 @@ export const review = {
   saveSettings: (reviewPaths: string[]) => request<{ reviewPaths: string[] }>("PUT", "/api/review/settings", { reviewPaths }),
 };
 
-export type LintKind = "broken_link" | "broken_source" | "orphan" | "no_sources" | "missing_frontmatter" | "stale" | "unprocessed_raw";
+export type LintKind = "broken_link" | "broken_source" | "orphan" | "no_sources" | "missing_frontmatter" | "stale" | "unprocessed_raw" | "daily_mismatch";
 
 export interface LintReport {
   checkedAt: string;
@@ -429,6 +431,14 @@ const remoteApi = {
   /** 이동·이름 바꾸기. 기본으로 이 문서를 가리키던 링크도 같이 고친다(linksUpdated: 고친 문서, linkCount: 고친 링크 수) */
   move: (from: string, to: string, baseHash: string, opts: { updateLinks?: boolean } = {}) =>
     request<Doc & { linksUpdated?: string[]; linkCount?: number }>("POST", "/api/move", { from, to, baseHash, updateLinks: opts.updateLinks }),
+  /** 폴더 옮기기·이름 바꾸기: 안의 문서·첨부를 한 커밋으로(링크도 같이 고친다) */
+  moveFolder: (from: string, to: string) => request<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }>("POST", "/api/move", { from, to, folder: true }),
+  /** 여러 문서를 한 커밋으로 옮긴다(링크 자동 갱신). 데일리 노트 형식 옮기기 */
+  async moveFiles(pairs: [string, string][], message: string): Promise<{ linksUpdated: string[]; linkCount: number }> {
+    const operations = [];
+    for (const [from, to] of pairs) operations.push({ op: "move", from, to, baseHash: (await remoteApi.read(from, { fresh: true })).hash });
+    return request("POST", "/api/batch", { operations, message });
+  },
   history: (path: string) => request<{ commits: CommitInfo[] }>("GET", `/api/history?path=${q(path)}`).then((r) => r.commits),
   revision: (path: string, rev: string) =>
     request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),
