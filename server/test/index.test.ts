@@ -219,7 +219,7 @@ describe("위젯", () => {
   });
 
   it("잘못된 위젯은 이유를 알려 준다", async () => {
-    await expect(w(owner, "type: graph")).rejects.toThrow(/알 수 없는 위젯/);
+    await expect(w(owner, "type: graph")).rejects.toMatchObject({ code: "widget.unknown_type" });
     await expect(w(owner, "type: chart")).rejects.toThrow(/x/);
     await expect(w(owner, "where: [a ~~ b c]")).rejects.toThrow(/조건/);
     await expect(w(owner, "type: [")).rejects.toThrow(/YAML/);
@@ -231,7 +231,7 @@ describe("할 일 체크", () => {
     const p = "업무/프로젝트A/계획.md";
     const d = await owner.setTask(p, 10, true, h[p]);
     expect(d.content).toContain("- [x] 일정 확정");
-    await expect(owner.setTask(p, 11, false, h[p])).rejects.toThrow(/먼저 수정/);
+    await expect(owner.setTask(p, 11, false, h[p])).rejects.toMatchObject({ code: "conflict_path" });
     await expect(owner.setTask(p, 9, true, d.hash)).rejects.toThrow(/할 일이 아닙니다/);
     const r = await owner.widget("type: tasks\nfrom: 업무/프로젝트A");
     if (r.type !== "tasks") throw new Error();

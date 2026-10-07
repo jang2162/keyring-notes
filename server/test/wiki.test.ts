@@ -84,7 +84,7 @@ const git = (...args: string[]) => execFileSync("git", ["--git-dir", path.join(d
 describe("위키 토픽", () => {
   it("SCHEMA.md 템플릿과 자동 생성 index·log를 만들고, 자동 생성 문서는 Git·검색에서 뺀다", async () => {
     await owner.createTopic("업무/경제");
-    expect((await owner.read("업무/경제/SCHEMA.md")).content).toContain("# 경제 위키 스키마");
+    expect((await owner.read("업무/경제/SCHEMA.md")).content).toContain("# 업무/경제 위키 스키마");
     const idx = await owner.read("업무/경제/wiki/index.md");
     expect(idx.generated).toBe(true);
     expect(idx.content).toContain("# 업무/경제 위키 목차");
@@ -213,7 +213,7 @@ describe("index·log 자동 생성", () => {
     const raw = await ingestor.ingest(owner, { kind: "text", topic: "업무/경제", title: "금리 기사", text: "기준금리 3.0% 동결" });
     let idx = (await owner.read("업무/경제/wiki/index.md")).content;
     expect(idx).toContain("원본 1개(미반영 1개)");
-    expect(idx).toMatch(/## 미반영 원본\n\n- \[\[업무/경제\/raw\/.+금리 기사\|금리 기사\]\]/);
+    expect(idx).toMatch(/## 미반영 원본\n\n- \[\[업무\/경제\/raw\/.+금리 기사\|금리 기사\]\]/);
 
     const agent = as({ "업무/경제/raw": "append", "업무/경제/wiki": "delete" });
     await agent.batch(
@@ -235,8 +235,8 @@ describe("index·log 자동 생성", () => {
     expect(idx).toContain("금리 기사]] — 페이지 1개에서 인용");
 
     const log = (await owner.read("업무/경제/wiki/log.md")).content;
-    expect(log).toMatch(/## \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] me \| 수집: 금리 기사\n\n- 추가: \[\[업무/경제\/raw\//);
-    expect(log).toMatch(/## \[[^\]]+\] wiki-agent \| 수집: 금리 기사\n\n- 추가: \[\[업무/경제\/wiki\/기준금리\|wiki\/기준금리\]\]\n- 추가: \[\[업무/경제\/wiki\/환율\|wiki\/환율\]\]/);
+    expect(log).toMatch(/## \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] me \| 수집: 금리 기사\n\n- 추가: \[\[업무\/경제\/raw\//);
+    expect(log).toMatch(/## \[[^\]]+\] wiki-agent \| 수집: 금리 기사\n\n- 추가: \[\[업무\/경제\/wiki\/기준금리\|wiki\/기준금리\]\]\n- 추가: \[\[업무\/경제\/wiki\/환율\|wiki\/환율\]\]/);
     // 위키 index·log가 새 백링크를 만들지 않는다(검색 인덱스에서 빠짐)
     expect((await owner.backlinks("업무/경제/wiki/기준금리.md")).map((b) => b.path)).toEqual(["업무/경제/wiki/환율.md"]);
   });

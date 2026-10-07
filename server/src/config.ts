@@ -1,7 +1,9 @@
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { PathError } from "@keyring-notes/core";
 import { AccessPolicy, isLevel, normalizeRulePath, type Level, type Principal } from "./access.js";
+import { serverText } from "./lang.js";
 
 export interface AgentConfig {
   name: string;
@@ -86,19 +88,19 @@ export function validateWebhooks(raw: unknown): WebhookConfig[] {
   const list = Array.isArray(raw) ? raw : [];
   const seen = new Set<string>();
   return list.map((w: Partial<WebhookConfig>) => {
-    if (typeof w.id !== "string" || !ID_RE.test(w.id)) throw new Error(`설정 오류: 웹훅 id는 영문 소문자·숫자·-·_ 40자 이내: ${String(w.id)}`);
-    if (seen.has(w.id)) throw new Error(`설정 오류: 웹훅 id가 겹칩니다: ${w.id}`);
+    if (typeof w.id !== "string" || !ID_RE.test(w.id)) throw new PathError("config.webhook_id", { id: String(w.id) });
+    if (seen.has(w.id)) throw new PathError("config.webhook_id_dup", { id: w.id });
     seen.add(w.id);
     let url: URL;
     try {
       url = new URL(String(w.url));
     } catch {
-      throw new Error(`설정 오류: 웹훅 주소가 잘못되었습니다: ${String(w.url)}`);
+      throw new PathError("config.webhook_url", { url: String(w.url) });
     }
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("설정 오류: 웹훅은 http·https 주소만");
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new PathError("config.webhook_protocol");
     const events = Array.isArray(w.events) ? w.events : [];
-    for (const e of events) if (!(WEBHOOK_EVENTS as readonly string[]).includes(e)) throw new Error(`설정 오류: 알 수 없는 이벤트: ${e}`);
-    if (typeof w.secret !== "string" || w.secret.length < 16) throw new Error("설정 오류: 웹훅 secret은 16자 이상");
+    for (const e of events) if (!(WEBHOOK_EVENTS as readonly string[]).includes(e)) throw new PathError("config.webhook_event", { event: String(e) });
+    if (typeof w.secret !== "string" || w.secret.length < 16) throw new PathError("config.webhook_secret");
     return {
       id: w.id,
       name: typeof w.name === "string" && w.name.trim() ? w.name.trim() : w.id,
@@ -115,12 +117,12 @@ export function validateJobs(raw: unknown, cronCheck: (expr: string) => void = (
   const list = Array.isArray(raw) ? raw : [];
   const seen = new Set<string>();
   return list.map((j: Partial<JobConfig>) => {
-    if (typeof j.id !== "string" || !ID_RE.test(j.id)) throw new Error(`설정 오류: 작업 id는 영문 소문자·숫자·-·_ 40자 이내: ${String(j.id)}`);
-    if (seen.has(j.id)) throw new Error(`설정 오류: 작업 id가 겹칩니다: ${j.id}`);
+    if (typeof j.id !== "string" || !ID_RE.test(j.id)) throw new PathError("config.job_id", { id: String(j.id) });
+    if (seen.has(j.id)) throw new PathError("config.job_id_dup", { id: j.id });
     seen.add(j.id);
-    if (typeof j.cron !== "string") throw new Error(`설정 오류: ${j.id}의 cron이 없습니다`);
+    if (typeof j.cron !== "string") throw new PathError("config.job_cron", { id: j.id });
     cronCheck(j.cron);
-    if (typeof j.webhook !== "string" || !j.webhook) throw new Error(`설정 오류: ${j.id}의 웹훅이 없습니다`);
+    if (typeof j.webhook !== "string" || !j.webhook) throw new PathError("config.job_webhook", { id: j.id });
     return {
       id: j.id,
       name: typeof j.name === "string" && j.name.trim() ? j.name.trim() : j.id,
@@ -161,11 +163,11 @@ export const DEFAULT_BACKUP: BackupSettings = { enabled: true, intervalHours: 24
 export function validateBackupSettings(raw: unknown): BackupSettings {
   const b = (raw ?? {}) as Partial<BackupSettings>;
   const out = { ...DEFAULT_BACKUP, ...b };
-  if (typeof out.enabled !== "boolean" || typeof out.includeConfig !== "boolean") throw new Error("설정 오류: backup.enabled·includeConfig는 true/false");
-  if (!Number.isFinite(out.intervalHours) || out.intervalHours < 1 || out.intervalHours > 24 * 30) throw new Error("설정 오류: backup.intervalHours는 1~720");
-  if (!Number.isInteger(out.keep) || out.keep < 1 || out.keep > 365) throw new Error("설정 오류: backup.keep은 1~365 정수");
-  if (typeof out.remote !== "boolean") throw new Error("설정 오류: backup.remote는 true/false");
-  if (!Number.isInteger(out.remoteKeep) || out.remoteKeep < 1 || out.remoteKeep > 3650) throw new Error("설정 오류: backup.remoteKeep은 1~3650 정수");
+  if (typeof out.enabled !== "boolean" || typeof out.includeConfig !== "boolean") throw new PathError("config.backup_flags");
+  if (!Number.isFinite(out.intervalHours) || out.intervalHours < 1 || out.intervalHours > 24 * 30) throw new PathError("config.backup_interval");
+  if (!Number.isInteger(out.keep) || out.keep < 1 || out.keep > 365) throw new PathError("config.backup_keep");
+  if (typeof out.remote !== "boolean") throw new PathError("config.backup_remote");
+  if (!Number.isInteger(out.remoteKeep) || out.remoteKeep < 1 || out.remoteKeep > 3650) throw new PathError("config.backup_remote_keep");
   return { enabled: out.enabled, intervalHours: out.intervalHours, keep: out.keep, includeConfig: out.includeConfig, remote: out.remote, remoteKeep: out.remoteKeep };
 }
 
@@ -183,7 +185,7 @@ function sha256(s: string) {
 export function validDeviceName(name: unknown): string {
   const n = typeof name === "string" ? name.trim() : "";
   // eslint-disable-next-line no-control-regex
-  if (!n || [...n].length > 40 || /[\u0000-\u001f\u007f<>]/.test(n)) throw new Error("기기 이름은 1~40자로, 제어 문자·<>는 쓸 수 없습니다");
+  if (!n || [...n].length > 40 || /[\u0000-\u001f\u007f<>]/.test(n)) throw new PathError("device_name");
   return n;
 }
 
@@ -209,14 +211,14 @@ const B64URL = /^[A-Za-z0-9_-]+$/;
 function validatePasskeys(raw: unknown): PasskeyConfig[] {
   return (Array.isArray(raw) ? raw : []).map((k: Partial<PasskeyConfig>) => {
     if (typeof k?.id !== "string" || !B64URL.test(k.id) || typeof k.publicKey !== "string" || !B64URL.test(k.publicKey) || typeof k.rpID !== "string" || !k.rpID) {
-      throw new Error("설정 오류: passkeys 항목이 잘못되었습니다");
+      throw new PathError("config.passkeys");
     }
     return {
       id: k.id,
       publicKey: k.publicKey,
       counter: Number.isInteger(k.counter) && k.counter! >= 0 ? k.counter! : 0,
       transports: Array.isArray(k.transports) ? k.transports.filter((t): t is string => typeof t === "string") : [],
-      name: typeof k.name === "string" && k.name.trim() ? k.name.trim().slice(0, 40) : "패스키",
+      name: typeof k.name === "string" && k.name.trim() ? k.name.trim().slice(0, 40) : serverText("server.passkey_name"),
       rpID: k.rpID,
       createdAt: k.createdAt ?? "",
       lastUsedAt: k.lastUsedAt ?? null,
@@ -229,10 +231,10 @@ function validate(raw: unknown): KeyringConfig {
   const base = defaultConfig();
   const agents = Array.isArray(c.agents) ? c.agents : [];
   for (const a of agents) {
-    if (!AGENT_NAME_RE.test(a.name)) throw new Error(`설정 오류: 에이전트 이름이 잘못되었습니다: ${a.name}`);
+    if (!AGENT_NAME_RE.test(a.name)) throw new PathError("config.agent_name", { name: String(a.name) });
     for (const [k, v] of Object.entries(a.rules ?? {})) {
       normalizeRulePath(k);
-      if (!isLevel(v)) throw new Error(`설정 오류: ${a.name}의 ${k} 권한 값이 잘못되었습니다: ${v}`);
+      if (!isLevel(v)) throw new PathError("config.agent_level", { name: a.name, path: k, level: String(v) });
     }
   }
   return {
@@ -240,12 +242,12 @@ function validate(raw: unknown): KeyringConfig {
     sessionSecret: typeof c.sessionSecret === "string" && c.sessionSecret.length >= 32 ? c.sessionSecret : base.sessionSecret,
     agents: agents.map((a) => ({ name: a.name, tokenHash: a.tokenHash, rules: a.rules ?? {}, createdAt: a.createdAt ?? "" })),
     devices: (Array.isArray(c.devices) ? c.devices : []).map((d) => {
-      if (typeof d?.id !== "string" || typeof d.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(d.tokenHash)) throw new Error("설정 오류: devices 항목이 잘못되었습니다");
+      if (typeof d?.id !== "string" || typeof d.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(d.tokenHash)) throw new PathError("config.devices");
       return { id: d.id, name: validDeviceName(d.name), tokenHash: d.tokenHash, createdAt: d.createdAt ?? "" };
     }),
     backup: validateBackupSettings(c.backup),
     reviewPaths: (Array.isArray(c.reviewPaths) ? c.reviewPaths : []).map((p) => {
-      if (typeof p !== "string") throw new Error("설정 오류: reviewPaths는 문자열 목록");
+      if (typeof p !== "string") throw new PathError("config.review_paths");
       return normalizeRulePath(p) || "/";
     }),
     webhooks: validateWebhooks(c.webhooks),
@@ -307,7 +309,7 @@ export class ConfigStore {
   // ── 사람(소유자) 로그인 ──
 
   setPassword(password: string) {
-    if (password.length < 8) throw new Error("비밀번호는 8자 이상이어야 합니다");
+    if (password.length < 8) throw new PathError("password_short");
     this.update((c) => {
       c.owner.passwordHash = hashPassword(password);
       c.sessionSecret = randomBytes(32).toString("hex");
@@ -371,7 +373,7 @@ export class ConfigStore {
     this.update((c) => {
       const before = c.devices.length;
       c.devices = c.devices.filter((d) => d.id !== id);
-      if (c.devices.length === before) throw new Error(`기기가 없습니다: ${id}`);
+      if (c.devices.length === before) throw new PathError("device_missing", { id });
     });
     this.lastUsed.delete(`device:${id}`);
   }
@@ -381,7 +383,7 @@ export class ConfigStore {
   addPasskey(k: Omit<PasskeyConfig, "createdAt" | "lastUsedAt">): PasskeyConfig {
     const entry: PasskeyConfig = { ...k, name: validDeviceName(k.name), createdAt: new Date().toISOString(), lastUsedAt: null };
     this.update((c) => {
-      if (c.passkeys.some((p) => p.id === k.id)) throw new Error("이미 등록한 패스키입니다");
+      if (c.passkeys.some((p) => p.id === k.id)) throw new PathError("passkey_exists");
       c.passkeys.push(entry);
     });
     return entry;
@@ -402,7 +404,7 @@ export class ConfigStore {
     this.update((c) => {
       const before = c.passkeys.length;
       c.passkeys = c.passkeys.filter((p) => p.id !== id);
-      if (c.passkeys.length === before) throw new Error(`패스키가 없습니다: ${id}`);
+      if (c.passkeys.length === before) throw new PathError("passkey_missing", { id });
     });
   }
 
@@ -423,7 +425,7 @@ export class ConfigStore {
 
   /** 에이전트를 만들거나 토큰을 새로 발급한다. 토큰 원문은 이때 한 번만 돌려준다. */
   issueToken(name: string): string {
-    if (!AGENT_NAME_RE.test(name)) throw new Error("에이전트 이름은 영문 소문자·숫자·-·_ 로 64자 이내여야 합니다");
+    if (!AGENT_NAME_RE.test(name)) throw new PathError("agent_name");
     const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
     this.update((c) => {
       const existing = c.agents.find((a) => a.name === name);
@@ -437,7 +439,7 @@ export class ConfigStore {
     this.update((c) => {
       const before = c.agents.length;
       c.agents = c.agents.filter((a) => a.name !== name);
-      if (c.agents.length === before) throw new Error(`에이전트가 없습니다: ${name}`);
+      if (c.agents.length === before) throw new PathError("agent_missing", { name });
     });
   }
 
@@ -445,12 +447,12 @@ export class ConfigStore {
   setRules(name: string, rules: Record<string, Level>) {
     const normalized: Record<string, Level> = {};
     for (const [k, v] of Object.entries(rules)) {
-      if (!isLevel(v)) throw new Error(`권한 값이 잘못되었습니다: ${String(v)}`);
+      if (!isLevel(v)) throw new PathError("level_invalid", { level: String(v) });
       normalized[normalizeRulePath(k) || "/"] = v;
     }
     this.update((c) => {
       const a = c.agents.find((x) => x.name === name);
-      if (!a) throw new Error(`에이전트가 없습니다: ${name}`);
+      if (!a) throw new PathError("agent_missing", { name });
       a.rules = normalized;
     });
   }
@@ -465,7 +467,7 @@ export class ConfigStore {
     const key = normalizeRulePath(rulePath) || "/";
     this.update((c) => {
       const a = c.agents.find((x) => x.name === name);
-      if (!a) throw new Error(`에이전트가 없습니다: ${name}`);
+      if (!a) throw new PathError("agent_missing", { name });
       for (const k of Object.keys(a.rules)) if ((normalizeRulePath(k) || "/") === key) delete a.rules[k];
       if (level !== null) a.rules[key] = level;
     });

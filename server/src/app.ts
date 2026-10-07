@@ -18,7 +18,8 @@ import type { Wiki } from "./wiki.js";
 import { PathError } from "./paths.js";
 import { ScopedVault } from "./scoped.js";
 import { SyncManifest } from "./sync.js";
-import { ConflictError, ForbiddenError, NotFoundError, type Op, type Vault } from "./vault.js";
+import { ConflictError, ForbiddenError, KeyedError, NotFoundError, type Op, type Vault } from "./vault.js";
+import { serverText } from "./lang.js";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -72,26 +73,26 @@ const APP_CSP = [
 type Env = { Variables: { scoped: ScopedVault } };
 
 function requirePath(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0) throw new PathError("path가 필요합니다");
+  if (typeof value !== "string" || value.length === 0) throw new PathError("field_required", { field: "path" });
   return value;
 }
 
 function optionalHash(value: unknown): string | null {
   if (value === null || value === undefined) return null;
-  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) throw new PathError("baseHash 형식이 잘못되었습니다");
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) throw new PathError("base_hash_invalid");
   return value;
 }
 
 /** 켜고 끄는 옵션(없으면 기본값) */
 function optionalBool(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== "boolean") throw new PathError("true/false 값이어야 합니다");
+  if (typeof value !== "boolean") throw new PathError("boolean_required");
   return value;
 }
 
 function requireHash(value: unknown): string {
   const h = optionalHash(value);
-  if (h === null) throw new PathError("baseHash가 필요합니다");
+  if (h === null) throw new PathError("field_required", { field: "baseHash" });
   return h;
 }
 
@@ -135,7 +136,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       // node 서버는 Host 헤더로 요청 URL을 만들므로 URL의 호스트 이름이 곧 Host 헤더다
       const host = new URL(c.req.url).hostname.toLowerCase().replace(/^\[|\]$/g, "");
       if (!allowedHosts.includes(host) && !["localhost", "127.0.0.1", "::1"].includes(host)) {
-        return c.text("허용되지 않은 호스트입니다 (KEYRING_ALLOWED_HOSTS)", 421);
+        return c.text(serverText("error.host_not_allowed"), 421);
       }
     }
     await next();
@@ -168,17 +169,21 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   app.get("/api/health", (c) => c.json({ ok: true }));
 
+  /** 오류 응답: error(종류)·code(메시지 키 error.<code>)·params(끼워 넣을 값)·message(서버 언어의 글). 화면은 code로 번역한다 */
+  const fail = (c: Context, status: 400 | 401 | 403 | 404 | 409 | 415 | 500, error: string, code: string, params: Record<string, string | number> = {}, extra: Record<string, unknown> = {}) =>
+    c.json({ error, code, params, message: serverText(`error.${code}`, params), ...extra }, status);
+  const keyed = (err: KeyedError) => ({ code: err.code, params: err.params as Record<string, string | number> });
+
   app.onError((err, c) => {
-    if (err instanceof ConflictError) {
-      return c.json({ error: "conflict", message: err.message, currentHash: err.currentHash }, 409);
-    }
-    if (err instanceof NotFoundError) return c.json({ error: "not_found", message: err.message }, 404);
-    if (err instanceof ForbiddenError) return c.json({ error: "forbidden", message: err.message }, 403);
-    if (err instanceof PathError) return c.json({ error: "bad_request", message: err.message }, 400);
-    if (err instanceof PasskeyError) return c.json({ error: "passkey", message: err.message }, 400);
-    if (err instanceof SyntaxError) return c.json({ error: "bad_request", message: "JSON 본문이 잘못되었습니다" }, 400);
+    if (err instanceof ConflictError) return fail(c, 409, "conflict", err.code, keyed(err).params, { currentHash: err.currentHash });
+    if (err instanceof NotFoundError) return fail(c, 404, "not_found", err.code, keyed(err).params);
+    if (err instanceof ForbiddenError) return fail(c, 403, "forbidden", err.code, keyed(err).params);
+    if (err instanceof PathError) return fail(c, 400, "bad_request", err.code, keyed(err).params);
+    if (err instanceof PasskeyError) return fail(c, 400, "passkey", err.code, keyed(err).params);
+    if (err instanceof KeyedError) return fail(c, 400, "bad_request", err.code, keyed(err).params);
+    if (err instanceof SyntaxError) return fail(c, 400, "bad_request", "bad_json");
     console.error(err);
-    return c.json({ error: "internal", message: "서버 오류" }, 500);
+    return fail(c, 500, "internal", "internal");
   });
 
   /** 요청한 쪽: 에이전트·기기 토큰(Authorization: Bearer) 또는 소유자 로그인 쿠키. */
@@ -191,14 +196,14 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   // ── 위젯 플러그인 모듈: 소유자 로그인 필요 ──
   app.get("/plugins/:file", async (c) => {
-    if (!config.verifySession(getCookie(c, SESSION_COOKIE))) return c.text("로그인이 필요합니다", 401);
+    if (!config.verifySession(getCookie(c, SESSION_COOKIE))) return c.text(serverText("error.login_required"), 401);
     const m = /^(.+)\.js$/.exec(c.req.param("file"));
-    if (!pluginsDir || !m || !PLUGIN_NAME_RE.test(m[1])) return c.text("플러그인이 없습니다", 404);
+    if (!pluginsDir || !m || !PLUGIN_NAME_RE.test(m[1])) return c.text(serverText("error.plugin_missing"), 404);
     try {
       const code = await readFile(path.join(pluginsDir, `${m[1]}.js`), "utf8");
       return c.body(code, 200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" });
     } catch {
-      return c.text("플러그인이 없습니다", 404);
+      return c.text(serverText("error.plugin_missing"), 404);
     }
   });
 
@@ -206,9 +211,8 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   app.all("/mcp", async (c) => {
     const principal = config.agentByToken(bearer(c));
     if (!principal) {
-      return c.json({ error: "unauthorized", message: "에이전트 토큰이 필요합니다" }, 401, {
-        "www-authenticate": 'Bearer realm="keyring-notes"',
-      });
+      c.header("www-authenticate", 'Bearer realm="keyring-notes"');
+      return fail(c, 401, "unauthorized", "agent_token_required");
     }
     const lang = config.get().agentLanguage;
     const scoped = new ScopedVault(vault, principal, index, wiki, review, semantic);
@@ -226,7 +230,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       const rawBody = c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" || c.req.path === "/api/admin/backups/upload";
       const upload = rawBody && c.req.header("x-keyring-upload") === "1";
       if (!upload && !ct.toLowerCase().startsWith("application/json")) {
-        return c.json({ error: "bad_request", message: "Content-Type: application/json 이 필요합니다" }, 415);
+        return fail(c, 415, "bad_request", "json_required");
       }
     }
     await next();
@@ -264,7 +268,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     if (typeof password !== "string" || !config.checkPassword(password)) {
       throttle.fail();
-      return c.json({ error: "unauthorized", message: "비밀번호가 맞지 않습니다" }, 401);
+      return fail(c, 401, "unauthorized", "wrong_password");
     }
     throttle.reset();
     const s = config.issueSession();
@@ -290,7 +294,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     if (!(await passkeys.verifyAuthentication(id, response))) {
       throttle.fail();
-      return c.json({ error: "unauthorized", message: "패스키를 확인하지 못했습니다" }, 401);
+      return fail(c, 401, "unauthorized", "passkey_failed");
     }
     throttle.reset();
     const s = config.issueSession();
@@ -303,7 +307,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     const { code, password } = await c.req.json();
     const expected = setupCode?.() ?? null;
     if (config.get().owner.passwordHash !== null || !expected) {
-      return c.json({ error: "forbidden", message: "이미 설정되었습니다" }, 403);
+      return fail(c, 403, "forbidden", "already_set_up");
     }
     const wait = throttle.delayMs();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -312,9 +316,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     const want = Buffer.from(norm(expected));
     if (given.length !== want.length || !timingSafeEqual(given, want)) {
       throttle.fail();
-      return c.json({ error: "unauthorized", message: "설정 코드가 맞지 않습니다(서버 로그를 확인하세요)" }, 401);
+      return fail(c, 401, "unauthorized", "wrong_setup_code");
     }
-    if (typeof password !== "string" || password.length < 8) throw new PathError("비밀번호는 8자 이상이어야 합니다");
+    if (typeof password !== "string" || password.length < 8) throw new PathError("password_short");
     config.setPassword(password);
     const s = config.issueSession();
     setCookie(c, SESSION_COOKIE, s.value, { httpOnly: true, sameSite: "Strict", secure: secureCookies(c), path: "/", maxAge: s.maxAge });
@@ -328,14 +332,14 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     if (typeof password !== "string" || !config.checkPassword(password)) {
       throttle.fail();
-      return c.json({ error: "unauthorized", message: "비밀번호가 맞지 않습니다" }, 401);
+      return fail(c, 401, "unauthorized", "wrong_password");
     }
     throttle.reset();
     let device: string;
     try {
       device = validDeviceName(name);
     } catch (e) {
-      throw new PathError(e instanceof Error ? e.message : String(e));
+      throw e instanceof KeyedError ? e : new PathError("invalid", { message: e instanceof Error ? e.message : String(e) });
     }
     const d = config.issueDeviceToken(device);
     return c.json({ id: d.id, name: d.name, token: d.token });
@@ -349,7 +353,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   // ── 여기부터는 인증 필요. 모든 경로가 ScopedVault(권한 계층)를 지난다 ──
   api.use("*", async (c, next) => {
     const p = principalOf(c);
-    if (!p) return c.json({ error: "unauthorized", message: "로그인이 필요합니다" }, 401);
+    if (!p) return fail(c, 401, "unauthorized", "login_required");
     const scoped = new ScopedVault(vault, p, index, wiki, review, semantic);
     scoped.agentLang = config.get().agentLanguage;
     c.set("scoped", scoped);
@@ -361,7 +365,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   // ── 앱 동기화: 파일 목록과 해시(소유자만). 내용은 /file·/raw, 쓰기는 /file(baseHash)로 한다 ──
   const manifest = new SyncManifest(vault, (rel) => wiki.isGenerated(rel));
   api.get("/sync/manifest", async (c) => {
-    if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("동기화는 소유자(앱 기기)만 쓸 수 있습니다");
+    if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("sync_owner_only");
     return c.json({ files: await manifest.files() });
   });
 
@@ -405,20 +409,20 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.post("/topics", async (c) => {
     const body = await c.req.json();
-    if (typeof body.name !== "string") throw new PathError("name이 필요합니다");
+    if (typeof body.name !== "string") throw new PathError("field_required", { field: "name" });
     return c.json(await c.var.scoped.createTopic(body.name));
   });
 
   api.post("/ingest", async (c) => {
     const b = await c.req.json();
     const str = (v: unknown) => (typeof v === "string" ? v : undefined);
-    if (typeof b.topic !== "string") throw new PathError("topic이 필요합니다");
+    if (typeof b.topic !== "string") throw new PathError("field_required", { field: "topic" });
     switch (b.kind) {
       case "url":
-        if (typeof b.url !== "string") throw new PathError("url이 필요합니다");
+        if (typeof b.url !== "string") throw new PathError("field_required", { field: "url" });
         return c.json(await ingestor.ingest(c.var.scoped, { kind: "url", topic: b.topic, url: b.url, title: str(b.title) }));
       case "html":
-        if (typeof b.html !== "string") throw new PathError("html이 필요합니다");
+        if (typeof b.html !== "string") throw new PathError("field_required", { field: "html" });
         return c.json(
           await ingestor.ingest(c.var.scoped, {
             kind: "html",
@@ -430,26 +434,26 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
           }),
         );
       case "text":
-        if (typeof b.text !== "string" || typeof b.title !== "string") throw new PathError("text, title이 필요합니다");
+        if (typeof b.text !== "string" || typeof b.title !== "string") throw new PathError("field_required", { field: "text, title" });
         return c.json(await ingestor.ingest(c.var.scoped, { kind: "text", topic: b.topic, text: b.text, title: b.title, url: str(b.url) }));
       default:
-        throw new PathError("kind는 url, html, text 중 하나입니다");
+        throw new PathError("ingest_kind");
     }
   });
 
   // 첨부 파일 올리기(붙여넣기·끌어놓기, 앱 동기화): 새 파일만(이미 있으면 409). 원본 바이트, 헤더 x-keyring-upload: 1
   api.post("/attachment", async (c) => {
     const data = new Uint8Array(await c.req.arrayBuffer());
-    if (data.byteLength === 0) throw new PathError("빈 파일입니다");
+    if (data.byteLength === 0) throw new PathError("file_empty");
     return c.json(await c.var.scoped.putAttachment(requirePath(c.req.query("path")), data));
   });
 
   api.post("/ingest/file", async (c) => {
     const topic = c.req.query("topic");
     const name = c.req.query("name");
-    if (!topic || !name) throw new PathError("topic, name이 필요합니다");
+    if (!topic || !name) throw new PathError("field_required", { field: "topic, name" });
     const data = new Uint8Array(await c.req.arrayBuffer());
-    if (data.byteLength === 0) throw new PathError("빈 파일입니다");
+    if (data.byteLength === 0) throw new PathError("file_empty");
     return c.json(await ingestor.ingest(c.var.scoped, { kind: "file", topic, filename: name, data, title: c.req.query("title") }));
   });
 
@@ -478,30 +482,30 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.get("/sources", async (c) => c.json(await c.var.scoped.sources(requirePath(c.req.query("path")))));
 
-  api.get("/tags", async (c) => c.json({ tags: await c.var.scoped.tags() }));
+  api.get("/tags", async (c) => c.json({ tags: await c.var.scoped.tags(c.req.query("folder")) }));
 
   // 위젯은 읽기 전용이지만 YAML 본문이 길 수 있어 POST로 받는다.
   api.post("/widget", async (c) => {
     const body = await c.req.json();
-    if (typeof body.source !== "string") throw new PathError("source가 필요합니다");
+    if (typeof body.source !== "string") throw new PathError("field_required", { field: "source" });
     return c.json(await c.var.scoped.widget(body.source));
   });
 
   api.post("/task", async (c) => {
     const body = await c.req.json();
-    if (!Number.isInteger(body.line) || typeof body.done !== "boolean") throw new PathError("line, done이 필요합니다");
+    if (!Number.isInteger(body.line) || typeof body.done !== "boolean") throw new PathError("field_required", { field: "line, done" });
     return c.json(await c.var.scoped.setTask(requirePath(body.path), body.line, body.done, requireHash(body.baseHash)));
   });
 
   api.put("/file", async (c) => {
     const body = await c.req.json();
-    if (typeof body.content !== "string") throw new PathError("content가 필요합니다");
+    if (typeof body.content !== "string") throw new PathError("field_required", { field: "content" });
     return c.json(await c.var.scoped.write(requirePath(body.path), body.content, optionalHash(body.baseHash), { coalesce: optionalBool(body.coalesce) }));
   });
 
   api.post("/append", async (c) => {
     const body = await c.req.json();
-    if (typeof body.content !== "string") throw new PathError("content가 필요합니다");
+    if (typeof body.content !== "string") throw new PathError("field_required", { field: "content" });
     const base = body.baseHash === undefined ? undefined : optionalHash(body.baseHash);
     return c.json(await c.var.scoped.append(requirePath(body.path), body.content, base));
   });
@@ -531,14 +535,14 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.post("/batch", async (c) => {
     const body = await c.req.json();
-    if (!Array.isArray(body.operations)) throw new PathError("operations 배열이 필요합니다");
+    if (!Array.isArray(body.operations)) throw new PathError("array_required", { field: "operations" });
     const ops: Op[] = body.operations.map((o: Record<string, unknown>): Op => {
       switch (o?.op) {
         case "write":
-          if (typeof o.content !== "string") throw new PathError("content가 필요합니다");
+          if (typeof o.content !== "string") throw new PathError("field_required", { field: "content" });
           return { op: "write", path: requirePath(o.path), content: o.content, baseHash: optionalHash(o.baseHash) };
         case "append":
-          if (typeof o.content !== "string") throw new PathError("content가 필요합니다");
+          if (typeof o.content !== "string") throw new PathError("field_required", { field: "content" });
           return {
             op: "append",
             path: requirePath(o.path),
@@ -551,10 +555,10 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
           return { op: "move", from: requirePath(o.from), to: requirePath(o.to), baseHash: requireHash(o.baseHash) };
         case "put":
           // 첨부 새로 만들기(노드 삭제 되돌리기): data는 base64
-          if (typeof o.data !== "string") throw new PathError("data(base64)가 필요합니다");
+          if (typeof o.data !== "string") throw new PathError("field_required", { field: "data (base64)" });
           return { op: "put", path: requirePath(o.path), data: new Uint8Array(Buffer.from(o.data, "base64")) };
         default:
-          throw new PathError(`알 수 없는 연산입니다: ${String(o?.op)}`);
+          throw new PathError("op_unknown", { op: String(o?.op) });
       }
     });
     const message = typeof body.message === "string" ? body.message : undefined;
@@ -577,20 +581,20 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.get("/revision", async (c) => {
     const rev = c.req.query("rev");
-    if (!rev) throw new PathError("rev가 필요합니다");
+    if (!rev) throw new PathError("field_required", { field: "rev" });
     return c.json(await c.var.scoped.revision(requirePath(c.req.query("path")), rev));
   });
 
   api.post("/rollback", async (c) => {
     const body = await c.req.json();
-    if (typeof body.rev !== "string") throw new PathError("rev가 필요합니다");
+    if (typeof body.rev !== "string") throw new PathError("field_required", { field: "rev" });
     return c.json(await c.var.scoped.rollback(requirePath(body.path), body.rev, optionalHash(body.baseHash)));
   });
 
   // ── 변경 검토 대기열(소유자만) ──
   const ownerOnly = (c: Context<Env>) => {
-    if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("검토는 소유자만 할 수 있습니다");
-    if (!review) throw new PathError("검토 대기열이 꺼져 있습니다");
+    if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("review_owner_only");
+    if (!review) throw new PathError("review_off");
     return review;
   };
   api.get("/review/settings", (c) => {
@@ -600,13 +604,13 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.put("/review/settings", async (c) => {
     ownerOnly(c);
     const { reviewPaths } = await c.req.json();
-    if (!Array.isArray(reviewPaths) || reviewPaths.some((p) => typeof p !== "string")) throw new PathError("reviewPaths는 경로 문자열 목록입니다");
+    if (!Array.isArray(reviewPaths) || reviewPaths.some((p) => typeof p !== "string")) throw new PathError("review_paths_invalid");
     try {
       config.update((cfg) => {
         cfg.reviewPaths = reviewPaths;
       });
     } catch (e) {
-      throw new PathError(e instanceof Error ? e.message : String(e));
+      throw e instanceof KeyedError ? e : new PathError("invalid", { message: e instanceof Error ? e.message : String(e) });
     }
     return c.json({ reviewPaths: config.get().reviewPaths });
   });

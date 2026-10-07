@@ -54,6 +54,19 @@ export interface VaultText {
     syncMerged: string;
     task: (done: boolean, p: string) => string;
     dailyMigrate: (n: number) => string;
+    /** 변경 제안의 기본 메시지 */
+    proposal: (n: number) => string;
+    /** 승인한 제안의 커밋 본문 줄 */
+    approved: (approver: string, id: string) => string;
+  };
+  /** 원본 수집으로 만드는 노트 안의 글 */
+  ingest: {
+    webClip: string;
+    notConverted: string;
+    source: string;
+    originalFile: string;
+    page: (n: number) => string;
+    noText: string;
   };
   /** 공통 설정 파일 본문 안내 */
   settingsBody: string;
@@ -96,6 +109,16 @@ const EN: VaultText = {
     syncMerged: "Sync: merged automatically (changes from this device and the server)",
     task: (done, p) => `Task ${done ? "done" : "reopened"}: ${p}`,
     dailyMigrate: (n) => `Move daily notes to the new format (${n})`,
+    proposal: (n) => `${n} change${n === 1 ? "" : "s"}`,
+    approved: (a, id) => `Approved: ${a} (proposal ${id})`,
+  },
+  ingest: {
+    webClip: "Web clip",
+    notConverted: "_This format could not be converted to Markdown. Open the original file._",
+    source: "Source",
+    originalFile: "Original file",
+    page: (n) => `Page ${n}`,
+    noText: "(no text)",
   },
   settingsBody: `
 # Keyring Notes settings
@@ -142,6 +165,16 @@ const KO: VaultText = {
     syncMerged: "동기화: 자동 병합(이 기기와 서버의 변경을 합침)",
     task: (done, p) => `할 일 ${done ? "완료" : "되돌림"}: ${p}`,
     dailyMigrate: (n) => `데일리 노트 형식 옮기기(${n}개)`,
+    proposal: (n) => `변경 ${n}건`,
+    approved: (a, id) => `승인: ${a} (제안 ${id})`,
+  },
+  ingest: {
+    webClip: "웹 클립",
+    notConverted: "_이 형식은 마크다운으로 바꾸지 못했다. 원본 파일을 열어 볼 것._",
+    source: "원문",
+    originalFile: "원본 파일",
+    page: (n) => `${n}쪽`,
+    noText: "(텍스트 없음)",
   },
   settingsBody: `
 # Keyring Notes 설정

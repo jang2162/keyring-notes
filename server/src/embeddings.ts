@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
-import { headings, parseFrontmatter } from "@keyring-notes/core";
+import { headings, KeyedError, parseFrontmatter } from "@keyring-notes/core";
+import { serverText } from "./lang.js";
 import type { NoteIndex } from "./noteindex.js";
 import { PathError } from "./paths.js";
 import type { Vault } from "./vault.js";
@@ -123,9 +124,9 @@ export class SemanticIndex {
       body: JSON.stringify({ model: this.cfg.model, input: texts }),
       signal: AbortSignal.timeout(60_000),
     });
-    if (!res.ok) throw new Error(`임베딩 요청 실패: HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
+    if (!res.ok) throw new KeyedError("embed_failed", { status: res.status, body: (await res.text().catch(() => "")).slice(0, 200) });
     const data = (await res.json()) as { data?: { embedding: number[]; index?: number }[] };
-    if (!Array.isArray(data.data) || data.data.length !== texts.length) throw new Error("임베딩 응답 형식이 OpenAI 호환이 아닙니다");
+    if (!Array.isArray(data.data) || data.data.length !== texts.length) throw new KeyedError("embed_format");
     return [...data.data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).map((d) => d.embedding);
   }
 
@@ -157,7 +158,7 @@ export class SemanticIndex {
         this.lastError = null;
       } catch (e) {
         this.lastError = e instanceof Error ? e.message : String(e);
-        console.error("의미 검색 색인 실패:", this.lastError);
+        console.error(serverText("server.log.semantic_index_failed"), this.lastError);
       } finally {
         this.running = null;
         this.lastSync = new Date().toISOString();
@@ -210,7 +211,7 @@ export class SemanticIndex {
   /** canRead로 걸러진 문서만 대상으로, 문서별 가장 가까운 조각의 점수로 순위를 매긴다. */
   async search(query: string, canRead: (p: string) => boolean, limit = 10): Promise<SemanticHit[]> {
     const q = query.trim();
-    if (!q) throw new PathError("검색어가 필요합니다");
+    if (!q) throw new PathError("query_required");
     const [qv] = await this.embed([q]);
     const qf = fromBlob(toBlob(qv));
     const rows = this.db.prepare("SELECT path, heading, text, vec FROM embed_chunks WHERE model = ?").all(this.cfg.model) as { path: string; heading: string; text: string; vec: Uint8Array }[];

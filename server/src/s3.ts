@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { KeyedError } from "@keyring-notes/core";
 
 /**
  * S3 호환 저장소(AWS S3, Cloudflare R2, MinIO, Backblaze B2 …) 최소 클라이언트.
@@ -39,7 +40,7 @@ export function s3ConfigFromEnv(e: NodeJS.ProcessEnv = process.env): S3Config | 
   if (!bucket) return null;
   const accessKeyId = env(e, "KEYRING_S3_ACCESS_KEY_ID") ?? env(e, "AWS_ACCESS_KEY_ID");
   const secretAccessKey = env(e, "KEYRING_S3_SECRET_ACCESS_KEY") ?? env(e, "AWS_SECRET_ACCESS_KEY");
-  if (!accessKeyId || !secretAccessKey) throw new Error("KEYRING_S3_BUCKET을 쓰려면 KEYRING_S3_ACCESS_KEY_ID·KEYRING_S3_SECRET_ACCESS_KEY가 필요합니다");
+  if (!accessKeyId || !secretAccessKey) throw new KeyedError("s3_keys_missing");
   const region = env(e, "KEYRING_S3_REGION") ?? env(e, "AWS_REGION") ?? "us-east-1";
   const custom = env(e, "KEYRING_S3_ENDPOINT");
   const endpoint = (custom ?? `https://s3.${region}.amazonaws.com`).replace(/\/+$/, "");

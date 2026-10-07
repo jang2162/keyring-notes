@@ -1,5 +1,5 @@
 import { isMap, isScalar, isSeq, parseDocument } from "yaml";
-import { PathError } from "./paths.js";
+import { PathError } from "./errors.js";
 
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
 const EMPTY_FM_RE = /^---\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
@@ -38,10 +38,10 @@ export function renameFrontmatterField(content: string, from: string, to: string
   checkKey(to);
   if (from === to) return content;
   return editFrontmatter(content, (doc) => {
-    if (doc.has(to)) throw new PathError(`이미 있는 필드입니다: ${to}`);
+    if (doc.has(to)) throw new PathError("field_exists", { field: to });
     const map = doc.contents;
     const pair = isMap(map) ? map.items.find((p) => isScalar(p.key) && p.key.value === from) : undefined;
-    if (!pair) throw new PathError(`없는 필드입니다: ${from}`);
+    if (!pair) throw new PathError("field_missing", { field: from });
     pair.key = doc.createNode(to);
   }, null);
 }
@@ -56,9 +56,9 @@ function editFrontmatter(content: string, edit: (doc: ReturnType<typeof parseDoc
   const yamlText = m && m[1] !== undefined ? m[1] : "";
   const body = m ? content.slice(m[0].length) : content;
   const doc = parseDocument(yamlText);
-  if (doc.errors.length) throw new PathError(`프런트매터 YAML 오류: ${doc.errors[0].message.split("\n")[0]}`);
+  if (doc.errors.length) throw new PathError("frontmatter_yaml", { message: doc.errors[0].message.split("\n")[0] });
   if (doc.contents === null || doc.contents === undefined) doc.contents = doc.createNode({}) as unknown as typeof doc.contents;
-  if (!isMap(doc.contents)) throw new PathError("프런트매터가 객체가 아닙니다");
+  if (!isMap(doc.contents)) throw new PathError("frontmatter_not_object");
   edit(doc);
   // 다른 필드의 모양이 바뀌지 않게([a, b]를 [ a, b ]로 바꾸지 않는 등)
   let out = doc.toString({ flowCollectionPadding: false, lineWidth: 0 }).replace(/\n+$/, "");

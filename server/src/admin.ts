@@ -1,4 +1,5 @@
 import { createWriteStream } from "node:fs";
+import { serverText, setServerLanguage } from "./lang.js";
 import { mkdtemp, readdir, rm, stat, statfs } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,7 +15,7 @@ import { AGENT_NAME_RE, SESSION_COOKIE, validateBackupSettings, validateJobs, va
 import type { NoteIndex } from "./noteindex.js";
 import { PathError } from "./paths.js";
 import type { ScopedVault } from "./scoped.js";
-import { ForbiddenError, NotFoundError, type Vault } from "./vault.js";
+import { ForbiddenError, KeyedError, NotFoundError, type Vault } from "./vault.js";
 import { APP_VERSION } from "./version.js";
 import type { Wiki } from "./wiki.js";
 import type { BlobStore } from "./blobs.js";
@@ -82,8 +83,8 @@ export function adminRoutes(deps: AdminDeps) {
 
   admin.use("*", async (c, next) => {
     const p = c.var.scoped.principal;
-    if (p.kind !== "owner") throw new ForbiddenError("관리 콘솔은 소유자만 쓸 수 있습니다");
-    if (p.device) throw new ForbiddenError("앱(기기 토큰)으로는 관리 콘솔을 쓸 수 없습니다. 웹에서 로그인하세요");
+    if (p.kind !== "owner") throw new ForbiddenError("admin_owner_only");
+    if (p.device) throw new ForbiddenError("admin_device");
     await next();
   });
 
@@ -135,16 +136,29 @@ export function adminRoutes(deps: AdminDeps) {
   });
 
   // ── 업데이트 확인 ──
+  // 언어: 서버·CLI 언어(null이면 LANG)와 에이전트에게 가는 글의 언어(기본 영어)
+  admin.get("/language", (c) => c.json({ language: config.get().language, agentLanguage: config.get().agentLanguage }));
+  admin.put("/language", async (c) => {
+    const body = await c.req.json();
+    config.update((cfg) => {
+      if (body.language === null || body.language === "en" || body.language === "ko") cfg.language = body.language;
+      if (body.agentLanguage === "en" || body.agentLanguage === "ko") cfg.agentLanguage = body.agentLanguage;
+    });
+    deps.vault.fallbackLang = config.get().language ?? process.env.KEYRING_LANG ?? process.env.LANG;
+    setServerLanguage(config.get().language);
+    return c.json({ language: config.get().language, agentLanguage: config.get().agentLanguage });
+  });
+
   admin.get("/update", async (c) => {
     const url = deps.updateUrl;
     const base = {
       current: APP_VERSION,
       instructions: {
-        docker: "docker compose pull && docker compose up -d   # 직접 빌드했다면: git pull && docker compose up -d --build",
-        source: "git pull && npm ci && npm run build && (서버 재시작)",
+        docker: serverText("server.update.docker"),
+        source: serverText("server.update.source"),
       },
     };
-    if (!url) return c.json({ ...base, latest: null, checked: false, error: "업데이트 확인 주소가 꺼져 있습니다(KEYRING_UPDATE_URL)" });
+    if (!url) return c.json({ ...base, latest: null, checked: false, error: serverText("server.update.off") });
     if (updateCache && Date.now() - updateCache.at < 3600_000 && c.req.query("force") !== "1") {
       return c.json({ ...base, ...(updateCache.value as object) });
     }
@@ -153,7 +167,7 @@ export function adminRoutes(deps: AdminDeps) {
       const res = await fetch(url, { headers: { accept: "application/vnd.github+json", "user-agent": "keyring-notes" }, signal: AbortSignal.timeout(8000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { tag_name?: string; html_url?: string; published_at?: string; body?: string };
-      if (!data.tag_name) throw new Error("버전 정보가 없습니다");
+      if (!data.tag_name) throw new Error(serverText("server.update.no_version"));
       value = {
         latest: data.tag_name.replace(/^v/, ""),
         url: data.html_url ?? null,
@@ -164,7 +178,7 @@ export function adminRoutes(deps: AdminDeps) {
         checkedAt: new Date().toISOString(),
       };
     } catch (e) {
-      value = { latest: null, checked: false, error: `업데이트 확인 실패: ${e instanceof Error ? e.message : e}` };
+      value = { latest: null, checked: false, error: serverText("server.update.failed", { message: e instanceof Error ? e.message : String(e) }) };
     }
     updateCache = { at: Date.now(), value };
     return c.json({ ...base, ...value });
@@ -184,7 +198,7 @@ export function adminRoutes(deps: AdminDeps) {
   );
   admin.delete("/devices/:id", (c) => {
     const id = c.req.param("id");
-    if (!config.get().devices.some((d) => d.id === id)) throw new NotFoundError(`기기가 없습니다: ${id}`);
+    if (!config.get().devices.some((d) => d.id === id)) throw new NotFoundError("device_missing", { id });
     config.removeDevice(id);
     return c.json({ ok: true });
   });
@@ -203,13 +217,13 @@ export function adminRoutes(deps: AdminDeps) {
 
   admin.post("/agents", async (c) => {
     const { name } = await c.req.json();
-    if (typeof name !== "string" || !AGENT_NAME_RE.test(name)) throw new PathError("에이전트 이름은 영문 소문자·숫자·-·_ 로 64자 이내여야 합니다");
-    if (config.get().agents.some((a) => a.name === name)) throw new PathError(`이미 있는 에이전트입니다: ${name}`);
+    if (typeof name !== "string" || !AGENT_NAME_RE.test(name)) throw new PathError("agent_name");
+    if (config.get().agents.some((a) => a.name === name)) throw new PathError("agent_exists", { name });
     return c.json({ name, token: config.issueToken(name) });
   });
 
   const agentName = (n: string) => {
-    if (!config.get().agents.some((a) => a.name === n)) throw new NotFoundError(`에이전트가 없습니다: ${n}`);
+    if (!config.get().agents.some((a) => a.name === n)) throw new NotFoundError("agent_missing", { name: n });
     return n;
   };
 
@@ -221,12 +235,12 @@ export function adminRoutes(deps: AdminDeps) {
   admin.put("/agents/:name/rules", async (c) => {
     const name = agentName(c.req.param("name"));
     const { rules } = await c.req.json();
-    if (!rules || typeof rules !== "object" || Array.isArray(rules)) throw new PathError("rules는 {경로: 권한} 객체여야 합니다");
-    for (const v of Object.values(rules)) if (!isLevel(v)) throw new PathError(`권한 값이 잘못되었습니다: ${String(v)}`);
+    if (!rules || typeof rules !== "object" || Array.isArray(rules)) throw new PathError("rules_invalid");
+    for (const v of Object.values(rules)) if (!isLevel(v)) throw new PathError("level_invalid", { level: String(v) });
     try {
       config.setRules(name, rules as Record<string, Level>);
     } catch (e) {
-      throw new PathError(e instanceof Error ? e.message : String(e));
+      throw e instanceof KeyedError ? e : new PathError("invalid", { message: e instanceof Error ? e.message : String(e) });
     }
     return c.json({ name, rules: config.get().agents.find((a) => a.name === name)!.rules });
   });
@@ -241,8 +255,8 @@ export function adminRoutes(deps: AdminDeps) {
   // ── 비밀번호 변경 ──
   admin.post("/password", async (c) => {
     const { current, next } = await c.req.json();
-    if (typeof current !== "string" || !config.checkPassword(current)) throw new ForbiddenError("현재 비밀번호가 맞지 않습니다");
-    if (typeof next !== "string" || next.length < 8) throw new PathError("새 비밀번호는 8자 이상이어야 합니다");
+    if (typeof current !== "string" || !config.checkPassword(current)) throw new ForbiddenError("wrong_current_password");
+    if (typeof next !== "string" || next.length < 8) throw new PathError("password_short");
     config.setPassword(next);
     // 다른 기기의 세션은 모두 끊고, 지금 쓰는 브라우저에는 새 세션을 준다.
     const s = config.issueSession();
@@ -269,11 +283,11 @@ export function adminRoutes(deps: AdminDeps) {
     return c.json({ passkeys: deps.passkeys.list(), here });
   });
   admin.post("/passkeys/options", async (c) => {
-    if (!deps.passkeys) throw new NotFoundError("패스키를 쓸 수 없습니다");
+    if (!deps.passkeys) throw new NotFoundError("passkeys_unavailable");
     return c.json(await deps.passkeys.registrationOptions(passkeyAt(c)));
   });
   admin.post("/passkeys", async (c) => {
-    if (!deps.passkeys) throw new NotFoundError("패스키를 쓸 수 없습니다");
+    if (!deps.passkeys) throw new NotFoundError("passkeys_unavailable");
     const { id, response, name } = await c.req.json();
     return c.json(await deps.passkeys.verifyRegistration(id, response, name));
   });
@@ -288,7 +302,7 @@ export function adminRoutes(deps: AdminDeps) {
 
   // ── 자동화: 웹훅·정기 작업 ──
   const automation = () => {
-    if (!deps.automation) throw new PathError("자동화가 꺼져 있습니다");
+    if (!deps.automation) throw new PathError("automation_off");
     return deps.automation;
   };
   const maskSecret = (w: WebhookConfig) => ({ ...w, secret: `${w.secret.slice(0, 4)}…` });
@@ -307,7 +321,7 @@ export function adminRoutes(deps: AdminDeps) {
   // 웹훅 목록 통째로 저장. secret을 비워 보내면 같은 id의 기존 값을 쓰고, 새 웹훅이면 만들어 준다(응답에 한 번만 원문).
   admin.put("/automation/webhooks", async (c) => {
     const { webhooks } = await c.req.json();
-    if (!Array.isArray(webhooks)) throw new PathError("webhooks 목록이 필요합니다");
+    if (!Array.isArray(webhooks)) throw new PathError("array_required", { field: "webhooks" });
     const prev = new Map(config.get().webhooks.map((w) => [w.id, w]));
     const created: Record<string, string> = {};
     const merged = webhooks.map((w: Partial<WebhookConfig>) => {
@@ -322,7 +336,7 @@ export function adminRoutes(deps: AdminDeps) {
     try {
       valid = validateWebhooks(merged);
     } catch (e) {
-      throw new PathError(e instanceof Error ? e.message : String(e));
+      throw e instanceof KeyedError ? e : new PathError("invalid", { message: e instanceof Error ? e.message : String(e) });
     }
     config.update((cfg) => {
       cfg.webhooks = valid;
@@ -336,9 +350,9 @@ export function adminRoutes(deps: AdminDeps) {
     try {
       valid = validateJobs(jobs, (expr) => void parseCron(expr));
       const hooks = new Set(config.get().webhooks.map((w) => w.id));
-      for (const j of valid) if (!hooks.has(j.webhook)) throw new Error(`${j.id}: 없는 웹훅입니다(${j.webhook})`);
+      for (const j of valid) if (!hooks.has(j.webhook)) throw new PathError("job_webhook_missing", { id: j.id, webhook: j.webhook });
     } catch (e) {
-      throw new PathError(e instanceof Error ? e.message : String(e));
+      throw e instanceof KeyedError ? e : new PathError("invalid", { message: e instanceof Error ? e.message : String(e) });
     }
     config.update((cfg) => {
       cfg.jobs = valid;
@@ -348,16 +362,16 @@ export function adminRoutes(deps: AdminDeps) {
 
   admin.post("/automation/webhooks/:id/test", async (c) => {
     const w = config.get().webhooks.find((x) => x.id === c.req.param("id"));
-    if (!w) throw new NotFoundError("웹훅이 없습니다");
+    if (!w) throw new NotFoundError("webhook_missing");
     const a = automation();
-    a.emit("ping", { message: "Keyring Notes 웹훅 시험" }, [w]);
+    a.emit("ping", { message: serverText("server.webhook_test") }, [w]);
     await a.idle();
     return c.json(a.deliveries.find((d) => d.webhook === w.id && d.event === "ping"));
   });
 
   admin.post("/automation/jobs/:id/run", async (c) => {
     const job = config.get().jobs.find((x) => x.id === c.req.param("id"));
-    if (!job) throw new NotFoundError("작업이 없습니다");
+    if (!job) throw new NotFoundError("job_missing");
     const d = await automation().runJob(job);
     return c.json({ delivery: d, job: automation().jobStatus(job) });
   });
@@ -377,7 +391,7 @@ export function adminRoutes(deps: AdminDeps) {
     try {
       settings = validateBackupSettings({ ...config.get().backup, ...body });
     } catch (e) {
-      throw new PathError(e instanceof Error ? e.message : String(e));
+      throw e instanceof KeyedError ? e : new PathError("invalid", { message: e instanceof Error ? e.message : String(e) });
     }
     config.update((cfg) => {
       cfg.backup = settings;
@@ -424,16 +438,16 @@ export function adminRoutes(deps: AdminDeps) {
   admin.post("/backups/upload", async (c) => {
     const max = deps.maxBackupUpload ?? 4 * 1024 ** 3;
     const declared = Number(c.req.header("content-length") ?? 0);
-    if (declared > max) throw new PathError("백업 파일이 너무 큽니다");
+    if (declared > max) throw new PathError("backup_too_large");
     const body = c.req.raw.body;
-    if (!body) throw new PathError("빈 파일입니다");
+    if (!body) throw new PathError("file_empty");
     const tmpDir = await mkdtemp(path.join(os.tmpdir(), "keyring-upload-"));
     const tmp = path.join(tmpDir, "upload.tar.gz");
     try {
       let total = 0;
       const counted = Readable.fromWeb(body as never).on("data", (chunk: Buffer) => {
         total += chunk.length;
-        if (total > max) counted.destroy(new PathError("백업 파일이 너무 큽니다"));
+        if (total > max) counted.destroy(new PathError("backup_too_large"));
       });
       await pipeline(counted, createWriteStream(tmp, { mode: 0o600 }));
       return c.json(await backups.importFile(tmp));

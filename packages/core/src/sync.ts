@@ -1,4 +1,18 @@
-import { ConflictError, NotFoundError, UnauthorizedError } from "./errors.js";
+import { ConflictError, KeyedError, NotFoundError, UnauthorizedError } from "./errors.js";
+
+/** 서버 오류 응답(code·params가 있으면 그것으로 번역한다) */
+interface RemoteErrorBody {
+  message?: string;
+  code?: string;
+  params?: Record<string, string | number>;
+  currentHash?: string | null;
+}
+
+function remoteError(status: number, data: RemoteErrorBody): { code: string; params: Record<string, string | number> } {
+  if (data.code) return { code: data.code, params: data.params ?? {} };
+  if (data.message) return { code: "server_message", params: { message: data.message } };
+  return { code: "server_status", params: { status } };
+}
 import { sha256Hex, utf8 } from "./hash.js";
 import type { LocalVault } from "./local.js";
 import { merge3 } from "./merge.js";
@@ -365,11 +379,12 @@ export class HttpRemote implements RemoteVault {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (res.ok) return res;
-    const data = (await res.json().catch(() => ({}))) as { message?: string; currentHash?: string | null };
-    if (res.status === 409) throw new ConflictError(data.currentHash ?? null, data.message);
-    if (res.status === 401) throw new UnauthorizedError(data.message ?? "서버가 이 기기를 받지 않습니다. 다시 연결하세요");
-    if (res.status === 404) throw new NotFoundError(data.message ?? "없습니다");
-    throw new Error(data.message ?? `서버 오류 ${res.status}`);
+    const data = (await res.json().catch(() => ({}))) as RemoteErrorBody;
+    const { code, params } = remoteError(res.status, data);
+    if (res.status === 409) throw new ConflictError(data.currentHash ?? null, data.code ?? undefined, data.params);
+    if (res.status === 401) throw new UnauthorizedError(data.code ?? undefined, data.params);
+    if (res.status === 404) throw new NotFoundError(code, params);
+    throw new KeyedError(code, params);
   }
 
   async manifest(): Promise<RemoteFile[]> {
@@ -404,10 +419,13 @@ export class HttpRemote implements RemoteVault {
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/octet-stream", "x-keyring-upload": "1" },
       body: data as Uint8Array<ArrayBuffer>,
     });
-    const body = (await res.json().catch(() => ({}))) as { message?: string; currentHash?: string | null; hash?: string };
-    if (res.status === 409) throw new ConflictError(body.currentHash ?? null, body.message);
-    if (res.status === 401) throw new UnauthorizedError(body.message ?? "서버가 이 기기를 받지 않습니다. 다시 연결하세요");
-    if (!res.ok) throw new Error(body.message ?? `서버 오류 ${res.status}`);
+    const body = (await res.json().catch(() => ({}))) as RemoteErrorBody & { hash?: string };
+    if (res.status === 409) throw new ConflictError(body.currentHash ?? null, body.code ?? undefined, body.params);
+    if (res.status === 401) throw new UnauthorizedError(body.code ?? undefined, body.params);
+    if (!res.ok) {
+      const { code, params } = remoteError(res.status, body);
+      throw new KeyedError(code, params);
+    }
     return { hash: body.hash ?? (await sha256Hex(data)) };
   }
 }
@@ -431,8 +449,11 @@ export async function pairDevice(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ password, name: device }),
   });
-  const data = (await res.json().catch(() => ({}))) as { token?: string; name?: string; message?: string };
-  if (!res.ok || !data.token) throw new Error(data.message ?? `연결 실패(${res.status})`);
+  const data = (await res.json().catch(() => ({}))) as RemoteErrorBody & { token?: string; name?: string };
+  if (!res.ok || !data.token) {
+    const { code, params } = remoteError(res.status, data);
+    throw res.status === 401 ? new UnauthorizedError(code, params) : new KeyedError(code, params);
+  }
   return { token: data.token, device: data.name ?? device, server };
 }
 

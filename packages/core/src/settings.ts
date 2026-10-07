@@ -1,7 +1,7 @@
 import { parseDocument, isMap } from "yaml";
 import { parseFrontmatter } from "./markdown.js";
 import { dailyFormatProblem, type DailyConfig, type DailyLookup, type WeekStart } from "./daily.js";
-import { PathError } from "./paths.js";
+import { PathError } from "./errors.js";
 import { vaultLangOf, vaultText, type VaultLang } from "./vaultText.js";
 
 /**
@@ -190,7 +190,7 @@ export type SettingPath = string[];
  * 기본값과 같아도 적어 둔다(다른 기기가 기본값을 바꿔도 그대로). 다른 키·주석·순서는 그대로 둔다.
  */
 export function setVaultSetting(content: string | null, keyPath: SettingPath, value: unknown, lang: VaultLang = "en"): string {
-  if (keyPath.length === 0 || keyPath.some((k) => typeof k !== "string" || !k)) throw new PathError("설정 키가 잘못되었습니다");
+  if (keyPath.length === 0 || keyPath.some((k) => typeof k !== "string" || !k)) throw new PathError("settings_key");
   const base = content ?? `---\nkeyring: settings\n---\n${vaultText(lang).settingsBody}`;
   return editSettings(base, (doc) => {
     if (value === null || value === undefined) {
@@ -218,9 +218,9 @@ function editSettings(content: string, edit: (doc: ReturnType<typeof parseDocume
   const yamlText = m ? m[1] : "";
   const body = m ? content.slice(m[0].length) : content;
   const doc = parseDocument(yamlText);
-  if (doc.errors.length) throw new PathError(`설정 파일 YAML 오류: ${doc.errors[0].message.split("\n")[0]}`);
+  if (doc.errors.length) throw new PathError("settings_yaml", { message: doc.errors[0].message.split("\n")[0] });
   if (doc.contents === null || doc.contents === undefined) doc.contents = doc.createNode({}) as unknown as typeof doc.contents;
-  if (!isMap(doc.contents)) throw new PathError("설정 파일 프런트매터가 객체가 아닙니다");
+  if (!isMap(doc.contents)) throw new PathError("settings_not_object");
   edit(doc);
   const out = doc.toString({ flowCollectionPadding: false, lineWidth: 0 }).replace(/\n+$/, "");
   return `---\n${out}\n---\n${body}`;

@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AccessPolicy, atLeast } from "./access.js";
 import type { ConfigStore } from "./config.js";
+import { serverText } from "./lang.js";
 import { PathError } from "./paths.js";
 import { hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
 
@@ -101,7 +102,7 @@ export class ReviewQueue {
       id,
       agent: agent.name,
       agentEmail: agent.email,
-      message: message?.trim() || `변경 ${preview.length}건`,
+      message: message?.trim() || this.vault.text().commit.proposal(preview.length),
       createdAt: new Date().toISOString(),
       status: "pending",
       ops: stored,
@@ -113,7 +114,7 @@ export class ReviewQueue {
       try {
         fn(proposal);
       } catch (e) {
-        console.error("제안 알림 실패", e);
+        console.error(serverText("server.log.proposal_listener_failed"), e);
       }
     }
     return proposal;
@@ -124,11 +125,11 @@ export class ReviewQueue {
   }
 
   async get(id: string): Promise<Proposal> {
-    if (!ID_RE.test(id)) throw new PathError("제안 ID가 잘못되었습니다");
+    if (!ID_RE.test(id)) throw new PathError("proposal_id_invalid");
     try {
       return JSON.parse(await readFile(path.join(this.dir, id, "proposal.json"), "utf8")) as Proposal;
     } catch {
-      throw new NotFoundError(`제안이 없습니다: ${id}`);
+      throw new NotFoundError("proposal_missing", { id });
     }
   }
 
@@ -188,7 +189,7 @@ export class ReviewQueue {
   /** 승인: 저장해 둔 연산을 그대로(같은 baseHash로) 적용한다. 그 사이 문서가 바뀌었으면 충돌로 거부된다. */
   async approve(id: string, approver: string): Promise<Proposal> {
     const p = await this.get(id);
-    if (p.status !== "pending") throw new PathError(`이미 처리된 제안입니다(${p.status})`);
+    if (p.status !== "pending") throw new PathError("proposal_done", { status: p.status });
     const ops: Op[] = [];
     for (const op of p.ops) {
       if (op.op === "put") ops.push({ op: "put", path: op.path, data: new Uint8Array(await readFile(path.join(this.dir, id, op.dataFile))) });
@@ -200,7 +201,7 @@ export class ReviewQueue {
     const links = p.links?.enabled
       ? { enabled: true, fullPaths: true, only: new Set(p.links.paths), canSee: (rel: string) => (policy ? atLeast(policy.level(rel), "read") : false) }
       : { enabled: false };
-    const res = await this.vault.batch(ops, { name: p.agent, email: p.agentEmail }, { message: `${p.message}\n\n승인: ${approver} (제안 ${p.id})`, links });
+    const res = await this.vault.batch(ops, { name: p.agent, email: p.agentEmail }, { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, links });
     p.status = "approved";
     p.decidedAt = new Date().toISOString();
     p.decidedBy = approver;
@@ -212,7 +213,7 @@ export class ReviewQueue {
 
   async reject(id: string, decider: string, reason?: string): Promise<Proposal> {
     const p = await this.get(id);
-    if (p.status !== "pending") throw new PathError(`이미 처리된 제안입니다(${p.status})`);
+    if (p.status !== "pending") throw new PathError("proposal_done", { status: p.status });
     p.status = "rejected";
     p.decidedAt = new Date().toISOString();
     p.decidedBy = decider;

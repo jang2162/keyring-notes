@@ -33,8 +33,8 @@ describe("속성 입력 화면", () => {
   it("이름 바꾸기는 자리·값·주석을 지킨다", () => {
     const doc = "---\ntitle: 계획\nstate: 진행 # 상태\ndue: 2026-10-10\n---\n본문";
     expect(renameFrontmatterField(doc, "state", "status")).toBe("---\ntitle: 계획\nstatus: 진행 # 상태\ndue: 2026-10-10\n---\n본문");
-    expect(() => renameFrontmatterField(doc, "state", "title")).toThrow(/이미/);
-    expect(() => renameFrontmatterField(doc, "없음", "x")).toThrow(/없는/);
+    expect(() => renameFrontmatterField(doc, "state", "title")).toThrow(expect.objectContaining({ code: "field_exists" }));
+    expect(() => renameFrontmatterField(doc, "없음", "x")).toThrow(expect.objectContaining({ code: "field_missing" }));
   });
   it("빈 값으로 더하면 `key:`", () => {
     expect(setFrontmatterField("---\ntitle: x\n---\n", "owner", null, { keepEmpty: true })).toBe("---\ntitle: x\nowner:\n---\n");

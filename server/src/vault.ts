@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { serverText } from "./lang.js";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -32,24 +33,9 @@ export interface Doc {
   hash: string;
 }
 
-export class NotFoundError extends Error {}
-
-export class ForbiddenError extends Error {
-  constructor(message = "권한이 없습니다") {
-    super(message);
-  }
-}
-
-/** 클라이언트가 본 버전(baseHash)과 서버의 현재 버전이 달라 쓰기를 거부할 때. */
-export class ConflictError extends Error {
-  constructor(
-    readonly currentHash: string | null,
-    message = "다른 곳에서 먼저 수정되었습니다",
-    readonly path?: string,
-  ) {
-    super(path ? `${message}: ${path}` : message);
-  }
-}
+/** 오류는 core와 같은 클래스(코드·끼워 넣을 값을 가진다 — core/errors.ts) */
+import { ConflictError, ForbiddenError, KeyedError, NotFoundError } from "@keyring-notes/core";
+export { ConflictError, ForbiddenError, KeyedError, NotFoundError };
 
 export function hashContent(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
@@ -277,7 +263,7 @@ export class Vault {
       try {
         const real = await realpath(probe);
         const r = path.relative(this.realRoot, real);
-        if (r.startsWith("..") || path.isAbsolute(r)) throw new PathError("볼트 밖을 가리키는 링크입니다");
+        if (r.startsWith("..") || path.isAbsolute(r)) throw new PathError("link_outside");
         break;
       } catch (e) {
         if (e instanceof PathError) throw e;
@@ -347,9 +333,9 @@ export class Vault {
 
   async read(input: string): Promise<Doc> {
     const { rel, abs } = await this.resolve(input);
-    if (!isMarkdown(rel)) throw new PathError("마크다운 문서만 열 수 있습니다");
+    if (!isMarkdown(rel)) throw new PathError("markdown_only");
     const buf = await this.readBuffer(abs);
-    if (buf === null) throw new NotFoundError(`문서가 없습니다: ${rel}`);
+    if (buf === null) throw new NotFoundError("doc_missing", { path: rel });
     return { path: rel, content: buf.toString("utf8"), hash: hashContent(buf) };
   }
 
@@ -358,10 +344,10 @@ export class Vault {
     const { rel, abs } = await this.resolve(input);
     try {
       const st = await lstat(abs);
-      if (!st.isFile()) throw new NotFoundError(`파일이 없습니다: ${rel}`);
+      if (!st.isFile()) throw new NotFoundError("file_missing", { path: rel });
       return { path: rel, data: await readFile(abs) };
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new NotFoundError(`파일이 없습니다: ${rel}`);
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new NotFoundError("file_missing", { path: rel });
       throw e;
     }
   }
@@ -371,8 +357,8 @@ export class Vault {
    * 아무것도 바뀌지 않는다. 연산은 앞 연산의 결과 위에서 차례로 검사된다.
    */
   async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard; dryRun?: boolean; links?: LinkUpdateOptions; coalesce?: boolean } = {}): Promise<BatchResult> {
-    if (ops.length === 0) throw new PathError("연산이 비어 있습니다");
-    if (ops.length > 500) throw new PathError("한 번에 500개까지 처리할 수 있습니다");
+    if (ops.length === 0) throw new PathError("ops_empty");
+    if (ops.length > 500) throw new PathError("ops_too_many", { max: 500 });
     const guard = opts.guard ?? (() => undefined);
 
     // 경로 검증은 잠금 밖에서 먼저 한다.
@@ -381,9 +367,9 @@ export class Vault {
     /** kind: md(문서만), bin(첨부만), any(이동·삭제: 둘 다) */
     const want = async (p: string, kind: "md" | "bin" | "any" = "md") => {
       const { rel, abs } = await this.resolve(p);
-      if (kind === "md" && !isMarkdown(rel)) throw new PathError(`마크다운 문서(.md)만 바꿀 수 있습니다: ${rel}`);
-      if (kind === "bin" && isMarkdown(rel)) throw new PathError(`마크다운 문서는 put으로 쓸 수 없습니다: ${rel}`);
-      if (this.readOnly(rel)) throw new PathError(`자동 생성 문서라 직접 고칠 수 없습니다: ${rel}`);
+      if (kind === "md" && !isMarkdown(rel)) throw new PathError("markdown_only_change", { path: rel });
+      if (kind === "bin" && isMarkdown(rel)) throw new PathError("markdown_no_put", { path: rel });
+      if (this.readOnly(rel)) throw new PathError("generated_readonly", { path: rel });
       resolved.set(p, rel);
       resolvedAbs.set(rel, abs);
     };
@@ -391,14 +377,14 @@ export class Vault {
       if (op.op === "move") {
         await want(op.from, "any");
         await want(op.to, "any");
-        if (isMarkdown(op.from) !== isMarkdown(op.to)) throw new PathError(`문서와 첨부 사이로는 옮길 수 없습니다(확장자 .md 유지): ${op.from} → ${op.to}`);
+        if (isMarkdown(op.from) !== isMarkdown(op.to)) throw new PathError("move_kind_path", { from: op.from, to: op.to });
       } else if (op.op === "put") {
-        if (!(op.data instanceof Uint8Array)) throw new PathError("data가 필요합니다");
+        if (!(op.data instanceof Uint8Array)) throw new PathError("field_required", { field: "data" });
         await want(op.path, "bin");
       } else if (op.op === "delete") {
         await want(op.path, "any");
       } else {
-        if (typeof op.content !== "string") throw new PathError("content가 필요합니다");
+        if (typeof op.content !== "string") throw new PathError("field_required", { field: "content" });
         await want(op.path);
       }
     }
@@ -437,12 +423,12 @@ export class Vault {
           const to = resolved.get(op.to)!;
           const a = await slot(from);
           const b = await slot(to);
-          if (a.hash === null) throw new NotFoundError(`${isMarkdown(from) ? "문서" : "파일"}가 없습니다: ${from}`);
+          if (a.hash === null) throw new NotFoundError(isMarkdown(from) ? "doc_missing" : "file_missing", { path: from });
           guard("delete", from);
           guard("create", to);
-          if (a.hash !== op.baseHash) throw new ConflictError(a.hash, undefined, from);
+          if (a.hash !== op.baseHash) throw new ConflictError(a.hash, "conflict_path", { path: from });
           if (from === to) continue;
-          if (b.hash !== null) throw new ConflictError(b.hash, "이미 같은 이름의 파일이 있습니다", to);
+          if (b.hash !== null) throw new ConflictError(b.hash, "file_exists", { path: to });
           if (isMarkdown(from)) set(b, a.content);
           else {
             // 첨부는 바이트를 그대로 옮긴다(S3 보관 첨부도 볼트에는 파일이 있다)
@@ -458,7 +444,7 @@ export class Vault {
         const s = await slot(rel);
         if (op.op === "put") {
           guard("create", rel);
-          if (s.hash !== null) throw new ConflictError(s.hash, "이미 같은 이름의 파일이 있습니다", rel);
+          if (s.hash !== null) throw new ConflictError(s.hash, "file_exists", { path: rel });
           s.bytes = op.data;
           s.hash = hashContent(Buffer.from(op.data));
           verbs.push({ kind: "attach", text: T.attach(rel) });
@@ -468,19 +454,19 @@ export class Vault {
           const action: Action = s.content === null ? "create" : op.content.startsWith(s.content) ? "append" : "modify";
           guard(action, rel);
           if (s.hash !== op.baseHash) {
-            throw new ConflictError(s.hash, s.hash === null ? "문서가 없습니다(삭제되었을 수 있음)" : undefined, rel);
+            throw new ConflictError(s.hash, s.hash === null ? "conflict_gone_path" : "conflict_path", { path: rel });
           }
           verbs.push(s.content === null ? { kind: "create", text: T.create(rel) } : { kind: "modify", text: T.modify(rel) });
           set(s, op.content);
         } else if (op.op === "append") {
           guard(s.content === null ? "create" : "append", rel);
-          if (op.baseHash !== undefined && s.hash !== op.baseHash) throw new ConflictError(s.hash, undefined, rel);
+          if (op.baseHash !== undefined && s.hash !== op.baseHash) throw new ConflictError(s.hash, "conflict_path", { path: rel });
           verbs.push(s.content === null ? { kind: "create", text: T.create(rel) } : { kind: "append", text: T.append(rel) });
           set(s, s.content === null ? op.content : appendText(s.content, op.content));
         } else {
-          if (s.hash === null) throw new NotFoundError(`${isMarkdown(rel) ? "문서" : "파일"}가 없습니다: ${rel}`);
+          if (s.hash === null) throw new NotFoundError(isMarkdown(rel) ? "doc_missing" : "file_missing", { path: rel });
           guard("delete", rel);
-          if (s.hash !== op.baseHash) throw new ConflictError(s.hash, undefined, rel);
+          if (s.hash !== op.baseHash) throw new ConflictError(s.hash, "conflict_path", { path: rel });
           verbs.push({ kind: "delete", text: T.delete(rel) });
           set(s, null);
         }
@@ -572,7 +558,7 @@ export class Vault {
           try {
             await fn(changed.map(([rel]) => rel));
           } catch (err) {
-            console.error("변경 알림 처리 실패", err);
+            console.error(serverText("server.log.change_listener_failed"), err);
           }
         }
         return { rev, files, linksUpdated, linkCount };
@@ -585,7 +571,7 @@ export class Vault {
               await writeFile(s.abs, s.original);
             }
           } catch (restoreErr) {
-            console.error("일괄 쓰기 복구 실패", restoreErr);
+            console.error(serverText("server.log.batch_restore_failed"), restoreErr);
           }
         }
         await this.git.unstage(changed.map(([rel]) => rel)).catch(() => undefined);

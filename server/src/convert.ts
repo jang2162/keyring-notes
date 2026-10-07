@@ -6,6 +6,7 @@ import TurndownService from "turndown";
 // @ts-expect-error 타입 선언이 없는 패키지
 import { gfm } from "turndown-plugin-gfm";
 import { PathError } from "./paths.js";
+import { vaultText, type VaultText } from "@keyring-notes/core";
 
 export interface Converted {
   title: string;
@@ -66,7 +67,9 @@ function tidy(md: string): string {
  * 웹 페이지 HTML → 마크다운. Readability로 본문만 뽑고(실패하면 body 전체) Turndown으로 변환한다.
  * selection이 있으면(웹 클리퍼에서 선택한 부분) 그 HTML만 변환한다.
  */
-export function htmlToMarkdown(html: string, opts: { url?: string; selectionHtml?: string } = {}): Converted {
+/** text: 볼트 언어의 글(기본 제목 등). 주지 않으면 영어 */
+export function htmlToMarkdown(html: string, opts: { url?: string; selectionHtml?: string; text?: VaultText } = {}): Converted {
+  const T = opts.text ?? vaultText("en");
   const { document } = parseHTML(html);
   const pageTitle = document.querySelector("title")?.textContent?.trim() ?? "";
   const metaOf = (sel: string) => document.querySelector(sel)?.getAttribute("content")?.trim() ?? "";
@@ -81,7 +84,7 @@ export function htmlToMarkdown(html: string, opts: { url?: string; selectionHtml
   if (opts.selectionHtml) {
     const { document: sel } = parseHTML(`<!doctype html><html><body>${opts.selectionHtml}</body></html>`);
     absolutize(sel as unknown as Document, opts.url);
-    return { title: cleanTitle(pageTitle, meta.site) || "웹 클립", markdown: tidy(turndown().turndown(sel.body.innerHTML)), meta };
+    return { title: cleanTitle(pageTitle, meta.site) || T.ingest.webClip, markdown: tidy(turndown().turndown(sel.body.innerHTML)), meta };
   }
 
   absolutize(document as unknown as Document, opts.url);
@@ -98,11 +101,11 @@ export function htmlToMarkdown(html: string, opts: { url?: string; selectionHtml
   } catch {
     // 본문 추출 실패 시 body 전체를 쓴다
   }
-  return { title: cleanTitle(title, meta.site) || "제목 없음", markdown: tidy(turndown().turndown(bodyHtml)), meta };
+  return { title: cleanTitle(title, meta.site) || T.untitled, markdown: tidy(turndown().turndown(bodyHtml)), meta };
 }
 
 /** PDF → 마크다운(페이지별 텍스트). 표·그림 구조는 남지 않는다. */
-export async function pdfToMarkdown(data: Uint8Array, fallbackTitle: string): Promise<Converted> {
+export async function pdfToMarkdown(data: Uint8Array, fallbackTitle: string, T: VaultText = vaultText("en")): Promise<Converted> {
   const { extractText, getDocumentProxy, getMeta } = await import("unpdf");
   const pdf = await getDocumentProxy(new Uint8Array(data));
   const { text, totalPages } = await extractText(pdf, { mergePages: false });
@@ -122,7 +125,7 @@ export async function pdfToMarkdown(data: Uint8Array, fallbackTitle: string): Pr
       .replace(/[ \t]+\n/g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    return totalPages > 1 ? `## ${i + 1}쪽\n\n${body || "(텍스트 없음)"}` : body;
+    return totalPages > 1 ? `## ${T.ingest.page(i + 1)}\n\n${body || T.ingest.noText}` : body;
   });
   return { title, markdown: tidy(pages.join("\n\n")), meta };
 }
@@ -168,7 +171,7 @@ async function assertPublicHost(url: URL, allowPrivate: boolean) {
   const host = url.hostname.replace(/^\[|\]$/g, "");
   const addrs = isIP(host) ? [host] : (await lookup(host, { all: true, verbatim: true })).map((a) => a.address);
   if (addrs.length === 0 || addrs.some(isPrivateAddress)) {
-    throw new PathError(`사설·내부 주소는 가져올 수 없습니다: ${url.hostname}`);
+    throw new PathError("private_address", { host: url.hostname });
   }
 }
 
@@ -179,26 +182,26 @@ export async function fetchUrl(input: string, opts: FetchOptions = {}): Promise<
   try {
     url = new URL(input);
   } catch {
-    throw new PathError("URL 형식이 잘못되었습니다");
+    throw new PathError("url_invalid");
   }
   for (let hop = 0; hop < 6; hop++) {
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new PathError("http·https 주소만 가져올 수 있습니다");
-    if (url.username || url.password) throw new PathError("인증 정보가 든 URL은 쓸 수 없습니다");
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new PathError("url_protocol");
+    if (url.username || url.password) throw new PathError("url_credentials");
     await assertPublicHost(url, opts.allowPrivate ?? false);
     const res = await fetch(url, {
       redirect: "manual",
       signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
       headers: { "user-agent": "Mozilla/5.0 (compatible; KeyringNotes/0.4; +clipper)", accept: "text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5" },
     }).catch((e) => {
-      throw new PathError(`가져오기 실패: ${e?.cause?.code ?? e?.message ?? e}`);
+      throw new PathError("fetch_failed", { reason: String(e?.cause?.code ?? e?.message ?? e) });
     });
     if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
       url = new URL(res.headers.get("location")!, url);
       continue;
     }
-    if (!res.ok) throw new PathError(`가져오기 실패: HTTP ${res.status}`);
+    if (!res.ok) throw new PathError("fetch_failed", { reason: `HTTP ${res.status}` });
     const declared = Number(res.headers.get("content-length") ?? 0);
-    if (declared > maxBytes) throw new PathError("문서가 너무 큽니다");
+    if (declared > maxBytes) throw new PathError("doc_too_large");
     const reader = res.body?.getReader();
     const chunks: Uint8Array[] = [];
     let total = 0;
@@ -209,7 +212,7 @@ export async function fetchUrl(input: string, opts: FetchOptions = {}): Promise<
         total += value.byteLength;
         if (total > maxBytes) {
           await reader.cancel();
-          throw new PathError("문서가 너무 큽니다");
+          throw new PathError("doc_too_large");
         }
         chunks.push(value);
       }
@@ -222,7 +225,7 @@ export async function fetchUrl(input: string, opts: FetchOptions = {}): Promise<
     }
     return { url: url.href, contentType: (res.headers.get("content-type") ?? "").toLowerCase(), data };
   }
-  throw new PathError("리다이렉트가 너무 많습니다");
+  throw new PathError("too_many_redirects");
 }
 
 /** 응답 바이트를 문자열로(Content-Type이나 meta charset의 인코딩을 따른다). */

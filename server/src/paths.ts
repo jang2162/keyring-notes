@@ -9,7 +9,7 @@ export function resolveInVault(root: string, relPath: string): string {
   const abs = path.resolve(root, relPath);
   const rel = path.relative(root, abs);
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    throw new PathError("볼트 밖 경로입니다");
+    throw new PathError("path_outside");
   }
   return abs;
 }

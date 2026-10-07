@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { serverText, setServerLanguage } from "./lang.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -44,6 +45,7 @@ const config = new ConfigStore(configFile);
 const vault = new Vault(vaultDir);
 // 볼트 언어를 아직 정하지 않았을 때의 볼트 글(커밋 메시지 등): 서버 언어 설정 → KEYRING_LANG → LANG
 vault.fallbackLang = config.get().language ?? process.env.KEYRING_LANG ?? process.env.LANG;
+setServerLanguage(config.get().language);
 await mkdir(vaultDir, { recursive: true });
 
 // 인덱스는 지워도 되는 캐시다. 볼트 안 숨김 폴더에 두고 Git 추적에서는 뺀다.
@@ -57,7 +59,7 @@ const blobs =
   s3 && process.env.KEYRING_S3_BLOBS === "1" ? new BlobStore(vault, s3, Math.max(0, Number(env("KEYRING_S3_BLOB_MIN_KB") ?? 256)) * 1024) : null;
 // S3에 올리기 전 암호화(선택). 키를 주면 백업·첨부 모두 암호화해 올린다.
 const s3Secret = await encryptionSecretFromEnv();
-if (s3Secret && !s3) throw new Error("KEYRING_S3_ENCRYPTION_KEY는 S3 설정(KEYRING_S3_BUCKET)과 같이 씁니다");
+if (s3Secret && !s3) throw new Error(serverText("server.s3_key_without_s3"));
 const s3Crypto = s3 && s3Secret ? S3Crypto.lazy(s3, s3Secret) : null;
 if (blobs) blobs.crypto = s3Crypto;
 
@@ -69,7 +71,9 @@ await vault.init();
 await wiki.init();
 const synced = await index.sync(vault);
 for (const t of wiki.topics) await wiki.regenerate(t);
-console.log(`인덱스 동기화: ${synced.updated}개 갱신, ${synced.removed}개 제거, 위키 토픽 ${wiki.topics.size}개 (${Date.now() - started}ms)`);
+console.log(
+  serverText("server.index_synced", { updated: synced.updated, removed: synced.removed, topics: wiki.topics.size, ms: Date.now() - started }),
+);
 // 순서가 중요하다: 인덱스를 먼저 고친 뒤 그 인덱스로 위키 index·log를 만든다.
 vault.onChange((paths) => index.refresh(vault.root, paths));
 vault.onChange((paths) => wiki.onChange(paths));
@@ -80,10 +84,15 @@ backups.remote = s3;
 backups.blobs = blobs;
 backups.crypto = s3Crypto;
 // 키가 맞는지 시작할 때 한 번 확인한다(S3가 안 되면 처음 올릴 때 다시)
-if (s3Crypto) void s3Crypto().catch((e) => console.error(`S3 암호화: ${e instanceof Error ? e.message : String(e)}`));
+if (s3Crypto) void s3Crypto().catch((e) => console.error(serverText("server.s3_encryption_error", { message: e instanceof Error ? e.message : String(e) })));
 if (process.env.KEYRING_BACKUP_SCHEDULER !== "0") backups.start();
 if (blobs) blobs.start();
-if (s3) console.log(`S3: ${s3.describe()} (원격 백업${blobs ? `, ${blobs.minBytes / 1024}KB 이상 첨부 보관` : ""}${s3Crypto ? ", 올리기 전 암호화" : ""})`);
+if (s3) {
+  const features = [serverText("server.s3_remote_backup")];
+  if (blobs) features.push(serverText("server.s3_blobs", { kb: blobs.minBytes / 1024 }));
+  if (s3Crypto) features.push(serverText("server.s3_encrypted"));
+  console.log(`S3: ${s3.describe()} (${features.join(", ")})`);
+}
 
 // 처음 설치: 비밀번호가 없으면 일회용 설정 코드를 만들어 로그에만 보여 준다(웹에서 비밀번호 설정).
 let setupCode: string | null = null;
@@ -101,7 +110,7 @@ const semantic =
 if (semantic) {
   vault.onChange(() => semantic.schedule());
   void semantic.sync();
-  console.log(`의미 검색: ${semantic.cfg.model} (${semantic.cfg.url})`);
+  console.log(serverText("server.semantic", { model: semantic.cfg.model, url: semantic.cfg.url }));
 }
 const ownerPrincipal = () => config.ownerPrincipal();
 const automation = new Automation({
@@ -145,11 +154,15 @@ if (existsSync(path.join(webDist, "index.html"))) {
 
 const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`keyring-notes: http://${info.address}:${info.port}  (vault: ${vaultDir}, config: ${configFile})`);
-  console.log(`MCP: http://${info.address}:${info.port}/mcp  (Authorization: Bearer <에이전트 토큰>)`);
-  console.log(`백업: ${backupDir}${allowedHosts.length ? ` · 허용 호스트: ${allowedHosts.join(", ")}` : ""}`);
+  console.log(`MCP: http://${info.address}:${info.port}/mcp  (Authorization: Bearer <${serverText("server.agent_token")}>)`);
+  console.log(
+    allowedHosts.length
+      ? serverText("server.backup_dir_hosts", { dir: backupDir, hosts: allowedHosts.join(", ") })
+      : serverText("server.backup_dir", { dir: backupDir }),
+  );
   if (config.get().owner.passwordHash === null) {
-    console.warn(`\n처음 설치: 웹 화면에서 이 설정 코드로 비밀번호를 정하세요 → ${setupCode}`);
-    console.warn("(또는 `npm run keyring -- passwd`, 도커는 `docker compose exec keyring keyring passwd`)\n");
+    console.warn(`\n${serverText("server.setup_code", { code: setupCode ?? "" })}`);
+    console.warn(`${serverText("server.setup_code_cli")}\n`);
   }
 });
 
@@ -159,7 +172,7 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
   process.on(sig, () => {
     if (stopping) return;
     stopping = true;
-    console.log(`${sig}: 종료하는 중…`);
+    console.log(serverText("server.stopping", { signal: sig }));
     backups.stop();
     automation.stop();
     // 묶어 둔 doc.changed는 기다리지 않고 지금 보낸다

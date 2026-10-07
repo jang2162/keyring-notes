@@ -2,10 +2,10 @@ import { propertyStats, type PropertyStat } from "./frontmatter.js";
 import { mentionNames, unlinkedMentions, type Mention } from "./mentions.js";
 import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysis.js";
 import { rewriteLinks, type LinkRewriteContext } from "./links.js";
-import { ConflictError, ForbiddenError, NotFoundError } from "./errors.js";
+import { ConflictError, ForbiddenError, NotFoundError, PathError } from "./errors.js";
 import { fromUtf8, sha256Hex, utf8 } from "./hash.js";
 import { analyze, anchorExists, parseFrontmatter, resolveLink, setTaskState, sourceRefs } from "./markdown.js";
-import { isMarkdown, normalizeFolder, normalizeVaultPath, PathError } from "./paths.js";
+import { isMarkdown, normalizeFolder, normalizeVaultPath } from "./paths.js";
 import type { CommitInfo, DocMeta, LinkRow, SearchHit, TaskRow, TreeNode } from "./types.js";
 import { parseWidget, runWidget, type WidgetResult } from "./widget.js";
 import { generatedKind, generatedPaths, isTopicName, renderWikiIndex, renderWikiLog, schemaTemplate, schemaTopic, topicCandidate } from "./wiki.js";
@@ -376,13 +376,13 @@ export class LocalVault {
 
   async read(input: string): Promise<LocalDoc> {
     const rel = normalizeVaultPath(input);
-    if (!isMarkdown(rel)) throw new PathError("마크다운 문서만 열 수 있습니다");
+    if (!isMarkdown(rel)) throw new PathError("markdown_only");
     if (this.isGenerated(rel)) {
       const content = this.renderGenerated(rel);
       return { path: rel, content, hash: await sha256Hex(content), generated: true };
     }
     const e = this.files.get(rel);
-    if (!e?.meta) throw new NotFoundError(`문서가 없습니다: ${rel}`);
+    if (!e?.meta) throw new NotFoundError("doc_missing", { path: rel });
     return { path: rel, content: e.content!, hash: e.hash! };
   }
 
@@ -390,7 +390,7 @@ export class LocalVault {
   async readBytes(input: string): Promise<Uint8Array> {
     const rel = normalizeVaultPath(input);
     const data = this.files.has(rel) ? await this.store.read(rel) : null;
-    if (data === null) throw new NotFoundError(`파일이 없습니다: ${rel}`);
+    if (data === null) throw new NotFoundError("file_missing", { path: rel });
     return data;
   }
 
@@ -414,12 +414,12 @@ export class LocalVault {
     const words = query.split(/\s+/).filter(Boolean);
     const tagTerms = words.filter((w) => w.startsWith("#") && w.length > 1).map((w) => w.slice(1).toLowerCase());
     const textTerms = words.filter((w) => !(w.startsWith("#") && w.length > 1)).map((w) => w.toLowerCase());
-    if (tagTerms.length === 0 && textTerms.length === 0) throw new PathError("검색어가 필요합니다");
+    if (tagTerms.length === 0 && textTerms.length === 0) throw new PathError("query_required");
     const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
     const f = normalizeFolder(opts.folder);
     const scored: { e: Entry; s: number }[] = [];
     for (const e of this.mdEntries()) {
-      if ((f && !e.path.startsWith(f + "/")) || isVaultSettingsPath(e.path)) continue;
+      if ((f && e.path !== `${f}.md` && !e.path.startsWith(f + "/")) || isVaultSettingsPath(e.path)) continue;
       if (tagTerms.length && !tagTerms.every((t) => e.meta!.tags.some((x) => x === t || x.startsWith(t + "/")))) continue;
       const title = e.meta!.title.toLowerCase();
       const path = e.path.toLowerCase();
@@ -488,9 +488,14 @@ export class LocalVault {
     };
   }
 
-  tags(): { tag: string; count: number }[] {
+  /** 태그와 문서 수. folder를 주면 그 노드(노트 포함) 안만 */
+  tags(folder?: string): { tag: string; count: number }[] {
+    const f = normalizeFolder(folder);
     const counts = new Map<string, number>();
-    for (const d of this.docs()) for (const t of d.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const d of this.docs()) {
+      if (f && d.path !== `${f}.md` && !d.path.startsWith(f + "/")) continue;
+      for (const t of d.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
     return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, "ko"));
   }
 
@@ -562,12 +567,12 @@ export class LocalVault {
   async revision(input: string, rev: string): Promise<string | null> {
     const rel = normalizeVaultPath(input);
     const e = this.journal.find((j) => j.id === rev);
-    if (!e) throw new NotFoundError(`기록이 없습니다: ${rev}`);
+    if (!e) throw new NotFoundError("rev_missing", { rev });
     const f = e.files.find((x) => x.path === rel) ?? (e.files.some((x) => x.from === rel) ? { hash: null } : undefined);
-    if (!f) throw new NotFoundError(`그 기록에 이 문서가 없습니다: ${rel}`);
+    if (!f) throw new NotFoundError("rev_doc_missing", { path: rel });
     if (f.hash === null) return null;
     const content = await this.store.readMeta(objectName(f.hash));
-    if (content === null) throw new NotFoundError("이력 내용이 지워졌습니다");
+    if (content === null) throw new NotFoundError("rev_content_gone");
     return content;
   }
 
@@ -580,15 +585,15 @@ export class LocalVault {
 
   private requireWritable(input: string): string {
     const rel = normalizeVaultPath(input);
-    if (!isMarkdown(rel)) throw new PathError("마크다운(.md) 문서만 쓸 수 있습니다");
-    if (this.isGenerated(rel)) throw new ForbiddenError("앱이 자동으로 만드는 문서(위키 목차·작업 기록)는 고칠 수 없습니다");
+    if (!isMarkdown(rel)) throw new PathError("markdown_only_write");
+    if (this.isGenerated(rel)) throw new ForbiddenError("generated_edit");
     return rel;
   }
 
   private check(rel: string, baseHash: string | null) {
     const cur = this.files.get(rel);
     const curHash = cur ? cur.hash : null;
-    if (baseHash === null && cur) throw new ConflictError(curHash, `이미 있는 문서입니다: ${rel}`);
+    if (baseHash === null && cur) throw new ConflictError(curHash, "doc_exists", { path: rel });
     if (baseHash !== null && curHash !== baseHash) throw new ConflictError(curHash);
   }
 
@@ -682,10 +687,10 @@ export class LocalVault {
   async moveNode(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
     const from = normalizeVaultPath(fromInput).replace(/\.md$/i, "");
     const to = normalizeVaultPath(toInput).replace(/\.md$/i, "");
-    if (from === to) throw new PathError("같은 경로입니다");
-    if (to.startsWith(from + "/")) throw new PathError("노드를 자기 하위로 옮길 수 없습니다");
+    if (from === to) throw new PathError("same_path");
+    if (to.startsWith(from + "/")) throw new PathError("node_into_self");
     const files = nodeFiles(from, this.files.keys());
-    if (files.length === 0) throw new NotFoundError(`노드가 없습니다: ${from}`);
+    if (files.length === 0) throw new NotFoundError("node_missing", { path: from });
     const pairs: [string, string, null][] = files.map((p) => [p, moveNodePath(p, from, to), null]);
     return this.moveMany(pairs, opts, this.text().commit.nodeMove(from, to));
   }
@@ -698,8 +703,8 @@ export class LocalVault {
     return this.exclusive(async () => {
       const node = normalizeVaultPath(input).replace(/\.md$/i, "");
       const files = nodeFiles(node, this.files.keys());
-      if (files.length === 0) throw new NotFoundError(`노드가 없습니다: ${node}`);
-      for (const p of files) if (this.isGenerated(p)) throw new ForbiddenError("앱이 자동으로 만드는 문서(위키 목차·작업 기록)는 지울 수 없습니다");
+      if (files.length === 0) throw new NotFoundError("node_missing", { path: node });
+      for (const p of files) if (this.isGenerated(p)) throw new ForbiddenError("generated_delete");
       const deleted: { path: string; content?: string; data?: Uint8Array }[] = [];
       const md: { path: string; content: string | null }[] = [];
       const attachments: string[] = [];
@@ -729,9 +734,9 @@ export class LocalVault {
       const attachments: string[] = [];
       for (const f of files) {
         const rel = normalizeVaultPath(f.path);
-        if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, `이미 있는 파일입니다: ${rel}`);
+        if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, "file_exists", { path: rel });
         if (f.content !== undefined) {
-          if (!isMarkdown(rel)) throw new PathError("마크다운이 아닌 파일은 data로 되살립니다");
+          if (!isMarkdown(rel)) throw new PathError("restore_data");
           md.push({ path: rel, content: f.content });
         } else if (f.data) {
           const st = await this.store.write(rel, f.data);
@@ -757,15 +762,15 @@ export class LocalVault {
     return this.exclusive(async () => {
       const targets = new Set<string>();
       for (const [from, to, baseHash] of pairs) {
-        if (from === to) throw new PathError("같은 경로입니다");
+        if (from === to) throw new PathError("same_path");
         for (const p of [from, to]) {
-          if (this.isGenerated(p)) throw new ForbiddenError("앱이 자동으로 만드는 문서(위키 목차·작업 기록)는 옮길 수 없습니다");
-          if (isMarkdown(p) !== isMarkdown(from)) throw new PathError("문서와 첨부 사이로는 옮길 수 없습니다(확장자 .md 유지)");
+          if (this.isGenerated(p)) throw new ForbiddenError("generated_move");
+          if (isMarkdown(p) !== isMarkdown(from)) throw new PathError("move_kind");
         }
         const cur = this.files.get(from);
-        if (!cur) throw new NotFoundError(`파일이 없습니다: ${from}`);
+        if (!cur) throw new NotFoundError("file_missing", { path: from });
         if (baseHash !== null && cur.md) this.check(from, baseHash);
-        if (this.files.has(to) || targets.has(to)) throw new ConflictError(this.files.get(to)?.hash ?? null, `이미 있는 파일입니다: ${to}`);
+        if (this.files.has(to) || targets.has(to)) throw new ConflictError(this.files.get(to)?.hash ?? null, "file_exists", { path: to });
         targets.add(to);
       }
       const moves = new Map(pairs.map(([f, t]) => [f, t]));
@@ -793,7 +798,7 @@ export class LocalVault {
       for (const [from, to] of pairs) {
         if (this.files.get(from)!.md) continue;
         const data = await this.store.read(from);
-        if (data === null) throw new NotFoundError(`파일이 없습니다: ${from}`);
+        if (data === null) throw new NotFoundError("file_missing", { path: from });
         const st = await this.store.write(to, data);
         await this.store.remove(from);
         const old = this.files.get(from)!;
@@ -816,9 +821,9 @@ export class LocalVault {
   putFile(input: string, data: Uint8Array): Promise<{ path: string; hash: string }> {
     return this.exclusive(async () => {
       const rel = normalizeVaultPath(input);
-      if (isMarkdown(rel)) throw new PathError("마크다운 문서는 write로 씁니다");
-      if (this.isGenerated(rel)) throw new ForbiddenError("자동 생성 문서 자리입니다");
-      if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, `이미 있는 파일입니다: ${rel}`);
+      if (isMarkdown(rel)) throw new PathError("markdown_use_write");
+      if (this.isGenerated(rel)) throw new ForbiddenError("generated_path");
+      if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, "file_exists", { path: rel });
       const st = await this.store.write(rel, data);
       const hash = await sha256Hex(data);
       this.files.set(rel, { path: rel, size: st.size, mtime: st.mtime, md: false, hash });
@@ -831,22 +836,22 @@ export class LocalVault {
     const doc = await this.read(input);
     if (doc.hash !== baseHash) throw new ConflictError(doc.hash);
     const next = setTaskState(doc.content, line, done);
-    if (next === null) throw new PathError(`${line}번째 줄은 할 일이 아닙니다`);
+    if (next === null) throw new PathError("not_task", { line });
     return this.write(doc.path, next, baseHash, this.text().commit.task(done, doc.path));
   }
 
   async rollback(input: string, rev: string, baseHash: string | null): Promise<LocalDoc> {
     const rel = normalizeVaultPath(input);
     const old = await this.revision(rel, rev);
-    if (old === null) throw new NotFoundError("그 기록에서는 문서가 지워진 상태입니다");
+    if (old === null) throw new NotFoundError("rev_deleted");
     return this.write(rel, old, baseHash, this.text().commit.restore(rel, rev.slice(0, 7)));
   }
 
   /** 새 위키 토픽: 이름은 워크스페이스/토픽(워크스페이스 바로 아래 노드) */
   async createTopic(name: string): Promise<{ topic: string; schema: string }> {
     const topic = normalizeVaultPath(name.trim());
-    if (!isTopicName(topic)) throw new PathError("토픽 이름은 워크스페이스/토픽 두 단계입니다");
-    if (this.topicSet.has(topic)) throw new ConflictError(null, "이미 위키 토픽입니다");
+    if (!isTopicName(topic)) throw new PathError("topic_name");
+    if (this.topicSet.has(topic)) throw new ConflictError(null, "topic_exists");
     const schema = `${topic}/SCHEMA.md`;
     await this.write(schema, schemaTemplate(topic, vaultLanguage(this.settings())), null, this.text().commit.createTopic(topic));
     return { topic, schema };

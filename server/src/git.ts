@@ -49,7 +49,7 @@ export class GitHistory {
         (err, stdout, stderr) => {
           const code = err ? (typeof err.code === "number" ? err.code : 1) : 0;
           if (err && !opts.allowFail) {
-            reject(new Error(`git ${args[0]} 실패: ${stderr || err.message}`));
+            reject(new Error(`git ${args[0]} failed: ${stderr || err.message}`));
             return;
           }
           resolve({ stdout, code });
@@ -229,7 +229,7 @@ export class GitHistory {
 
   /** 특정 리비전의 파일 내용. 그 리비전에 파일이 없으면 null. */
   async show(rev: string, relPath: string): Promise<string | null> {
-    if (!/^[0-9a-f]{7,64}$/i.test(rev)) throw new PathError("잘못된 리비전입니다");
+    if (!/^[0-9a-f]{7,64}$/i.test(rev)) throw new PathError("rev_invalid");
     const res = await this.run(["show", `${rev}:${relPath}`], { allowFail: true });
     return res.code === 0 ? res.stdout : null;
   }

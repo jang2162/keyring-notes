@@ -138,7 +138,7 @@ describe("노드 이동·삭제", () => {
 
   it("중간에 실패하면 아무것도 옮기지 않는다", async () => {
     await owner.write("업무/보관/2026 프로젝트/계획.md", "먼저 있음", null);
-    await expect(owner.moveNode("업무/프로젝트", "업무/보관/2026 프로젝트")).rejects.toThrow(/이미 같은 이름/);
+    await expect(owner.moveNode("업무/프로젝트", "업무/보관/2026 프로젝트")).rejects.toMatchObject({ code: "file_exists" });
     expect((await owner.read("업무/프로젝트/계획.md")).content).toContain("도식");
     expect([...(await vault.readRaw("업무/프로젝트/도식.png")).data]).toEqual([1, 2, 3]);
   });
@@ -159,7 +159,7 @@ describe("노드 이동·삭제", () => {
     // 하나가 바뀌면 거부(되돌리기에 쓸 내용과 어긋나지 않게)
     const plan = await owner.read("업무/프로젝트/계획.md");
     await owner.write(plan.path, plan.content + "\n더", plan.hash);
-    await expect(owner.deleteNode("업무/프로젝트", expectList)).rejects.toThrow(/먼저 수정/);
+    await expect(owner.deleteNode("업무/프로젝트", expectList)).rejects.toMatchObject({ code: "conflict_path" });
     // 하위가 늘어도 거부
     const fresh = await Promise.all(files.map(async (p) => ({ path: p, baseHash: hashContent((await vault.readRaw(p)).data) })));
     await owner.write("업무/프로젝트/새.md", "새", null);

@@ -130,7 +130,7 @@ describe("블록 단위 출처", () => {
     expect(blockText(raw, "li")).toBe("- 항목 하나");
     expect(blockText(raw, "tbl")).toBe("| a | b |\n|---|---|\n| 1 | 2 |");
     expect(section(raw, { heading: "^p1" })).toMatchObject({ startLine: 3, endLine: 4, heading: "^p1" });
-    expect(() => section(raw, { heading: "^없음" })).toThrow(/블록/);
+    expect(() => section(raw, { heading: "^없음" })).toThrow(expect.objectContaining({ code: "block_missing" }));
   });
   it("sources의 #^블록·#제목을 구분한다", () => {
     expect(sourceRefs({ sources: ["[[raw/기사#^p1|문단]]", "raw/기사#결론", "[[raw/기사]]", "https://x.y/a#b"] })).toEqual([

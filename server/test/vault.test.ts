@@ -156,7 +156,7 @@ describe("일괄 쓰기", () => {
         { op: "write", path: "new.md", content: "N", baseHash: null },
         { op: "delete", path: "a.md", baseHash: a.hash }, // 앞에서 바뀌었으므로 충돌
       ]),
-    ).rejects.toThrow(/먼저 수정/);
+    ).rejects.toMatchObject({ code: "conflict_path" });
     expect((await me.read("a.md")).content).toBe("A");
     await expect(me.read("new.md")).rejects.toThrow();
     expect(await vault.git.log()).toEqual(before);

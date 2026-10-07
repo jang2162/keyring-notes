@@ -31,14 +31,14 @@ function today(): string {
 }
 
 /** 파일 이름으로 쓸 수 있게 다듬는다(한국어는 그대로, 경로·위키링크에 문제 되는 글자만 뺀다). */
-export function slugify(title: string): string {
+export function slugify(title: string, untitled = "Untitled"): string {
   const s = title
     .replace(/[\\/:*?"<>|#^[\]{}\u0000-\u001f]/g, " ")
     .replace(/^\.+/, "")
     .replace(/\s+/g, " ")
     .trim();
   const chars = [...s];
-  return (chars.length > 60 ? chars.slice(0, 60).join("").trim() : s) || "제목 없음";
+  return (chars.length > 60 ? chars.slice(0, 60).join("").trim() : s) || untitled;
 }
 
 function extOf(name: string): string {
@@ -70,13 +70,14 @@ export class Ingestor {
       const rel = `${dir}${base}${i === 1 ? "" : ` (${i})`}.${ext}`;
       if (!(await this.exists(rel))) return rel;
     }
-    throw new PathError("같은 이름의 원본이 너무 많습니다");
+    throw new PathError("raw_name_exhausted");
   }
 
   async ingest(scoped: ScopedVault, input: IngestInput): Promise<IngestResult> {
+    const T = this.vault.text();
     const topic = normalizeVaultPath(input.topic);
     if (!this.wiki.topics.has(topic)) {
-      throw new PathError(`위키 토픽이 아닙니다(SCHEMA.md 없음): ${input.topic}`);
+      throw new PathError("not_topic", { topic: input.topic });
     }
 
     let converted: Converted;
@@ -93,22 +94,22 @@ export class Ingestor {
         const isPdf = got.contentType.includes("application/pdf") || (/\.pdf($|\?)/i.test(got.url) && !got.contentType.includes("html"));
         if (isPdf) {
           const name = decodeURIComponent(new URL(got.url).pathname.split("/").pop() || "document.pdf");
-          converted = await pdfToMarkdown(got.data, name.replace(/\.pdf$/i, ""));
+          converted = await pdfToMarkdown(got.data, name.replace(/\.pdf$/i, ""), T);
           asset = { data: got.data, ext: "pdf" };
         } else if (got.contentType.includes("html") || got.contentType === "") {
-          converted = htmlToMarkdown(decodeText(got.data, got.contentType), { url: got.url });
+          converted = htmlToMarkdown(decodeText(got.data, got.contentType), { url: got.url, text: T });
         } else if (got.contentType.startsWith("text/")) {
           const text = decodeText(got.data, got.contentType);
           converted = { title: textTitle(text, got.url), markdown: text, meta: {} };
         } else {
-          throw new PathError(`가져올 수 없는 형식입니다: ${got.contentType || "알 수 없음"}`);
+          throw got.contentType ? new PathError("unsupported_type", { type: got.contentType }) : new PathError("unsupported_type_unknown");
         }
         break;
       }
       case "html":
         sourceUrl = input.url;
         sourceType = "clip";
-        converted = htmlToMarkdown(input.html, { url: input.url, selectionHtml: input.selectionHtml || undefined });
+        converted = htmlToMarkdown(input.html, { url: input.url, selectionHtml: input.selectionHtml || undefined, text: T });
         break;
       case "text":
         sourceUrl = input.url;
@@ -121,28 +122,28 @@ export class Ingestor {
         originalName = input.filename;
         sourceType = "file";
         if (ext === "pdf") {
-          converted = await pdfToMarkdown(input.data, baseName);
+          converted = await pdfToMarkdown(input.data, baseName, T);
           asset = { data: input.data, ext };
         } else if (TEXT_EXT.has(ext)) {
           const text = new TextDecoder("utf-8").decode(input.data);
           converted = { title: textTitle(text, baseName), markdown: text, meta: {} };
         } else if (HTML_EXT.has(ext)) {
-          converted = htmlToMarkdown(new TextDecoder("utf-8").decode(input.data));
+          converted = htmlToMarkdown(new TextDecoder("utf-8").decode(input.data), { text: T });
           asset = { data: input.data, ext };
         } else if (IMAGE_EXT.has(ext)) {
           converted = { title: baseName, markdown: "", meta: {} };
           asset = { data: input.data, ext };
         } else {
-          if (!ext) throw new PathError("확장자가 없는 파일은 올릴 수 없습니다");
-          converted = { title: baseName, markdown: "_이 형식은 마크다운으로 바꾸지 못했다. 원본 파일을 열어 볼 것._\n", meta: {} };
+          if (!ext) throw new PathError("no_extension");
+          converted = { title: baseName, markdown: `${T.ingest.notConverted}\n`, meta: {} };
           asset = { data: input.data, ext };
         }
         break;
       }
     }
 
-    const title = (input.title?.trim() || converted.title).replace(/\s+/g, " ").trim() || "제목 없음";
-    const base = `${today()} ${slugify(title)}`;
+    const title = (input.title?.trim() || converted.title).replace(/\s+/g, " ").trim() || T.untitled;
+    const base = `${today()} ${slugify(title, T.untitled)}`;
     const docPath = await this.freeName(topic, base, "md");
     const assetPath = asset ? await this.freeName(topic, path.basename(docPath, ".md"), asset.ext, "assets/") : undefined;
 
@@ -155,9 +156,9 @@ export class Ingestor {
     fm.ingested_by = scoped.principal.name;
 
     const lines = [`---`, toYaml(fm).trimEnd(), `---`, `# ${title}`, ""];
-    if (sourceUrl) lines.push(`> 원문: <${sourceUrl}>`, "");
+    if (sourceUrl) lines.push(`> ${T.ingest.source}: <${sourceUrl}>`, "");
     if (assetPath) {
-      lines.push(IMAGE_EXT.has(asset!.ext) ? `![[${assetPath}]]` : `> 원본 파일: [[${assetPath}]]`, "");
+      lines.push(IMAGE_EXT.has(asset!.ext) ? `![[${assetPath}]]` : `> ${T.ingest.originalFile}: [[${assetPath}]]`, "");
     }
     lines.push(converted.markdown.trim());
     const content = lines.join("\n").trimEnd() + "\n";

@@ -3,7 +3,8 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import type { Ingestor } from "./ingest.js";
 import type { ScopedVault } from "./scoped.js";
-import { ConflictError, ForbiddenError, NotFoundError, type Op } from "./vault.js";
+import { errorMessage, translate } from "@keyring-notes/core";
+import { ConflictError, ForbiddenError, KeyedError, NotFoundError, type Op } from "./vault.js";
 import { PathError } from "./paths.js";
 import { agentText, type AgentLang } from "./agentText.js";
 
@@ -31,7 +32,8 @@ function toOp(o: z.infer<typeof opSchema>): Op {
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
-async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
+/** 도구 실행: 오류는 에이전트 언어의 글과 코드(code)로 */
+async function runIn(fn: () => Promise<unknown>, lang: AgentLang): Promise<ToolResult> {
   try {
     const value = await fn();
     return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
@@ -45,7 +47,8 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
     else if (e instanceof ForbiddenError) code = "forbidden";
     else if (e instanceof PathError) code = "bad_request";
     else console.error(e);
-    const message = e instanceof Error && code !== "error" ? e.message : "서버 오류";
+    if (e instanceof KeyedError) extra = { ...extra, code: e.code };
+    const message = code !== "error" ? errorMessage(e, lang) : translate(lang, "error.internal");
     return { content: [{ type: "text", text: JSON.stringify({ error: code, message, ...extra }) }], isError: true };
   }
 }
@@ -53,6 +56,7 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 /** 에이전트 언어(서버 설정, 기본 영어)로 안내·도구 설명을 쓴다 */
 export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: AgentLang = "en"): McpServer {
   const T = agentText(lang);
+  const run = (fn: () => Promise<unknown>) => runIn(fn, lang);
   const server = new McpServer({ name: "keyring-notes", version: "0.7.0" }, { instructions: T.instructions });
   const ro = { readOnlyHint: true, openWorldHint: false };
 

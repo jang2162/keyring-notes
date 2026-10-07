@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import type { DocMeta, TaskRow } from "./types.js";
-import { PathError } from "./paths.js";
+import { PathError } from "./errors.js";
 import { isVaultSettingsPath } from "./settings.js";
 
 /**
@@ -88,7 +88,7 @@ function parseValue(raw: string): unknown {
 
 export function parseCondition(src: string): Condition {
   const s = src.trim();
-  if (!s) throw new PathError("빈 조건입니다");
+  if (!s) throw new PathError("widget.empty_condition");
   const m = /^([^\s!=<>]+)\s*(!=|>=|<=|==|=|>|<|\s!?contains\s)\s*(.*)$/.exec(s);
   if (m) {
     const op = (m[2].trim() === "==" ? "=" : m[2].trim()) as Op;
@@ -96,7 +96,7 @@ export function parseCondition(src: string): Condition {
   }
   if (/^!\S+$/.test(s)) return { field: s.slice(1), op: "!exists" };
   if (/^\S+$/.test(s)) return { field: s, op: "exists" };
-  throw new PathError(`조건을 이해할 수 없습니다: ${src}`);
+  throw new PathError("widget.bad_condition", { condition: src });
 }
 
 export function parseWidget(source: string): WidgetSpec {
@@ -104,39 +104,39 @@ export function parseWidget(source: string): WidgetSpec {
   try {
     raw = parseYaml(source);
   } catch (e) {
-    throw new PathError(`위젯 YAML 오류: ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+    throw new PathError("widget.yaml", { message: e instanceof Error ? e.message.split("\n")[0] : String(e) });
   }
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new PathError("위젯 내용은 YAML 객체여야 합니다");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new PathError("widget.not_object");
   const r = raw as Record<string, unknown>;
   const type = (r.type ?? "query") as WidgetSpec["type"];
-  if (!["query", "table", "tasks", "chart", "plugin", "cards", "kanban"].includes(type)) throw new PathError(`알 수 없는 위젯 종류입니다: ${String(r.type)}`);
+  if (!["query", "table", "tasks", "chart", "plugin", "cards", "kanban"].includes(type)) throw new PathError("widget.unknown_type", { type: String(r.type) });
   if (type === "plugin" && (typeof r.plugin !== "string" || !PLUGIN_NAME_RE.test(r.plugin))) {
-    throw new PathError("plugin 위젯에는 plugin: <이름>(영문 소문자·숫자·-)이 필요합니다");
+    throw new PathError("widget.plugin_name");
   }
   if (r.options !== undefined && (typeof r.options !== "object" || r.options === null || Array.isArray(r.options))) {
-    throw new PathError("options는 YAML 객체여야 합니다");
+    throw new PathError("widget.options");
   }
   const sort = asList(r.sort).map((s) => {
     const str = String(s).trim();
     const m = /^(-)?(\S+)(?:\s+(asc|desc))?$/i.exec(str);
-    if (!m) throw new PathError(`정렬 기준을 이해할 수 없습니다: ${str}`);
+    if (!m) throw new PathError("widget.bad_sort", { sort: str });
     return { field: m[2], desc: m[1] === "-" || m[3]?.toLowerCase() === "desc" };
   });
   const data = r.data === undefined ? undefined : asList(r.data).map((d) => {
     const o = d as Record<string, unknown>;
     const value = Number(o?.value);
-    if (!o || o.label === undefined || Number.isNaN(value)) throw new PathError("data 항목은 {label, value} 형식이어야 합니다");
+    if (!o || o.label === undefined || Number.isNaN(value)) throw new PathError("widget.data_item");
     return { label: String(o.label), value };
   });
   const status = String(r.status ?? "open");
-  if (!["open", "done", "all"].includes(status)) throw new PathError("status는 open, done, all 중 하나입니다");
+  if (!["open", "done", "all"].includes(status)) throw new PathError("widget.status");
   const chart = String(r.chart ?? "bar");
-  if (!["bar", "line"].includes(chart)) throw new PathError("chart는 bar, line 중 하나입니다");
+  if (!["bar", "line"].includes(chart)) throw new PathError("widget.chart");
   const agg = String(r.agg ?? (r.y ? "sum" : "count"));
-  if (!["sum", "count", "avg"].includes(agg)) throw new PathError("agg는 sum, count, avg 중 하나입니다");
+  if (!["sum", "count", "avg"].includes(agg)) throw new PathError("widget.agg");
   const limit = r.limit === undefined ? 100 : Number(r.limit);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new PathError("limit은 1~1000 사이 정수입니다");
-  if (type === "chart" && !data && !r.x) throw new PathError("chart 위젯에는 x(묶을 필드) 또는 data가 필요합니다");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new PathError("widget.limit");
+  if (type === "chart" && !data && !r.x) throw new PathError("widget.chart_x");
   return {
     type,
     from: asList(r.from).map((f) => String(f).trim()).filter(Boolean),

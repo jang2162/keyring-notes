@@ -11,6 +11,8 @@ import {
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 import type { ConfigStore, PasskeyConfig } from "./config.js";
+import { KeyedError } from "@keyring-notes/core";
+import { serverText } from "./lang.js";
 import { PathError } from "./paths.js";
 
 /**
@@ -30,7 +32,7 @@ interface Pending {
   expires: number;
 }
 
-export class PasskeyError extends Error {}
+export class PasskeyError extends KeyedError {}
 
 export class PasskeyService {
   private pending = new Map<string, Pending>();
@@ -43,22 +45,22 @@ export class PasskeyService {
 
   /** 요청의 Origin을 확인하고 rpID를 정한다 */
   origin(origin: string | undefined, host: string | undefined, forwardedHost?: string): { origin: string; rpID: string } {
-    if (!origin) throw new PathError("Origin 헤더가 없습니다");
+    if (!origin) throw new PathError("origin_missing");
     let u: URL;
     try {
       u = new URL(origin);
     } catch {
-      throw new PathError("Origin이 잘못되었습니다");
+      throw new PathError("origin_invalid");
     }
     const allowed = new Set([host, forwardedHost, this.publicUrl ? new URL(this.publicUrl).host : undefined].filter(Boolean).map((h) => h!.toLowerCase()));
-    if (!allowed.has(u.host.toLowerCase())) throw new PathError("다른 주소에서 온 요청입니다");
+    if (!allowed.has(u.host.toLowerCase())) throw new PathError("origin_mismatch");
     return { origin: u.origin, rpID: u.hostname };
   }
 
   private remember(p: Omit<Pending, "expires">): string {
     const now = Date.now();
     for (const [k, v] of this.pending) if (v.expires < now) this.pending.delete(k);
-    if (this.pending.size > 200) throw new PathError("진행 중인 패스키 요청이 너무 많습니다. 잠시 뒤 다시 하세요");
+    if (this.pending.size > 200) throw new PathError("passkey_busy");
     const id = randomBytes(16).toString("base64url");
     this.pending.set(id, { ...p, expires: now + CHALLENGE_TTL });
     return id;
@@ -68,7 +70,7 @@ export class PasskeyService {
   private take(id: unknown, kind: Pending["kind"]): Pending {
     const p = typeof id === "string" ? this.pending.get(id) : undefined;
     if (typeof id === "string") this.pending.delete(id);
-    if (!p || p.kind !== kind || p.expires < Date.now()) throw new PasskeyError("패스키 요청이 만료되었습니다. 다시 하세요");
+    if (!p || p.kind !== kind || p.expires < Date.now()) throw new PasskeyError("passkey_expired");
     return p;
   }
 
@@ -108,16 +110,16 @@ export class PasskeyService {
         requireUserVerification: false,
       });
     } catch (e) {
-      throw new PasskeyError(`패스키를 확인하지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+      throw new PasskeyError("passkey_failed_detail", { message: e instanceof Error ? e.message : String(e) });
     }
-    if (!v.verified || !v.registrationInfo) throw new PasskeyError("패스키를 확인하지 못했습니다");
+    if (!v.verified || !v.registrationInfo) throw new PasskeyError("passkey_failed");
     const { credential } = v.registrationInfo;
     const saved = this.config.addPasskey({
       id: credential.id,
       publicKey: Buffer.from(credential.publicKey).toString("base64url"),
       counter: credential.counter,
       transports: credential.transports ?? [],
-      name: typeof name === "string" && name.trim() ? name : "패스키",
+      name: typeof name === "string" && name.trim() ? name : serverText("server.passkey_name"),
       rpID: p.rpID,
     });
     const { publicKey: _k, counter: _c, ...rest } = saved;
@@ -126,7 +128,7 @@ export class PasskeyService {
 
   async authenticationOptions(at: { origin: string; rpID: string }): Promise<{ id: string; options: PublicKeyCredentialRequestOptionsJSON }> {
     const keys = this.config.get().passkeys.filter((k) => k.rpID === at.rpID);
-    if (keys.length === 0) throw new PasskeyError("이 주소로 등록한 패스키가 없습니다");
+    if (keys.length === 0) throw new PasskeyError("passkey_none");
     const options = await generateAuthenticationOptions({
       rpID: at.rpID,
       allowCredentials: keys.map((k) => ({ id: k.id, transports: k.transports as AuthenticatorTransportFuture[] })),

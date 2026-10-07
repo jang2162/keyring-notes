@@ -8,6 +8,7 @@ import type { ConfigStore } from "./config.js";
 import type { S3Client } from "./s3.js";
 import { EncryptionError, isSealedFile, type CryptoProvider } from "./s3crypto.js";
 import { PathError } from "./paths.js";
+import { serverText } from "./lang.js";
 import { NotFoundError, type Vault } from "./vault.js";
 import { APP_VERSION } from "./version.js";
 
@@ -130,10 +131,10 @@ export class BackupService {
 
   /** 이름 검증 후 백업 파일의 절대 경로. */
   async file(name: string): Promise<string> {
-    if (!NAME_RE.test(name)) throw new PathError("백업 이름이 잘못되었습니다");
+    if (!NAME_RE.test(name)) throw new PathError("backup_name_invalid");
     const p = path.join(this.dir, name);
     await stat(p).catch(() => {
-      throw new NotFoundError(`백업이 없습니다: ${name}`);
+      throw new NotFoundError("backup_missing", { name });
     });
     return p;
   }
@@ -154,7 +155,7 @@ export class BackupService {
     await this.ensureDir();
     await this.vault.absorbOutsideChanges();
     const head = await this.vault.git.head();
-    if (!head) throw new PathError("아직 백업할 커밋이 없습니다");
+    if (!head) throw new PathError("backup_no_commit");
     const includesConfig = opts.includeConfig ?? this.config.get().backup.includeConfig;
     const stage = await mkdtemp(path.join(os.tmpdir(), "keyring-backup-"));
     try {
@@ -202,7 +203,7 @@ export class BackupService {
       },
     });
     const m = JSON.parse(raw) as Manifest;
-    if (m.format !== "keyring-backup" || m.version !== 1) throw new Error("백업 형식이 아닙니다");
+    if (m.format !== "keyring-backup" || m.version !== 1) throw new PathError("backup_format");
     return m;
   }
 
@@ -212,7 +213,7 @@ export class BackupService {
     try {
       m = await this.readManifest(tmpFile);
     } catch {
-      throw new PathError("Keyring 백업 파일(.tar.gz)이 아닙니다");
+      throw new PathError("backup_file_invalid");
     }
     await this.ensureDir();
     const name = `keyring-${stamp(new Date(m.createdAt))}-${m.kind}.tar.gz`;
@@ -237,7 +238,7 @@ export class BackupService {
         const hasHead = (await this.vault.git.head()) !== null;
         // 번들 검사: 저장소가 비어 있으면 verify가 실패하므로 list-heads로 대신한다
         const check = await this.vault.git.raw(hasHead ? ["bundle", "verify", "--quiet", bundle] : ["bundle", "list-heads", bundle], true);
-        if (check.code !== 0) throw new PathError("백업의 Git 번들이 손상되었습니다");
+        if (check.code !== 0) throw new PathError("backup_bundle_corrupt");
 
         const pre = hasHead ? await this.createNow("pre-restore", { includeConfig: true }) : null;
         const result = await this.vault.maintenance(async () => {
@@ -281,7 +282,7 @@ export class BackupService {
 
   /** 백업 하나를 S3에 올린다(실패는 lastRemoteError에 남기고 던진다). */
   async pushRemote(name: string): Promise<void> {
-    if (!this.remote) throw new PathError("S3가 설정되지 않았습니다(KEYRING_S3_BUCKET)");
+    if (!this.remote) throw new PathError("s3_not_configured");
     const stage = this.crypto ? await mkdtemp(path.join(os.tmpdir(), "keyring-seal-")) : null;
     try {
       const file = await this.file(name);
@@ -296,7 +297,7 @@ export class BackupService {
       this.lastRemoteError = null;
     } catch (e) {
       this.lastRemoteError = e instanceof Error ? e.message : String(e);
-      console.error("원격 백업 업로드 실패:", this.lastRemoteError);
+      console.error(serverText("server.log.remote_backup_failed"), this.lastRemoteError);
       throw e;
     } finally {
       if (stage) await rm(stage, { recursive: true, force: true });
@@ -316,15 +317,15 @@ export class BackupService {
 
   /** S3의 백업을 이 서버 백업 폴더로 받아 온다(그 뒤 평소처럼 복원). */
   async fetchRemote(name: string): Promise<BackupInfo> {
-    if (!this.remote) throw new PathError("S3가 설정되지 않았습니다(KEYRING_S3_BUCKET)");
-    if (!NAME_RE.test(name)) throw new PathError("백업 이름이 잘못되었습니다");
+    if (!this.remote) throw new PathError("s3_not_configured");
+    if (!NAME_RE.test(name)) throw new PathError("backup_name_invalid");
     const stage = await mkdtemp(path.join(os.tmpdir(), "keyring-remote-"));
     try {
       const tmp = path.join(stage, name);
-      if (!(await this.remote.download(this.remoteKey(name), tmp))) throw new NotFoundError(`S3에 백업이 없습니다: ${name}`);
+      if (!(await this.remote.download(this.remoteKey(name), tmp))) throw new NotFoundError("remote_backup_missing", { name });
       // 암호화해 올린 백업은 풀어서 넣는다(예전에 그대로 올린 것은 그대로)
       if (await isSealedFile(tmp)) {
-        if (!this.crypto) throw new EncryptionError("암호화된 백업입니다. KEYRING_S3_ENCRYPTION_KEY를 설정해야 받을 수 있습니다");
+        if (!this.crypto) throw new EncryptionError("backup_encrypted");
         const plain = path.join(stage, `plain-${name}`);
         await (await this.crypto()).openFile(tmp, plain);
         return await this.importFile(plain);
@@ -374,7 +375,7 @@ export class BackupService {
       return info;
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e);
-      console.error("자동 백업 실패:", this.lastError);
+      console.error(serverText("server.log.auto_backup_failed"), this.lastError);
       return null;
     }
   }

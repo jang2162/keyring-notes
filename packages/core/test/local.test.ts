@@ -117,7 +117,7 @@ describe("로컬 볼트", () => {
 
   it("위키 토픽: index·log를 앱이 만들고 고칠 수 없다", async () => {
     const { v } = await vault({ "업무/경제/raw/기사.md": "# 기사\n본문", "업무/경제/wiki/index.md": "옛 파일" });
-    await expect(v.createTopic("경제")).rejects.toThrow(/두 단계/);
+    await expect(v.createTopic("경제")).rejects.toMatchObject({ code: "topic_name" });
     await v.createTopic("업무/경제");
     expect(v.topics().find((t) => t.name === "업무/경제")).toMatchObject({ wiki: true, raw: 1, pages: 0 });
     const idx = await v.read("업무/경제/wiki/index.md");
@@ -176,7 +176,7 @@ describe("공통 설정·노드 이동", () => {
     expect((await v.read("보관/2026 프로젝트/계획.md")).content).toBe("![[도식.png]] ![](도식.png) [[참고]]");
     expect(new TextDecoder().decode(await v.readBytes("보관/2026 프로젝트/도식.png"))).toBe("PNG");
     await expect(v.readBytes("업무/프로젝트/도식.png")).rejects.toBeInstanceOf(NotFoundError);
-    await expect(v.moveNode("보관", "보관/안")).rejects.toThrow(/하위/);
+    await expect(v.moveNode("보관", "보관/안")).rejects.toMatchObject({ code: "node_into_self" });
   });
 
   it("노드 삭제는 하위까지 한 기록, 되살리면 하위까지", async () => {

@@ -1,5 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { WEBHOOK_EVENTS, type ConfigStore, type JobConfig, type WebhookConfig } from "./config.js";
+import { serverText } from "./lang.js";
+import { PathError } from "./paths.js";
 import type { LintReport } from "./scoped.js";
 import type { Vault } from "./vault.js";
 import type { Wiki } from "./wiki.js";
@@ -48,12 +50,12 @@ export interface Cron {
   dow: CronField;
 }
 
-function parseField(src: string, min: number, max: number, name: string): CronField {
+function parseField(src: string, min: number, max: number, position: number): CronField {
   const values = new Set<number>();
   const any = src === "*" || src === "?";
   for (const part of src.split(",")) {
     const m = /^(\*|\?|\d+(?:-\d+)?)(?:\/(\d+))?$/.exec(part.trim());
-    if (!m) throw new Error(`cron ${name} 필드를 이해할 수 없습니다: ${part}`);
+    if (!m) throw new PathError("cron_field", { position, part });
     let lo = min;
     let hi = max;
     if (m[1] !== "*" && m[1] !== "?") {
@@ -62,7 +64,7 @@ function parseField(src: string, min: number, max: number, name: string): CronFi
       hi = b ?? (m[2] ? max : a);
     }
     const step = m[2] ? Number(m[2]) : 1;
-    if (lo < min || hi > max || lo > hi || step < 1) throw new Error(`cron ${name} 범위는 ${min}~${max}입니다: ${part}`);
+    if (lo < min || hi > max || lo > hi || step < 1) throw new PathError("cron_range", { position, min, max, part });
     for (let v = lo; v <= hi; v += step) values.add(v);
   }
   return { values, any };
@@ -71,14 +73,14 @@ function parseField(src: string, min: number, max: number, name: string): CronFi
 /** "분 시 일 월 요일" 5필드. *, 숫자, a-b, 목록(,), 간격(/n). 요일 0과 7은 일요일. */
 export function parseCron(expr: string): Cron {
   const f = expr.trim().split(/\s+/);
-  if (f.length !== 5) throw new Error("cron은 '분 시 일 월 요일' 5개 필드입니다(예: 0 9 * * 1)");
-  const dow = parseField(f[4], 0, 7, "요일");
+  if (f.length !== 5) throw new PathError("cron_fields");
+  const dow = parseField(f[4], 0, 7, 5);
   if (dow.values.has(7)) dow.values.add(0);
   return {
-    minute: parseField(f[0], 0, 59, "분"),
-    hour: parseField(f[1], 0, 23, "시"),
-    dom: parseField(f[2], 1, 31, "일"),
-    month: parseField(f[3], 1, 12, "월"),
+    minute: parseField(f[0], 0, 59, 1),
+    hour: parseField(f[1], 0, 23, 2),
+    dom: parseField(f[2], 1, 31, 3),
+    month: parseField(f[3], 1, 12, 4),
     dow,
   };
 }
@@ -313,7 +315,7 @@ export class Automation {
     const w = this.deps.config.get().webhooks.find((x) => x.id === job.webhook);
     this.lastRun.set(job.id, at.toISOString());
     if (!w || !w.enabled) {
-      this.lastResult.set(job.id, "웹훅이 없거나 꺼져 있음");
+      this.lastResult.set(job.id, serverText("server.job.no_webhook"));
       return null;
     }
     const data: Record<string, unknown> = { job: { id: job.id, name: job.name, cron: job.cron }, topic: job.topic ?? null, instructions: job.instructions ?? null };
@@ -322,7 +324,7 @@ export class Automation {
       data.lint = { counts: report.counts, issues: report.issues.slice(0, 200), total: report.issues.length };
     }
     const d = await this.track(this.deliver(w, "schedule", data));
-    this.lastResult.set(job.id, d.status === "ok" ? `전송 성공(HTTP ${d.httpStatus})` : `전송 실패: ${d.error}`);
+    this.lastResult.set(job.id, d.status === "ok" ? serverText("server.job.sent", { status: String(d.httpStatus) }) : serverText("server.job.send_failed", { error: String(d.error) }));
     return d;
   }
 
@@ -342,7 +344,7 @@ export class Automation {
       const last = this.lastRun.get(job.id);
       if (cronMatches(cron, minuteKey) && (!last || Date.parse(last) < minuteKey.getTime())) {
         due.push(job);
-        void this.track(this.runJob(job, now).catch((e) => this.lastResult.set(job.id, `실패: ${e instanceof Error ? e.message : e}`)));
+        void this.track(this.runJob(job, now).catch((e) => this.lastResult.set(job.id, serverText("server.job.failed", { error: e instanceof Error ? e.message : String(e) }))));
       }
     }
     return due;

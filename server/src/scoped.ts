@@ -28,6 +28,7 @@ import {
   type WidgetResult,
   isVaultSettingsPath,
   isTopicName,
+  translate,
   nodeFiles,
   moveNodePath,
 } from "@keyring-notes/core";
@@ -127,14 +128,14 @@ export class ScopedVault {
   /** 읽기 권한 확인. 숨김이면 없는 문서와 같은 오류를 낸다. */
   private requireRead(input: string): string {
     const rel = normalizeVaultPath(input);
-    if (!this.canRead(rel)) throw new NotFoundError(`문서가 없습니다: ${rel}`);
+    if (!this.canRead(rel)) throw new NotFoundError("doc_missing", { path: rel });
     return rel;
   }
 
   private requireLevel(rel: string, level: Level) {
     if (!atLeast(this.level(rel), level)) {
       // 숨김 경로는 존재 여부와 상관없이 같은 메시지를 낸다.
-      throw new ForbiddenError(`권한이 없습니다(현재 권한: ${this.level(rel)}): ${rel}`);
+      throw new ForbiddenError("forbidden_level", { level: this.level(rel), path: rel });
     }
   }
 
@@ -168,7 +169,7 @@ export class ScopedVault {
         return null;
       };
       const found = find(nodes);
-      if (!found) throw new NotFoundError(`폴더가 없습니다: ${f}`);
+      if (!found) throw new NotFoundError("folder_missing", { path: f });
       nodes = found;
     }
     return nodes;
@@ -248,10 +249,10 @@ export class ScopedVault {
 
   /** 새 위키 토픽(SCHEMA.md 템플릿, 볼트 언어). 소유자만. 이름은 워크스페이스/토픽. 기존 노드에 만들면 그 노드가 위키 토픽이 된다. */
   async createTopic(name: string): Promise<{ topic: string; schema: string }> {
-    if (this.principal.kind !== "owner") throw new ForbiddenError("위키 토픽은 소유자만 만들 수 있습니다");
+    if (this.principal.kind !== "owner") throw new ForbiddenError("topic_owner_only");
     const topic = normalizeVaultPath(name.trim());
-    if (!isTopicName(topic)) throw new PathError("토픽 이름은 워크스페이스/토픽 두 단계입니다(예: 업무/경제)");
-    if (this.wiki?.topics.has(topic)) throw new ConflictError(null, "이미 위키 토픽입니다", topic);
+    if (!isTopicName(topic)) throw new PathError("topic_name");
+    if (this.wiki?.topics.has(topic)) throw new ConflictError(null, "topic_exists_name", { topic });
     const schema = `${topic}/SCHEMA.md`;
     await this.batch([{ op: "write", path: schema, content: schemaTemplate(topic, this.vault.language()), baseHash: null }], this.vault.text().commit.createTopic(topic));
     return { topic, schema };
@@ -272,7 +273,7 @@ export class ScopedVault {
       };
       const noteVisible = this.canRead(`${node}.md`) && (await this.vault.markdownPaths()).includes(`${node}.md`);
       const found = find(nodes);
-      if (!found && !noteVisible) throw new NotFoundError(`노드가 없습니다: ${node}`);
+      if (!found && !noteVisible) throw new NotFoundError("node_missing", { path: node });
       nodes = found ?? [];
     }
     const out = new Map<string, { name: string; path: string; note: string | null; hasChildren: boolean; attachments: number }>();
@@ -308,12 +309,7 @@ export class ScopedVault {
 
   async section(input: string, opts: { heading?: string; startLine?: number; endLine?: number }): Promise<Section & { path: string; hash: string }> {
     const doc = await this.read(input);
-    try {
-      return { path: doc.path, hash: doc.hash, ...section(doc.content, opts) };
-    } catch (e) {
-      if (e instanceof RangeError) throw new PathError(e.message);
-      throw e;
-    }
+    return { path: doc.path, hash: doc.hash, ...section(doc.content, opts) };
   }
 
   async frontmatterList(folder?: string, fields?: string[]) {
@@ -339,11 +335,11 @@ export class ScopedVault {
     const words = query.split(/\s+/).filter(Boolean);
     const tagTerms = words.filter((w) => w.startsWith("#") && w.length > 1).map((w) => w.slice(1).toLowerCase());
     const textTerms = words.filter((w) => !(w.startsWith("#") && w.length > 1));
-    if (tagTerms.length === 0 && textTerms.length === 0) throw new PathError("검색어가 필요합니다");
+    if (tagTerms.length === 0 && textTerms.length === 0) throw new PathError("query_required");
     const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
     const f = normalizeFolder(opts.folder);
     // 공통 설정 파일은 검색에 나오지 않는다(설정 화면에서 고친다)
-    const inScope = (p: string) => this.canRead(p) && !isVaultSettingsPath(p) && (!f || p.startsWith(f + "/"));
+    const inScope = (p: string) => this.canRead(p) && !isVaultSettingsPath(p) && (!f || p === `${f}.md` || p.startsWith(f + "/"));
 
     let candidates: { path: string; title: string; body: string }[];
     if (textTerms.length > 0) {
@@ -500,16 +496,21 @@ export class ScopedVault {
 
   /** 의미 검색(임베딩). 설정하지 않았으면 오류. 볼 수 있는 문서만 대상으로 한다. */
   async semantic(query: string, opts: { folder?: string; limit?: number } = {}) {
-    if (!this.semanticIndex) throw new PathError("의미 검색이 꺼져 있습니다(KEYRING_EMBED_URL·KEYRING_EMBED_MODEL 설정 필요)");
+    if (!this.semanticIndex) throw new PathError("semantic_off");
     const f = normalizeFolder(opts.folder);
     const limit = Math.min(Math.max(opts.limit ?? 10, 1), 50);
     return this.semanticIndex.search(query, (p) => this.canRead(p) && !this.wiki?.isGenerated(p) && !isVaultSettingsPath(p) && (!f || p.startsWith(f + "/")), limit);
   }
 
   /** 읽을 수 있는 문서에 쓰인 태그와 개수. */
-  async tags(): Promise<{ tag: string; count: number }[]> {
+  /** 읽을 수 있는 문서의 태그와 개수. folder를 주면 그 노드(노트 포함) 안만 */
+  async tags(folder?: string): Promise<{ tag: string; count: number }[]> {
+    const f = normalizeFolder(folder);
     const counts = new Map<string, number>();
-    for (const r of this.index.tagRows()) if (this.canRead(r.path)) counts.set(r.tag, (counts.get(r.tag) ?? 0) + 1);
+    for (const r of this.index.tagRows()) {
+      if (!this.canRead(r.path) || (f && r.path !== `${f}.md` && !r.path.startsWith(f + "/"))) continue;
+      counts.set(r.tag, (counts.get(r.tag) ?? 0) + 1);
+    }
     return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, "ko"));
   }
 
@@ -529,9 +530,9 @@ export class ScopedVault {
   async setTask(input: string, line: number, done: boolean, baseHash: string) {
     const rel = this.requireRead(input);
     const doc = await this.vault.read(rel);
-    if (doc.hash !== baseHash) throw new ConflictError(doc.hash, undefined, rel);
+    if (doc.hash !== baseHash) throw new ConflictError(doc.hash, "conflict_path", { path: rel });
     const next = setTaskState(doc.content, line, done);
-    if (next === null) throw new PathError(`${line}번째 줄은 할 일이 아닙니다`);
+    if (next === null) throw new PathError("not_task", { line });
     return this.write(rel, next, baseHash);
   }
 
@@ -547,9 +548,9 @@ export class ScopedVault {
   }
 
   async batch(ops: Op[], message?: string, opts: { updateLinks?: boolean; coalesce?: boolean } = {}): Promise<BatchResult & { pending?: PendingInfo }> {
-    if (!Array.isArray(ops)) throw new PathError("operations가 필요합니다");
+    if (!Array.isArray(ops)) throw new PathError("field_required", { field: "operations" });
     for (const op of ops) {
-      if (!op || typeof op !== "object") throw new PathError("연산 형식이 잘못되었습니다");
+      if (!op || typeof op !== "object") throw new PathError("op_invalid");
       if (op.op === "move") {
         this.requireLevel(normalizeVaultPath(op.from), "delete");
         this.requireLevel(normalizeVaultPath(op.to), "append");
@@ -558,14 +559,14 @@ export class ScopedVault {
       } else if (op.op === "write" || op.op === "append" || op.op === "delete") {
         this.requireLevel(normalizeVaultPath(op.path), op.op === "delete" ? "delete" : "append");
       } else {
-        throw new PathError(`알 수 없는 연산입니다: ${(op as { op: unknown }).op}`);
+        throw new PathError("op_unknown", { op: String((op as { op: unknown }).op) });
       }
     }
     const guard = (action: Action, rel: string) => {
       const need = ACTION_LEVEL[action];
       if (!atLeast(this.level(rel), need)) {
-        const hint = action === "modify" && this.level(rel) === "append" ? " — 추가 전용: 기존 내용은 바꿀 수 없고 끝에 덧붙이기만 됩니다" : "";
-        throw new ForbiddenError(`권한이 없습니다(${need} 필요): ${rel}${hint}`);
+        const appendOnly = action === "modify" && this.level(rel) === "append";
+        throw new ForbiddenError(appendOnly ? "forbidden_append_only" : "forbidden_need", { level: need, path: rel });
       }
     };
     const links = this.linkOptions(opts.updateLinks !== false);
@@ -585,7 +586,7 @@ export class ScopedVault {
             linksUpdated: dry.linksUpdated,
             linkCount: dry.linkCount,
             preview: dry.preview,
-            pending: { proposal: proposal.id, message: "검토 대기열에 올렸습니다. 사람이 승인하면 반영됩니다(그 전까지 볼트는 그대로)." },
+            pending: { proposal: proposal.id, message: translate(this.agentLang, "server.review_pending") },
           };
         }
         // 검토 대상이 아니면 바로 적용하되, 링크 갱신은 방금 본 문서로만(그 사이 검토 대상 문서가 끼어들지 않게)
@@ -607,7 +608,7 @@ export class ScopedVault {
    * content·hash는 승인 뒤의 내용·해시를 돌려준다.
    */
   private async single(op: Op, opts: { updateLinks?: boolean; coalesce?: boolean } = {}): Promise<Doc & { rev: string | null; pending?: PendingInfo; linksUpdated: string[]; linkCount: number }> {
-    if (op.op === "put") throw new PathError("put은 batch로만 쓸 수 있습니다");
+    if (op.op === "put") throw new PathError("put_batch_only");
     const res = await this.batch([op], undefined, opts);
     const target = normalizeVaultPath(op.op === "move" ? op.to : op.path);
     if (res.pending) {
@@ -656,10 +657,10 @@ export class ScopedVault {
   async moveNode(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}) {
     const from = normalizeVaultPath(fromInput).replace(/\.md$/i, "");
     const to = normalizeVaultPath(toInput).replace(/\.md$/i, "");
-    if (from === to) throw new PathError("같은 경로입니다");
-    if (to.startsWith(from + "/")) throw new PathError("노드를 자기 하위로 옮길 수 없습니다");
+    if (from === to) throw new PathError("same_path");
+    if (to.startsWith(from + "/")) throw new PathError("node_into_self");
     const files = await this.nodeFilesOf(from);
-    if (files.length === 0) throw new NotFoundError(`노드가 없습니다: ${from}`);
+    if (files.length === 0) throw new NotFoundError("node_missing", { path: from });
     const ops: Op[] = [];
     for (const f of files) {
       const { data } = await this.vault.readRaw(f);
@@ -676,9 +677,9 @@ export class ScopedVault {
   async deleteNode(input: string, expect?: { path: string; baseHash: string }[]): Promise<{ rev: string | null; deleted: string[]; pending?: PendingInfo }> {
     const node = normalizeVaultPath(input).replace(/\.md$/i, "");
     const files = await this.nodeFilesOf(node);
-    if (files.length === 0) throw new NotFoundError(`노드가 없습니다: ${node}`);
+    if (files.length === 0) throw new NotFoundError("node_missing", { path: node });
     const given = expect ? new Map(expect.map((e) => [normalizeVaultPath(e.path), e.baseHash])) : null;
-    if (given && (given.size !== files.length || files.some((f) => !given.has(f)))) throw new ConflictError(null, "그 사이 노드의 하위가 바뀌었습니다", node);
+    if (given && (given.size !== files.length || files.some((f) => !given.has(f)))) throw new ConflictError(null, "node_children_changed", { path: node });
     const ops: Op[] = [];
     for (const f of files) ops.push({ op: "delete", path: f, baseHash: given?.get(f) ?? hashContent((await this.vault.readRaw(f)).data) });
     const res = await this.batch(ops, this.vault.text().commit.nodeDelete(node));
@@ -724,8 +725,8 @@ export class ScopedVault {
   async rollback(input: string, rev: string, baseHash: string | null) {
     const rel = this.requireRead(input);
     const old = await this.vault.git.show(rev, rel);
-    if (old === null) throw new NotFoundError(`해당 리비전에 문서가 없습니다: ${rev.slice(0, 7)}`);
-    const res = await this.batch([{ op: "write", path: rel, content: old, baseHash }], `되돌리기: ${rel} @ ${rev.slice(0, 7)}`);
+    if (old === null) throw new NotFoundError("rev_doc_missing", { path: rel });
+    const res = await this.batch([{ op: "write", path: rel, content: old, baseHash }], this.vault.text().commit.restore(rel, rev.slice(0, 7)));
     return { path: rel, content: old, hash: hashContent(old), rev: res.rev };
   }
 

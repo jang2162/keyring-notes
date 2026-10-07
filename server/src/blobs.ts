@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { isMarkdown } from "./paths.js";
 import { fileSha256, type S3Client } from "./s3.js";
-import { isSealed, type CryptoProvider, type S3Crypto } from "./s3crypto.js";
+import { EncryptionError, isSealed, type CryptoProvider, type S3Crypto } from "./s3crypto.js";
+import { serverText } from "./lang.js";
 import type { Vault } from "./vault.js";
 
 const hashContentHex = (data: Uint8Array) => createHash("sha256").update(data).digest("hex");
@@ -114,7 +115,7 @@ export class BlobStore {
       return true;
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e);
-      console.error("첨부 S3 업로드 실패(나중에 다시 시도):", this.lastError);
+      console.error(serverText("server.log.blob_upload_failed"), this.lastError);
       return false;
     }
   }
@@ -212,7 +213,7 @@ export class BlobStore {
     data ??= await this.s3.get(this.key(sha));
     if (!data) return null;
     if (isSealed(data)) {
-      if (!c) throw new Error("암호화된 첨부입니다(KEYRING_S3_ENCRYPTION_KEY 필요)");
+      if (!c) throw new EncryptionError("attachment_encrypted");
       data = c.openBytes(data);
     }
     return hashContentHex(data) === sha ? data : null;

@@ -58,7 +58,7 @@ export function lintVault(input: {
   const staleDays = input.staleDays ?? 180;
   const required = input.required ?? ["title", "summary"];
   const docs = input.docs.filter((d) => !wiki?.isGenerated(d.path) && !isVaultSettingsPath(d.path));
-  const inScope = (p: string) => !f || p === f || p.startsWith(f + "/");
+  const inScope = (p: string) => !f || p === f || p === `${f}.md` || p.startsWith(f + "/");
   const isWikiPage = (p: string) => {
     const t = wiki?.topicOf(p);
     return !!t && p.startsWith(`${t}/wiki/`);
@@ -131,7 +131,7 @@ export function lintVault(input: {
  */
 export function linkGraph(input: { docs: DocMeta[]; links: LinkRow[]; wiki?: WikiTopics; folder: string; daily?: DailyLookup | null }): GraphData {
   const f = input.folder;
-  const docs = input.docs.filter((d) => !input.wiki?.isGenerated(d.path) && !isVaultSettingsPath(d.path) && (!f || d.path.startsWith(f + "/")));
+  const docs = input.docs.filter((d) => !input.wiki?.isGenerated(d.path) && !isVaultSettingsPath(d.path) && (!f || d.path === `${f}.md` || d.path.startsWith(f + "/")));
   const ids = new Set(docs.map((d) => d.path));
   const paths = [...ids];
   const seen = new Set<string>();

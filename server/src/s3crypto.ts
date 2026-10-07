@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { open, readFile, rename, rm, stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { KeyedError } from "@keyring-notes/core";
 import type { S3Client } from "./s3.js";
 
 /**
@@ -36,7 +37,7 @@ interface Meta {
   check: string;
 }
 
-export class EncryptionError extends Error {}
+export class EncryptionError extends KeyedError {}
 
 export type CryptoProvider = () => Promise<S3Crypto>;
 
@@ -45,7 +46,7 @@ export async function encryptionSecretFromEnv(e: NodeJS.ProcessEnv = process.env
   const file = e.KEYRING_S3_ENCRYPTION_KEY_FILE;
   const raw = file ? (await readFile(file, "utf8")).trim() : e.KEYRING_S3_ENCRYPTION_KEY?.trim();
   if (!raw) return null;
-  if (raw.length < 12) throw new EncryptionError("S3 암호화 키가 너무 짧습니다(12자 이상, 긴 무작위 문자열 권장)");
+  if (raw.length < 12) throw new EncryptionError("s3_key_short", { min: 12 });
   return raw;
 }
 
@@ -89,7 +90,7 @@ export class S3Crypto {
         meta = JSON.parse(new TextDecoder().decode(raw)) as Meta;
         if (meta.format !== "keyring-s3-encryption" || meta.version !== 1) throw new Error();
       } catch {
-        throw new EncryptionError(`S3의 ${META_NAME}을 읽을 수 없습니다`);
+        throw new EncryptionError("s3_meta_unreadable", { name: META_NAME });
       }
     } else {
       meta = { format: "keyring-s3-encryption", version: 1, kdf: "scrypt", N: params.N ?? SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p, salt: randomBytes(16).toString("base64"), check: "" };
@@ -98,7 +99,7 @@ export class S3Crypto {
     const check = createHmac("sha256", sub(master, "check")).update("keyring-s3-check").digest("hex");
     if (raw) {
       if (!timingSafeEqual(Buffer.from(check), Buffer.from(String(meta.check).padEnd(check.length).slice(0, check.length)))) {
-        throw new EncryptionError("S3 암호화 키가 이 버킷에 처음 쓴 키와 다릅니다. 같은 키로 시작하세요(키를 잃으면 암호화한 백업·첨부는 열 수 없습니다)");
+        throw new EncryptionError("s3_key_mismatch");
       }
     } else {
       await s3.put(key, new TextEncoder().encode(JSON.stringify({ ...meta, check }, null, 2)), { contentType: "application/json" });
@@ -134,13 +135,13 @@ export class S3Crypto {
 
   openBytes(data: Uint8Array): Uint8Array {
     const buf = Buffer.from(data);
-    if (!isSealed(buf) || buf.length < HEADER + TAG) throw new EncryptionError("암호화 형식이 아닙니다");
+    if (!isSealed(buf) || buf.length < HEADER + TAG) throw new EncryptionError("not_encrypted");
     const d = createDecipheriv("aes-256-gcm", this.contentKey, buf.subarray(MAGIC.length, HEADER));
     d.setAuthTag(buf.subarray(buf.length - TAG));
     try {
       return Buffer.concat([d.update(buf.subarray(HEADER, buf.length - TAG)), d.final()]);
     } catch {
-      throw new EncryptionError("복호화 실패: 키가 다르거나 내용이 바뀌었습니다");
+      throw new EncryptionError("decrypt_failed");
     }
   }
 
@@ -169,7 +170,7 @@ export class S3Crypto {
   /** 암호화한 파일을 풀어 dst로. 태그가 맞지 않으면 dst를 남기지 않고 EncryptionError */
   async openFile(src: string, dst: string): Promise<void> {
     const size = (await stat(src)).size;
-    if (size < HEADER + TAG || !(await isSealedFile(src))) throw new EncryptionError("암호화 형식이 아닙니다");
+    if (size < HEADER + TAG || !(await isSealedFile(src))) throw new EncryptionError("not_encrypted");
     const fh = await open(src, "r");
     const nonce = Buffer.alloc(NONCE);
     const tag = Buffer.alloc(TAG);
@@ -186,7 +187,7 @@ export class S3Crypto {
       await pipeline(createReadStream(src, { start: HEADER, end: size - TAG - 1 }), d, createWriteStream(tmp, { mode: 0o600 }));
     } catch {
       await rm(tmp, { force: true });
-      throw new EncryptionError("복호화 실패: 키가 다르거나 내용이 바뀌었습니다");
+      throw new EncryptionError("decrypt_failed");
     }
     await rename(tmp, dst);
   }

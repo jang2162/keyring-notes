@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { PathError } from "./errors.js";
 import { dailyLinkDate, dailyNotesOn, type DailyLookup } from "./daily.js";
 
 export interface Heading {
@@ -127,7 +128,7 @@ export function section(content: string, opts: { heading?: string; startLine?: n
   if (opts.heading?.trim().startsWith("^")) {
     const id = opts.heading.trim().slice(1);
     const r = blockRange(content, id);
-    if (!r) throw new RangeError(`블록을 찾을 수 없습니다: ^${id}`);
+    if (!r) throw new PathError("block_missing", { id });
     return { heading: `^${id}`, startLine: r.start, endLine: r.end, totalLines: total, content: lines.slice(r.start - 1, r.end).join("\n") };
   }
   if (opts.heading) {
@@ -146,14 +147,14 @@ export function section(content: string, opts: { heading?: string; startLine?: n
       }
       return wi < 0;
     });
-    if (!match) throw new RangeError(`제목을 찾을 수 없습니다: ${opts.heading}`);
+    if (!match) throw new PathError("heading_missing", { heading: opts.heading });
     start = match.line;
     end = match.endLine;
     headingText = match.text;
   } else {
     start = Math.max(1, opts.startLine ?? 1);
     end = Math.min(total, opts.endLine ?? total);
-    if (start > end) throw new RangeError("줄 범위가 잘못되었습니다");
+    if (start > end) throw new PathError("line_range");
   }
   return { heading: headingText, startLine: start, endLine: end, totalLines: total, content: lines.slice(start - 1, end).join("\n") };
 }
@@ -255,41 +256,76 @@ function wsOf(p: string): string | null {
 }
 
 /**
- * Obsidian식 링크 해석: 정확한 경로가 없으면 같은 파일 이름 중 가장 얕은 경로. 링크를 쓴 문서(from)가 있으면
- * 그 워크스페이스 안의 것이 먼저다. 그래도 없고 대상이 데일리 날짜면 그날 데일리 노트(같은 워크스페이스 먼저,
- * 날짜만 있는 이름 먼저). 정확한 이름의 문서가 늘 먼저다.
+ * 링크 해석용 경로 색인(같은 목록으로 여러 번 해석할 때 미리 만들어 둔다: 웹 미리보기·트리).
  */
-export function resolveLink(target: string, paths: string[], opts: ResolveOptions = {}): string | null {
-  const t = target.trim().replace(/^\/+/, "").toLowerCase();
-  if (!t) return null;
-  const candidates = /\.[a-z0-9]+$/i.test(t) ? [t] : [`${t}.md`, t];
-  const lowered = paths.map((p) => [p.toLowerCase(), p] as const);
-  for (const c of candidates) {
-    const exact = lowered.find(([l]) => l === c);
-    if (exact) return exact[1];
+export class LinkIndex {
+  readonly paths: string[];
+  private exact = new Map<string, string>();
+  /** 파일 이름(소문자) → 경로들 */
+  private byBase = new Map<string, string[]>();
+
+  constructor(paths: Iterable<string>) {
+    this.paths = [...paths];
+    for (const p of this.paths) {
+      const l = p.toLowerCase();
+      if (!this.exact.has(l)) this.exact.set(l, p);
+      const base = l.slice(l.lastIndexOf("/") + 1);
+      const list = this.byBase.get(base);
+      if (list) list.push(p);
+      else this.byBase.set(base, [p]);
+    }
   }
-  const ws = opts.from ? wsOf(opts.from) : null;
-  const shallowest = (hits: string[]) => hits.sort((a, b) => a.split("/").length - b.split("/").length || (a < b ? -1 : a > b ? 1 : 0))[0];
-  const byName = (inWs: boolean): string | null => {
+
+  /** 정확한 경로(대소문자 무시) */
+  get(path: string): string | null {
+    return this.exact.get(path.toLowerCase()) ?? null;
+  }
+
+  /**
+   * Obsidian식 링크 해석: 정확한 경로가 없으면 같은 파일 이름 중 가장 얕은 경로. 링크를 쓴 문서(from)가 있으면
+   * 그 워크스페이스 안의 것이 먼저다. 그래도 없고 대상이 데일리 날짜면 그날 데일리 노트(같은 워크스페이스 먼저,
+   * 날짜만 있는 이름 먼저). 정확한 이름의 문서가 늘 먼저다.
+   */
+  resolve(target: string, opts: ResolveOptions = {}): string | null {
+    const t = target.trim().replace(/^\/+/, "").toLowerCase();
+    if (!t) return null;
+    const candidates = /\.[a-z0-9]+$/i.test(t) ? [t] : [`${t}.md`, t];
     for (const c of candidates) {
-      const hits = lowered.filter(([l, p]) => (l === c || l.endsWith("/" + c)) && (!inWs || wsOf(p) === ws)).map(([, p]) => p);
-      if (hits.length) return shallowest(hits);
+      const exact = this.exact.get(c);
+      if (exact) return exact;
     }
-    return null;
-  };
-  const byDaily = (which: "here" | "others" | "all"): string | null => {
-    if (!opts.daily) return null;
-    for (const { workspace, config } of opts.daily.all()) {
-      if ((which === "here" && workspace !== ws) || (which === "others" && workspace === ws)) continue;
-      const day = dailyLinkDate(target, config);
-      const hit = day ? dailyNotesOn(paths, config, day)[0] : undefined;
-      if (hit) return hit.path;
-    }
-    return null;
-  };
-  // 같은 워크스페이스(이름 → 그날 데일리 노트) → 볼트 전체(이름 → 다른 워크스페이스의 데일리 노트)
-  if (ws !== null) return byName(true) ?? byDaily("here") ?? byName(false) ?? byDaily("others");
-  return byName(false) ?? byDaily("all");
+    const ws = opts.from ? wsOf(opts.from) : null;
+    const shallowest = (hits: string[]) => [...hits].sort((a, b) => a.split("/").length - b.split("/").length || (a < b ? -1 : a > b ? 1 : 0))[0];
+    const byName = (inWs: boolean): string | null => {
+      for (const c of candidates) {
+        const base = c.slice(c.lastIndexOf("/") + 1);
+        const hits = (this.byBase.get(base) ?? []).filter((p) => {
+          const l = p.toLowerCase();
+          return (l === c || l.endsWith("/" + c)) && (!inWs || wsOf(p) === ws);
+        });
+        if (hits.length) return shallowest(hits);
+      }
+      return null;
+    };
+    const byDaily = (which: "here" | "others" | "all"): string | null => {
+      if (!opts.daily) return null;
+      for (const { workspace, config } of opts.daily.all()) {
+        if ((which === "here" && workspace !== ws) || (which === "others" && workspace === ws)) continue;
+        const day = dailyLinkDate(target, config);
+        const hit = day ? dailyNotesOn(this.paths, config, day)[0] : undefined;
+        if (hit) return hit.path;
+      }
+      return null;
+    };
+    // 같은 워크스페이스(이름 → 그날 데일리 노트) → 볼트 전체(이름 → 다른 워크스페이스의 데일리 노트)
+    if (ws !== null) return byName(true) ?? byDaily("here") ?? byName(false) ?? byDaily("others");
+    return byName(false) ?? byDaily("all");
+  }
+}
+
+/** 링크 해석(LinkIndex.resolve). 같은 경로 목록으로 여러 번 해석하면 LinkIndex를 만들어 넘긴다 */
+export function resolveLink(target: string, paths: string[] | LinkIndex, opts: ResolveOptions = {}): string | null {
+  return (paths instanceof LinkIndex ? paths : new LinkIndex(paths)).resolve(target, opts);
 }
 
 export interface TaskItem {
