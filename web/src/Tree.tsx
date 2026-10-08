@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ChevronRight, File, FileImage, FileText, FileType, Paperclip } from "lucide-react";
+import { ChevronRight, File, FileImage, FileText, FileType, Paperclip, Plus } from "lucide-react";
+import { tipProps } from "./Tooltip";
 import { stripMd, type VaultNode } from "@keyring-notes/core";
 import type { Prefs } from "./prefs";
 import { Menu, type MenuEntry } from "./ui";
@@ -26,6 +27,8 @@ export interface TreeActions {
   open: (node: VaultNode, opts?: { newTab?: boolean }) => void;
   /** 노드 안의 첨부 열기 */
   openAttachment: (path: string) => void;
+  /** 첨부를 문서로 끌어 놓을 때 넣을 글(embed 링크). 없으면 경로 */
+  embedText?: (path: string) => string;
   /** 하위 노트 만들기(parent ""면 맨 위 = 지금 워크스페이스) */
   newChild: (parent: string) => void;
   /** 노드 이름 바꾸기(노트와 하위를 한 번에) 또는 첨부 이름 바꾸기 */
@@ -416,8 +419,9 @@ export const Tree = forwardRef<
               draggable={renaming !== key}
               onDragStart={(e) => {
                 dragging.current = { path: r.path, kind: "file" };
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", r.path);
+                // 트리 안에서는 옮기기, 문서(에디터)에 놓으면 embed 링크가 들어간다
+                e.dataTransfer.effectAllowed = "copyMove";
+                e.dataTransfer.setData("text/plain", actions.embedText?.(r.path) ?? r.path);
               }}
               onDragEnd={dragEnd}
               onClick={() => renaming !== key && activate(r)}
@@ -522,6 +526,24 @@ export const Tree = forwardRef<
               />
             ) : (
               <span className="tree-name">{decor.label?.(n) ?? n.name}</span>
+            )}
+            {renaming !== n.path && (
+              // 마우스를 올리면 보이는 "하위 노트 추가"(메뉴의 같은 항목). 행 클릭·끌기와 따로 논다
+              <button
+                type="button"
+                className="tree-add"
+                tabIndex={-1}
+                draggable={false}
+                {...tipProps({ label: t("tree.newChild"), side: "right" })}
+                aria-label={t("tree.newChildOf", { name: n.name })}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  actions.newChild(n.path);
+                }}
+              >
+                <Plus size={14} strokeWidth={2} aria-hidden />
+              </button>
             )}
           </div>
         );

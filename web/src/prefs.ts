@@ -21,7 +21,7 @@ export interface Prefs {
   leftOpen: boolean;
   rightOpen: boolean;
   /** 왼쪽 패널 내용(레일에서 고른 것) */
-  leftView: "files" | "search" | "tags";
+  leftView: "files" | "search" | "tags" | "attachments";
   rightTab: "outline" | "links" | "props" | "history";
   autosave: boolean;
   /** 입력이 멈춘 뒤 저장까지(ms) */
@@ -113,7 +113,7 @@ const ENUMS: Partial<Record<keyof Prefs, readonly string[]>> = {
   theme: ["system", "light", "dark"],
   editorFont: ["sans", "serif", "mono"],
   treeAttachments: ["show", "hide"],
-  leftView: ["files", "search", "tags"],
+  leftView: ["files", "search", "tags", "attachments"],
   rightTab: ["outline", "links", "props", "history"],
 };
 

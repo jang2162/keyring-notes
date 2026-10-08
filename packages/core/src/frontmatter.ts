@@ -11,7 +11,7 @@ export const BUILTIN_FIELDS = new Set(["path", "title", "folder", "name", "tags"
  * 프런트매터 필드 하나를 바꾼다(value가 null이면 지운다). 다른 필드·주석·순서는 그대로 둔다.
  * 프런트매터가 없으면 새로 만든다. YAML이 깨져 있으면 고치지 않고 오류.
  */
-export function setFrontmatterField(content: string, key: string, value: unknown, opts: { keepEmpty?: boolean } = {}): string {
+export function setFrontmatterField(content: string, key: string, value: unknown, opts: { keepEmpty?: boolean; flow?: boolean } = {}): string {
   checkKey(key);
   return editFrontmatter(content, (doc) => {
     if (value === null || value === undefined) {
@@ -26,7 +26,8 @@ export function setFrontmatterField(content: string, key: string, value: unknown
         if (typeof prev.value !== typeof node.value) prev.type = undefined;
         prev.value = node.value;
       } else {
-        if (isSeq(prev) && prev.flow && isSeq(node)) node.flow = true;
+        // 새로 만드는 목록은 flow면 한 줄 목록으로
+        if (isSeq(node) && ((isSeq(prev) && prev.flow) || (opts.flow && !isSeq(prev)))) node.flow = true;
         doc.set(key, node);
       }
     }

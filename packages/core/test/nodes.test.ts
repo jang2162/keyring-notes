@@ -75,7 +75,7 @@ describe("노드 짝짓기", () => {
 });
 
 describe("링크 해석: 같은 워크스페이스 먼저", () => {
-  const paths = ["개인/회의.md", "업무/팀/회의.md", "업무/계획.md", "개인/깊은/곳/계획.md", "개인/일기/2026-10-07.md", "업무/일기/2026-10-07 회의.md"];
+  const paths = ["개인/회의.md", "업무/팀/회의.md", "업무/계획.md", "개인/깊은/곳/계획.md", "개인/데일리 노트/2026-10-07.md", "업무/데일리 노트/2026-10-07 회의.md"];
   it("이름이 같으면 링크를 쓴 문서의 워크스페이스 것, 없으면 볼트 전체에서 가장 얕은 것", () => {
     expect(resolveLink("회의", paths, { from: "업무/메모.md" })).toBe("업무/팀/회의.md");
     expect(resolveLink("회의", paths, { from: "개인/메모.md" })).toBe("개인/회의.md");
@@ -88,11 +88,11 @@ describe("링크 해석: 같은 워크스페이스 먼저", () => {
   it("[[날짜]]는 같은 워크스페이스의 그날 노트가 먼저(정확한 이름이 같은 워크스페이스에 있으면 그것)", () => {
     const s = parseVaultSettings("---\nvault:\n  language: ko\n---\n");
     const daily = dailyLookup(s, () => ["개인", "업무"]);
-    expect(resolveLink("2026-10-07", paths, { from: "업무/x.md", daily })).toBe("업무/일기/2026-10-07 회의.md");
-    expect(resolveLink("2026-10-07", paths, { from: "개인/x.md", daily })).toBe("개인/일기/2026-10-07.md");
+    expect(resolveLink("2026-10-07", paths, { from: "업무/x.md", daily })).toBe("업무/데일리 노트/2026-10-07 회의.md");
+    expect(resolveLink("2026-10-07", paths, { from: "개인/x.md", daily })).toBe("개인/데일리 노트/2026-10-07.md");
     // 데일리가 꺼진 워크스페이스에서는 다른 워크스페이스의 정확한 이름
     const off = dailyLookup(parseVaultSettings("---\nvault:\n  language: ko\nworkspaces:\n  업무:\n    daily:\n      enabled: false\n---\n"), () => ["개인", "업무"]);
-    expect(resolveLink("2026-10-07", paths, { from: "업무/x.md", daily: off })).toBe("개인/일기/2026-10-07.md");
+    expect(resolveLink("2026-10-07", paths, { from: "업무/x.md", daily: off })).toBe("개인/데일리 노트/2026-10-07.md");
   });
   it("링크 자동 갱신은 이동 전후 같은 워크스페이스 기준으로 비교한다", () => {
     const before = ["개인/회의.md", "업무/팀/회의.md", "업무/메모.md"];

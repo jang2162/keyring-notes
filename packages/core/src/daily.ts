@@ -1,6 +1,6 @@
 import { parseFrontmatter } from "./markdown.js";
 import { setFrontmatterField } from "./frontmatter.js";
-import { vaultText, type VaultLang } from "./vaultText.js";
+import { VAULT_LANGS, vaultText, type VaultLang } from "./vaultText.js";
 
 /**
  * 날짜 형식과 데일리 노트 판정. 웹·앱·서버(링크 해석·위젯·정리 점검)가 같은 규칙을 쓴다.
@@ -117,7 +117,7 @@ function validDate(y: number, m: number, d: number): Date | null {
 
 /** 데일리 노트 설정(모든 기기 공통 설정 파일의 워크스페이스 묶음에서 온다) */
 export interface DailyConfig {
-  /** 볼트 기준 폴더(워크스페이스 포함, 예: 개인/일기) */
+  /** 볼트 기준 폴더(워크스페이스 포함, 예: 개인/데일리 노트) */
   folder: string;
   /** 파일 이름 형식(/가 있으면 하위 폴더, 예: YYYY/MM/YYYY-MM-DD) */
   format: string;
@@ -362,55 +362,79 @@ export function dailyLinkDate(target: string, cfg: DailyConfig | null | undefine
   return null;
 }
 
-/** 데일리 노트 자동 속성(만들 때 넣고, 이름의 날짜를 바꿀 때 같이 고친다) */
-export const DAILY_PROP_KEYS = ["daily", "date", "year", "month", "monthday", "week", "weekday"] as const;
+/** 데일리 노트 자동 태그의 종류(만들 때 프런트매터 tags에 넣고, 이름의 날짜를 바꿀 때 같이 고친다) */
+export const DAILY_TAG_KINDS = ["day", "monthday", "week", "weekday"] as const;
+export type DailyTagKind = (typeof DAILY_TAG_KINDS)[number];
 
-export function dailyProps(d: Date, weekStart: WeekStart = "monday", lang?: VaultLang): Record<(typeof DAILY_PROP_KEYS)[number], string | number | boolean> {
+/**
+ * 데일리 노트 자동 태그. 계층 태그 하나(데일리/2026/10/07)에 연·월·일을 담아 #데일리/2026·#데일리/2026/10 으로
+ * 그해·그달을 찾고(하위 태그 포함 검색), 해마다 오늘(10-07)·주차(2026-W41)·요일은 따로 둔다.
+ */
+export function dailyTags(d: Date, weekStart: WeekStart = "monday", lang?: VaultLang): Record<DailyTagKind, string> {
+  const t = vaultText(lang);
   const w = weekOf(d, weekStart);
   return {
-    daily: true,
-    date: ymd(d),
-    year: d.getFullYear(),
-    month: d.getMonth() + 1,
+    day: `${t.dailyTag}/${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`,
     monthday: `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
     week: `${w.year}-W${pad(w.week)}`,
-    weekday: vaultText(lang).weekdaysShort[d.getDay()],
+    weekday: t.weekdaysLong[d.getDay()],
   };
 }
 
+/** 자동 태그의 종류(모양으로 판정). 볼트 언어를 바꾼 뒤에도 알아보게 공식 언어를 모두 본다 */
+function dailyTagKind(tag: string): DailyTagKind | null {
+  const s = tag.trim().replace(/^#/, "").toLowerCase();
+  if (/^\d{2}-\d{2}$/.test(s)) return "monthday";
+  if (/^\d{4}-w\d{2}$/.test(s)) return "week";
+  for (const lang of VAULT_LANGS) {
+    const t = vaultText(lang);
+    const root = t.dailyTag.toLowerCase() + "/";
+    if (s.startsWith(root) && /^\d{4}\/\d{2}\/\d{2}$/.test(s.slice(root.length))) return "day";
+    if (t.weekdaysLong.some((w) => w.toLowerCase() === s)) return "weekday";
+  }
+  return null;
+}
+
+/** 프런트매터 tags 목록(쉼표·공백으로 적은 글자도 목록으로) */
+function tagList(fm: Record<string, unknown> | null): string[] {
+  const raw = fm?.tags;
+  if (Array.isArray(raw)) return raw.filter((x) => typeof x === "string" || typeof x === "number").map(String);
+  return typeof raw === "string" ? raw.split(/[,\s]+/).filter(Boolean) : [];
+}
+
 /**
- * 데일리 노트 내용에 자동 속성을 합친다. 템플릿 프런트매터와 같은 키는 자동 값이 이기고,
+ * 데일리 노트 내용에 자동 태그를 넣는다. 템플릿의 다른 태그는 뒤에 그대로 두고(템플릿에 적힌 자동 모양 태그는 새 값으로),
  * icon은 템플릿 값이 있으면 그것을 둔다(없으면 설정의 데일리 기본 아이콘).
  */
-export function withDailyProps(content: string, d: Date, opts: { weekStart?: WeekStart; icon?: string; lang?: VaultLang } = {}): string {
-  let out = content;
-  for (const [k, v] of Object.entries(dailyProps(d, opts.weekStart, opts.lang))) out = setFrontmatterField(out, k, v);
-  const fm = parseFrontmatter(out).data;
+export function withDailyTags(content: string, d: Date, opts: { weekStart?: WeekStart; icon?: string; lang?: VaultLang } = {}): string {
+  const auto = Object.values(dailyTags(d, opts.weekStart, opts.lang));
+  const fm = parseFrontmatter(content).data;
+  const own = tagList(fm).filter((t) => !dailyTagKind(t));
+  let out = setFrontmatterField(content, "tags", [...new Set([...auto, ...own])], { flow: true });
   if (opts.icon && !(typeof fm?.icon === "string" && fm.icon.trim())) out = setFrontmatterField(out, "icon", opts.icon);
   return out;
 }
 
 /**
- * 이름의 날짜가 바뀐 데일리 노트: 이미 있는 자동 속성만 새 날짜로 고친다(없던 속성은 넣지 않는다).
+ * 이름의 날짜가 바뀐 데일리 노트: 이미 있는 자동 태그만 새 날짜로 고친다(사람이 지운 태그는 넣지 않는다).
  * 바뀐 것이 없으면 null.
  */
-export function updateDailyProps(content: string, d: Date, weekStart: WeekStart = "monday", lang?: VaultLang): string | null {
-  const fm = parseFrontmatter(content).data;
-  if (!fm) return null;
-  const want = dailyProps(d, weekStart, lang);
-  let out = content;
-  for (const k of DAILY_PROP_KEYS) {
-    if (!(k in fm) || k === "daily") continue;
-    if (String(fm[k]) !== String(want[k])) out = setFrontmatterField(out, k, want[k]);
-  }
-  return out === content ? null : out;
+export function updateDailyTags(content: string, d: Date, weekStart: WeekStart = "monday", lang?: VaultLang): string | null {
+  const list = tagList(parseFrontmatter(content).data);
+  if (!list.length) return null;
+  const want = dailyTags(d, weekStart, lang);
+  const next = [...new Set(list.map((t) => (dailyTagKind(t) ? want[dailyTagKind(t)!] : t)))];
+  if (next.length === list.length && next.every((t, i) => t === list[i])) return null;
+  return setFrontmatterField(content, "tags", next, { flow: true });
 }
 
-/** 자동 속성이 이름의 날짜와 다른 키(정리 점검용). 없는 속성은 보지 않는다 */
-export function dailyPropMismatch(frontmatter: Record<string, unknown> | null, d: Date, weekStart: WeekStart = "monday", lang?: VaultLang): string[] {
-  if (!frontmatter) return [];
-  const want = dailyProps(d, weekStart, lang);
-  return DAILY_PROP_KEYS.filter((k) => k !== "daily" && k in frontmatter && frontmatter[k] !== null && String(frontmatter[k]) !== String(want[k]));
+/** 이름의 날짜와 다른 자동 태그(정리 점검용). 어느 공식 언어의 값이든 맞으면 맞는 것으로 본다 */
+export function dailyTagMismatch(frontmatter: Record<string, unknown> | null, d: Date, weekStart: WeekStart = "monday"): string[] {
+  const wants = VAULT_LANGS.map((l) => dailyTags(d, weekStart, l));
+  return tagList(frontmatter).filter((t) => {
+    const k = dailyTagKind(t);
+    return k !== null && !wants.some((w) => w[k].toLowerCase() === t.trim().replace(/^#/, "").toLowerCase());
+  });
 }
 
 /**

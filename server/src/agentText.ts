@@ -85,7 +85,7 @@ const EN: AgentText = {
       case "unprocessed_raw":
         return "Source not cited by any wiki page";
       case "daily_mismatch":
-        return `Daily properties differ from the date in the name (${p.date}): ${p.keys}`;
+        return `Daily tags differ from the date in the name (${p.date}): ${p.tags}`;
     }
   },
   hiddenCommit: "(change involving hidden paths)",
@@ -158,7 +158,7 @@ const KO: AgentText = {
       case "unprocessed_raw":
         return "어느 위키 페이지에서도 인용하지 않은 원본";
       case "daily_mismatch":
-        return `데일리 속성과 이름 날짜(${p.date})가 다름: ${p.keys}`;
+        return `데일리 태그와 이름 날짜(${p.date})가 다름: ${p.tags}`;
     }
   },
   hiddenCommit: "(숨김 경로가 포함된 변경)",

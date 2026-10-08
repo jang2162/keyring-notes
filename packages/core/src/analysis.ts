@@ -1,5 +1,5 @@
 import { resolveLink } from "./markdown.js";
-import { dailyOfPath, dailyPropMismatch, type DailyLookup } from "./daily.js";
+import { dailyOfPath, dailyTagMismatch, type DailyLookup } from "./daily.js";
 import { isVaultSettingsPath } from "./settings.js";
 import type { DocMeta, LinkRow } from "./types.js";
 
@@ -36,7 +36,7 @@ export interface WikiTopics {
  * - 모든 문서: 깨진 위키링크, 깨진 출처(볼 수 없는 대상도 "없거나 볼 수 없음"으로 같이 센다)
  * - 위키 페이지(<토픽>/wiki/): 고아(아무 데서도 링크·인용 안 됨), 출처 없음, 필수 프런트매터 누락, 오래됨
  * - 위키 원본(<토픽>/raw/): 어느 위키 페이지에서도 인용되지 않음
- * - 데일리 노트: 자동 속성(date·year·month·monthday·week·weekday)이 이름의 날짜와 다름
+ * - 데일리 노트: 자동 태그(데일리/연/월/일·월-일·주차·요일)가 이름의 날짜와 다름
  */
 export function lintVault(input: {
   docs: DocMeta[];
@@ -113,8 +113,8 @@ export function lintVault(input: {
     const daily = dailyOfPath(d.path, input.daily);
     if (daily) {
       const cfg = input.daily?.of(d.path.split("/")[0]);
-      const keys = dailyPropMismatch(d.frontmatter, daily.date, cfg?.weekStart, cfg?.lang);
-      if (keys.length) issues.push({ kind: "daily_mismatch", path: d.path, params: { date: daily.ymd, keys: keys.join(", ") } });
+      const tags = dailyTagMismatch(d.frontmatter, daily.date, cfg?.weekStart);
+      if (tags.length) issues.push({ kind: "daily_mismatch", path: d.path, params: { date: daily.ymd, tags: tags.join(", ") } });
     }
   }
 

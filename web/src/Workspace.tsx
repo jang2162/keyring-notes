@@ -18,6 +18,8 @@ import {
   Keyboard,
   Layers,
   Link,
+  Link2,
+  Paperclip,
   ListChecks,
   ListTree,
   LocateFixed,
@@ -30,6 +32,7 @@ import {
   SmilePlus,
   ChevronLeft,
   SlidersHorizontal,
+  TableOfContents,
   Tag,
   Trash2,
   Waypoints,
@@ -56,7 +59,6 @@ import {
   dailyNotePath,
   dailyNotes,
   dailyOfPath,
-  DAILY_PROP_KEYS,
   findNode,
   flattenNodes,
   friendlyDate,
@@ -76,9 +78,9 @@ import {
   shiftDays,
   stripMd,
   templateDirFor,
-  updateDailyProps,
+  updateDailyTags,
   vaultText,
-  withDailyProps,
+  withDailyTags,
   workspaceOf,
   workspacesOf,
   workspaceSettings,
@@ -108,6 +110,8 @@ import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./preview
 import { AsidePreview, FileViewer } from "./Aside";
 import { fmtDateTime, fmtNumber, missingPack, t, timeAgo, useLang } from "./i18n";
 import { tipProps } from "./Tooltip";
+import { AttachmentList } from "./Attachments";
+import { isRecordOf, isString, isStringArray, readStored } from "./stored";
 
 type ViewMode = "split" | "edit" | "preview";
 
@@ -184,12 +188,11 @@ function uniquePath(dir: string, stem: string, taken: string[], ext = ".md"): st
   }
 }
 
-/** 이 기기에 기억하는 값(localStorage JSON) */
-function useStored<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => void] {
+/** 이 기기에 기억하는 값(localStorage JSON). 모양이 맞지 않는 저장값(예전 형식 등)은 버리고 initial로 시작한다. */
+function useStored<T>(key: string, initial: T, valid: (v: unknown) => v is T): [T, (v: T | ((p: T) => T)) => void] {
   const [v, setV] = useState<T>(() => {
     try {
-      const raw = localStorage.getItem(key);
-      return raw === null ? initial : (JSON.parse(raw) as T);
+      return readStored(localStorage.getItem(key), initial, valid);
     } catch {
       return initial;
     }
@@ -413,7 +416,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [now, setNow] = useState(Date.now());
   const tabCache = useRef(new Map<string, OpenDoc>());
   const closedTabs = useRef<string[]>([]);
-  const [recent, setRecent] = useStored<string[]>("keyring:recent", []);
+  const [recent, setRecent] = useStored<string[]>("keyring:recent", [], isStringArray);
   /** 열어 본 문서 기록(뒤로·앞으로) */
   const nav = useRef<{ list: string[]; i: number }>({ list: [], i: -1 });
   const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | null>(null);
@@ -443,8 +446,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   scopeRef.current = { allWs, ws, scopeKey };
   const inScope = (p: string) => !scope || inWorkspace(p, scope);
   /** 워크스페이스마다 열린 탭·마지막 문서(이 기기) */
-  const [tabsByScope, setTabsByScope] = useStored<Record<string, string[]>>("keyring:tabs", {});
-  const [lastByScope, setLastByScope] = useStored<Record<string, string>>("keyring:last-doc", {});
+  const [tabsByScope, setTabsByScope] = useStored<Record<string, string[]>>("keyring:tabs", {}, isRecordOf(isStringArray));
+  const [lastByScope, setLastByScope] = useStored<Record<string, string>>("keyring:last-doc", {}, isRecordOf(isString));
   const tabs = tabsByScope[scopeKey] ?? [];
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
@@ -1175,6 +1178,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   /** 새로 넣는 링크의 대상 이름(공통 설정의 링크 모양: 가장 짧은 이름 또는 전체 경로). from: 링크를 쓸 문서 */
+  /** 첨부를 문서에 넣을 글: 이미지는 그림으로(`![[…]]`), 나머지는 링크 */
+  const embedText = (p: string) => (/\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i.test(p) ? `![[${linkTo(p)}]]` : `[[${linkTo(p)}]]`);
+
   const linkTo = (p: string, from = docRef.current?.path) => {
     const md = /\.md$/i.test(p);
     if (shared.linkFormat === "full") return md ? p.replace(/\.md$/i, "") : p;
@@ -1252,7 +1258,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const body = tpl ? applyTemplate(tpl, { title: stemOf(path), date: day, weekStart: cfg.weekStart, lang: cfg.lang }) : "";
     let content = body;
     try {
-      content = withDailyProps(body, day, { weekStart: cfg.weekStart, icon: wsSet.daily.icon || undefined, lang: cfg.lang });
+      content = withDailyTags(body, day, { weekStart: cfg.weekStart, icon: wsSet.daily.icon || undefined, lang: cfg.lang });
     } catch (e) {
       // 템플릿의 프런트매터가 깨져 있으면 속성 없이 만든다
       toast(t("daily.propsFailed", { message: errorText(e) }), { kind: "warn" });
@@ -1477,7 +1483,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  /** 이름 바꾸기(노드). 데일리 노트의 날짜가 바뀌면 날짜 속성(있는 것만)도 같이 고친다 */
+  /** 이름 바꾸기(노드). 데일리 노트의 날짜가 바뀌면 자동 태그(있는 것만)도 같이 고친다 */
   const renameNode = async (node: string, name: string) => {
     const path = `${node}.md`;
     const before = dailyOfPath(path, daily);
@@ -1488,10 +1494,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (after && before?.ymd !== after.ymd && cur?.path === `${to}.md`) {
       try {
         const cfg = daily.of(workspaceOf(cur.path));
-        const next = updateDailyProps(cur.draft, after.date, cfg?.weekStart, cfg?.lang);
+        const next = updateDailyTags(cur.draft, after.date, cfg?.weekStart, cfg?.lang);
         if (next) {
           editorHandle.current?.setContent(next);
-          toast(t("daily.propsUpdated", { date: after.ymd }), { kind: "info", duration: 3000 });
+          toast(t("daily.tagsUpdated", { date: after.ymd }), { kind: "info", duration: 3000 });
         }
       } catch {
         /* 프런트매터가 깨져 있으면 그대로 */
@@ -1594,6 +1600,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   /** 노드 아이콘: 노드 노트의 icon 속성. 노트가 없으면 그때 만든다 */
+  const openIconPicker = (node: string) => {
+    const r = document.querySelector(".title-icon")?.getBoundingClientRect();
+    setIconPick({ x: r ? r.left : Math.max(16, window.innerWidth / 2 - 160), y: r ? r.bottom + 4 : 96, node });
+  };
+
   const setIcon = async (node: string, icon: string | null) => {
     const path = `${node}.md`;
     const cur = docRef.current;
@@ -1898,6 +1909,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           { id: "tpl-insert", group: g.doc, label: t("cmd.templateInsert"), run: () => setPalette("templates") },
           { id: "save", group: g.doc, label: t("cmd.save"), keys: "Mod+S", run: () => void save() },
           { id: "rename", group: g.doc, label: t("common.rename"), keys: "F2", inInputs: false, run: () => focusTitle(doc.path) },
+          { id: "icon", group: g.doc, label: docIcon ? t("title.changeIcon") : t("title.addIcon"), run: () => openIconPicker(stripMd(doc.path)) },
           { id: "new-child", group: g.doc, label: t("tree.newChild"), run: () => void createDoc(stripMd(doc.path)) },
           { id: "move", group: g.doc, label: t("tree.moveTo"), run: () => startMove(stripMd(doc.path), "node") },
           { id: "duplicate", group: g.doc, label: t("tree.duplicate"), run: () => { const n = findNode(nodeTree, stripMd(doc.path)); if (n) void duplicateNode(n); } },
@@ -1967,6 +1979,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const keyOf = (id: string) => {
     const c = commands.find((x) => x.id === id);
     return c ? commandKey(c, prefs.keys) : undefined;
+  };
+  /** 툴팁 글: 이름 뒤에 그 명령의 단축키(있으면) */
+  const withKey = (label: string, id: string) => {
+    const k = keyOf(id);
+    return k ? `${label} (${formatCombo(k)})` : label;
   };
 
   function cycleTab(dir: number) {
@@ -2079,6 +2096,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   const treeActions: TreeActions = {
     open: (n, o) => void openNode(n, o),
+    embedText: (p) => embedText(p),
     openAttachment: (p) => (/\.pdf$/i.test(p) ? setPdfView({ path: p }) : setFileView(p)),
     newChild: (parent) => void createDoc(parent || currentParent()),
     rename: (p, kind, name) => (kind === "node" ? renameNode(p, name) : moveAttachment(p, join(parentOf(p), name))),
@@ -2129,10 +2147,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       {rl && <span className="icon-btn-label">{allWs ? t("ws.all") : ws}</span>}
     </button>
   );
+  // 워크스페이스마다 같은 폭의 앞자리(아이콘 또는 첫 글자)를 두어 이름이 왼쪽으로 맞고, 고른 것은 강조 모양으로
+  const wsLead = (w: string) =>
+    wsIcon(w) ? <span className="ws-emoji menu-emoji" aria-hidden>{wsIcon(w)}</span> : <span className="ws-letter menu-letter" aria-hidden>{[...w][0]}</span>;
+  const wsMenuAt = wsMenu ?? { x: 64, y: 64 };
   const wsMenuItems: MenuEntry[] = [
-    ...wsNames.map((w) => ({ label: `${!allWs && w === ws ? "✓ " : ""}${wsIcon(w) ? `${wsIcon(w)} ` : ""}${w}`, run: () => void switchScope({ workspace: w, all: false }) })),
+    ...wsNames.map((w) => ({ label: w, lead: wsLead(w), checked: !allWs && w === ws, run: () => void switchScope({ workspace: w, all: false }) })),
     "-",
-    { label: `${allWs ? "✓ " : ""}${t("ws.all")}`, icon: Layers, run: () => void switchScope({ all: !allWs }) },
+    { label: t("ws.all"), icon: Layers, checked: allWs, run: () => void switchScope({ all: !allWs }) },
+    ...(ws && !allWs ? [{ label: wsIcon(ws) ? t("ws.changeIcon", { name: ws }) : t("ws.addIcon", { name: ws }), icon: SmilePlus, run: () => setIconPick({ ...wsMenuAt, node: ws }) }] : []),
     { label: t("ws.manage"), icon: SettingsIcon, run: () => openSettings("workspaces") },
   ];
 
@@ -2144,6 +2167,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         <IconButton icon={Files} label={t("rail.files")} side={railSide} showLabel={rl} active={prefs.leftOpen && prefs.leftView === "files"} onClick={() => showLeft("files")} />
         <IconButton icon={Search} label={t("rail.search")} side={railSide} showLabel={rl} keys={keyOf("search")} active={prefs.leftOpen && prefs.leftView === "search"} onClick={() => showLeft("search")} />
         <IconButton icon={Tag} label={t("rail.tags")} side={railSide} showLabel={rl} active={prefs.leftOpen && prefs.leftView === "tags"} onClick={() => showLeft("tags")} />
+        <IconButton icon={Paperclip} label={t("rail.attachments")} side={railSide} showLabel={rl} active={prefs.leftOpen && prefs.leftView === "attachments"} onClick={() => showLeft("attachments")} />
         <span className="rail-sep" />
         {dailyCfg && <IconButton icon={CalendarDays} label={t("cmd.daily")} shortLabel={t("rail.daily")} side={railSide} showLabel={rl} keys={keyOf("daily")} onClick={() => void openDaily(0)} />}
         <IconButton icon={Waypoints} label={t("tool.graph")} shortLabel={t("rail.graph")} side={railSide} showLabel={rl} onClick={() => setGraphOpen(true)} />
@@ -2182,7 +2206,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </nav>
   );
 
-  const leftLabel = { files: t("rail.files"), search: t("rail.search"), tags: t("rail.tags") }[prefs.leftView];
+  const leftLabel = { files: t("rail.files"), search: t("rail.search"), tags: t("rail.tags"), attachments: t("rail.attachments") }[prefs.leftView];
+  // 첨부 보기: 지금 워크스페이스(모든 워크스페이스면 전체)의 마크다운이 아닌 파일
+  const attachmentPaths = resolver.paths.filter((p) => !/\.md$/i.test(p) && !isVaultSettingsPath(p) && (allWs || p.startsWith(`${ws}/`)));
+  const canInsert = !!doc && !doc.generated && !revision && !doc.virtual;
   const leftPanel = (
     <aside className="left-panel" aria-label={leftLabel}>
       {prefs.leftView === "files" && (
@@ -2273,6 +2300,20 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           )}
         </>
       )}
+      {prefs.leftView === "attachments" && (
+        <>
+          <div className="panel-head">
+            <strong>{t("attach.title", { count: attachmentPaths.length })}</strong>
+            {!allWs && <span className="meta panel-scope">{ws}</span>}
+          </div>
+          <AttachmentList
+            paths={attachmentPaths}
+            embedText={embedText}
+            onOpen={(p) => treeActions.openAttachment(p)}
+            onInsert={canInsert ? (p) => editorHandle.current?.insertText(embedText(p), { keepSelection: true, ownLine: true }) : undefined}
+          />
+        </>
+      )}
       {prefs.leftView === "tags" && (
         <>
           <div className="panel-head">
@@ -2306,11 +2347,30 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           label={t("panel.label")}
           value={rightTab}
           onChange={(v) => setPrefs({ rightTab: v })}
+          // 좁은 패널에서 글자가 줄바꿈되지 않게 아이콘(+ 개수)만 두고, 이름·설명·단축키는 툴팁으로
           options={[
-            { value: "outline", label: t("panel.outline") },
-            { value: "links", label: linkCount ? t("panel.linksCount", { count: linkCount }) : t("panel.links"), title: t("panel.linksTip") },
-            { value: "props", label: propCount ? t("panel.propsCount", { count: propCount }) : t("panel.props"), title: t("panel.propsTip") },
-            { value: "history", label: t("panel.history") },
+            { value: "outline", label: <TableOfContents size={15} aria-label={t("panel.outline")} />, title: withKey(t("panel.outline"), "outline") },
+            {
+              value: "links",
+              label: (
+                <>
+                  <Link2 size={15} aria-label={t("panel.links")} />
+                  {linkCount > 0 && <span className="seg-count">{linkCount}</span>}
+                </>
+              ),
+              title: `${linkCount ? t("panel.linksCount", { count: linkCount }) : t("panel.links")} · ${t("panel.linksTip")}`,
+            },
+            {
+              value: "props",
+              label: (
+                <>
+                  <SlidersHorizontal size={15} aria-label={t("panel.props")} />
+                  {propCount > 0 && <span className="seg-count">{propCount}</span>}
+                </>
+              ),
+              title: `${propCount ? t("panel.propsCount", { count: propCount }) : t("panel.props")} · ${t("panel.propsTip")}`,
+            },
+            { value: "history", label: <History size={15} aria-label={t("panel.history")} />, title: withKey(t("panel.history"), "history") },
           ]}
         />
         <IconButton size={16} icon={X} label={t("panel.close")} keys={keyOf("right")} onClick={() => (narrow() ? setDrawer(null) : setPrefs({ rightOpen: false }))} />
@@ -2321,8 +2381,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             content={revision ? (revision.content ?? "") : doc.draft}
             stats={propStats}
             readOnly={doc.generated || !!revision}
-            autoKeys={docDaily ? DAILY_PROP_KEYS : undefined}
             onChange={(next) => editorHandle.current?.setContent(next)}
+            onPickIcon={(at) => setIconPick({ ...at, node: docNode })}
           />
         )}
         {rightTab === "outline" && (
@@ -2399,6 +2459,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     ? [
         { label: t("cmd.save"), icon: Pencil, keys: keyOf("save"), disabled: !dirty || doc.generated, run: () => void save() },
         { label: t("common.rename"), keys: keyOf("rename"), disabled: doc.generated || isWsDoc, run: () => focusTitle(doc.path) },
+        { label: docIcon ? t("title.changeIcon") : t("title.addIcon"), icon: SmilePlus, disabled: doc.generated || !!revision, run: () => openIconPicker(docNode) },
+        ...(docIcon && !doc.generated && !revision ? [{ label: t("title.removeIcon"), run: () => void setIcon(docNode, null) }] : []),
         { label: t("tree.newChild"), icon: FilePlus, disabled: doc.generated, run: () => void createDoc(docNode) },
         { label: t("tree.moveTo"), icon: FolderInput, disabled: doc.generated || isWsDoc, run: () => startMove(docNode, "node") },
         { label: t("tree.duplicate"), icon: Copy, disabled: doc.virtual, run: () => { const n = findNode(nodeTree, docNode); if (n) void duplicateNode(n); } },

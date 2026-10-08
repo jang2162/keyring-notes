@@ -144,18 +144,18 @@ describe("공통 설정·노드 이동", () => {
   it("설정 파일은 검색·위젯·속성 통계에서 빠지고, [[날짜]]는 같은 워크스페이스의 그날 데일리 노트로", async () => {
     const { v } = await vault({
       "keyring-settings.md": "---\nkeyring: settings\nvault:\n  language: ko\nworkspaces:\n  개인:\n    daily:\n      format: YYYY/YYYY-MM-DD\n---\n# Keyring Notes 설정\n일기",
-      "개인/일기/2026/2026-10-07 회의.md": "---\nicon: 📅\n---\n회의 일기",
-      "업무/일기/2026-10-07.md": "업무 일기",
+      "개인/데일리 노트/2026/2026-10-07 회의.md": "---\nicon: 📅\n---\n회의 일기",
+      "업무/데일리 노트/2026-10-07.md": "업무 일기",
       "개인/a.md": "[[2026-10-07]] 일기",
       "업무/b.md": "[[2026-10-07]]",
     });
-    expect(v.daily().of("개인")).toMatchObject({ folder: "개인/일기", format: "YYYY/YYYY-MM-DD" });
-    expect(v.search("일기").map((h) => h.path).sort()).toEqual(["개인/a.md", "개인/일기/2026/2026-10-07 회의.md", "업무/일기/2026-10-07.md"]);
+    expect(v.daily().of("개인")).toMatchObject({ folder: "개인/데일리 노트", format: "YYYY/YYYY-MM-DD" });
+    expect(v.search("일기").map((h) => h.path).sort()).toEqual(["개인/a.md", "개인/데일리 노트/2026/2026-10-07 회의.md", "업무/데일리 노트/2026-10-07.md"]);
     expect(v.properties().map((p) => p.key)).toEqual(["icon"]);
     const w = v.widget("type: query\nfrom: 개인");
-    expect(w.type === "query" && w.rows.map((r) => r.path).sort()).toEqual(["개인/a.md", "개인/일기/2026/2026-10-07 회의.md"]);
-    expect(v.backlinks("개인/일기/2026/2026-10-07 회의.md").map((b) => b.path)).toEqual(["개인/a.md"]);
-    expect(v.backlinks("업무/일기/2026-10-07.md").map((b) => b.path)).toEqual(["업무/b.md"]);
+    expect(w.type === "query" && w.rows.map((r) => r.path).sort()).toEqual(["개인/a.md", "개인/데일리 노트/2026/2026-10-07 회의.md"]);
+    expect(v.backlinks("개인/데일리 노트/2026/2026-10-07 회의.md").map((b) => b.path)).toEqual(["개인/a.md"]);
+    expect(v.backlinks("업무/데일리 노트/2026-10-07.md").map((b) => b.path)).toEqual(["업무/b.md"]);
     expect(v.graph().nodes.map((n) => n.id)).not.toContain("keyring-settings.md");
   });
 

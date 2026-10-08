@@ -26,6 +26,8 @@ export interface VaultText {
   templateFolder: string;
   dailyTemplate: string;
   attachmentFolder: string;
+  /** 데일리 노트 자동 태그의 맨 앞(데일리/2026/10/07) */
+  dailyTag: string;
   /** 요일(일요일부터) 짧은·긴 이름 */
   weekdaysShort: string[];
   weekdaysLong: string[];
@@ -86,6 +88,7 @@ const EN: VaultText = {
   templateFolder: "Templates",
   dailyTemplate: "Templates/Daily.md",
   attachmentFolder: "_attachments",
+  dailyTag: "daily",
   weekdaysShort: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
   weekdaysLong: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
   months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
@@ -139,10 +142,11 @@ const KO: VaultText = {
   copySuffix: "사본",
   pastedImage: "붙여넣은 이미지",
   attachmentName: "첨부",
-  dailyFolder: "일기",
+  dailyFolder: "데일리 노트",
   templateFolder: "템플릿",
   dailyTemplate: "템플릿/데일리.md",
   attachmentFolder: "_첨부",
+  dailyTag: "데일리",
   weekdaysShort: ["일", "월", "화", "수", "목", "금", "토"],
   weekdaysLong: ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"],
   months: Array.from({ length: 12 }, (_, i) => `${i + 1}월`),

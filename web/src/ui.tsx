@@ -66,6 +66,10 @@ export function IconButton({
 export interface MenuItem {
   label: string;
   icon?: LucideIcon;
+  /** 아이콘 자리에 둘 것(이모지·글자 배지 등). icon보다 먼저 */
+  lead?: ReactNode;
+  /** 고른 항목(워크스페이스 등): ✓ 대신 강조 모양 */
+  checked?: boolean;
   keys?: string;
   run: () => void;
   danger?: boolean;
@@ -143,13 +147,14 @@ export function Menu({ at, items, onClose }: { at: { x: number; y: number }; ite
           <button
             key={i}
             type="button"
-            role="menuitem"
-            className={`menu-item${it.danger ? " danger" : ""}${sel === i ? " on" : ""}`}
+            role={it.checked === undefined ? "menuitem" : "menuitemradio"}
+            aria-checked={it.checked}
+            className={`menu-item${it.danger ? " danger" : ""}${sel === i ? " on" : ""}${it.checked ? " checked" : ""}`}
             disabled={it.disabled}
             onMouseEnter={() => setSel(i)}
             onClick={() => run(it)}
           >
-            <span className="menu-icon">{it.icon && <it.icon size={15} strokeWidth={1.75} aria-hidden />}</span>
+            <span className="menu-icon">{it.lead ?? (it.icon && <it.icon size={15} strokeWidth={1.75} aria-hidden />)}</span>
             <span className="menu-label">{it.label}</span>
             {it.keys && <kbd className="menu-keys">{formatCombo(it.keys)}</kbd>}
           </button>

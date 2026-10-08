@@ -26,8 +26,8 @@ beforeEach(async () => {
   settings = setVaultSetting(settings, ["workspaces", "개인", "daily", "format"], "GGGG/[W]WW/YYYY-MM-DD");
   await owner.batch([
     { op: "write", path: VAULT_SETTINGS_PATH, content: settings, baseHash: null },
-    { op: "write", path: "개인/일기/2026/W53/2027-01-01 새해 계획.md", content: "---\nicon: 🎍\n---\n새해", baseHash: null },
-    { op: "write", path: "개인/일기/2026/W41/2026-10-07.md", content: "오늘", baseHash: null },
+    { op: "write", path: "개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md", content: "---\nicon: 🎍\n---\n새해", baseHash: null },
+    { op: "write", path: "개인/데일리 노트/2026/W41/2026-10-07.md", content: "오늘", baseHash: null },
     { op: "write", path: "개인/공개/메모.md", content: "[[2027-01-01]] [[2026-10-07]] 계획", baseHash: null },
   ]);
 });
@@ -66,32 +66,32 @@ describe("모든 기기 공통 설정 파일", () => {
   it("[[날짜]] 링크는 같은 워크스페이스의 그날 데일리 노트로, 에이전트에게는 보이는 문서 안에서만", async () => {
     const outline = await owner.outline("개인/공개/메모.md");
     expect(outline.links).toEqual([
-      { target: "2027-01-01", path: "개인/일기/2026/W53/2027-01-01 새해 계획.md" },
-      { target: "2026-10-07", path: "개인/일기/2026/W41/2026-10-07.md" },
+      { target: "2027-01-01", path: "개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md" },
+      { target: "2026-10-07", path: "개인/데일리 노트/2026/W41/2026-10-07.md" },
     ]);
-    expect((await owner.backlinks("개인/일기/2026/W53/2027-01-01 새해 계획.md")).map((b) => b.path)).toEqual(["개인/공개/메모.md"]);
+    expect((await owner.backlinks("개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md")).map((b) => b.path)).toEqual(["개인/공개/메모.md"]);
     expect((await owner.lint()).issues.filter((i) => i.kind === "broken_link")).toEqual([]);
     // 다른 워크스페이스의 같은 날 노트보다 같은 워크스페이스 것이 먼저
-    await owner.write("업무/일기/2026-10-07.md", "업무 일기", null);
-    expect((await owner.outline("개인/공개/메모.md")).links[1].path).toBe("개인/일기/2026/W41/2026-10-07.md");
+    await owner.write("업무/데일리 노트/2026-10-07.md", "업무 일기", null);
+    expect((await owner.outline("개인/공개/메모.md")).links[1].path).toBe("개인/데일리 노트/2026/W41/2026-10-07.md");
     await owner.write("업무/메모.md", "[[2026-10-07]]", null);
-    expect((await owner.outline("업무/메모.md")).links[0].path).toBe("업무/일기/2026-10-07.md");
+    expect((await owner.outline("업무/메모.md")).links[0].path).toBe("업무/데일리 노트/2026-10-07.md");
     // 일기가 숨겨진 에이전트: 날짜 링크도 해석되지 않는다(존재가 드러나지 않게)
     const agent = new ScopedVault(vault, agentPrincipal("bot", { "개인/공개": "read" }), index, wiki);
     expect((await agent.outline("개인/공개/메모.md")).links.map((l) => l.path)).toEqual([null, null]);
     // 설정을 바꾸면(형식) 바로 따라간다: 2027-01-01은 이제 데일리 노트가 아니고, 2026-10-07은 이름이 같아서(최단 경로) 찾는다
     const s = await owner.read(VAULT_SETTINGS_PATH);
     await owner.write(VAULT_SETTINGS_PATH, setVaultSetting(s.content, ["workspaces", "개인", "daily", "format"], "YYYY-MM-DD"), s.hash);
-    expect((await owner.outline("개인/공개/메모.md")).links.map((l) => l.path)).toEqual([null, "개인/일기/2026/W41/2026-10-07.md"]);
+    expect((await owner.outline("개인/공개/메모.md")).links.map((l) => l.path)).toEqual([null, "개인/데일리 노트/2026/W41/2026-10-07.md"]);
   });
 
   it("트리 문서에 아이콘", async () => {
-    const tree = await owner.tree("개인/일기/2026/W53");
-    expect(tree).toEqual([{ name: "2027-01-01 새해 계획.md", path: "개인/일기/2026/W53/2027-01-01 새해 계획.md", type: "file", icon: "🎍" }]);
+    const tree = await owner.tree("개인/데일리 노트/2026/W53");
+    expect(tree).toEqual([{ name: "2027-01-01 새해 계획.md", path: "개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md", type: "file", icon: "🎍" }]);
   });
 
   it("데일리 노트를 데일리 폴더 밖으로 옮기면 [[날짜]] 링크를 고친다", async () => {
-    const d = await owner.read("개인/일기/2026/W53/2027-01-01 새해 계획.md");
+    const d = await owner.read("개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md");
     const r = await owner.move(d.path, "개인/보관/2027-01-01 새해 계획.md", d.hash);
     expect(r.linksUpdated).toContain("개인/공개/메모.md");
     expect((await owner.read("개인/공개/메모.md")).content).toBe("[[2027-01-01 새해 계획]] [[2026-10-07]] 계획");

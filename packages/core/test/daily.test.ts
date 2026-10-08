@@ -5,8 +5,8 @@ import {
   dailyLinkDate,
   dailyNotePath,
   dailyNotes,
-  dailyPropMismatch,
-  dailyProps,
+  dailyTagMismatch,
+  dailyTags,
   formatDate,
   lintVault,
   parseDailyPath,
@@ -18,9 +18,9 @@ import {
   runWidget,
   parseWidget,
   setVaultSetting,
-  updateDailyProps,
+  updateDailyTags,
   weekOf,
-  withDailyProps,
+  withDailyTags,
   analyze,
   singleDaily,
   dailyLookup,
@@ -128,45 +128,60 @@ describe("데일리 판정", () => {
   });
 });
 
-describe("데일리 속성", () => {
-  it("자동 속성과 YAML 형태", () => {
-    expect(dailyProps(day(2026, 10, 7), "monday", "ko")).toEqual({ daily: true, date: "2026-10-07", year: 2026, month: 10, monthday: "10-07", week: "2026-W41", weekday: "수" });
-    expect(dailyProps(day(2026, 10, 7)).weekday).toBe("Wed");
-    const out = withDailyProps("---\ntags: [일기]\ndate: 옛날\n---\n본문", day(2026, 10, 7), { icon: "📅", lang: "ko" });
+describe("데일리 태그", () => {
+  it("자동 태그와 YAML 형태(템플릿 태그·아이콘과 합침)", () => {
+    expect(dailyTags(day(2026, 10, 7), "monday", "ko")).toEqual({ day: "데일리/2026/10/07", monthday: "10-07", week: "2026-W41", weekday: "수요일" });
+    expect(dailyTags(day(2026, 10, 7))).toEqual({ day: "daily/2026/10/07", monthday: "10-07", week: "2026-W41", weekday: "Wednesday" });
+    const out = withDailyTags("---\ntags: [일기]\nicon: \n---\n본문", day(2026, 10, 7), { icon: "📅", lang: "ko" });
+    expect(out).toContain("tags: [데일리/2026/10/07, 10-07, 2026-W41, 수요일, 일기]");
     const fm = parseYaml(out.split("---\n")[1]);
-    expect(fm).toMatchObject({ tags: ["일기"], daily: true, date: "2026-10-07", year: 2026, month: 10, monthday: "10-07", week: "2026-W41", weekday: "수", icon: "📅" });
-    expect(typeof fm.date).toBe("string");
-    expect(typeof fm.monthday).toBe("string");
+    expect(fm).toMatchObject({ tags: ["데일리/2026/10/07", "10-07", "2026-W41", "수요일", "일기"], icon: "📅" });
+    // 날짜 속성은 더 넣지 않는다
+    expect(Object.keys(fm).sort()).toEqual(["icon", "tags"]);
     expect(out.endsWith("본문")).toBe(true);
-    // 템플릿의 icon이 있으면 그대로
-    expect(parseFrontmatter(withDailyProps("---\nicon: 🌙\n---\n", day(2026, 10, 7), { icon: "📅" })).data?.icon).toBe("🌙");
+    // 템플릿 없이 만들면 한 줄 목록, 템플릿의 icon이 있으면 그대로
+    expect(withDailyTags("", day(2026, 10, 7), { lang: "ko" })).toBe("---\ntags: [데일리/2026/10/07, 10-07, 2026-W41, 수요일]\n---\n");
+    expect(parseFrontmatter(withDailyTags("---\nicon: 🌙\n---\n", day(2026, 10, 7), { icon: "📅" })).data?.icon).toBe("🌙");
+    // 색인에는 소문자 태그로 들어가고 #데일리 로 하위까지 잡힌다
+    expect(analyze("일기/2026-10-07.md", withDailyTags("", day(2026, 10, 7))).tags).toEqual(["10-07", "2026-w41", "daily/2026/10/07", "wednesday"]);
   });
-  it("이름 날짜를 바꾸면 있는 속성만 고치고, 어긋나면 점검에 나온다", () => {
-    const c = withDailyProps("", day(2026, 10, 7), { lang: "ko" });
-    const next = updateDailyProps(c, day(2027, 1, 1), "monday", "ko")!;
-    expect(parseFrontmatter(next).data).toMatchObject({ date: "2027-01-01", year: 2027, month: 1, monthday: "01-01", week: "2026-W53", weekday: "금" });
-    expect(updateDailyProps("---\ntitle: x\n---\n", day(2026, 1, 1))).toBeNull();
-    expect(dailyPropMismatch(parseFrontmatter(c).data, day(2026, 10, 8), "monday", "ko")).toEqual(["date", "monthday", "weekday"]);
+  it("이름 날짜를 바꾸면 있는 자동 태그만 고치고, 어긋나면 점검에 나온다", () => {
+    const c = withDailyTags("---\ntags: [회의, 10-07]\n---\n", day(2026, 10, 7), { lang: "ko" });
+    const next = updateDailyTags(c, day(2027, 1, 1), "monday", "ko")!;
+    expect(parseFrontmatter(next).data?.tags).toEqual(["데일리/2027/01/01", "01-01", "2026-W53", "금요일", "회의"]);
+    // 사람이 지운 자동 태그는 다시 넣지 않는다
+    const partial = updateDailyTags("---\ntags: [데일리/2026/10/07, 메모]\n---\n", day(2026, 10, 8), "monday", "ko")!;
+    expect(parseFrontmatter(partial).data?.tags).toEqual(["데일리/2026/10/08", "메모"]);
+    expect(updateDailyTags("---\ntitle: x\n---\n", day(2026, 1, 1))).toBeNull();
+    expect(updateDailyTags(c, day(2026, 10, 7), "monday", "ko")).toBeNull();
+    expect(dailyTagMismatch(parseFrontmatter(c).data, day(2026, 10, 8))).toEqual(["데일리/2026/10/07", "10-07", "수요일"]);
+    expect(dailyTagMismatch(parseFrontmatter(c).data, day(2026, 10, 7))).toEqual([]);
+    // 볼트 언어를 바꾼 뒤에도 예전 언어의 자동 태그를 알아본다
+    const mixed = "---\ntags: [daily/2026/10/07, 수요일]\n---\n";
+    expect(dailyTagMismatch(parseFrontmatter(mixed).data, day(2026, 10, 8))).toEqual(["daily/2026/10/07", "수요일"]);
+    expect(parseFrontmatter(updateDailyTags(mixed, day(2026, 10, 8), "monday", "ko")!).data?.tags).toEqual(["데일리/2026/10/08", "목요일"]);
     const cfg = singleDaily("개인", { folder: "개인/일기", format: "YYYY-MM-DD", lang: "ko" });
     const meta = (path: string, content: string): DocMeta => {
       const a = analyze(path, content);
       return { path, title: a.title, summary: a.summary, hash: "h", mtime: Date.now(), size: 1, frontmatter: a.frontmatter, tags: a.tags };
     };
     const report = lintVault({ docs: [meta("개인/일기/2026-10-08.md", c), meta("개인/일기/2026-10-07.md", c)], files: ["개인/일기/2026-10-08.md", "개인/일기/2026-10-07.md"], links: [], canRead: () => true, folder: "", daily: cfg });
-    expect(report.issues.map((i) => [i.kind, i.path, i.params?.date])).toEqual([["daily_mismatch", "개인/일기/2026-10-08.md", "2026-10-08"]]);
+    expect(report.issues.map((i) => [i.kind, i.path, i.params?.date, i.params?.tags])).toEqual([["daily_mismatch", "개인/일기/2026-10-08.md", "2026-10-08", "데일리/2026/10/07, 10-07, 수요일"]]);
   });
-  it("위젯 조건: monthday = 10-07, 연·월", () => {
+  it("위젯: 태그로 해마다 오늘·그달·그주", () => {
     const meta = (path: string, d: Date): DocMeta => {
-      const a = analyze(path, withDailyProps("", d));
-      return { path, title: a.title, summary: "", hash: "h", mtime: 0, size: 1, frontmatter: a.frontmatter, tags: [] };
+      const a = analyze(path, withDailyTags("", d, { lang: "ko" }));
+      return { path, title: a.title, summary: "", hash: "h", mtime: 0, size: 1, frontmatter: a.frontmatter, tags: a.tags };
     };
     const docs = [meta("일기/2025-10-07.md", day(2025, 10, 7)), meta("일기/2026-10-07.md", day(2026, 10, 7)), meta("일기/2026-10-08.md", day(2026, 10, 8))];
-    const r = runWidget(parseWidget("type: query\nwhere: monthday = 10-07"), docs, []);
-    expect(r.type === "query" && r.rows.map((x) => x.path)).toEqual(["일기/2025-10-07.md", "일기/2026-10-07.md"]);
-    const r2 = runWidget(parseWidget("type: query\nwhere: [daily, year = 2026, month = 10]"), docs, []);
-    expect(r2.type === "query" && r2.rows.length).toBe(2);
-    const r3 = runWidget(parseWidget("type: query\nwhere: week = 2026-W41"), docs, []);
-    expect(r3.type === "query" && r3.rows.length).toBe(2);
+    const paths = (spec: string) => {
+      const r = runWidget(parseWidget(spec), docs, []);
+      return r.type === "query" ? r.rows.map((x) => x.path) : null;
+    };
+    expect(paths('type: query\nfrom: "#10-07"')).toEqual(["일기/2025-10-07.md", "일기/2026-10-07.md"]);
+    expect(paths('type: query\nfrom: "#데일리/2026/10"')).toEqual(["일기/2026-10-07.md", "일기/2026-10-08.md"]);
+    expect(paths('type: query\nfrom: "#데일리"')).toHaveLength(3);
+    expect(paths("type: query\nwhere: tags = 2026-W41")).toEqual(["일기/2026-10-07.md", "일기/2026-10-08.md"]);
   });
 });
 
@@ -197,16 +212,16 @@ describe("공통 설정 파일", () => {
   it("읽기·쓰기·기본값(워크스페이스별, 볼트 언어의 폴더 이름)", () => {
     expect(workspaceSettings(parseVaultSettings(null), "개인").daily.folder).toBe("Daily");
     let c = setVaultSetting(null, ["vault", "language"], "ko", "ko");
-    expect(workspaceSettings(parseVaultSettings(c), "개인")).toMatchObject({ daily: { folder: "일기", format: "YYYY-MM-DD", template: "템플릿/데일리.md" }, attachmentFolder: "_첨부", templateFolder: "템플릿" });
+    expect(workspaceSettings(parseVaultSettings(c), "개인")).toMatchObject({ daily: { folder: "데일리 노트", format: "YYYY-MM-DD", template: "템플릿/데일리.md" }, attachmentFolder: "_첨부", templateFolder: "템플릿" });
     c = setVaultSetting(c, ["workspaces", "업무", "daily", "format"], "GGGG/[W]WW/YYYY-MM-DD");
     c = setVaultSetting(c, ["workspaces", "업무", "daily", "weekStart"], "sunday");
     c = setVaultSetting(c, ["workspaces", "개인", "daily", "enabled"], false);
     const s = parseVaultSettings(c);
-    expect(workspaceSettings(s, "업무").daily).toMatchObject({ format: "GGGG/[W]WW/YYYY-MM-DD", weekStart: "sunday", folder: "일기" });
+    expect(workspaceSettings(s, "업무").daily).toMatchObject({ format: "GGGG/[W]WW/YYYY-MM-DD", weekStart: "sunday", folder: "데일리 노트" });
     expect(c).toContain("# Keyring Notes 설정");
     const lookup = dailyLookup(s, () => ["개인", "업무"]);
     expect(lookup.of("개인")).toBeNull();
-    expect(lookup.of("업무")).toMatchObject({ folder: "업무/일기", lang: "ko" });
+    expect(lookup.of("업무")).toMatchObject({ folder: "업무/데일리 노트", lang: "ko" });
     // 키를 지우면 빈 묶음도 지운다
     c = setVaultSetting(c, ["workspaces", "개인", "daily", "enabled"], null);
     expect(parseVaultSettings(c).workspaces.개인).toBeUndefined();

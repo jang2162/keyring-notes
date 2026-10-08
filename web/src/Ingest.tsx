@@ -4,6 +4,7 @@ import { api, type IngestResult, type Topic } from "./api";
 import { errorText } from "./toast";
 import { alertDialog, promptDialog } from "./dialog";
 import { t } from "./i18n";
+import { Paperclip } from "lucide-react";
 import { tipProps } from "./Tooltip";
 
 /**
@@ -175,7 +176,9 @@ export function IngestDialog({ workspace, onClose, onDone }: { workspace?: strin
           <div className="bookmarklet">
             <p className="meta">{t("ingest.bookmarkletHint")}</p>
             <a ref={bm} className="bookmarklet-link" onClick={(e) => e.preventDefault()}>
-              📎 {t("ingest.bookmarklet")}
+              <Paperclip size={15} strokeWidth={1.75} aria-hidden />
+              <span className="sr-only">📎 </span>
+              {t("ingest.bookmarklet")}
             </a>
           </div>
         </form>

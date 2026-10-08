@@ -14,7 +14,7 @@
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w packages/core && npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
-    "test": "npm test -w packages/core && npm test -w server",
+    "test": "npm test -w packages/core && npm test -w server && npm test -w web",
     "typecheck": "npm run typecheck -w packages/core && npm run typecheck -w server && npm run typecheck -w web",
     "keyring": "npm run --silent keyring -w server --",
     "app:dev": "npm run dev -w app",

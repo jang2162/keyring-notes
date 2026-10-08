@@ -9,6 +9,7 @@ import {
   type PropertyStat,
   type PropertyType,
 } from "@keyring-notes/core";
+import { SmilePlus } from "lucide-react";
 import { fmtNumber, t } from "./i18n";
 import { errorText } from "./toast";
 import { tipProps } from "./Tooltip";
@@ -28,12 +29,11 @@ interface Props {
   onChange: (next: string) => void;
   stats: PropertyStat[];
   readOnly?: boolean;
-  /** 앱이 정하는 속성(데일리 노트의 날짜 속성): "자동" 표시, 읽기 전용 */
-  autoKeys?: readonly string[];
+  /** 주면 icon 속성 값을 이모지 고르기 단추로 보인다(누른 자리 아래에 고르기 창) */
+  onPickIcon?: (at: { x: number; y: number }) => void;
 }
 
-export function Properties({ content, onChange, stats, readOnly: readOnlyAll, autoKeys = [] }: Props) {
-  const readOnly = readOnlyAll;
+export function Properties({ content, onChange, stats, readOnly, onPickIcon }: Props) {
   const fm = useMemo(() => parseFrontmatter(content), [content]);
   const [error, setError] = useState<string | null>(null);
   // 값이 비어 종류를 알 수 없는 필드에 사람이 고른 종류
@@ -93,10 +93,8 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
           <tbody>
             {entries.map(([key, value]) => {
               const type = typeOf(key, value);
-              const auto = autoKeys.includes(key);
-              const readOnly = readOnlyAll || auto;
               return (
-                <tr key={key} className={auto ? "prop-auto" : undefined} title={auto ? t("props.autoTip") : undefined}>
+                <tr key={key}>
                   <th>
                     <input
                       className="prop-key"
@@ -132,10 +130,24 @@ export function Properties({ content, onChange, stats, readOnly: readOnlyAll, au
                     )}
                   </td>
                   <td className="prop-value">
-                    <ValueInput name={key} type={type} value={value} suggestions={statOf.get(key)?.values ?? []} readOnly={readOnly} onSet={(v) => set(key, v)} />
+                    {key === "icon" && onPickIcon && !readOnly && (value === null || typeof value === "string") ? (
+                      <button
+                        type="button"
+                        className="prop-icon-btn"
+                        {...tipProps({ label: value ? t("title.changeIcon") : t("title.addIcon") })}
+                        aria-label={value ? t("title.changeIconOf", { icon: value }) : t("title.addIcon")}
+                        onClick={(e) => {
+                          const r = e.currentTarget.getBoundingClientRect();
+                          onPickIcon({ x: r.left, y: r.bottom + 4 });
+                        }}
+                      >
+                        {value || <SmilePlus size={16} strokeWidth={1.75} aria-hidden />}
+                      </button>
+                    ) : (
+                      <ValueInput name={key} type={type} value={value} suggestions={statOf.get(key)?.values ?? []} readOnly={readOnly} onSet={(v) => set(key, v)} />
+                    )}
                   </td>
                   <td>
-                    {auto && <span className="prop-auto-badge">{t("props.auto")}</span>}
                     {!readOnly && (
                       <button className="link-btn" {...tipProps({ label: t("props.removeTip", { key }) })} aria-label={t("props.removeTip", { key })} onClick={() => remove(key)}>
                         ×

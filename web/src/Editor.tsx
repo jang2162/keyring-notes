@@ -44,8 +44,8 @@ export interface EditorHandle {
   toggleTask(line: number, done: boolean): void;
   /** 그 줄(1부터)로 커서를 옮기고 보이게 한다. text가 그 줄(또는 가까운 줄)에 있으면 그 글을 고른다 */
   gotoLine(line: number, text?: string): void;
-  /** 커서 자리에 글을 넣는다(템플릿 넣기) */
-  insertText(text: string): void;
+  /** 커서 자리에 글을 넣는다(템플릿 넣기). keepSelection이면 고른 글을 지우지 않고 그 뒤에 넣는다(첨부 넣기) */
+  insertText(text: string, opts?: { keepSelection?: boolean; ownLine?: boolean }): void;
   /** 내용을 바꾼다(속성 입력 화면). 달라진 부분만 바꿔 커서·실행 취소 기록을 지킨다 */
   setContent(next: string): void;
   focus(): void;
@@ -381,9 +381,14 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           const at = line.from + m.index + 1;
           view.dispatch({ changes: { from: at, to: at + 1, insert: done ? "x" : " " } });
         },
-        insertText(text) {
+        insertText(text, opts) {
           const r = view.state.selection.main;
-          view.dispatch({ changes: { from: r.from, to: r.to, insert: text }, selection: { anchor: r.from + text.length }, scrollIntoView: true });
+          const from = opts?.keepSelection ? r.to : r.from;
+          // ownLine: 앞뒤 글과 붙지 않게 자기 줄에(그림 embed는 줄 하나를 차지해야 그려진다)
+          const before = from > 0 && view.state.sliceDoc(from - 1, from) !== "\n" ? "\n" : "";
+          const after = r.to < view.state.doc.length && view.state.sliceDoc(r.to, r.to + 1) !== "\n" ? "\n" : "";
+          const insert = opts?.ownLine ? before + text + after : text;
+          view.dispatch({ changes: { from, to: r.to, insert }, selection: { anchor: from + (opts?.ownLine ? before.length + text.length : text.length) }, scrollIntoView: true });
           view.focus();
         },
         setContent(next) {
