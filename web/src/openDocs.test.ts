@@ -32,6 +32,11 @@ describe("열린 문서 저장소", () => {
     expect(s["a.md"].doc.draft).toBe("x");
   });
 
+  it("patchDoc: 문서가 그대로면 같은 저장소(다른 칸에서 받은 같은 초안이 다시 그리지 않게)", () => {
+    const s = upsertDoc({}, doc("a.md", "x"));
+    expect(patchDoc(s, "a.md", (d) => d)).toBe(s);
+  });
+
   it("setSave·setConflict: 없는 경로는 같은 객체", () => {
     const s: DocStore = {};
     expect(setSave(s, "x.md", { kind: "saving" })).toBe(s);

@@ -18,6 +18,8 @@ export interface Prefs {
   language: string;
   leftWidth: number;
   rightWidth: number;
+  /** 가운데를 두 칸으로 나눴을 때 왼쪽 칸의 비율(0~1, 이 기기) */
+  splitRatio: number;
   leftOpen: boolean;
   rightOpen: boolean;
   /** 왼쪽 패널 내용(레일에서 고른 것) */
@@ -59,6 +61,7 @@ export const DEFAULT_PREFS: Prefs = {
   language: "",
   leftWidth: 260,
   rightWidth: 280,
+  splitRatio: 0.5,
   leftOpen: true,
   rightOpen: false,
   leftView: "files",
@@ -129,6 +132,7 @@ function valid<K extends keyof Prefs>(k: K, v: unknown): Prefs[K] | undefined {
   if (typeof v === "number" && !Number.isFinite(v)) return undefined;
   if (k === "editorSize" && ((v as number) < 10 || (v as number) > 32)) return undefined;
   if (k === "autosaveDelay" && ((v as number) < 300 || (v as number) > 60_000)) return undefined;
+  if (k === "splitRatio" && ((v as number) <= 0 || (v as number) >= 1)) return undefined;
   return v as Prefs[K];
 }
 

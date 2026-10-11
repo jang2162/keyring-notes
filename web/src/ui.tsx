@@ -177,8 +177,10 @@ export function Resizer({
   onChange,
   onReset,
   label,
+  className,
 }: {
   side: "left" | "right";
+  className?: string;
   width: number;
   min: number;
   max: number;
@@ -189,7 +191,7 @@ export function Resizer({
   const start = useRef<{ x: number; w: number } | null>(null);
   return (
     <div
-      className={`resizer resizer-${side}`}
+      className={`resizer resizer-${side}${className ? ` ${className}` : ""}`}
       role="separator"
       aria-orientation="vertical"
       aria-label={label}

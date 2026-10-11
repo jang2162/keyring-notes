@@ -41,7 +41,7 @@ export interface TreeActions {
   remove: (path: string, kind: "node" | "file") => void;
   copyPath: (path: string) => void;
   copyLink: (path: string) => void;
-  openAside: (path: string) => void;
+  openOther: (path: string) => void;
   /** 아이콘 고르기(노드 노트의 icon 속성. 노트가 없으면 그때 만든다) */
   pickIcon: (node: VaultNode, at: { x: number; y: number }) => void;
 }
@@ -229,7 +229,7 @@ export const Tree = forwardRef<
     return [
       { label: t("common.open"), run: () => actions.open(n) },
       { label: t("tree.openNewTab"), keys: "Mod+Enter", run: () => actions.open(n, { newTab: true }) },
-      ...(n.note ? [{ label: t("tree.openAside"), run: () => actions.openAside(n.note!) }] : []),
+      ...(n.note ? [{ label: t("doc.openOther"), run: () => actions.openOther(n.note!) }] : []),
       "-",
       { label: t("tree.newChild"), run: () => actions.newChild(n.path) },
       "-",

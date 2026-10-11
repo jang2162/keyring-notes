@@ -51,8 +51,13 @@ const patchEntry = (s: DocStore, path: string, patch: (e: DocEntry) => DocEntry)
   return e ? { ...s, [path]: patch(e) } : s;
 };
 
-/** 없으면 s 그대로 */
-export const patchDoc = (s: DocStore, path: string, patch: (d: OpenDoc) => OpenDoc): DocStore => patchEntry(s, path, (e) => ({ ...e, doc: patch(e.doc) }));
+/** 없거나 문서가 그대로면 s 그대로 */
+export function patchDoc(s: DocStore, path: string, patch: (d: OpenDoc) => OpenDoc): DocStore {
+  const e = s[path];
+  if (!e) return s;
+  const doc = patch(e.doc);
+  return doc === e.doc ? s : { ...s, [path]: { ...e, doc } };
+}
 
 export const setSave = (s: DocStore, path: string, save: SaveState): DocStore => patchEntry(s, path, (e) => ({ ...e, save }));
 

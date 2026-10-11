@@ -92,7 +92,6 @@ export interface PaneContext {
   rollback: (pane: number) => Promise<void>;
   setMode: (pane: number, m: ViewMode) => void;
   setCursor: (pane: number, c: { line: number; col: number }) => void;
-  onFocus: (pane: number) => void;
   setDocMenu: (at: { x: number; y: number }) => void;
   dailyStep: (dir: -1 | 1) => void;
   openDaily: (offset?: number) => void;
@@ -525,6 +524,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 foldKey={revision ? undefined : doc.path}
                 renderContext={() => ({ resolver: ctx.resolverRef.current, docPath: docRef.current.path, onLink: ctx.followLinkEl })}
                 readOnly={doc.generated}
+                autoFocus={focused}
                 onCursor={(line, col) => ctx.setCursor(pane, { line, col })}
                 onBlur={() => prefs.autosave && void ctx.save(doc.path, { auto: true })}
               />

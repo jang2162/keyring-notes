@@ -107,7 +107,7 @@ import {
 } from "./vaultSettings";
 import { DocIcon, IconLookup, IconPicker } from "./IconPicker";
 import { getFolds, moveFolds, onFoldsChange, resolveFolds } from "./folds";
-import { AsidePreview, FileViewer } from "./Aside";
+import { FileViewer } from "./Aside";
 import { fmtDateTime, fmtNumber, missingPack, t, timeAgo, useLang } from "./i18n";
 import { tipProps } from "./Tooltip";
 import { AttachmentList } from "./Attachments";
@@ -126,7 +126,24 @@ import {
   type OpenDoc,
   type SaveState,
 } from "./openDocs";
-import { closeIn, emptyLayout, isLayout, migrateLayouts, openIn, removePaths, renamePath, setMode as setPaneMode, type Layout, type ViewMode } from "./panes";
+import {
+  canSplit,
+  closeIn,
+  emptyLayout,
+  focusPane,
+  isLayout,
+  MIN_PANE_WIDTH,
+  mergePanes,
+  migrateLayouts,
+  moveTab,
+  openIn,
+  panesWith,
+  removePaths,
+  renamePath,
+  setMode as setPaneMode,
+  type Layout,
+  type ViewMode,
+} from "./panes";
 
 /** 칸이 없는 배치(매번 새 객체를 만들지 않게 하나만 둔다) */
 const NO_PANES: Layout = emptyLayout();
@@ -240,6 +257,21 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
   }, []);
+  /** 가운데(main.center) 폭: 둘째 칸을 열 수 있는지, 칸 경계를 어디에 둘지 */
+  const centerRef = useRef<HTMLElement>(null);
+  const [centerWidth, setCenterWidth] = useState(0);
+  const centerWidthRef = useRef(centerWidth);
+  centerWidthRef.current = centerWidth;
+  const isNarrowRef = useRef(isNarrow);
+  isNarrowRef.current = isNarrow;
+  useEffect(() => {
+    const el = centerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setCenterWidth(el.clientWidth));
+    ro.observe(el);
+    setCenterWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
   /** 접힌 상태가 바뀔 때 올린다(미리보기·개요를 다시 맞춘다) */
   const [foldVersion, setFoldVersion] = useState(0);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
@@ -277,7 +309,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [ingestOpen, setIngestOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsSection | null>(settingsFromLocation);
   const [keysOpen, setKeysOpen] = useState(false);
-  const [aside, setAside] = useState<string | null>(null);
   const [fileView, setFileView] = useState<string | null>(null);
   const [docMenu, setDocMenu] = useState<{ x: number; y: number } | null>(null);
   const [wsMenu, setWsMenu] = useState<{ x: number; y: number } | null>(null);
@@ -369,7 +400,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const curLayout = () => layoutsRef.current[scopeRef.current.scopeKey] ?? NO_PANES;
   const layout = layoutByScope[scopeKey] ?? NO_PANES;
   const focusedPane = layout.panes[layout.focused] as Layout["panes"][number] | undefined;
-  const tabs = focusedPane?.tabs ?? [];
   /** 지금 배치의 모든 칸의 탭 */
   const allTabs = layout.panes.flatMap((p) => p.tabs);
   /** 활성 칸의 문서(오른쪽 패널·상태 표시줄·명령의 대상) */
@@ -856,6 +886,23 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   );
   const openRef = useRef(open);
   openRef.current = open;
+
+  /** 활성 칸이 아닌 칸(칸이 하나면 새로 만들 둘째 칸) */
+  const otherPane = () => {
+    const l = curLayout();
+    return l.panes.length === 2 ? 1 - l.focused : l.panes.length;
+  };
+  /** 다른 칸에 새 탭으로 연다. 가운데가 좁아 나눌 수 없으면 같은 칸의 새 탭으로 */
+  const openOther = (path: string) =>
+    canSplit(centerWidthRef.current, isNarrowRef.current) ? open(path, { pane: otherPane(), newTab: true }) : open(path, { newTab: true });
+  /** 활성 탭을 다른 칸으로(칸이 하나면 둘째 칸을 만든다) */
+  const moveActiveTabOther = () => {
+    const l = curLayout();
+    const active = l.panes[l.focused]?.active;
+    if (!active || (l.panes.length < 2 && !canSplit(centerWidthRef.current, isNarrowRef.current))) return;
+    const to = otherPane();
+    setLayout((x) => moveTab(x, x.focused, to, active));
+  };
 
   /** 노드 열기: 노트가 있으면 그 노트, 없으면 빈 노드(쓰면 노트가 생긴다) */
   const openNode = (node: string | VaultNode, opts: { newTab?: boolean } = {}) => {
@@ -1386,7 +1433,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       ),
     );
     if (opened && (content === null || hash === null)) await load(to);
-    if (aside === from) setAside(to);
   };
 
   /** 첨부 하나 옮기기·이름 바꾸기. 이 첨부를 가리키던 링크는 서버가 같이 고친다 */
@@ -1684,11 +1730,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const followLinkRef = useRef<(target: string, anchor: { heading?: string; block?: string } | null, aside: boolean, page?: string) => void>(() => undefined);
-  /** 링크 대상 열기: Mod+클릭이면 옆 칸 */
-  const followLink = (target: string, anchor: { heading?: string; block?: string } | null, aside: boolean, page?: string) => {
+  const followLinkRef = useRef<(target: string, anchor: { heading?: string; block?: string } | null, other: boolean, page?: string) => void>(() => undefined);
+  /** 링크 대상 열기: Mod+클릭이면 다른 칸 */
+  const followLink = (target: string, anchor: { heading?: string; block?: string } | null, other: boolean, page?: string) => {
     if (target.toLowerCase().endsWith(".md")) {
-      if (aside) return setAside(target);
+      if (other) {
+        if (anchor) setPendingAnchor({ path: target, ...anchor });
+        return void openOther(target);
+      }
       if (anchor && target === doc?.path) paneApis[curLayout().focused].current?.scrollToAnchor(anchor);
       else {
         if (anchor) setPendingAnchor({ path: target, ...anchor });
@@ -1950,11 +1999,29 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { id: "mode-split", group: g.view, label: t("cmd.modeSplit"), run: () => setFocusedMode("split") },
     { id: "mode-preview", group: g.view, label: t("cmd.modePreview"), run: () => setFocusedMode("preview") },
     {
-      id: "aside",
+      id: "split",
       group: g.view,
-      label: aside ? t("cmd.asideClose") : t("cmd.asideOpen"),
+      label: layout.panes.length === 2 ? t("cmd.splitClose") : t("cmd.splitOpen"),
       keys: "Mod+\\",
-      run: () => setAside((a) => (a ? null : (doc?.path ?? null))),
+      run: () => {
+        if (curLayout().panes.length === 2) return setLayout(mergePanes);
+        const cur = docRef.current;
+        if (cur && canSplit(centerWidthRef.current, isNarrowRef.current)) void open(cur.path, { pane: 1, newTab: true });
+      },
+    },
+    { id: "move-tab-other", group: g.tab, label: t("cmd.moveTabOther"), keys: "Mod+Shift+.", run: () => moveActiveTabOther() },
+    {
+      id: "focus-other-pane",
+      group: g.view,
+      label: t("cmd.focusOtherPane"),
+      keys: "Mod+Shift+,",
+      run: () => {
+        const l = curLayout();
+        if (l.panes.length < 2) return;
+        const other = 1 - l.focused;
+        setLayout((x) => focusPane(x, other));
+        setTimeout(() => paneHandles[other].current?.focus(), 0);
+      },
     },
     // 패널 키는 접기 기본 키(Ctrl+Alt+[ 등, CodeMirror foldKeymap)와 겹치지 않게
     { id: "left", group: g.view, label: t("cmd.left"), keys: "Mod+Shift+E", run: toggleLeft },
@@ -2094,7 +2161,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     remove: (p, kind) => void (kind === "node" ? deleteNode(p) : deleteAttachment(p)),
     copyPath: (p) => void copyText(p, "path"),
     copyLink: (p) => void copyText(`[[${linkTo(p)}]]`, "link"),
-    openAside: (p) => setAside(p),
+    openOther: (p) => void openOther(p),
     pickIcon: (n, at) => setIconPick({ ...at, node: n.path }),
   };
 
@@ -2604,7 +2671,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           },
         },
         "-",
-        { label: t("cmd.asideOpen"), icon: Columns2, keys: keyOf("aside"), run: () => setAside(doc.path) },
+        { label: t("doc.openOther"), icon: Columns2, keys: keyOf("split"), run: () => void openOther(doc.path) },
         { label: t("cmd.modeSplit"), run: () => setFocusedMode("split") },
         {
           label: t("cmd.reveal"),
@@ -2700,17 +2767,26 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </footer>
   );
 
-  const tabBar = (
+  /** 칸 하나의 탭 바(칸이 없으면 빈 탭 바) */
+  const renderTabBar = (pane: number) => (
     <nav className="tabbar" aria-label={t("tab.label")}>
-      <IconButton className="nav-toggle" icon={MenuIcon} label={t("tab.docList")} onClick={() => setDrawer((d) => (d === "left" ? null : "left"))} size={18} />
+      {pane === 0 && (
+        <IconButton
+          className="nav-toggle"
+          icon={MenuIcon}
+          label={t("tab.docList")}
+          onClick={() => setDrawer((d) => (d === "left" ? null : "left"))}
+          size={18}
+        />
+      )}
       <div className="tab-list" role="tablist">
-        {tabs.map((tp) => {
+        {(layout.panes[pane]?.tabs ?? []).map((tp) => {
           const cached = docs[tp]?.doc;
           const tabDirty = !!cached && cached.draft !== cached.saved;
-          const on = tp === focusedPane?.active;
+          const on = tp === layout.panes[pane]?.active;
           return (
             <span key={tp} className={`tab${on ? " on" : ""}`} {...tipProps({ label: tp })} role="tab" aria-selected={on}>
-              <button className="tab-name" onClick={() => void open(tp)} onAuxClick={(e) => e.button === 1 && void closeTab(layout.focused, tp)}>
+              <button className="tab-name" onClick={() => void open(tp, { pane })} onAuxClick={(e) => e.button === 1 && void closeTab(pane, tp)}>
                 <DocIcon icon={iconOf(tp)} />
                 {docLabel(tp)}
               </button>
@@ -2719,7 +2795,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 className="tab-close"
                 aria-label={t("tab.closeName", { name: stemOf(tp) })}
                 {...tipProps({ label: t("cmd.closeTab"), keys: keyOf("close-tab") })}
-                onClick={() => void closeTab(layout.focused, tp)}
+                onClick={() => void closeTab(pane, tp)}
               >
                 <X size={13} aria-hidden />
               </button>
@@ -2759,7 +2835,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     load,
     save,
     onDraft: (path, draft) => patchDoc(path, (prev) => (prev.draft === draft ? prev : { ...prev, draft })),
-    onChanges: () => undefined,
+    onChanges: (pane, path, changes) => {
+      // 같은 문서를 보고 있는 다른 칸의 에디터에 같은 변경을 넣는다(원본은 저장소 하나, 에디터는 칸마다)
+      const l = curLayout();
+      for (const j of panesWith(l, path)) {
+        if (j === pane || l.panes[j].active !== path) continue;
+        paneHandles[j].current?.applyChanges(changes, docsRef.current[path]?.doc.draft ?? "");
+      }
+    },
     uploadFiles,
     renameNode,
     setIconPick,
@@ -2786,7 +2869,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         next[pane] = c;
         return next;
       }),
-    onFocus: () => undefined,
     setDocMenu,
     dailyStep,
     openDaily: (offset) => void openDaily(offset),
@@ -2794,36 +2876,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     setPendingAnchor,
   };
 
-  const center = entry ? (
-    <DocPane
-      pane={layout.focused}
-      entry={entry}
-      mode={mode}
-      focused
-      revision={revision}
-      handle={paneHandles[layout.focused]}
-      paneApi={paneApis[layout.focused]}
-      titleFocus={titleFocus?.path === entry.doc.path ? titleFocus.n : 0}
-      pendingAnchor={pendingAnchor}
-      ctx={paneCtx}
-      extra={
-        aside && (
-          <AsidePreview
-            path={aside}
-            resolver={resolver}
-            version={vaultVersion}
-            live={aside === entry.doc.path ? entry.doc.draft : undefined}
-            onNavigate={setAside}
-            onEdit={(p) => {
-              setAside(null);
-              void open(p, { newTab: true });
-            }}
-            onClose={() => setAside(null)}
-          />
-        )
-      }
-    />
-  ) : (
+  const home = (
     <Home
       workspace={allWs ? null : ws}
       wsIcon={allWs ? null : wsIcon(ws)}
@@ -2843,6 +2896,66 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       local={local}
       keyOf={keyOf}
     />
+  );
+
+  const two = layout.panes.length === 2;
+  /** 왼쪽 칸 폭(두 칸일 때). 칸마다 최소 폭을 지킨다 */
+  const leftPaneWidth = Math.round(Math.min(Math.max(prefs.splitRatio * centerWidth, MIN_PANE_WIDTH), Math.max(centerWidth - MIN_PANE_WIDTH, MIN_PANE_WIDTH)));
+  const renderPane = (pane: number) => {
+    const p = layout.panes[pane];
+    const e = p.active ? docs[p.active] : undefined;
+    const focused = pane === layout.focused;
+    return (
+      <section
+        key={pane}
+        className={`split-pane${focused ? " focused" : ""}`}
+        aria-label={two ? t("pane.label", { n: pane + 1 }) : undefined}
+        style={two && pane === 0 ? { flex: `0 0 ${leftPaneWidth}px` } : undefined}
+        onFocusCapture={() => !focused && setLayout((l) => focusPane(l, pane))}
+        onMouseDownCapture={() => !focused && setLayout((l) => focusPane(l, pane))}
+      >
+        {renderTabBar(pane)}
+        {e ? (
+          <DocPane
+            pane={pane}
+            entry={e}
+            mode={p.mode}
+            focused={focused}
+            revision={revisionOf(pane)}
+            handle={paneHandles[pane]}
+            paneApi={paneApis[pane]}
+            titleFocus={focused && titleFocus?.path === e.doc.path ? titleFocus.n : 0}
+            pendingAnchor={focused ? pendingAnchor : null}
+            ctx={paneCtx}
+          />
+        ) : (
+          home
+        )}
+      </section>
+    );
+  };
+  const center = layout.panes.length ? (
+    <div className={`split-root${two ? " two" : ""}`}>
+      {renderPane(0)}
+      {two && !isNarrow && (
+        <Resizer
+          side="left"
+          className="split-divider"
+          label={t("pane.width")}
+          width={leftPaneWidth}
+          min={MIN_PANE_WIDTH}
+          max={Math.max(centerWidth - MIN_PANE_WIDTH, MIN_PANE_WIDTH)}
+          onChange={(w) => centerWidth > 0 && setPrefs({ splitRatio: w / centerWidth })}
+          onReset={() => setPrefs({ splitRatio: DEFAULT_PREFS.splitRatio })}
+        />
+      )}
+      {two && renderPane(1)}
+    </div>
+  ) : (
+    <>
+      {renderTabBar(0)}
+      {home}
+    </>
   );
 
   return (
@@ -2867,8 +2980,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             onReset={() => setPrefs({ leftWidth: DEFAULT_PREFS.leftWidth })}
           />
         )}
-        <main className="center">
-          {tabBar}
+        <main className="center" ref={centerRef}>
           {center}
         </main>
         {doc && ((rightOpen && !isNarrow) || drawer === "right") && (

@@ -150,6 +150,8 @@ interface Props {
   foldKey?: string;
   /** Live Preview가 블록(콜아웃·수식·임베드…)을 그릴 때 쓸 링크 해석 */
   renderContext?: () => LiveRenderContext | null;
+  /** 만들어질 때 포커스를 가져갈지(기본 true). 두 칸이면 활성 칸의 것만 — 아니면 나중에 만든 칸이 활성 칸을 빼앗는다 */
+  autoFocus?: boolean;
 }
 
 /** 두 글의 앞뒤 같은 부분을 빼고 달라진 한 구간. 같으면 null */
@@ -300,6 +302,7 @@ export function Editor({
   onShowProps,
   foldKey,
   renderContext,
+  autoFocus = true,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -317,6 +320,8 @@ export function Editor({
   const getCtx = () => ctxRef.current?.() ?? null;
   const foldKeyRef = useRef(foldKey);
   foldKeyRef.current = foldKey;
+  const autoFocusRef = useRef(autoFocus);
+  autoFocusRef.current = autoFocus;
   const callbacks = useRef({ onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
   callbacks.current = { onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
   const showProps = () => callbacks.current.onShowProps?.();
@@ -389,8 +394,9 @@ export function Editor({
           }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) {
-              for (const tr of u.transactions) if (tr.docChanged && tr.annotation(mirrored) !== true) callbacks.current.onChanges?.(tr.changes);
+              // 초안을 먼저 고친다: 다른 칸이 변경을 못 맞추면 이 최신 초안으로 맞춘다
               callbacks.current.onChange(u.state.doc.toString());
+              for (const tr of u.transactions) if (tr.docChanged && tr.annotation(mirrored) !== true) callbacks.current.onChanges?.(tr.changes);
             }
             // 접은 것을 이 기기에 기억한다(내용이 바뀌어 줄이 밀리면 새 줄로)
             const foldChanged = u.transactions.some((t) => t.effects.some((e) => e.is(foldEffect) || e.is(unfoldEffect)));
@@ -511,7 +517,7 @@ export function Editor({
       if (source !== view && path === foldKeyRef.current) applyFolds();
     });
     viewRef.current = view;
-    if (!readOnly) view.focus();
+    if (!readOnly && autoFocusRef.current) view.focus();
     return () => {
       offFolds();
       viewRef.current = null;
