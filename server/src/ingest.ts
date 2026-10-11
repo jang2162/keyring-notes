@@ -33,6 +33,8 @@ function today(): string {
 /** 파일 이름으로 쓸 수 있게 다듬는다(한국어는 그대로, 경로·위키링크에 문제 되는 글자만 뺀다). */
 export function slugify(title: string, untitled = "Untitled"): string {
   const s = title
+    // 파일 이름에 쓸 수 없는 글자와 제어 문자(U+0000–U+001F)를 지운다
+    // oxlint-disable-next-line no-control-regex
     .replace(/[\\/:*?"<>|#^[\]{}\u0000-\u001f]/g, " ")
     .replace(/^\.+/, "")
     .replace(/\s+/g, " ")

@@ -219,7 +219,10 @@ export class LocalVault {
       frontmatter: a.frontmatter,
       tags: a.tags,
     };
-    entry.links = [...a.links.map((t) => ({ src: entry.path, target: t, kind: "link" as const })), ...a.sources.map((t) => ({ src: entry.path, target: t, kind: "source" as const }))];
+    entry.links = [
+      ...a.links.map((t) => ({ src: entry.path, target: t, kind: "link" as const })),
+      ...a.sources.map((t) => ({ src: entry.path, target: t, kind: "source" as const })),
+    ];
     entry.tasks = a.tasks.map((t) => ({ path: entry.path, ...t }));
   }
 
@@ -364,7 +367,12 @@ export class LocalVault {
     for (const p of paths) {
       const i = p.lastIndexOf("/");
       const icon = this.files.get(p)?.meta?.frontmatter?.icon;
-      dirOf(i < 0 ? "" : p.slice(0, i)).push({ name: p.slice(i + 1), path: p, type: "file", ...(typeof icon === "string" && icon.trim() ? { icon: icon.trim() } : {}) });
+      dirOf(i < 0 ? "" : p.slice(0, i)).push({
+        name: p.slice(i + 1),
+        path: p,
+        type: "file",
+        ...(typeof icon === "string" && icon.trim() ? { icon: icon.trim() } : {}),
+      });
     }
     const sort = (nodes: TreeNode[]) => {
       nodes.sort((a, b) => (a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name, "ko")));
@@ -482,7 +490,11 @@ export class LocalVault {
     const files = this.allPaths();
     return {
       path: doc.path,
-      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files, { daily: this.daily(), from: doc.path }), ...(r.anchor ? { anchor: r.anchor } : {}) })),
+      sources: sourceRefs(fm).map((r) => ({
+        target: r.target,
+        path: resolveLink(r.target, files, { daily: this.daily(), from: doc.path }),
+        ...(r.anchor ? { anchor: r.anchor } : {}),
+      })),
       citedBy: this.withTitles(this.incoming(doc.path, "source")),
       linkedBy: this.withTitles(this.incoming(doc.path, "link")),
     };
@@ -512,15 +524,17 @@ export class LocalVault {
       if (segs.length >= 2 && !isVaultSettingsPath(p)) names.add(`${segs[0]}/${segs[1].replace(/\.md$/i, "")}`);
     }
     for (const t of this.topicSet) names.add(t);
-    return [...names].sort((a, b) => a.localeCompare(b, "ko")).map((name) => {
-      const wiki = this.topicSet.has(name);
-      return {
-        name,
-        wiki,
-        pages: wiki ? docs.filter((d) => d.path.startsWith(`${name}/wiki/`) && !this.isGenerated(d.path)).length : 0,
-        raw: wiki ? docs.filter((d) => d.path.startsWith(`${name}/raw/`) && !d.path.startsWith(`${name}/raw/assets/`)).length : 0,
-      };
-    });
+    return [...names]
+      .sort((a, b) => a.localeCompare(b, "ko"))
+      .map((name) => {
+        const wiki = this.topicSet.has(name);
+        return {
+          name,
+          wiki,
+          pages: wiki ? docs.filter((d) => d.path.startsWith(`${name}/wiki/`) && !this.isGenerated(d.path)).length : 0,
+          raw: wiki ? docs.filter((d) => d.path.startsWith(`${name}/raw/`) && !d.path.startsWith(`${name}/raw/assets/`)).length : 0,
+        };
+      });
   }
 
   lint(opts: { folder?: string; staleDays?: number } = {}): LintReport {
@@ -641,7 +655,7 @@ export class LocalVault {
     const before = [...this.topicSet].join("\0");
     this.computeTopics(this.files.keys());
     // 새로 위키가 된 토픽에 남아 있던 index·log 파일은 자동 생성 문서로 바뀐다
-    for (const p of [...this.files.keys()]) if (this.isGenerated(p)) this.files.delete(p);
+    for (const p of this.files.keys()) if (this.isGenerated(p)) this.files.delete(p);
     await this.record(author, message, files, contents);
     const changed = changes.flatMap((c) => (c.from ? [c.from, c.path] : [c.path]));
     if (before !== [...this.topicSet].join("\0")) changed.push(...[...this.topicSet].flatMap(generatedPaths));
@@ -671,7 +685,12 @@ export class LocalVault {
    * 이동·이름 바꾸기(문서·첨부). updateLinks(기본 켬)면 이 파일을 가리키던 링크(다른 문서와 이 문서 자신의 상대 링크)를
    * 같은 기록 안에서 함께 고친다. linksUpdated: 링크를 고친 문서(이동한 문서 포함), linkCount: 고친 링크 수.
    */
-  async move(fromInput: string, toInput: string, baseHash: string, opts: { updateLinks?: boolean } = {}): Promise<LocalDoc & { linksUpdated: string[]; linkCount: number }> {
+  async move(
+    fromInput: string,
+    toInput: string,
+    baseHash: string,
+    opts: { updateLinks?: boolean } = {},
+  ): Promise<LocalDoc & { linksUpdated: string[]; linkCount: number }> {
     const from = normalizeVaultPath(fromInput);
     const r = await this.moveMany([[from, normalizeVaultPath(toInput), baseHash]], opts, null);
     const to = r.moved[0][1];
@@ -684,7 +703,11 @@ export class LocalVault {
    * 첨부는 기록(스냅샷)에 내용을 남기지 않는다. 서버와 동기화하면 새 자리의 첨부는 올리고, 원래 자리의 첨부는
    * 서버에서도 그대로일 때만 지운다(SyncEngine).
    */
-  async moveNode(fromInput: string, toInput: string, opts: { updateLinks?: boolean } = {}): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
+  async moveNode(
+    fromInput: string,
+    toInput: string,
+    opts: { updateLinks?: boolean } = {},
+  ): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
     const from = normalizeVaultPath(fromInput).replace(/\.md$/i, "");
     const to = normalizeVaultPath(toInput).replace(/\.md$/i, "");
     if (from === to) throw new PathError("same_path");
@@ -750,7 +773,11 @@ export class LocalVault {
   }
 
   /** 여러 파일을 한 기록으로 옮긴다(데일리 노트 형식 옮기기 등). 링크도 같이 고친다 */
-  moveFiles(pairs: [string, string][], message: string, opts: { updateLinks?: boolean } = {}): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
+  moveFiles(
+    pairs: [string, string][],
+    message: string,
+    opts: { updateLinks?: boolean } = {},
+  ): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
     return this.moveMany(
       pairs.map(([f, t]) => [normalizeVaultPath(f), normalizeVaultPath(t), null]),
       opts,
@@ -758,7 +785,11 @@ export class LocalVault {
     );
   }
 
-  private moveMany(pairs: [string, string, string | null][], opts: { updateLinks?: boolean }, message: string | null): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
+  private moveMany(
+    pairs: [string, string, string | null][],
+    opts: { updateLinks?: boolean },
+    message: string | null,
+  ): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
     return this.exclusive(async () => {
       const targets = new Set<string>();
       for (const [from, to, baseHash] of pairs) {
@@ -906,7 +937,10 @@ export class LocalVault {
         applied.push(rel);
       }
       if (md.length) await this.apply(md, SYNC_AUTHOR, message, "sync");
-      this.emit(applied.filter((p) => !isMarkdown(p)), "sync");
+      this.emit(
+        applied.filter((p) => !isMarkdown(p)),
+        "sync",
+      );
       return applied;
     });
   }

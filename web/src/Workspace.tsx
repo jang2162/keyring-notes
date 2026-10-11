@@ -103,7 +103,15 @@ import { IconButton, Menu, Resizer, Segmented, type MenuEntry } from "./ui";
 import { invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
 import { SettingsModal, KeySettings, type SettingsSection, type WorkspaceOps } from "./Settings";
 import { attemptCloseTopModal, Modal } from "./Modal";
-import { ensureVaultSettings, reloadVaultSettings, updateVaultSetting, useVaultSettings, vaultLang, vaultSettingsReady, getVaultSettings } from "./vaultSettings";
+import {
+  ensureVaultSettings,
+  reloadVaultSettings,
+  updateVaultSetting,
+  useVaultSettings,
+  vaultLang,
+  vaultSettingsReady,
+  getVaultSettings,
+} from "./vaultSettings";
 import { DocIcon, IconLookup, IconPicker } from "./IconPicker";
 import { getFolds, moveFolds, onFoldsChange, resolveFolds } from "./folds";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
@@ -140,7 +148,13 @@ interface RevisionView {
   content: string | null;
 }
 
-type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: number } | { kind: "queued" } | { kind: "error"; message: string } | { kind: "conflict" };
+type SaveState =
+  | { kind: "idle" }
+  | { kind: "saving" }
+  | { kind: "saved"; at: number }
+  | { kind: "queued" }
+  | { kind: "error"; message: string }
+  | { kind: "conflict" };
 
 /** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
 const SETTINGS_HASH = "#/:settings";
@@ -468,7 +482,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     if (!propsShown) return;
-    api.properties().then(setPropStats).catch(() => undefined);
+    api
+      .properties()
+      .then(setPropStats)
+      .catch(() => undefined);
   }, [propsShown, vaultVersion]);
 
   const resolver = useMemo(() => new LinkResolver(tree, daily), [tree, daily]);
@@ -477,7 +494,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     if (!tree.length) return;
     const files = new Set(resolver.paths);
-    const dirs = new Set(resolver.paths.flatMap((p) => p.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))));
+    const dirs = new Set(
+      resolver.paths.flatMap((p) =>
+        p
+          .split("/")
+          .slice(0, -1)
+          .map((_, i, a) => a.slice(0, i + 1).join("/")),
+      ),
+    );
     // 지금 연 노트·저장 안 한 탭(오프라인에서 만든 것 포함)은 남긴다
     const keep = (p: string) => p === docRef.current?.path || (tabCache.current.get(p)?.draft ?? "") !== (tabCache.current.get(p)?.saved ?? "");
     const alive = (p: string) => files.has(p) || dirs.has(stripMd(p)) || keep(p);
@@ -498,7 +522,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /** 워크스페이스 첨부 폴더(트리에서 숨긴다) */
   const attachDirs = useMemo(() => new Set(wsNames.map((w) => attachmentDirFor(shared, w, uiLang))), [shared, wsNames, uiLang]);
   /** 노드 트리(공통 설정 파일·워크스페이스 첨부 폴더는 빼고) */
-  const nodeTree = useMemo(() => buildNodeTree(tree, { hidden: (p, type) => isVaultSettingsPath(p) || (type === "dir" && attachDirs.has(p)) }), [tree, attachDirs]);
+  const nodeTree = useMemo(
+    () => buildNodeTree(tree, { hidden: (p, type) => isVaultSettingsPath(p) || (type === "dir" && attachDirs.has(p)) }),
+    [tree, attachDirs],
+  );
   const viewNodes = useMemo(() => (allWs ? nodeTree : (findNode(nodeTree, ws)?.children ?? [])), [nodeTree, allWs, ws]);
   const wsNode = (name: string) => findNode(nodeTree, name);
 
@@ -556,7 +583,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (!/\.md$/i.test(path)) return path.split("/").pop();
     const d = dailyOfPath(path, daily);
     if (!d) return stemOf(path);
-    if (!d.title) return prefs.dailyFriendly && !opts.plain ? <span {...tipProps({ label: d.datePart })}>{friendlyDate(d.date, new Date(), lang)}</span> : d.datePart;
+    if (!d.title)
+      return prefs.dailyFriendly && !opts.plain ? <span {...tipProps({ label: d.datePart })}>{friendlyDate(d.date, new Date(), lang)}</span> : d.datePart;
     return (
       <>
         <span className="daily-date">{d.datePart}</span>
@@ -622,7 +650,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     if (!doc?.path || doc.virtual) return setRefs(null);
-    api.sources(doc.path).then(setRefs).catch(() => setRefs(null));
+    api
+      .sources(doc.path)
+      .then(setRefs)
+      .catch(() => setRefs(null));
   }, [doc?.path, doc?.virtual, vaultVersion]);
 
   useEffect(() => {
@@ -650,7 +681,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const timer = setTimeout(
       () => {
         (semantic
-          ? api.semantic(q, scope || undefined).then((hs) => hs.map((h) => ({ path: h.path, title: h.title, line: 1, snippet: (h.heading ? `${h.heading} · ` : "") + h.snippet, score: h.score })))
+          ? api
+              .semantic(q, scope || undefined)
+              .then((hs) =>
+                hs.map((h) => ({ path: h.path, title: h.title, line: 1, snippet: (h.heading ? `${h.heading} · ` : "") + h.snippet, score: h.score })),
+              )
           : api.search(q, scope || undefined)
         )
           .then(setHits)
@@ -776,7 +811,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           const message = errorText(e);
           setSaveState({ kind: "error", message });
           // 자동 저장이 잇달아 실패하면 처음 한 번만 알린다(상태 표시줄에는 계속 보인다)
-          if (!opts.auto || saveStateRef.current.kind !== "error") toast(t("save.failed", { message }), { kind: "error", action: { label: t("common.retry"), run: () => void save() } });
+          if (!opts.auto || saveStateRef.current.kind !== "error")
+            toast(t("save.failed", { message }), { kind: "error", action: { label: t("common.retry"), run: () => void save() } });
         }
       } finally {
         savingRef.current = false;
@@ -1135,10 +1171,18 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const vt = vaultText(vaultLang());
     const out: string[] = [];
     for (const f of files) {
-      const ext = (/\.[A-Za-z0-9]+$/.exec(f.name)?.[0] ?? (f.type.startsWith("image/") ? `.${f.type.slice(6).replace("jpeg", "jpg").replace(/\+.*/, "")}` : "")).toLowerCase();
+      const ext = (
+        /\.[A-Za-z0-9]+$/.exec(f.name)?.[0] ?? (f.type.startsWith("image/") ? `.${f.type.slice(6).replace("jpeg", "jpg").replace(/\+.*/, "")}` : "")
+      ).toLowerCase();
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
       // 클립보드 이미지는 이름이 image.png라 날짜로 바꾼다
-      const stem = !f.name || /^image\.\w+$/i.test(f.name) ? `${vt.pastedImage} ${stamp}` : f.name.replace(/\.[A-Za-z0-9]+$/, "").replace(/[\\/:*?"<>|#^[\]]/g, " ").trim() || vt.attachmentName;
+      const stem =
+        !f.name || /^image\.\w+$/i.test(f.name)
+          ? `${vt.pastedImage} ${stamp}`
+          : f.name
+              .replace(/\.[A-Za-z0-9]+$/, "")
+              .replace(/[\\/:*?"<>|#^[\]]/g, " ")
+              .trim() || vt.attachmentName;
       let path = "";
       for (let i = 1; ; i++) {
         const cand = join(dir, `${stem}${i > 1 ? ` ${i}` : ""}${ext}`);
@@ -1315,7 +1359,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       await refreshTree();
       const cur = docRef.current;
       if (cur && moves.some((m) => m.to === cur.path)) await load(cur.path);
-      toast([t("daily.migrated", { count: moves.length }), r.linkCount ? t("links.fixed", { count: r.linkCount }) : ""].filter(Boolean).join(" "), { kind: "success" });
+      toast([t("daily.migrated", { count: moves.length }), r.linkCount ? t("links.fixed", { count: r.linkCount }) : ""].filter(Boolean).join(" "), {
+        kind: "success",
+      });
     } catch (e) {
       toastError(e);
     }
@@ -1471,7 +1517,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       if (!opts.quiet) {
         const renamed = parentOf(from) === parentOf(to);
         toast(
-          [renamed ? t("node.renamed", { name: stemOf(to) }) : t("node.moved", { parent: parentOf(to) }), linkCount ? t("links.fixedIn", { count: linkCount, docs: others }) : ""].filter(Boolean).join(" "),
+          [
+            renamed ? t("node.renamed", { name: stemOf(to) }) : t("node.moved", { parent: parentOf(to) }),
+            linkCount ? t("links.fixedIn", { count: linkCount, docs: others }) : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
           { kind: "success", action: opts.undo === false ? undefined : { label: t("common.undo"), run: () => void moveNodeTo(to, from, { undo: false }) } },
         );
       }
@@ -1508,7 +1559,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /** 탭·기록에서 지운 노드의 문서를 뺀다 */
   const forget = (gone: (p: string) => boolean) => {
-    for (const p of [...tabCache.current.keys()]) if (gone(p)) tabCache.current.delete(p);
+    for (const p of tabCache.current.keys()) if (gone(p)) tabCache.current.delete(p);
     setTabsByScope((m) => Object.fromEntries(Object.entries(m).map(([k, list]) => [k, list.filter((p) => !gone(p))])));
     setRecent((r) => r.filter((p) => !gone(p)));
     const cur = docRef.current;
@@ -1528,7 +1579,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const n = findNode(nodeTree, node);
     const counts = n ? countNode(n) : { nodes: 0, attachments: 0 };
     const name = stemOf(node);
-    const message = counts.nodes || counts.attachments ? t("node.deleteAskChildren", { name, nodes: counts.nodes, attachments: counts.attachments }) : t("node.deleteAsk", { name });
+    const message =
+      counts.nodes || counts.attachments
+        ? t("node.deleteAskChildren", { name, nodes: counts.nodes, attachments: counts.attachments })
+        : t("node.deleteAsk", { name });
     if (!(await confirmDialog(`${message}\n${node}`, t("common.delete")))) return;
     await flush();
     const files = nodeFiles(node, resolver.paths).filter((p) => !isVaultSettingsPath(p));
@@ -1578,7 +1632,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       await refreshTree();
       toast(t("file.deleted", { name: path.split("/").pop()! }), {
         kind: "info",
-        action: { label: t("common.undo"), run: () => void api.restoreFiles([{ path, data }]).then(() => (vaultChanged(), refreshTree())).catch(toastError) },
+        action: {
+          label: t("common.undo"),
+          run: () =>
+            void api
+              .restoreFiles([{ path, data }])
+              .then(() => (vaultChanged(), refreshTree()))
+              .catch(toastError),
+        },
       });
     } catch (e) {
       toastError(e);
@@ -1849,7 +1910,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       const n = to.trim();
       const reason = invalidNameReason(n);
       if (reason) throw new Error(reason);
-      if (wsNames.some((w) => w.toLowerCase() === n.toLowerCase() && w !== from) || isVaultSettingsPath(`${n}.md`)) throw new Error(t("ws.exists", { name: n }));
+      if (wsNames.some((w) => w.toLowerCase() === n.toLowerCase() && w !== from) || isVaultSettingsPath(`${n}.md`))
+        throw new Error(t("ws.exists", { name: n }));
       await flush();
       const r = await api.moveNode(from, n);
       for (const [a, b] of r.moved) if (/\.md$/i.test(a)) await afterMove(a, b, null, null);
@@ -1859,7 +1921,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         await updateVaultSetting(["workspaces", n], s.workspaces[from]);
         await updateVaultSetting(["workspaces", from], null);
       }
-      if (s.workspaceOrder.includes(from)) await updateVaultSetting(["vault", "workspaceOrder"], s.workspaceOrder.map((w) => (w === from ? n : w)));
+      if (s.workspaceOrder.includes(from))
+        await updateVaultSetting(
+          ["vault", "workspaceOrder"],
+          s.workspaceOrder.map((w) => (w === from ? n : w)),
+        );
       setTabsByScope((m) => {
         const next = { ...m, [n]: (m[from] ?? []).map((p) => (p.startsWith(from + "/") || p === `${from}.md` ? moveNodePath(p, from, n) : p)) };
         delete next[from];
@@ -1881,16 +1947,44 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   // ── 명령: 팔레트·단축키·설정의 단축키 목록이 같이 쓴다
-  const g = { nav: t("cmd.group.nav"), doc: t("cmd.group.doc"), tab: t("cmd.group.tab"), view: t("cmd.group.view"), fold: t("cmd.group.fold"), tool: t("cmd.group.tool"), ws: t("cmd.group.ws") };
+  const g = {
+    nav: t("cmd.group.nav"),
+    doc: t("cmd.group.doc"),
+    tab: t("cmd.group.tab"),
+    view: t("cmd.group.view"),
+    fold: t("cmd.group.fold"),
+    tool: t("cmd.group.tool"),
+    ws: t("cmd.group.ws"),
+  };
   const commands: Command[] = [
     { id: "quick-open", group: g.nav, label: t("cmd.quickOpen"), keys: "Mod+O", run: () => setPalette("files") },
     { id: "palette", group: g.nav, label: t("cmd.palette"), keys: "Mod+P", run: () => setPalette("commands") },
     { id: "palette-2", group: g.nav, label: t("cmd.palette2"), keys: "Mod+Shift+P", run: () => setPalette("commands"), hidden: true },
-    { id: "search", group: g.nav, label: t("cmd.search"), keys: "Mod+Shift+F", run: () => (setPrefs({ leftOpen: true, leftView: "search" }), narrow() && setDrawer("left"), setTimeout(() => searchInput.current?.focus(), 0)) },
+    {
+      id: "search",
+      group: g.nav,
+      label: t("cmd.search"),
+      keys: "Mod+Shift+F",
+      run: () => (setPrefs({ leftOpen: true, leftView: "search" }), narrow() && setDrawer("left"), setTimeout(() => searchInput.current?.focus(), 0)),
+    },
     { id: "back", group: g.nav, label: t("cmd.back"), keys: "Mod+Alt+ArrowLeft", run: () => goNav(-1) },
     { id: "forward", group: g.nav, label: t("cmd.forward"), keys: "Mod+Alt+ArrowRight", run: () => goNav(1) },
-    { id: "home", group: g.nav, label: t("cmd.home"), run: () => void (async () => { await flush(); if (docRef.current) tabCache.current.set(docRef.current.path, docRef.current); setDoc(null); closeSettings(false); history.replaceState(null, "", "#"); })() },
-    ...wsNames.slice(0, 9).map((w, i) => ({ id: `ws-${i + 1}`, group: g.ws, label: t("cmd.switchWs", { name: w }), run: () => void switchScope({ workspace: w, all: false }) })),
+    {
+      id: "home",
+      group: g.nav,
+      label: t("cmd.home"),
+      run: () =>
+        void (async () => {
+          await flush();
+          if (docRef.current) tabCache.current.set(docRef.current.path, docRef.current);
+          setDoc(null);
+          closeSettings(false);
+          history.replaceState(null, "", "#");
+        })(),
+    },
+    ...wsNames
+      .slice(0, 9)
+      .map((w, i) => ({ id: `ws-${i + 1}`, group: g.ws, label: t("cmd.switchWs", { name: w }), run: () => void switchScope({ workspace: w, all: false }) })),
     { id: "ws-all", group: g.ws, label: allWs ? t("cmd.wsOnlyOne") : t("cmd.wsAll"), run: () => void switchScope({ all: !allWs }) },
     { id: "new", group: g.doc, label: t("cmd.new"), keys: "Mod+N", webKeys: "Alt+N", run: () => void createDoc() },
     ...(dailyCfg
@@ -1912,7 +2006,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           { id: "icon", group: g.doc, label: docIcon ? t("title.changeIcon") : t("title.addIcon"), run: () => openIconPicker(stripMd(doc.path)) },
           { id: "new-child", group: g.doc, label: t("tree.newChild"), run: () => void createDoc(stripMd(doc.path)) },
           { id: "move", group: g.doc, label: t("tree.moveTo"), run: () => startMove(stripMd(doc.path), "node") },
-          { id: "duplicate", group: g.doc, label: t("tree.duplicate"), run: () => { const n = findNode(nodeTree, stripMd(doc.path)); if (n) void duplicateNode(n); } },
+          {
+            id: "duplicate",
+            group: g.doc,
+            label: t("tree.duplicate"),
+            run: () => {
+              const n = findNode(nodeTree, stripMd(doc.path));
+              if (n) void duplicateNode(n);
+            },
+          },
           { id: "delete", group: g.doc, label: t("tree.deleteNode"), run: () => void deleteNode(stripMd(doc.path)) },
         ]
       : []),
@@ -1920,11 +2022,23 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       ? [
           { id: "copy-path", group: g.doc, label: t("tree.copyPath"), run: () => void copyText(doc.path, "path") },
           { id: "copy-link", group: g.doc, label: t("tree.copyLink"), run: () => void copyText(`[[${linkTo(doc.path)}]]`, "link") },
-          { id: "reveal", group: g.nav, label: t("cmd.reveal"), run: () => (setPrefs({ leftOpen: true, leftView: "files" }), setTimeout(() => treeRef.current?.reveal(), 0)) },
+          {
+            id: "reveal",
+            group: g.nav,
+            label: t("cmd.reveal"),
+            run: () => (setPrefs({ leftOpen: true, leftView: "files" }), setTimeout(() => treeRef.current?.reveal(), 0)),
+          },
         ]
       : []),
     { id: "close-tab", group: g.tab, label: t("cmd.closeTab"), keys: "Mod+W", webKeys: "Alt+W", run: () => doc && void closeTab(doc.path) },
-    { id: "reopen-tab", group: g.tab, label: t("cmd.reopenTab"), keys: "Mod+Shift+T", webKeys: "Alt+Shift+T", run: () => closedTabs.current[0] && void open(closedTabs.current.shift()!, { newTab: true }) },
+    {
+      id: "reopen-tab",
+      group: g.tab,
+      label: t("cmd.reopenTab"),
+      keys: "Mod+Shift+T",
+      webKeys: "Alt+Shift+T",
+      run: () => closedTabs.current[0] && void open(closedTabs.current.shift()!, { newTab: true }),
+    },
     { id: "next-tab", group: g.tab, label: t("cmd.nextTab"), keys: "Ctrl+Tab", webKeys: "Alt+]", run: () => cycleTab(1) },
     { id: "prev-tab", group: g.tab, label: t("cmd.prevTab"), keys: "Ctrl+Shift+Tab", webKeys: "Alt+[", run: () => cycleTab(-1) },
     ...Array.from({ length: 9 }, (_, i) => ({
@@ -1950,7 +2064,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { id: "mode-edit", group: g.view, label: t("cmd.modeEdit"), run: () => setMode("edit") },
     { id: "mode-split", group: g.view, label: t("cmd.modeSplit"), run: () => setMode("split") },
     { id: "mode-preview", group: g.view, label: t("cmd.modePreview"), run: () => setMode("preview") },
-    { id: "aside", group: g.view, label: aside ? t("cmd.asideClose") : t("cmd.asideOpen"), keys: "Mod+\\", run: () => setAside((a) => (a ? null : (doc?.path ?? null))) },
+    {
+      id: "aside",
+      group: g.view,
+      label: aside ? t("cmd.asideClose") : t("cmd.asideOpen"),
+      keys: "Mod+\\",
+      run: () => setAside((a) => (a ? null : (doc?.path ?? null))),
+    },
     // 패널 키는 접기 기본 키(Ctrl+Alt+[ 등, CodeMirror foldKeymap)와 겹치지 않게
     { id: "left", group: g.view, label: t("cmd.left"), keys: "Mod+Shift+E", run: toggleLeft },
     { id: "right", group: g.view, label: t("cmd.right"), keys: "Mod+Alt+B", run: () => toggleRight() },
@@ -1960,8 +2080,18 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { id: "live", group: g.view, label: live ? t("cmd.liveOff") : t("cmd.liveOn"), run: () => setPrefs({ live: !live }) },
     { id: "props", group: g.view, label: t("cmd.props"), run: () => toggleRight("props") },
     { id: "lines", group: g.view, label: prefs.lineNumbers ? t("cmd.linesOff") : t("cmd.linesOn"), run: () => setPrefs({ lineNumbers: !prefs.lineNumbers }) },
-    { id: "width", group: g.view, label: prefs.readableWidth ? t("cmd.wide") : t("cmd.readable"), run: () => setPrefs({ readableWidth: !prefs.readableWidth }) },
-    { id: "theme", group: g.view, label: t("cmd.theme"), run: () => setPrefs((p) => ({ theme: p.theme === "system" ? "light" : p.theme === "light" ? "dark" : "system" })) },
+    {
+      id: "width",
+      group: g.view,
+      label: prefs.readableWidth ? t("cmd.wide") : t("cmd.readable"),
+      run: () => setPrefs({ readableWidth: !prefs.readableWidth }),
+    },
+    {
+      id: "theme",
+      group: g.view,
+      label: t("cmd.theme"),
+      run: () => setPrefs((p) => ({ theme: p.theme === "system" ? "light" : p.theme === "light" ? "dark" : "system" })),
+    },
     { id: "graph", group: g.tool, label: t("tool.graph"), run: () => setGraphOpen(true) },
     { id: "lint", group: g.tool, label: t("tool.lint"), run: () => setLintOpen(true) },
     ...(local
@@ -2042,7 +2172,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (!moveTarget) return [];
     const { path, kind } = moveTarget;
     const here = parentOf(path);
-    const targets = flattenNodes(allWs ? nodeTree : (wsNode(ws) ? [wsNode(ws)!] : [])).map((n) => n.path);
+    const targets = flattenNodes(allWs ? nodeTree : wsNode(ws) ? [wsNode(ws)!] : []).map((n) => n.path);
     return targets
       .filter((f) => f !== here && !(kind === "node" && (f === path || f.startsWith(path + "/"))))
       .map((f) => ({
@@ -2059,7 +2189,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [doc?.path, doc?.draft, rightTab, foldVersion],
   );
-  const outline = useMemo(() => (doc && ((rightOpen && !isNarrow) || drawer === "right") && rightTab === "outline" ? headings(doc.draft) : []), [rightOpen, drawer, rightTab, doc?.draft]);
+  const outline = useMemo(
+    () => (doc && ((rightOpen && !isNarrow) || drawer === "right") && rightTab === "outline" ? headings(doc.draft) : []),
+    [rightOpen, drawer, rightTab, doc?.draft],
+  );
 
   // 수식·다이어그램·문서 임베드는 그린 뒤에 채운다(enhance.ts)
   useEffect(() => {
@@ -2143,19 +2276,45 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         setWsMenu({ x: r.right + 4, y: r.top });
       }}
     >
-      {allWs ? <Layers size={18} strokeWidth={1.75} aria-hidden /> : wsIcon(ws) ? <span className="ws-emoji" aria-hidden>{wsIcon(ws)}</span> : <span className="ws-letter" aria-hidden>{[...(ws || "?")][0]}</span>}
+      {allWs ? (
+        <Layers size={18} strokeWidth={1.75} aria-hidden />
+      ) : wsIcon(ws) ? (
+        <span className="ws-emoji" aria-hidden>
+          {wsIcon(ws)}
+        </span>
+      ) : (
+        <span className="ws-letter" aria-hidden>
+          {[...(ws || "?")][0]}
+        </span>
+      )}
       {rl && <span className="icon-btn-label">{allWs ? t("ws.all") : ws}</span>}
     </button>
   );
   // 워크스페이스마다 같은 폭의 앞자리(아이콘 또는 첫 글자)를 두어 이름이 왼쪽으로 맞고, 고른 것은 강조 모양으로
   const wsLead = (w: string) =>
-    wsIcon(w) ? <span className="ws-emoji menu-emoji" aria-hidden>{wsIcon(w)}</span> : <span className="ws-letter menu-letter" aria-hidden>{[...w][0]}</span>;
+    wsIcon(w) ? (
+      <span className="ws-emoji menu-emoji" aria-hidden>
+        {wsIcon(w)}
+      </span>
+    ) : (
+      <span className="ws-letter menu-letter" aria-hidden>
+        {[...w][0]}
+      </span>
+    );
   const wsMenuAt = wsMenu ?? { x: 64, y: 64 };
   const wsMenuItems: MenuEntry[] = [
     ...wsNames.map((w) => ({ label: w, lead: wsLead(w), checked: !allWs && w === ws, run: () => void switchScope({ workspace: w, all: false }) })),
     "-",
     { label: t("ws.all"), icon: Layers, checked: allWs, run: () => void switchScope({ all: !allWs }) },
-    ...(ws && !allWs ? [{ label: wsIcon(ws) ? t("ws.changeIcon", { name: ws }) : t("ws.addIcon", { name: ws }), icon: SmilePlus, run: () => setIconPick({ ...wsMenuAt, node: ws }) }] : []),
+    ...(ws && !allWs
+      ? [
+          {
+            label: wsIcon(ws) ? t("ws.changeIcon", { name: ws }) : t("ws.addIcon", { name: ws }),
+            icon: SmilePlus,
+            run: () => setIconPick({ ...wsMenuAt, node: ws }),
+          },
+        ]
+      : []),
     { label: t("ws.manage"), icon: SettingsIcon, run: () => openSettings("workspaces") },
   ];
 
@@ -2164,16 +2323,81 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       <div className="rail-top">
         {wsSwitcher}
         <span className="rail-sep" />
-        <IconButton icon={Files} label={t("rail.files")} side={railSide} showLabel={rl} active={prefs.leftOpen && prefs.leftView === "files"} onClick={() => showLeft("files")} />
-        <IconButton icon={Search} label={t("rail.search")} side={railSide} showLabel={rl} keys={keyOf("search")} active={prefs.leftOpen && prefs.leftView === "search"} onClick={() => showLeft("search")} />
-        <IconButton icon={Tag} label={t("rail.tags")} side={railSide} showLabel={rl} active={prefs.leftOpen && prefs.leftView === "tags"} onClick={() => showLeft("tags")} />
-        <IconButton icon={Paperclip} label={t("rail.attachments")} side={railSide} showLabel={rl} active={prefs.leftOpen && prefs.leftView === "attachments"} onClick={() => showLeft("attachments")} />
+        <IconButton
+          icon={Files}
+          label={t("rail.files")}
+          side={railSide}
+          showLabel={rl}
+          active={prefs.leftOpen && prefs.leftView === "files"}
+          onClick={() => showLeft("files")}
+        />
+        <IconButton
+          icon={Search}
+          label={t("rail.search")}
+          side={railSide}
+          showLabel={rl}
+          keys={keyOf("search")}
+          active={prefs.leftOpen && prefs.leftView === "search"}
+          onClick={() => showLeft("search")}
+        />
+        <IconButton
+          icon={Tag}
+          label={t("rail.tags")}
+          side={railSide}
+          showLabel={rl}
+          active={prefs.leftOpen && prefs.leftView === "tags"}
+          onClick={() => showLeft("tags")}
+        />
+        <IconButton
+          icon={Paperclip}
+          label={t("rail.attachments")}
+          side={railSide}
+          showLabel={rl}
+          active={prefs.leftOpen && prefs.leftView === "attachments"}
+          onClick={() => showLeft("attachments")}
+        />
         <span className="rail-sep" />
-        {dailyCfg && <IconButton icon={CalendarDays} label={t("cmd.daily")} shortLabel={t("rail.daily")} side={railSide} showLabel={rl} keys={keyOf("daily")} onClick={() => void openDaily(0)} />}
+        {dailyCfg && (
+          <IconButton
+            icon={CalendarDays}
+            label={t("cmd.daily")}
+            shortLabel={t("rail.daily")}
+            side={railSide}
+            showLabel={rl}
+            keys={keyOf("daily")}
+            onClick={() => void openDaily(0)}
+          />
+        )}
         <IconButton icon={Waypoints} label={t("tool.graph")} shortLabel={t("rail.graph")} side={railSide} showLabel={rl} onClick={() => setGraphOpen(true)} />
-        {!local && <IconButton icon={Inbox} label={t("tool.ingestLong")} shortLabel={t("rail.ingest")} side={railSide} showLabel={rl} onClick={() => setIngestOpen(true)} />}
-        {!local && <IconButton icon={ListChecks} label={pendingCount ? t("tool.reviewWaiting", { count: pendingCount }) : t("tool.reviewLong")} shortLabel={t("rail.review")} side={railSide} showLabel={rl} badge={pendingCount} onClick={() => setReviewOpen(true)} />}
-        <IconButton icon={BrushCleaning} label={t("tool.lintLong")} shortLabel={t("rail.lint")} side={railSide} showLabel={rl} onClick={() => setLintOpen(true)} />
+        {!local && (
+          <IconButton
+            icon={Inbox}
+            label={t("tool.ingestLong")}
+            shortLabel={t("rail.ingest")}
+            side={railSide}
+            showLabel={rl}
+            onClick={() => setIngestOpen(true)}
+          />
+        )}
+        {!local && (
+          <IconButton
+            icon={ListChecks}
+            label={pendingCount ? t("tool.reviewWaiting", { count: pendingCount }) : t("tool.reviewLong")}
+            shortLabel={t("rail.review")}
+            side={railSide}
+            showLabel={rl}
+            badge={pendingCount}
+            onClick={() => setReviewOpen(true)}
+          />
+        )}
+        <IconButton
+          icon={BrushCleaning}
+          label={t("tool.lintLong")}
+          shortLabel={t("rail.lint")}
+          side={railSide}
+          showLabel={rl}
+          onClick={() => setLintOpen(true)}
+        />
       </div>
       <div className="rail-bottom">
         {local && (
@@ -2187,8 +2411,24 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             onClick={() => openSettings("device")}
           />
         )}
-        <IconButton icon={Keyboard} label={t("cmd.keys")} shortLabel={t("rail.keys")} side={railSide} showLabel={rl} keys={keyOf("keys")} onClick={() => setKeysOpen(true)} />
-        <IconButton icon={SettingsIcon} label={t("settings.title")} side={railSide} showLabel={rl} keys={keyOf("settings")} active={!!settings} onClick={() => (settings ? closeSettings() : openSettings())} />
+        <IconButton
+          icon={Keyboard}
+          label={t("cmd.keys")}
+          shortLabel={t("rail.keys")}
+          side={railSide}
+          showLabel={rl}
+          keys={keyOf("keys")}
+          onClick={() => setKeysOpen(true)}
+        />
+        <IconButton
+          icon={SettingsIcon}
+          label={t("settings.title")}
+          side={railSide}
+          showLabel={rl}
+          keys={keyOf("settings")}
+          active={!!settings}
+          onClick={() => (settings ? closeSettings() : openSettings())}
+        />
         {!local && (
           <IconButton
             icon={LogOut}
@@ -2224,8 +2464,23 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               </button>
             )}
             <span className="panel-tools">
-              <IconButton size={16} icon={FilePlus} label={t("tree.newNote")} keys={keyOf("new")} disabled={!ws} why={t("ws.needOne")} onClick={() => void createDoc()} />
-              <IconButton size={16} icon={LocateFixed} label={t("tree.reveal")} disabled={!doc} why={t("tree.revealWhy")} onClick={() => treeRef.current?.reveal()} />
+              <IconButton
+                size={16}
+                icon={FilePlus}
+                label={t("tree.newNote")}
+                keys={keyOf("new")}
+                disabled={!ws}
+                why={t("ws.needOne")}
+                onClick={() => void createDoc()}
+              />
+              <IconButton
+                size={16}
+                icon={LocateFixed}
+                label={t("tree.reveal")}
+                disabled={!doc}
+                why={t("tree.revealWhy")}
+                onClick={() => treeRef.current?.reveal()}
+              />
               <IconButton size={16} icon={ChevronsDownUp} label={t("tree.collapseAll")} onClick={() => treeRef.current?.collapseAll()} />
               <TreeOptions prefs={prefs} />
             </span>
@@ -2260,7 +2515,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               aria-label={t("search.label")}
             />
             {semanticOn && (
-              <button className={`search-mode${searchMode === "semantic" ? " on" : ""}`} {...tipProps({ label: t("search.semanticTip") })} onClick={() => setSearchMode((m) => (m === "text" ? "semantic" : "text"))}>
+              <button
+                className={`search-mode${searchMode === "semantic" ? " on" : ""}`}
+                {...tipProps({ label: t("search.semanticTip") })}
+                onClick={() => setSearchMode((m) => (m === "text" ? "semantic" : "text"))}
+              >
                 {t("search.semantic")}
               </button>
             )}
@@ -2373,7 +2632,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             { value: "history", label: <History size={15} aria-label={t("panel.history")} />, title: withKey(t("panel.history"), "history") },
           ]}
         />
-        <IconButton size={16} icon={X} label={t("panel.close")} keys={keyOf("right")} onClick={() => (narrow() ? setDrawer(null) : setPrefs({ rightOpen: false }))} />
+        <IconButton
+          size={16}
+          icon={X}
+          label={t("panel.close")}
+          keys={keyOf("right")}
+          onClick={() => (narrow() ? setDrawer(null) : setPrefs({ rightOpen: false }))}
+        />
       </div>
       <div className="panel-body">
         {rightTab === "props" && (
@@ -2429,7 +2694,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             )}
             {!doc.generated && !doc.virtual && (
               <section className="backlinks mentions-wrap">
-                <UnlinkedMentions path={doc.path} target={mentionTarget(doc.path, resolver)} version={vaultVersion} onOpen={(p) => void open(p)} onChanged={vaultChanged} />
+                <UnlinkedMentions
+                  path={doc.path}
+                  target={mentionTarget(doc.path, resolver)}
+                  version={vaultVersion}
+                  onOpen={(p) => void open(p)}
+                  onChanged={vaultChanged}
+                />
               </section>
             )}
           </>
@@ -2459,15 +2730,32 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     ? [
         { label: t("cmd.save"), icon: Pencil, keys: keyOf("save"), disabled: !dirty || doc.generated, run: () => void save() },
         { label: t("common.rename"), keys: keyOf("rename"), disabled: doc.generated || isWsDoc, run: () => focusTitle(doc.path) },
-        { label: docIcon ? t("title.changeIcon") : t("title.addIcon"), icon: SmilePlus, disabled: doc.generated || !!revision, run: () => openIconPicker(docNode) },
+        {
+          label: docIcon ? t("title.changeIcon") : t("title.addIcon"),
+          icon: SmilePlus,
+          disabled: doc.generated || !!revision,
+          run: () => openIconPicker(docNode),
+        },
         ...(docIcon && !doc.generated && !revision ? [{ label: t("title.removeIcon"), run: () => void setIcon(docNode, null) }] : []),
         { label: t("tree.newChild"), icon: FilePlus, disabled: doc.generated, run: () => void createDoc(docNode) },
         { label: t("tree.moveTo"), icon: FolderInput, disabled: doc.generated || isWsDoc, run: () => startMove(docNode, "node") },
-        { label: t("tree.duplicate"), icon: Copy, disabled: doc.virtual, run: () => { const n = findNode(nodeTree, docNode); if (n) void duplicateNode(n); } },
+        {
+          label: t("tree.duplicate"),
+          icon: Copy,
+          disabled: doc.virtual,
+          run: () => {
+            const n = findNode(nodeTree, docNode);
+            if (n) void duplicateNode(n);
+          },
+        },
         "-",
         { label: t("cmd.asideOpen"), icon: Columns2, keys: keyOf("aside"), run: () => setAside(doc.path) },
         { label: t("cmd.modeSplit"), run: () => setMode("split") },
-        { label: t("cmd.reveal"), icon: LocateFixed, run: () => (setPrefs({ leftOpen: true, leftView: "files" }), setTimeout(() => treeRef.current?.reveal(), 0)) },
+        {
+          label: t("cmd.reveal"),
+          icon: LocateFixed,
+          run: () => (setPrefs({ leftOpen: true, leftView: "files" }), setTimeout(() => treeRef.current?.reveal(), 0)),
+        },
         "-",
         { label: t("tree.copyPath"), run: () => void copyText(doc.path, "path") },
         { label: t("tree.copyLink"), icon: Link, run: () => void copyText(`[[${linkTo(doc.path)}]]`, "link") },
@@ -2478,7 +2766,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     : [];
 
   /** 빵부스러기: 상위 노드들(누르면 그 노드를 연다) */
-  const crumbs = doc ? docNode.split("/").slice(0, -1).map((_, i, all) => all.slice(0, i + 1).join("/")) : [];
+  const crumbs = doc
+    ? docNode
+        .split("/")
+        .slice(0, -1)
+        .map((_, i, all) => all.slice(0, i + 1).join("/"))
+    : [];
 
   const saveLabel = (() => {
     if (!doc || doc.generated) return null;
@@ -2497,7 +2790,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       {saveLabel && (
         <button
           className={`status-item save-status ${saveLabel.cls}`}
-          {...tipProps({ label: saveState.kind === "error" ? t("status.errorTip", { message: saveState.message }) : prefs.autosave ? t("status.autosaveOn") : t("status.autosaveOff"), side: "top" })}
+          {...tipProps({
+            label:
+              saveState.kind === "error"
+                ? t("status.errorTip", { message: saveState.message })
+                : prefs.autosave
+                  ? t("status.autosaveOn")
+                  : t("status.autosaveOff"),
+            side: "top",
+          })}
           onClick={() => void save()}
         >
           <span className="dot" aria-hidden /> {saveLabel.text}
@@ -2510,8 +2811,18 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         </button>
       )}
       {local && syncStatus?.settings && (
-        <button className={`status-item${syncStatus.lastError ? " error" : ""}`} onClick={() => openSettings("device")} {...tipProps({ label: syncStatus.lastError ?? t("sync.with", { server: syncStatus.settings.server }), side: "top" })}>
-          {syncStatus.running ? t("sync.running") : syncStatus.lastError ? t("sync.failed") : syncStatus.lastSync ? t("sync.ago", { ago: timeAgo(new Date(syncStatus.lastSync).getTime(), now) }) : t("sync.waiting")}
+        <button
+          className={`status-item${syncStatus.lastError ? " error" : ""}`}
+          onClick={() => openSettings("device")}
+          {...tipProps({ label: syncStatus.lastError ?? t("sync.with", { server: syncStatus.settings.server }), side: "top" })}
+        >
+          {syncStatus.running
+            ? t("sync.running")
+            : syncStatus.lastError
+              ? t("sync.failed")
+              : syncStatus.lastSync
+                ? t("sync.ago", { ago: timeAgo(new Date(syncStatus.lastSync).getTime(), now) })
+                : t("sync.waiting")}
         </button>
       )}
       {!local && pendingCount > 0 && (
@@ -2530,7 +2841,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               {cursor.line}:{cursor.col}
             </span>
           )}
-          <button className={`status-item${live ? "" : " muted"}`} onClick={() => setPrefs({ live: !live })} {...tipProps({ label: t("status.liveTip"), side: "top" })}>
+          <button
+            className={`status-item${live ? "" : " muted"}`}
+            onClick={() => setPrefs({ live: !live })}
+            {...tipProps({ label: t("status.liveTip"), side: "top" })}
+          >
             {live ? t("status.liveOn") : t("status.liveOff")}
           </button>
         </>
@@ -2552,14 +2867,28 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 {docLabel(tp)}
               </button>
               {isDirty ? <span className="tab-dirty" aria-label={t("status.unsaved")} /> : null}
-              <button className="tab-close" aria-label={t("tab.closeName", { name: stemOf(tp) })} {...tipProps({ label: t("cmd.closeTab"), keys: keyOf("close-tab") })} onClick={() => void closeTab(tp)}>
+              <button
+                className="tab-close"
+                aria-label={t("tab.closeName", { name: stemOf(tp) })}
+                {...tipProps({ label: t("cmd.closeTab"), keys: keyOf("close-tab") })}
+                onClick={() => void closeTab(tp)}
+              >
                 <X size={13} aria-hidden />
               </button>
             </span>
           );
         })}
       </div>
-      <IconButton className="tab-new" icon={FilePlus} label={t("tree.newNote")} keys={keyOf("new")} disabled={!ws && !wsNames.length} why={t("ws.needOne")} onClick={() => void createDoc()} size={16} />
+      <IconButton
+        className="tab-new"
+        icon={FilePlus}
+        label={t("tree.newNote")}
+        keys={keyOf("new")}
+        disabled={!ws && !wsNames.length}
+        why={t("ws.needOne")}
+        onClick={() => void createDoc()}
+        size={16}
+      />
     </nav>
   );
 
@@ -2593,13 +2922,36 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             value={revision ? "preview" : mode}
             onChange={(m) => setMode(m)}
             options={[
-              { value: "edit", label: <Pencil size={15} aria-label={t("cmd.modeEditShort")} />, title: `${t("cmd.modeEditShort")} (${formatCombo(keyOf("toggle-mode"))})` },
+              {
+                value: "edit",
+                label: <Pencil size={15} aria-label={t("cmd.modeEditShort")} />,
+                title: `${t("cmd.modeEditShort")} (${formatCombo(keyOf("toggle-mode"))})`,
+              },
               { value: "split", label: <Columns2 size={15} aria-label={t("cmd.modeSplitShort")} />, title: t("cmd.modeSplit") },
-              { value: "preview", label: <Eye size={15} aria-label={t("cmd.modePreviewShort")} />, title: `${t("cmd.modePreviewShort")} (${formatCombo(keyOf("toggle-mode"))})` },
+              {
+                value: "preview",
+                label: <Eye size={15} aria-label={t("cmd.modePreviewShort")} />,
+                title: `${t("cmd.modePreviewShort")} (${formatCombo(keyOf("toggle-mode"))})`,
+              },
             ]}
           />
-          <IconButton icon={SlidersHorizontal} label={propCount ? t("doc.propsCount", { count: propCount }) : t("doc.props")} active={propsShown} badge={!propsShown && propCount ? propCount : undefined} onClick={() => toggleRight("props")} size={16} />
-          <IconButton icon={ListTree} label={t("doc.rightPanel")} keys={keyOf("right")} active={rightOpen} badge={!rightOpen && linkCount ? linkCount : undefined} onClick={() => toggleRight()} size={16} />
+          <IconButton
+            icon={SlidersHorizontal}
+            label={propCount ? t("doc.propsCount", { count: propCount }) : t("doc.props")}
+            active={propsShown}
+            badge={!propsShown && propCount ? propCount : undefined}
+            onClick={() => toggleRight("props")}
+            size={16}
+          />
+          <IconButton
+            icon={ListTree}
+            label={t("doc.rightPanel")}
+            keys={keyOf("right")}
+            active={rightOpen}
+            badge={!rightOpen && linkCount ? linkCount : undefined}
+            onClick={() => toggleRight()}
+            size={16}
+          />
           <IconButton
             icon={Ellipsis}
             label={t("doc.menu")}
@@ -2620,7 +2972,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           {conflict.currentHash === null ? t("doc.deletedElsewhere") : local ? t("doc.conflictLocal") : t("doc.conflictServer")}
           <button onClick={saveConflictCopy}>{t("doc.saveCopy")}</button>
           {conflict.currentHash !== null && (
-            <button onClick={async () => (await confirmDialog(local ? t("doc.reloadAskLocal") : t("doc.reloadAskServer"), t("doc.reload"))) && load(doc.path)}>{local ? t("doc.reloadLocal") : t("doc.reloadServer")}</button>
+            <button onClick={async () => (await confirmDialog(local ? t("doc.reloadAskLocal") : t("doc.reloadAskServer"), t("doc.reload"))) && load(doc.path)}>
+              {local ? t("doc.reloadLocal") : t("doc.reloadServer")}
+            </button>
           )}
         </div>
       )}
@@ -2633,7 +2987,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       )}
 
       <div className="doc-area">
-        <div className={`panes mode-${revision ? "preview" : mode}${prefs.readableWidth ? " readable" : ""} font-${prefs.editorFont}`} style={{ ["--editor-size" as string]: `${prefs.editorSize}px` }}>
+        <div
+          className={`panes mode-${revision ? "preview" : mode}${prefs.readableWidth ? " readable" : ""} font-${prefs.editorFont}`}
+          style={{ ["--editor-size" as string]: `${prefs.editorSize}px` }}
+        >
           <div className="pane edit-pane">
             <div className="page">
               <InlineTitle
@@ -2677,7 +3034,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               )}
               <div className="markdown-body" ref={previewRef} dangerouslySetInnerHTML={{ __html: rendered.html }} />
               {widgetSlots.map((el, i) =>
-                rendered.widgets[i] === undefined ? null : createPortal(<Widget source={rendered.widgets[i]} onOpen={open} onChanged={onWidgetChanged} />, el, `${i}:${rendered.widgets[i]}`),
+                rendered.widgets[i] === undefined
+                  ? null
+                  : createPortal(<Widget source={rendered.widgets[i]} onOpen={open} onChanged={onWidgetChanged} />, el, `${i}:${rendered.widgets[i]}`),
               )}
               {prefs.backlinksInDoc && !revision && refs && (
                 <References
@@ -2741,7 +3100,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           {((prefs.leftOpen && !isNarrow) || drawer === "left") && leftPanel}
         </div>
         {prefs.leftOpen && !isNarrow && (
-          <Resizer side="left" label={t("panel.leftWidth")} width={prefs.leftWidth} min={180} max={520} onChange={(w) => setPrefs({ leftWidth: w })} onReset={() => setPrefs({ leftWidth: DEFAULT_PREFS.leftWidth })} />
+          <Resizer
+            side="left"
+            label={t("panel.leftWidth")}
+            width={prefs.leftWidth}
+            min={180}
+            max={520}
+            onChange={(w) => setPrefs({ leftWidth: w })}
+            onReset={() => setPrefs({ leftWidth: DEFAULT_PREFS.leftWidth })}
+          />
         )}
         <main className="center">
           {tabBar}
@@ -2750,7 +3117,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         {doc && ((rightOpen && !isNarrow) || drawer === "right") && (
           <>
             {rightOpen && !isNarrow && (
-              <Resizer side="right" label={t("panel.rightWidth")} width={prefs.rightWidth} min={200} max={560} onChange={(w) => setPrefs({ rightWidth: w })} onReset={() => setPrefs({ rightWidth: DEFAULT_PREFS.rightWidth })} />
+              <Resizer
+                side="right"
+                label={t("panel.rightWidth")}
+                width={prefs.rightWidth}
+                min={200}
+                max={560}
+                onChange={(w) => setPrefs({ rightWidth: w })}
+                onReset={() => setPrefs({ rightWidth: DEFAULT_PREFS.rightWidth })}
+              />
             )}
             {rightPanel}
           </>
@@ -2866,7 +3241,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         )}
         {migration && (
           <Modal title={t("daily.migrateTitle")} size="md" onClose={() => setMigration(null)}>
-            <p className="meta">{t("daily.migrateHint", { example: dailyNotePath(migration.cfg.folder, migration.cfg.format, new Date(), { weekStart: migration.cfg.weekStart, lang: migration.cfg.lang }) })}</p>
+            <p className="meta">
+              {t("daily.migrateHint", {
+                example: dailyNotePath(migration.cfg.folder, migration.cfg.format, new Date(), {
+                  weekStart: migration.cfg.weekStart,
+                  lang: migration.cfg.lang,
+                }),
+              })}
+            </p>
             {migration.moves.length === 0 ? (
               <p className="note-ok">{t("daily.migrateNone")}</p>
             ) : (
@@ -2885,7 +3267,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 <ul className="migration-list">
                   {migration.skipped.map((x) => (
                     <li key={x.path}>
-                      <code>{x.path}</code> <span className="meta">{x.reason === "noDate" ? t("daily.skipNoDate") : t("daily.skipTaken", { path: x.to ?? "" })}</span>
+                      <code>{x.path}</code>{" "}
+                      <span className="meta">{x.reason === "noDate" ? t("daily.skipNoDate") : t("daily.skipTaken", { path: x.to ?? "" })}</span>
                     </li>
                   ))}
                 </ul>
@@ -2894,7 +3277,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             <div className="ask-actions">
               <button onClick={() => setMigration(null)}>{t("common.close")}</button>
               {migration.moves.length > 0 && (
-                <button className="on" onClick={() => void runMigration()} aria-disabled={migration.moves.length > 500 || undefined} {...(migration.moves.length > 500 ? tipProps({ label: t("daily.migrateLimit") }) : {})}>
+                <button
+                  className="on"
+                  onClick={() => void runMigration()}
+                  aria-disabled={migration.moves.length > 500 || undefined}
+                  {...(migration.moves.length > 500 ? tipProps({ label: t("daily.migrateLimit") }) : {})}
+                >
                   {t("daily.migrateRun", { count: migration.moves.length })}
                 </button>
               )}
@@ -2923,7 +3311,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                   : palette === "move"
                     ? moveItems
                     : palette === "daily"
-                      ? dailyChoices.map((n) => ({ id: n.path, label: stemOf(n.path), display: docLabel(n.path), detail: parentOf(n.path), run: (alt: boolean) => void open(n.path, { newTab: alt }) }))
+                      ? dailyChoices.map((n) => ({
+                          id: n.path,
+                          label: stemOf(n.path),
+                          display: docLabel(n.path),
+                          detail: parentOf(n.path),
+                          run: (alt: boolean) => void open(n.path, { newTab: alt }),
+                        }))
                       : templatePaths.map((p) => ({
                           id: p,
                           label: stemOf(p),
@@ -2947,7 +3341,14 @@ function KeysDialog({ commands, onClose, onEdit }: { commands: Command[]; onClos
     <Modal title={t("keys.title")} size="md" onClose={onClose} className="keys-dialog" head={<button onClick={onEdit}>{t("keys.edit")}</button>}>
       <KeySettings commands={commands} query="" readOnly />
       <p className="meta">
-        {t("keys.editor", { bold: formatCombo("Mod+B"), italic: formatCombo("Mod+I"), link: formatCombo("Mod+K"), mark: formatCombo("Mod+Shift+H"), task: formatCombo("Mod+Enter"), find: formatCombo("Mod+F") })}
+        {t("keys.editor", {
+          bold: formatCombo("Mod+B"),
+          italic: formatCombo("Mod+I"),
+          link: formatCombo("Mod+K"),
+          mark: formatCombo("Mod+Shift+H"),
+          task: formatCombo("Mod+Enter"),
+          find: formatCombo("Mod+F"),
+        })}
         <br />
         {t("keys.tree")}
         <br />
@@ -3026,7 +3427,14 @@ function Home({
         <h1>
           {workspace ? (
             <button type="button" className="home-ws" onClick={onOpenWorkspace} {...tipProps({ label: t("ws.openNote") })}>
-              {wsIcon ? <span className="doc-icon" aria-hidden>{wsIcon}</span> : <House size={22} aria-hidden />} {workspace}
+              {wsIcon ? (
+                <span className="doc-icon" aria-hidden>
+                  {wsIcon}
+                </span>
+              ) : (
+                <House size={22} aria-hidden />
+              )}{" "}
+              {workspace}
             </button>
           ) : (
             <>

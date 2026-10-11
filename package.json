@@ -13,13 +13,17 @@
     "keyring": "pnpm --silent --filter @keyring-notes/server keyring",
     "app:dev": "pnpm --filter @keyring-notes/app dev",
     "app:build": "pnpm --filter @keyring-notes/app build",
-    "ruler:apply": "ruler apply"
+    "ruler:apply": "ruler apply",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "lint": "oxlint .",
+    "prepare": "lefthook install || true"
+  },
+  "devDependencies": {
+    "@intellectronica/ruler": "^0.3.44"
   },
   "engines": {
     "node": ">=22.13"
   },
-  "packageManager": "pnpm@10.33.0",
-  "devDependencies": {
-    "@intellectronica/ruler": "^0.3.44"
-  }
+  "packageManager": "pnpm@10.33.0"
 }

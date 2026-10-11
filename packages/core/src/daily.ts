@@ -213,7 +213,10 @@ function tokenPattern(tok: string, used: Set<string>, lang?: VaultLang): string 
       return "\\d{4}";
     case "MMMM": {
       // 월 이름(볼트 언어). 읽을 때는 이름 순서로 월을 정한다
-      const names = [...t.months].sort((a, b) => b.length - a.length).map(escapeRe).join("|");
+      const names = [...t.months]
+        .sort((a, b) => b.length - a.length)
+        .map(escapeRe)
+        .join("|");
       if (used.has("Mn")) return `(?:${names})`;
       used.add("Mn");
       return `(?<Mn>${names})`;
@@ -478,7 +481,7 @@ export function planDailyMigration(paths: string[], cfg: DailyConfig): { moves: 
     }
     const rest = m[4];
     const title = rest.replace(/^(?: - |[\s_·-])+/, "").trim();
-    const sep = /^ - /.test(rest) ? " - " : /^_/.test(rest) ? "_" : /^·/.test(rest) ? "·" : " ";
+    const sep = rest.startsWith(" - ") ? " - " : rest.startsWith("_") ? "_" : rest.startsWith("·") ? "·" : " ";
     const base = dailyNotePath(cfg.folder, cfg.format, d, { weekStart: cfg.weekStart, lang: cfg.lang });
     const to = title ? `${base.slice(0, -3)}${sep}${title}.md` : base;
     if (to === p) continue;

@@ -1,4 +1,14 @@
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
+import {
+  forceCenter,
+  forceCollide,
+  forceLink,
+  forceManyBody,
+  forceSimulation,
+  forceX,
+  forceY,
+  type SimulationLinkDatum,
+  type SimulationNodeDatum,
+} from "d3-force";
 import { Modal } from "./Modal";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent } from "react";
 import { api, type GraphData } from "./api";
@@ -38,14 +48,31 @@ function neighborhood(data: GraphData, center: string, depth: number): Set<strin
   let frontier = [center];
   for (let d = 0; d < depth; d++) {
     const next: string[] = [];
-    for (const n of frontier) for (const m of adj.get(n) ?? []) if (!seen.has(m)) (seen.add(m), next.push(m));
+    for (const n of frontier)
+      for (const m of adj.get(n) ?? [])
+        if (!seen.has(m)) {
+          seen.add(m);
+          next.push(m);
+        }
     frontier = next;
   }
   return seen;
 }
 
 /** initialFolder: 처음 볼 범위(지금 워크스페이스, ""면 볼트 전체) */
-export function GraphView({ current, folders, initialFolder = "", onClose, onOpen }: { current: string | null; folders: string[]; initialFolder?: string; onClose: () => void; onOpen: (p: string) => void }) {
+export function GraphView({
+  current,
+  folders,
+  initialFolder = "",
+  onClose,
+  onOpen,
+}: {
+  current: string | null;
+  folders: string[];
+  initialFolder?: string;
+  onClose: () => void;
+  onOpen: (p: string) => void;
+}) {
   const [data, setData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [folder, setFolder] = useState(initialFolder);
@@ -159,10 +186,19 @@ export function GraphView({ current, folders, initialFolder = "", onClose, onOpe
       ctx.globalAlpha = 1;
     };
     const simulation = forceSimulation(nodes)
-      .force("link", forceLink<Node, Link>(links).id((d) => d.id).distance(60).strength(0.4))
+      .force(
+        "link",
+        forceLink<Node, Link>(links)
+          .id((d) => d.id)
+          .distance(60)
+          .strength(0.4),
+      )
       .force("charge", forceManyBody().strength(-160))
       .force("center", forceCenter(0, 0))
-      .force("collide", forceCollide<Node>().radius((d) => d.r + 6))
+      .force(
+        "collide",
+        forceCollide<Node>().radius((d) => d.r + 6),
+      )
       // 떨어진 무리가 화면 밖으로 흩어지지 않게 약하게 가운데로 당긴다
       .force("x", forceX(0).strength(0.06))
       .force("y", forceY(0).strength(0.06))
@@ -200,7 +236,10 @@ export function GraphView({ current, folders, initialFolder = "", onClose, onOpe
     let bestD = Infinity;
     for (const n of sim.current?.nodes ?? []) {
       const d = Math.hypot(n.x! - p.x, n.y! - p.y);
-      if (d < n.r + 6 / view.current.k && d < bestD) (best = n), (bestD = d);
+      if (d < n.r + 6 / view.current.k && d < bestD) {
+        best = n;
+        bestD = d;
+      }
     }
     return { node: best, p };
   };

@@ -114,13 +114,25 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
         {tab === "settings" && (
           <div>
             <p className="meta">{t("review.targetsHint")}</p>
-            <textarea className="paths-input" rows={6} value={paths} onChange={(e) => setPaths(e.target.value)} aria-label={t("review.targets")} placeholder={t("review.targetsPlaceholder")} />
+            <textarea
+              className="paths-input"
+              rows={6}
+              value={paths}
+              onChange={(e) => setPaths(e.target.value)}
+              aria-label={t("review.targets")}
+              placeholder={t("review.targetsPlaceholder")}
+            />
             <div className="agent-actions">
               <button
                 className="on"
                 onClick={async () => {
                   try {
-                    const r = await review.saveSettings(paths.split("\n").map((s) => s.trim()).filter(Boolean));
+                    const r = await review.saveSettings(
+                      paths
+                        .split("\n")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    );
                     setPaths(r.reviewPaths.join("\n"));
                     setSavedPaths(r.reviewPaths.join("\n"));
                     setNote({ ok: true, text: r.reviewPaths.length ? t("review.targetsSaved", { list: r.reviewPaths.join(", ") }) : t("review.targetsNone") });
@@ -142,7 +154,11 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
                   <span className="proposal-msg">
                     {p.message}
                     {p.stale && <span className="badge warn">{t("review.stale")}</span>}
-                    {p.status !== "pending" && <span className={`badge ${p.status === "approved" ? "" : "muted"}`}>{p.status === "approved" ? t("review.statusApproved") : t("review.statusRejected")}</span>}
+                    {p.status !== "pending" && (
+                      <span className={`badge ${p.status === "approved" ? "" : "muted"}`}>
+                        {p.status === "approved" ? t("review.statusApproved") : t("review.statusRejected")}
+                      </span>
+                    )}
                   </span>
                   <span className="meta">
                     {p.agent} · {fmtDateTime(p.createdAt)} · {p.files.map((f) => `${t(`review.change.${f.change}`)} ${f.path.split("/").pop()}`).join(", ")}
@@ -171,7 +187,8 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
             <h4>{open.message}</h4>
             <p className="meta">
               {open.agent} · {fmtDateTime(open.createdAt)}
-              {open.status !== "pending" && ` · ${open.status === "approved" ? t("review.statusApproved") : t("review.statusRejected")}: ${open.decidedBy} ${fmtDateTime(open.decidedAt!)}`}
+              {open.status !== "pending" &&
+                ` · ${open.status === "approved" ? t("review.statusApproved") : t("review.statusRejected")}: ${open.decidedBy} ${fmtDateTime(open.decidedAt!)}`}
             </p>
             {open.preview.map((f) => (
               <section key={f.path} className="diff-file">
@@ -185,7 +202,9 @@ export function ReviewPanel({ onClose, onChanged, onOpen }: { onClose: () => voi
                   >
                     {f.path}
                   </a>{" "}
-                  <span className="meta">{f.beforeHash === null ? t("review.newFile") : f.afterHash === null ? t("review.change.delete") : t("review.change.modify")}</span>
+                  <span className="meta">
+                    {f.beforeHash === null ? t("review.newFile") : f.afterHash === null ? t("review.change.delete") : t("review.change.modify")}
+                  </span>
                 </div>
                 {f.binary ? <p className="meta">{t("review.binary")}</p> : <DiffView before={f.before} after={f.after} />}
               </section>
@@ -206,14 +225,24 @@ const LINT_KINDS: LintKind[] = ["broken_link", "broken_source", "missing_frontma
 
 /** 정리 점검 설명: 종류와 끼워 넣을 값으로 화면 언어 글을 만든다 */
 function lintDetail(i: LintReport["issues"][number]): string {
-  const p = { ...(i.params ?? {}), target: i.target ?? "" };
+  const p = { ...i.params, target: i.target ?? "" };
   if (i.kind === "broken_source" && i.params?.anchor) return t(String(i.params.anchor).startsWith("^") ? "lint.d.brokenBlock" : "lint.d.brokenHeading", p);
   return t(`lint.d.${i.kind}`, p);
 }
 
 /** 구조적 정리(W7) 결과. */
 /** initialFolder: 처음 점검할 범위(지금 워크스페이스, ""면 볼트 전체) */
-export function LintPanel({ folders, initialFolder = "", onClose, onOpen }: { folders: string[]; initialFolder?: string; onClose: () => void; onOpen: (p: string) => void }) {
+export function LintPanel({
+  folders,
+  initialFolder = "",
+  onClose,
+  onOpen,
+}: {
+  folders: string[];
+  initialFolder?: string;
+  onClose: () => void;
+  onOpen: (p: string) => void;
+}) {
   const [folder, setFolder] = useState(initialFolder);
   const [report, setReport] = useState<LintReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -259,7 +288,9 @@ export function LintPanel({ folders, initialFolder = "", onClose, onOpen }: { fo
         {error && <p className="form-error">{error}</p>}
         {report && (
           <>
-            <p className="meta">{t("lint.summary", { date: fmtDateTime(report.checkedAt), scope: report.folder ?? t("lint.wholeVault"), count: report.issues.length })}</p>
+            <p className="meta">
+              {t("lint.summary", { date: fmtDateTime(report.checkedAt), scope: report.folder ?? t("lint.wholeVault"), count: report.issues.length })}
+            </p>
             {groups.length === 0 && <p className="note-ok">{t("lint.none")}</p>}
             {groups.map(([k, issues]) => (
               <details key={k} className="lint-group" open={issues.length <= 20}>

@@ -1,0 +1,28 @@
+# 훅은 툴체인을 설치본(pnpm exec)으로 부른다 — pnpx·pnpm dlx 는 레지스트리 최신본을 받아 lockfile 과 갈린다.
+# 규칙은 docs/guideline/lefthook/ 이다.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: fmt
+      glob: "*.{js,mjs,cjs,ts,tsx,json}"
+      run: "pnpm exec oxfmt --no-error-on-unmatched-pattern {staged_files}"
+      stage_fixed: true
+    - name: lint
+      glob: "*.{js,mjs,cjs,ts,tsx}"
+      run: "pnpm exec oxlint --no-error-on-unmatched-pattern {staged_files}"
+
+# pre-commit 은 staged 파일만 본다. 손대지 않은 파일과 병합으로 들어온 변경은 여기서 잡는다.
+pre-push:
+  jobs:
+    - name: fmt-check
+      run: "pnpm exec oxfmt --check ."
+    - name: lint
+      run: "pnpm exec oxlint ."
+
+# 순차 실행이다 — 런타임이 맞은 뒤에 설치가 돌아야 한다. parallel 을 쓰지 않는다.
+post-checkout:
+  jobs:
+    - name: runtime
+      run: "if command -v mise >/dev/null; then mise install; else echo 'mise 가 없어 런타임 버전을 맞추지 못했다'; fi"
+    - name: deps
+      run: "pnpm install"

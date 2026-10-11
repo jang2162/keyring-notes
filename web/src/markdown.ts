@@ -11,7 +11,7 @@ import { t } from "./i18n";
  * DOMPurify 기본 허용 URI에 앱의 첨부 URL을 더한다: 데스크톱·모바일 앱의 파일(asset:), 브라우저 로컬 볼트의 blob:.
  * javascript: 등 나머지는 그대로 막힌다.
  */
-export const SAFE_URI = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|asset|blob):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+export const SAFE_URI = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|asset|blob):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i;
 
 /**
  * 위키링크 대상 이름 → 실제 경로. Obsidian처럼 경로 없이 파일 이름만 써도 찾는다. core의 LinkIndex(resolveLink와 같은 규칙):
@@ -333,16 +333,63 @@ md.core.ruler.push("callouts", (state: StateCore) => {
 
 /** 콜아웃 기본 제목: 종류 → 메시지 키(같은 뜻은 한 키로) */
 const CALLOUT_LABEL: Record<string, string> = {
-  note: "note", info: "info", todo: "todo", abstract: "summary", summary: "summary", tldr: "summary", tip: "tip", hint: "tip", important: "important",
-  success: "success", check: "success", done: "success", question: "question", help: "question", faq: "faq", warning: "warning", caution: "warning",
-  attention: "warning", failure: "failure", fail: "failure", missing: "missing", danger: "danger", error: "error", bug: "bug", example: "example",
-  quote: "quote", cite: "quote",
+  note: "note",
+  info: "info",
+  todo: "todo",
+  abstract: "summary",
+  summary: "summary",
+  tldr: "summary",
+  tip: "tip",
+  hint: "tip",
+  important: "important",
+  success: "success",
+  check: "success",
+  done: "success",
+  question: "question",
+  help: "question",
+  faq: "faq",
+  warning: "warning",
+  caution: "warning",
+  attention: "warning",
+  failure: "failure",
+  fail: "failure",
+  missing: "missing",
+  danger: "danger",
+  error: "error",
+  bug: "bug",
+  example: "example",
+  quote: "quote",
+  cite: "quote",
 };
 /** 콜아웃 종류 → 색 묶음(styles.css의 .callout-*) */
 const CALLOUT_GROUP: Record<string, string> = {
-  note: "blue", info: "blue", todo: "blue", abstract: "teal", summary: "teal", tldr: "teal", tip: "green", hint: "green", important: "green",
-  success: "green", check: "green", done: "green", question: "yellow", help: "yellow", faq: "yellow", warning: "orange", caution: "orange",
-  attention: "orange", failure: "red", fail: "red", missing: "red", danger: "red", error: "red", bug: "red", example: "purple", quote: "gray", cite: "gray",
+  note: "blue",
+  info: "blue",
+  todo: "blue",
+  abstract: "teal",
+  summary: "teal",
+  tldr: "teal",
+  tip: "green",
+  hint: "green",
+  important: "green",
+  success: "green",
+  check: "green",
+  done: "green",
+  question: "yellow",
+  help: "yellow",
+  faq: "yellow",
+  warning: "orange",
+  caution: "orange",
+  attention: "orange",
+  failure: "red",
+  fail: "red",
+  missing: "red",
+  danger: "red",
+  error: "red",
+  bug: "red",
+  example: "purple",
+  quote: "gray",
+  cite: "gray",
 };
 
 md.renderer.rules.blockquote_open = (tokens, idx, opts, env, self) => {
@@ -352,7 +399,8 @@ md.renderer.rules.blockquote_open = (tokens, idx, opts, env, self) => {
   const cls = `callout callout-${CALLOUT_GROUP[c.kind] ?? "blue"}`;
   const line = tokens[idx].attrGet("data-line");
   const at = line ? ` data-line="${escapeHtml(String(line))}"` : "";
-  if (c.fold) return `<details class="${cls}" data-callout="${escapeHtml(c.kind)}"${c.fold === "+" ? " open" : ""}><summary class="callout-title">${title}</summary><div class="callout-body">\n`;
+  if (c.fold)
+    return `<details class="${cls}" data-callout="${escapeHtml(c.kind)}"${c.fold === "+" ? " open" : ""}><summary class="callout-title">${title}</summary><div class="callout-body">\n`;
   return `<div class="${cls}" data-callout="${escapeHtml(c.kind)}"${at}><div class="callout-title">${title}</div><div class="callout-body">\n`;
 };
 md.renderer.rules.blockquote_close = (tokens, idx, opts, _env, self) => {

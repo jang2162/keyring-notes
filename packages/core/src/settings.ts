@@ -126,7 +126,7 @@ export function workspaceSettings(s: VaultSettings, workspace: string, fallbackL
   const lang = vaultLanguage(s, fallbackLang);
   const d = defaultWorkspaceSettings(lang);
   const w = s.workspaces[workspace] ?? {};
-  const daily: DailySettings = { ...d.daily, ...(w.daily ?? {}) };
+  const daily: DailySettings = { ...d.daily, ...w.daily };
   if (dailyFormatProblem(daily.folder, daily.format, lang)) daily.format = d.daily.format;
   return {
     daily,
@@ -154,10 +154,11 @@ export function dailyLookup(s: VaultSettings, workspaces: () => Iterable<string>
   };
   return {
     of,
-    all: () => [...workspaces()].flatMap((ws) => {
-      const c = of(ws);
-      return c ? [{ workspace: ws, config: c }] : [];
-    }),
+    all: () =>
+      [...workspaces()].flatMap((ws) => {
+        const c = of(ws);
+        return c ? [{ workspace: ws, config: c }] : [];
+      }),
   };
 }
 

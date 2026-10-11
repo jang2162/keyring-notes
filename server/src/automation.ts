@@ -158,7 +158,7 @@ export class Automation {
   /** 진행 중인 전송과 묶어 둔 doc.changed가 모두 나갈 때까지(시험·종료용). */
   async idle(): Promise<void> {
     while (this.inflight.size || this.pendingDocs.size) {
-      if (this.inflight.size) await Promise.allSettled([...this.inflight]);
+      if (this.inflight.size) await Promise.allSettled(this.inflight);
       else await new Promise((r) => setTimeout(r, Math.min(50, this.quietMs + 5)));
     }
   }
@@ -285,7 +285,10 @@ export class Automation {
     const due = [...this.pendingDocs].filter(([, p]) => force || p.at + this.quietMs <= now);
     if (due.length) {
       for (const [path] of due) this.pendingDocs.delete(path);
-      const last = due.map(([, p]) => p).sort((a, b) => a.at - b.at).at(-1)!;
+      const last = due
+        .map(([, p]) => p)
+        .sort((a, b) => a.at - b.at)
+        .at(-1)!;
       this.emit("doc.changed", {
         rev: last.rev,
         author: last.author,
@@ -318,13 +321,20 @@ export class Automation {
       this.lastResult.set(job.id, serverText("server.job.no_webhook"));
       return null;
     }
-    const data: Record<string, unknown> = { job: { id: job.id, name: job.name, cron: job.cron }, topic: job.topic ?? null, instructions: job.instructions ?? null };
+    const data: Record<string, unknown> = {
+      job: { id: job.id, name: job.name, cron: job.cron },
+      topic: job.topic ?? null,
+      instructions: job.instructions ?? null,
+    };
     if (job.lint) {
       const report = await this.deps.lint(job.topic ?? undefined);
       data.lint = { counts: report.counts, issues: report.issues.slice(0, 200), total: report.issues.length };
     }
     const d = await this.track(this.deliver(w, "schedule", data));
-    this.lastResult.set(job.id, d.status === "ok" ? serverText("server.job.sent", { status: String(d.httpStatus) }) : serverText("server.job.send_failed", { error: String(d.error) }));
+    this.lastResult.set(
+      job.id,
+      d.status === "ok" ? serverText("server.job.sent", { status: String(d.httpStatus) }) : serverText("server.job.send_failed", { error: String(d.error) }),
+    );
     return d;
   }
 
@@ -344,7 +354,11 @@ export class Automation {
       const last = this.lastRun.get(job.id);
       if (cronMatches(cron, minuteKey) && (!last || Date.parse(last) < minuteKey.getTime())) {
         due.push(job);
-        void this.track(this.runJob(job, now).catch((e) => this.lastResult.set(job.id, serverText("server.job.failed", { error: e instanceof Error ? e.message : String(e) }))));
+        void this.track(
+          this.runJob(job, now).catch((e) =>
+            this.lastResult.set(job.id, serverText("server.job.failed", { error: e instanceof Error ? e.message : String(e) })),
+          ),
+        );
       }
     }
     return due;
