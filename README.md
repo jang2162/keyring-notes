@@ -35,6 +35,10 @@ By default the app port is bound to `127.0.0.1` only. To use it from elsewhere, 
 
 When `KEYRING_PUBLIC_URL` is set, only requests for that host name are accepted (DNS rebinding protection; other Hosts get 421) and the login cookie gets `Secure`. Every page is sent with security headers such as CSP and `X-Frame-Options: DENY`.
 
+### Deploying with Komodo
+
+The settings for deploying as a Komodo Git Repo Stack (stack table, environment, server override file) are in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (Korean).
+
 ### Updating
 
 The admin console's "Updates" tab checks for the latest release. Make a backup before updating, then:

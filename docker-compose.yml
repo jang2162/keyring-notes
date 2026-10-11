@@ -5,6 +5,7 @@
 #
 # 처음 실행하면 로그에 설정 코드가 나온다: docker compose logs keyring
 # 설정은 .env 파일에 둔다(.env.example 참고).
+# Komodo 로 서버에 배포할 때는 이 파일 뒤에 서버용 덮어쓰기 파일을 건다: docs/guides/deploy-komodo.md
 services:
   keyring:
     image: ghcr.io/jang2162/keyring-notes:${KEYRING_TAG:-latest}
@@ -30,7 +31,8 @@ services:
       KEYRING_S3_ENCRYPTION_KEY: ${KEYRING_S3_ENCRYPTION_KEY:-}
       TZ: ${TZ:-Asia/Seoul}
     volumes:
-      - keyring-data:/data
+      # 기본은 named volume. 서버에서는 KEYRING_DATA_DIR 에 호스트 경로를 주면 그 디렉터리에 둔다
+      - ${KEYRING_DATA_DIR:-keyring-data}:/data
 
   caddy:
     image: caddy:2

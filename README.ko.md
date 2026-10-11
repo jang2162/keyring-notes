@@ -35,6 +35,10 @@ docker compose logs keyring               # "처음 설치: … 설정 코드 �
 
 `KEYRING_PUBLIC_URL`을 정하면 그 호스트 이름으로 온 요청만 받고(DNS 리바인딩 방지, 다른 Host는 421) 로그인 쿠키에 `Secure`가 붙는다. 모든 페이지에 CSP·`X-Frame-Options: DENY` 등 보안 헤더가 붙는다.
 
+### Komodo 로 서버 배포
+
+Komodo 의 Git Repo Stack 으로 올리는 설정(Stack 표, Environment, 서버용 덮어쓰기 파일)은 [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md)에 있다.
+
 ### 업데이트
 
 관리 콘솔의 "업데이트" 탭이 최신 릴리스를 확인한다. 업데이트 전에 백업을 하나 만들고:
