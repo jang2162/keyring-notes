@@ -3,7 +3,7 @@ import { onVaultSettings, updateVaultSetting } from "./vaultSettings";
 import { setLanguage, systemLanguage, urlLanguage } from "./i18n";
 
 /**
- * 화면 설정. 두 가지로 나뉜다(UX.md 27번).
+ * 화면 설정. 두 가지로 나뉜다.
  * - 따라가는 것(SYNCED_KEYS): 공통 설정 파일(keyring-settings.md)의 "ui" 묶음에 두어 앱 동기화로 모든 기기가 같이 쓴다.
  *   설정마다 "이 기기에서만 다르게"를 켜면 이 기기 localStorage의 덮어쓰기(keyring:prefs-local)에 두고 공통 값을 따라가지 않는다.
  *   값을 고르는 순서: 이 기기 덮어쓰기 → 공통 설정 "ui" → 기본값(화면 언어의 기본은 브라우저·OS 언어).

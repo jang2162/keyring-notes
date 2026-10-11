@@ -3,7 +3,6 @@
 **English** · [한국어](README.ko.md)
 
 A personal notes app that keeps plain Markdown files as the source of truth on a self-hosted server. People edit in the browser; agents get in only through per-topic permission tokens.
-The full plan is in [docs/PLAN.md](docs/PLAN.md) (Korean).
 
 > Status: **Phase 6** — file storage, web editor, Git history (1); login, token × folder permissions, MCP, batch writes (2);
 > SQLite index, autocomplete, widgets (3); LLM Wiki: source collection, topic templates, auto-generated index/log (4);
@@ -49,18 +48,20 @@ When building behind something that re-signs TLS, such as a corporate proxy: `do
 
 ## Running from source
 
+The package manager is pnpm (`packageManager` in `package.json`). With [mise](https://mise.jdx.dev), `mise install` sets up the Node and pnpm versions in `mise.toml`; otherwise run `corepack enable`.
+
 ```bash
-npm install
-npm run build                      # builds web/dist and server/dist
-npm start                          # http://127.0.0.1:8787 — set a password on the web with the setup code from the log
-                                   # (or npm run keyring -- passwd)
+pnpm install
+pnpm build                         # builds web/dist and server/dist
+pnpm start                         # http://127.0.0.1:8787 — set a password on the web with the setup code from the log
+                                   # (or pnpm keyring passwd)
 ```
 
 Development mode (hot reload) in two terminals:
 
 ```bash
-npm run dev:server   # API: 127.0.0.1:8787
-npm run dev:web      # web: http://localhost:5173 (proxies the API)
+pnpm dev:server      # API: 127.0.0.1:8787
+pnpm dev:web         # web: http://localhost:5173 (proxies the API)
 ```
 
 ### Environment variables
@@ -98,7 +99,7 @@ Make a **copy** so the original vault is untouched.
 
 ```bash
 cp -R ~/ObsidianVault /tmp/vault-copy
-KEYRING_VAULT=/tmp/vault-copy npm start
+KEYRING_VAULT=/tmp/vault-copy pnpm start
 ```
 
 On startup, the server absorbs the existing files in the vault into a single commit by the `system` author. Changes made outside the server later are recorded the same way on the next start.
@@ -175,14 +176,14 @@ Automatic sync runs when the app opens, 10 seconds after saving, when you return
 ### Building
 
 ```bash
-npm ci
-npm run app:dev                       # run the desktop app in dev mode (web dev server + app window)
-npm run app:build                     # installers (Windows .msi/.exe, macOS .dmg, Linux .deb/.rpm/.AppImage)
-npm run android:init -w app && npm run android:build -w app   # requires the Android SDK and NDK
-npm run ios:init -w app && npm run ios:build -w app           # requires macOS + Xcode
+pnpm install --frozen-lockfile
+pnpm app:dev                          # run the desktop app in dev mode (web dev server + app window)
+pnpm app:build                        # installers (Windows .msi/.exe, macOS .dmg, Linux .deb/.rpm/.AppImage)
+pnpm -F @keyring-notes/app android:init && pnpm -F @keyring-notes/app android:build   # requires the Android SDK and NDK
+pnpm -F @keyring-notes/app ios:init && pnpm -F @keyring-notes/app ios:build           # requires macOS + Xcode
 ```
 
-Requirements: Rust (stable), Node 22, and the platform-specific [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (`libwebkit2gtk-4.1-dev` etc. on Linux). Regenerate icons with `npm run icons -w app`.
+Requirements: Rust (stable), Node 22, and the platform-specific [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (`libwebkit2gtk-4.1-dev` etc. on Linux). Regenerate icons with `pnpm -F @keyring-notes/app icons`.
 
 ## Writing notes
 
@@ -351,9 +352,9 @@ Any OpenAI-compatible embedding endpoint works.
 
 ```bash
 # Local (Ollama): ollama pull nomic-embed-text
-KEYRING_EMBED_URL=http://localhost:11434/v1/embeddings KEYRING_EMBED_MODEL=nomic-embed-text npm start
+KEYRING_EMBED_URL=http://localhost:11434/v1/embeddings KEYRING_EMBED_MODEL=nomic-embed-text pnpm start
 # OpenAI
-KEYRING_EMBED_URL=https://api.openai.com/v1/embeddings KEYRING_EMBED_MODEL=text-embedding-3-small KEYRING_EMBED_KEY=sk-... npm start
+KEYRING_EMBED_URL=https://api.openai.com/v1/embeddings KEYRING_EMBED_MODEL=text-embedding-3-small KEYRING_EMBED_KEY=sk-... pnpm start
 ```
 
 Notes are split into sections and their vectors stored in the index file; only changed notes are recomputed (with an external API, note contents are sent to that service). Status: `GET /api/semantic/status`.
@@ -363,11 +364,11 @@ Notes are split into sections and their vectors stored in the index file; only c
 ### 1. Issuing tokens and granting permissions
 
 ```bash
-npm run keyring -- agent add wiki-work                    # the token is shown only now
-npm run keyring -- agent grant wiki-work Work/raw append
-npm run keyring -- agent grant wiki-work Work/wiki delete
-npm run keyring -- agent grant wiki-work Work/SCHEMA.md read
-npm run keyring -- agent list
+pnpm keyring agent add wiki-work                          # the token is shown only now
+pnpm keyring agent grant wiki-work Work/raw append
+pnpm keyring agent grant wiki-work Work/wiki delete
+pnpm keyring agent grant wiki-work Work/SCHEMA.md read
+pnpm keyring agent list
 ```
 
 Other commands: `agent rotate <name>` (reissue the token; the old one is invalid immediately), `agent revoke <name> <path>`, `agent remove <name>`.
@@ -503,7 +504,7 @@ Errors: `401` not authenticated, `403` forbidden, `404` not found (including hid
 ## Tests
 
 ```bash
-npm test         # path validation, conflicts, history/rollback, batch write atomicity, permissions (hidden, read, append-only), auth, MCP,
+pnpm test        # path validation, conflicts, history/rollback, batch write atomicity, permissions (hidden, read, append-only), auth, MCP,
                  # Korean search, tags, backlinks, index sync, widgets, task toggling,
                  # wiki topics, collection (URL, PDF, image, clip), SSRF blocking, index/log generation and per-permission content,
                  # review queue, sources/structure check, webhook signing/retries/cron, graph, semantic search (fake embedding server), plugins,
@@ -512,5 +513,5 @@ npm test         # path validation, conflicts, history/rollback, batch write ato
                  # device tokens/CORS/sync manifest, app ↔ server sync through the real server API,
                  # daily detection, weeks (year-end boundary), automatic properties, [[date]] links, format migration, shared settings file (agent read-only, excluded from search etc.),
                  # folder moves in one commit (including attachments and S3-stored attachments), app folder moves and attachment deletion sync, webhook doc.changed batching
-npm run typecheck
+pnpm typecheck
 ```

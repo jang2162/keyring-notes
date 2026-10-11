@@ -17,7 +17,7 @@
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
-    "@keyring-notes/core": "*",
+    "@keyring-notes/core": "workspace:*",
     "@lezer/highlight": "^1.2.5",
     "@simplewebauthn/browser": "^13.3.0",
     "@tauri-apps/api": "^2.12.1",

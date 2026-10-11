@@ -1,0 +1,5 @@
+[tools]
+node = "24"
+# pnpm 은 npm: backend 로 받는다 — 기본 backend(aqua)로는 pnpm 11 이 설치되지 않는다.
+# 버전은 루트 package.json 의 packageManager 와 같아야 한다.
+"npm:pnpm" = "10.33.0"

@@ -106,7 +106,10 @@ async function main(args: string[]) {
   }
 }
 
-main(process.argv.slice(2)).catch((e) => {
+// pnpm 은 `pnpm keyring -- agent list` 의 `--` 를 그대로 넘긴다(npm 은 뺀다). 두 꼴 모두 받는다
+const args = process.argv.slice(2);
+if (args[0] === "--") args.shift();
+main(args).catch((e) => {
   console.error(serverText("cli.error", { message: e instanceof Error ? e.message : String(e) }));
   process.exitCode = 1;
 });

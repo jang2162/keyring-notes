@@ -1,0 +1,9 @@
+# Orca 워크트리 설정. 규칙은 docs/guideline/orca/06-orca-yaml.md.
+# 로컬 데이터(config/, vault/, backups/, .env)는 복사하지 않는다 — 워크트리는 임시 KEYRING_DATA 로 띄운다.
+scripts:
+  setup: |
+    set -e
+    mise trust
+    mise install
+    mise exec -- pnpm install --frozen-lockfile
+setupAgentStartupPolicy: wait-for-setup

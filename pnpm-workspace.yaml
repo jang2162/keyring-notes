@@ -1,0 +1,9 @@
+packages:
+  - packages/core
+  - server
+  - web
+  - app
+
+# 설치 스크립트를 돌려도 되는 의존성(pnpm 10 은 기본으로 막는다)
+onlyBuiltDependencies:
+  - esbuild

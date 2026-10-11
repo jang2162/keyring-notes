@@ -3,24 +3,23 @@
   "version": "0.5.0",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/core",
-    "server",
-    "web",
-    "app"
-  ],
   "scripts": {
-    "dev:server": "npm run dev -w server",
-    "dev:web": "npm run dev -w web",
-    "build": "npm run build -w packages/core && npm run build -w web && npm run build -w server",
-    "start": "npm run start -w server",
-    "test": "npm test -w packages/core && npm test -w server && npm test -w web",
-    "typecheck": "npm run typecheck -w packages/core && npm run typecheck -w server && npm run typecheck -w web",
-    "keyring": "npm run --silent keyring -w server --",
-    "app:dev": "npm run dev -w app",
-    "app:build": "npm run build -w app"
+    "dev:server": "pnpm --filter @keyring-notes/server dev",
+    "dev:web": "pnpm --filter @keyring-notes/web dev",
+    "build": "pnpm --filter @keyring-notes/core build && pnpm --filter @keyring-notes/web build && pnpm --filter @keyring-notes/server build",
+    "start": "pnpm --filter @keyring-notes/server start",
+    "test": "pnpm --filter @keyring-notes/core test && pnpm --filter @keyring-notes/server test && pnpm --filter @keyring-notes/web test",
+    "typecheck": "pnpm --filter @keyring-notes/core typecheck && pnpm --filter @keyring-notes/server typecheck && pnpm --filter @keyring-notes/web typecheck",
+    "keyring": "pnpm --silent --filter @keyring-notes/server keyring",
+    "app:dev": "pnpm --filter @keyring-notes/app dev",
+    "app:build": "pnpm --filter @keyring-notes/app build",
+    "ruler:apply": "ruler apply"
   },
   "engines": {
     "node": ">=22.13"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "@intellectronica/ruler": "^0.3.44"
   }
 }

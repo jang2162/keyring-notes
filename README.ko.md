@@ -3,7 +3,6 @@
 [English](README.md) · **한국어**
 
 마크다운 파일을 원본으로 셀프호스팅 서버에 두고, 사람은 웹에서 편집하고 에이전트는 토픽별 권한 토큰으로만 접근하는 개인용 노트 앱.
-전체 계획은 [docs/PLAN.md](docs/PLAN.md)에 있다.
 
 > 현재 상태: **6단계** — 파일 저장소·웹 에디터·Git 이력(1), 로그인·토큰 × 폴더 권한·MCP·일괄 쓰기(2),
 > SQLite 인덱스·자동완성·위젯(3), LLM Wiki: 원본 수집·토픽 템플릿·index/log 자동 생성(4),
@@ -49,18 +48,20 @@ git pull && docker compose up -d --build             # 직접 빌드할 때
 
 ## 소스에서 실행
 
+패키지 매니저는 pnpm이다(`package.json`의 `packageManager`). [mise](https://mise.jdx.dev)를 쓰면 `mise install`이 `mise.toml`의 Node·pnpm 버전을 맞추고, 아니면 `corepack enable`을 돌린다.
+
 ```bash
-npm install
-npm run build                      # web/dist, server/dist 생성
-npm start                          # http://127.0.0.1:8787 — 로그의 설정 코드로 웹에서 비밀번호 설정
-                                   # (또는 npm run keyring -- passwd)
+pnpm install
+pnpm build                         # web/dist, server/dist 생성
+pnpm start                         # http://127.0.0.1:8787 — 로그의 설정 코드로 웹에서 비밀번호 설정
+                                   # (또는 pnpm keyring passwd)
 ```
 
 개발 모드(핫 리로드)는 터미널 두 개에서:
 
 ```bash
-npm run dev:server   # API: 127.0.0.1:8787
-npm run dev:web      # 웹: http://localhost:5173 (API는 프록시)
+pnpm dev:server      # API: 127.0.0.1:8787
+pnpm dev:web         # 웹: http://localhost:5173 (API는 프록시)
 ```
 
 ### 환경 변수
@@ -98,7 +99,7 @@ npm run dev:web      # 웹: http://localhost:5173 (API는 프록시)
 
 ```bash
 cp -R ~/ObsidianVault /tmp/vault-copy
-KEYRING_VAULT=/tmp/vault-copy npm start
+KEYRING_VAULT=/tmp/vault-copy pnpm start
 ```
 
 서버가 시작할 때 볼트 안의 기존 파일을 `system` 작성자의 커밋 하나로 흡수한다. 이후 서버 밖에서 고친 내용도 다음 시작 때 같은 방식으로 기록된다.
@@ -175,14 +176,14 @@ KEYRING_VAULT=/tmp/vault-copy npm start
 ### 빌드
 
 ```bash
-npm ci
-npm run app:dev                       # 데스크톱 개발 실행(웹 개발 서버 + 앱 창)
-npm run app:build                     # 설치 파일(Windows .msi/.exe, macOS .dmg, Linux .deb/.rpm/.AppImage)
-npm run android:init -w app && npm run android:build -w app   # Android SDK·NDK 필요
-npm run ios:init -w app && npm run ios:build -w app           # macOS + Xcode 필요
+pnpm install --frozen-lockfile
+pnpm app:dev                          # 데스크톱 개발 실행(웹 개발 서버 + 앱 창)
+pnpm app:build                        # 설치 파일(Windows .msi/.exe, macOS .dmg, Linux .deb/.rpm/.AppImage)
+pnpm -F @keyring-notes/app android:init && pnpm -F @keyring-notes/app android:build   # Android SDK·NDK 필요
+pnpm -F @keyring-notes/app ios:init && pnpm -F @keyring-notes/app ios:build           # macOS + Xcode 필요
 ```
 
-필요한 것: Rust(stable), Node 22, 플랫폼별 [Tauri 사전 요구 사항](https://v2.tauri.app/start/prerequisites/)(Linux는 `libwebkit2gtk-4.1-dev` 등). 아이콘은 `npm run icons -w app`으로 다시 만든다.
+필요한 것: Rust(stable), Node 22, 플랫폼별 [Tauri 사전 요구 사항](https://v2.tauri.app/start/prerequisites/)(Linux는 `libwebkit2gtk-4.1-dev` 등). 아이콘은 `pnpm -F @keyring-notes/app icons`으로 다시 만든다.
 
 ## 노트 쓰기
 
@@ -351,9 +352,9 @@ OpenAI 호환 임베딩이면 무엇이든 된다.
 
 ```bash
 # 로컬(Ollama): ollama pull nomic-embed-text
-KEYRING_EMBED_URL=http://localhost:11434/v1/embeddings KEYRING_EMBED_MODEL=nomic-embed-text npm start
+KEYRING_EMBED_URL=http://localhost:11434/v1/embeddings KEYRING_EMBED_MODEL=nomic-embed-text pnpm start
 # OpenAI
-KEYRING_EMBED_URL=https://api.openai.com/v1/embeddings KEYRING_EMBED_MODEL=text-embedding-3-small KEYRING_EMBED_KEY=sk-... npm start
+KEYRING_EMBED_URL=https://api.openai.com/v1/embeddings KEYRING_EMBED_MODEL=text-embedding-3-small KEYRING_EMBED_KEY=sk-... pnpm start
 ```
 
 문서를 절 단위로 나눠 벡터를 인덱스 파일에 저장하고, 바뀐 문서만 다시 계산한다(외부 API를 쓰면 문서 내용이 그 서비스로 간다). 상태는 `GET /api/semantic/status`.
@@ -363,11 +364,11 @@ KEYRING_EMBED_URL=https://api.openai.com/v1/embeddings KEYRING_EMBED_MODEL=text-
 ### 1. 토큰 발급과 권한 지정
 
 ```bash
-npm run keyring -- agent add wiki-work                    # 토큰은 이때 한 번만 보인다
-npm run keyring -- agent grant wiki-work 업무/raw append
-npm run keyring -- agent grant wiki-work 업무/wiki delete
-npm run keyring -- agent grant wiki-work 업무/SCHEMA.md read
-npm run keyring -- agent list
+pnpm keyring agent add wiki-work                          # 토큰은 이때 한 번만 보인다
+pnpm keyring agent grant wiki-work 업무/raw append
+pnpm keyring agent grant wiki-work 업무/wiki delete
+pnpm keyring agent grant wiki-work 업무/SCHEMA.md read
+pnpm keyring agent list
 ```
 
 그 밖의 명령: `agent rotate <이름>`(토큰 재발급, 이전 토큰 즉시 무효), `agent revoke <이름> <경로>`, `agent remove <이름>`.
@@ -503,7 +504,7 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 ## 테스트
 
 ```bash
-npm test         # 경로 검증, 충돌, 이력·롤백, 일괄 쓰기 원자성, 권한(숨김·읽기·추가 전용), 인증, MCP,
+pnpm test        # 경로 검증, 충돌, 이력·롤백, 일괄 쓰기 원자성, 권한(숨김·읽기·추가 전용), 인증, MCP,
                  # 한국어 검색, 태그, 백링크, 인덱스 동기화, 위젯, 할 일 체크,
                  # 위키 토픽, 수집(URL·PDF·이미지·클립), SSRF 차단, index·log 생성과 권한별 내용,
                  # 검토 대기열, 출처·정리 점검, 웹훅 서명·재시도·cron, 그래프, 의미 검색(가짜 임베딩 서버), 플러그인,
@@ -512,5 +513,5 @@ npm test         # 경로 검증, 충돌, 이력·롤백, 일괄 쓰기 원자�
                  # 기기 토큰·CORS·동기화 목록, 실제 서버 API를 거친 앱 ↔ 서버 동기화,
                  # 데일리 판정·주차(연말 경계)·자동 속성·[[날짜]] 링크·형식 옮기기, 공통 설정 파일(에이전트 읽기만·검색 등에서 빠짐),
                  # 폴더 이동 한 커밋(첨부·S3 보관 첨부 포함), 앱 폴더 이동과 첨부 지우기 동기화, 웹훅 doc.changed 묶기
-npm run typecheck
+pnpm typecheck
 ```

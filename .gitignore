@@ -7,3 +7,23 @@ dist/
 /backups/
 .env
 /plugins/
+
+# 에이전트 전달 문서와 세션 스크래치
+.superpowers/
+
+# Playwright MCP 페이지 스냅샷과 스크린샷
+/.playwright-mcp/
+
+
+# START Ruler Generated Files
+/.agents/skills
+/.claude/skills
+/.codex/config.toml
+/.codex/config.toml.bak
+/.mcp.json
+/.mcp.json.bak
+/AGENTS.md
+/AGENTS.md.bak
+/CLAUDE.md
+/CLAUDE.md.bak
+# END Ruler Generated Files

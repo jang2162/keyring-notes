@@ -11,30 +11,32 @@ ARG RUNTIME_IMAGE=${NODE_IMAGE}
 # ── 빌드: 공유 코어·웹(Vite)·서버(TypeScript) ──
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
-COPY package.json package-lock.json tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/core/package.json packages/core/
 COPY server/package.json server/
 COPY web/package.json web/
 COPY app/package.json app/
+# pnpm 은 package.json 의 packageManager 버전을 corepack 으로 받는다
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -f /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca npm_config_cafile=/run/secrets/extra_ca; fi; \
-    npm ci --no-audit --no-fund
+    corepack enable && pnpm install --frozen-lockfile
 COPY packages packages
 COPY server server
 COPY web web
-RUN npm run build
+RUN pnpm build
 
 # ── 실행에 필요한 서버 의존성만 ──
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/core/package.json packages/core/
 COPY server/package.json server/
 COPY web/package.json web/
 COPY app/package.json app/
+# 서버와 그것이 쓰는 워크스페이스 패키지(core)의 실행 의존성만
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -f /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca npm_config_cafile=/run/secrets/extra_ca; fi; \
-    npm ci --omit=dev --workspace server --no-audit --no-fund
+    corepack enable && pnpm install --frozen-lockfile --prod --filter "@keyring-notes/server..."
 
 # ── 실행 ──
 FROM ${RUNTIME_IMAGE}
@@ -47,11 +49,14 @@ ENV NODE_ENV=production \
     KEYRING_PORT=8787 \
     KEYRING_WEB_DIST=/app/web/dist
 WORKDIR /app
+# pnpm 은 패키지마다 node_modules 를 두고 루트의 .pnpm 으로 링크한다 — 셋 다 옮긴다
 COPY --from=deps /app/node_modules node_modules
 COPY package.json ./
 COPY packages/core/package.json packages/core/
+COPY --from=deps /app/packages/core/node_modules packages/core/node_modules
 COPY --from=build /app/packages/core/dist packages/core/dist
 COPY server/package.json server/
+COPY --from=deps /app/server/node_modules server/node_modules
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist
 COPY examples examples
