@@ -11,4 +11,4 @@
 
 | 언제 | 읽을 문서 |
 | --- | --- |
-| Docker 이미지·compose·Komodo 배포 구성을 바꿀 때 | `docs/guides/deploy-komodo.md` |
+| Docker 이미지·compose 파일·배포용 환경 변수를 바꿀 때 | `docs/guides/deploy-docker.md` |
