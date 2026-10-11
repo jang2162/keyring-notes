@@ -995,6 +995,18 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs, layoutByScope]);
 
+  // 좁은 화면(800px 이하)이 되거나 가운데가 두 칸을 담지 못하면(560px 미만) 한 칸으로 합친다.
+  // 둘째 칸의 탭은 첫째 칸 뒤에 붙고 초안은 저장소에 그대로 있다. 다시 넓어져도 저절로 나누지 않는다
+  useEffect(() => {
+    // 폭을 아직 재지 않았으면(처음 그릴 때 0) 기다린다
+    if (layout.panes.length < 2 || centerWidth === 0 || canSplit(centerWidth, isNarrow)) return;
+    const f = layout.focused;
+    setRevisions((rs) => [rs[f] ?? null, null]);
+    setCursors((cs) => [cs[f] ?? cs[0], { line: 1, col: 1 }]);
+    setLayout(mergePanes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNarrow, centerWidth, layout.panes.length]);
+
   // 칸이 다른 문서로 바뀌면 그 칸의 과거 판 보기를 닫는다
   useEffect(() => {
     setRevisions((rs) =>
