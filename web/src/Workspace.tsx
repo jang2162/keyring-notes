@@ -311,6 +311,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [keysOpen, setKeysOpen] = useState(false);
   const [fileView, setFileView] = useState<string | null>(null);
   const [docMenu, setDocMenu] = useState<{ x: number; y: number } | null>(null);
+  /** 탭 오른쪽 클릭 메뉴 */
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; pane: number; path: string } | null>(null);
+  /** 끌고 있는 탭을 놓을 수 있는 칸(탭 바 강조) */
+  const [tabDrop, setTabDrop] = useState<number | null>(null);
   const [wsMenu, setWsMenu] = useState<{ x: number; y: number } | null>(null);
   const [cursors, setCursors] = useState([
     { line: 1, col: 1 },
@@ -2767,7 +2771,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </footer>
   );
 
-  /** 칸 하나의 탭 바(칸이 없으면 빈 탭 바) */
+  /** 탭을 끌어 옮길 때 dataTransfer 에 싣는 형식(트리의 끌기와 섞이지 않게 따로) */
+  const TAB_DRAG = "application/x-keyring-tab";
+  /** 칸 하나의 탭 바(칸이 없으면 빈 탭 바). 칸이 둘이면 탭을 끌어 다른 칸의 탭 바에 놓아 옮긴다 */
   const renderTabBar = (pane: number) => (
     <nav className="tabbar" aria-label={t("tab.label")}>
       {pane === 0 && (
@@ -2779,13 +2785,48 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           size={18}
         />
       )}
-      <div className="tab-list" role="tablist">
+      <div
+        className={`tab-list${tabDrop === pane ? " drop-target" : ""}`}
+        role="tablist"
+        onDragOver={(e) => {
+          // 끌기로는 칸을 새로 만들지 않는다(칸이 둘일 때만)
+          if (layout.panes.length < 2 || !e.dataTransfer.types.includes(TAB_DRAG)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (tabDrop !== pane) setTabDrop(pane);
+        }}
+        onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setTabDrop(null)}
+        onDrop={(e) => {
+          setTabDrop(null);
+          const raw = e.dataTransfer.getData(TAB_DRAG);
+          if (!raw) return;
+          e.preventDefault();
+          const { pane: from, path } = JSON.parse(raw) as { pane: number; path: string };
+          if (from !== pane) setLayout((l) => moveTab(l, from, pane, path));
+        }}
+      >
         {(layout.panes[pane]?.tabs ?? []).map((tp) => {
           const cached = docs[tp]?.doc;
           const tabDirty = !!cached && cached.draft !== cached.saved;
           const on = tp === layout.panes[pane]?.active;
           return (
-            <span key={tp} className={`tab${on ? " on" : ""}`} {...tipProps({ label: tp })} role="tab" aria-selected={on}>
+            <span
+              key={tp}
+              className={`tab${on ? " on" : ""}`}
+              {...tipProps({ label: tp })}
+              role="tab"
+              aria-selected={on}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData(TAB_DRAG, JSON.stringify({ pane, path: tp }));
+              }}
+              onDragEnd={() => setTabDrop(null)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setTabMenu({ x: e.clientX, y: e.clientY, pane, path: tp });
+              }}
+            >
               <button className="tab-name" onClick={() => void open(tp, { pane })} onAuxClick={(e) => e.button === 1 && void closeTab(pane, tp)}>
                 <DocIcon icon={iconOf(tp)} />
                 {docLabel(tp)}
@@ -3002,6 +3043,27 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         {statusBar}
 
         {docMenu && <Menu at={docMenu} items={docMenuItems} onClose={() => setDocMenu(null)} />}
+        {tabMenu && (
+          <Menu
+            at={tabMenu}
+            label={t("tab.menu")}
+            items={[
+              { label: t("cmd.closeTab"), icon: X, keys: keyOf("close-tab"), run: () => void closeTab(tabMenu.pane, tabMenu.path) },
+              // 다른 칸으로: 칸이 하나면 둘째 칸을 만들며 옮긴다. 가운데가 좁아 나눌 수 없으면 숨긴다
+              ...(canSplit(centerWidth, isNarrow)
+                ? [
+                    {
+                      label: t("tab.moveOther"),
+                      icon: Columns2,
+                      keys: tabMenu.pane === layout.focused ? keyOf("move-tab-other") : undefined,
+                      run: () => setLayout((l) => moveTab(l, tabMenu.pane, l.panes.length === 2 ? 1 - tabMenu.pane : 1, tabMenu.path)),
+                    },
+                  ]
+                : []),
+            ]}
+            onClose={() => setTabMenu(null)}
+          />
+        )}
         {wsMenu && <Menu at={wsMenu} items={wsMenuItems} onClose={() => setWsMenu(null)} />}
 
         {reviewOpen && (

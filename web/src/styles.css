@@ -674,6 +674,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .split-root.two .split-pane + .split-pane { border-left: 1px solid var(--border); }
 .split-root.two .split-pane.focused > .tabbar { box-shadow: inset 0 2px 0 var(--accent); }
 .split-divider { margin: 0 -3px; }
+.tab-list.drop-target { background: var(--active); box-shadow: inset 0 0 0 1px var(--accent); }
 .doc-area { flex: 1; display: flex; min-height: 0; }
 .panes { flex: 1; display: flex; min-height: 0; min-width: 0; }
 .pane { flex: 1; min-width: 0; overflow: auto; }

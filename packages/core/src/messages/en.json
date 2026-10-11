@@ -1174,6 +1174,8 @@
   "tab.discardCloseButton": "Discard and close",
   "tab.docList": "Note list",
   "tab.label": "Open notes",
+  "tab.menu": "Tab menu",
+  "tab.moveOther": "Move to the other pane",
   "tags.none": "No tags. #tags in the text and frontmatter tags gather here.",
   "tags.title": "Tags {count}",
   "theme.dark": "Dark",

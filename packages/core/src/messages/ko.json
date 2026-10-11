@@ -1143,6 +1143,8 @@
   "tab.discardCloseButton": "버리고 닫기",
   "tab.docList": "노트 목록",
   "tab.label": "열린 노트",
+  "tab.menu": "탭 메뉴",
+  "tab.moveOther": "다른 칸으로 옮기기",
   "tags.none": "태그가 없습니다. 본문에 #태그나 프런트매터 tags를 쓰면 여기 모입니다.",
   "tags.title": "태그 {count}",
   "theme.dark": "어둡게",

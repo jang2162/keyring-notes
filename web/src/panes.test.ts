@@ -92,6 +92,40 @@ describe("칸 배치", () => {
     expect(moveTab(two, 0, 0, "a")).toBe(two);
   });
 
+  it("moveTab: 같은 칸으로 옮기거나 그 칸에 없는 탭이면 그대로", () => {
+    const two = openIn(one(["a", "c"], "a"), 1, "b");
+    expect(moveTab(two, 1, 1, "b")).toBe(two);
+    expect(moveTab(two, 0, 1, "zz")).toBe(two);
+  });
+
+  it("moveTab: 왼쪽 칸의 마지막 탭을 옮기면 왼쪽 칸이 사라지고 focused 는 0", () => {
+    const two: Layout = {
+      panes: [
+        { tabs: ["a"], active: "a", mode: "edit" },
+        { tabs: ["b"], active: "b", mode: "preview" },
+      ],
+      focused: 0,
+    };
+    expect(moveTab(two, 0, 1, "a")).toEqual({ panes: [{ tabs: ["b", "a"], active: "a", mode: "preview" }], focused: 0 });
+  });
+
+  it("moveTab: 오른쪽 칸에 이미 있는 탭을 옮기면 중복 없이 그 탭이 활성", () => {
+    const l: Layout = {
+      panes: [
+        { tabs: ["a", "b"], active: "b", mode: "edit" },
+        { tabs: ["b", "c"], active: "c", mode: "edit" },
+      ],
+      focused: 0,
+    };
+    expect(moveTab(l, 0, 1, "b")).toEqual({
+      panes: [
+        { tabs: ["a"], active: "a", mode: "edit" },
+        { tabs: ["b", "c"], active: "b", mode: "edit" },
+      ],
+      focused: 1,
+    });
+  });
+
   it("mergePanes: 중복 없이 이어 붙이고 focused 칸의 활성을 지킨다", () => {
     const l: Layout = {
       panes: [
