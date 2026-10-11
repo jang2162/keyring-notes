@@ -1,14 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BrushCleaning,
   CalendarDays,
   Check,
-  ChevronRight,
   Columns2,
   Copy,
   Ellipsis,
-  Eye,
   FilePlus,
   Files,
   FolderInput,
@@ -21,7 +18,6 @@ import {
   Link2,
   Paperclip,
   ListChecks,
-  ListTree,
   LocateFixed,
   LogOut,
   Menu as MenuIcon,
@@ -30,7 +26,6 @@ import {
   Search,
   Settings as SettingsIcon,
   SmilePlus,
-  ChevronLeft,
   SlidersHorizontal,
   TableOfContents,
   Tag,
@@ -40,19 +35,18 @@ import {
   X,
 } from "lucide-react";
 import { api, ApiError, appMode, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
-import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
+import type { EditorHandle, LinkCandidate } from "./Editor";
 import { LintPanel, ReviewPanel } from "./Curation";
 import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
-import { invalidateWidgets, Widget } from "./Widget";
+import { invalidateWidgets } from "./Widget";
 import { isNetworkError, offline } from "./offline";
-import { LinkResolver, renderMarkdown } from "./markdown";
-import { enhance, invalidateEmbeds } from "./enhance";
+import { LinkResolver } from "./markdown";
+import { invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
 import {
   applyTemplate,
   attachmentDirFor,
-  blockRange,
   buildNodeTree,
   countNode,
   dailyLookup,
@@ -71,7 +65,6 @@ import {
   officialLangOf,
   orderWorkspaces,
   parentNode,
-  parseFrontmatter,
   planDailyMigration,
   setFrontmatterField,
   sha256Hex,
@@ -114,11 +107,11 @@ import {
 } from "./vaultSettings";
 import { DocIcon, IconLookup, IconPicker } from "./IconPicker";
 import { getFolds, moveFolds, onFoldsChange, resolveFolds } from "./folds";
-import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
 import { AsidePreview, FileViewer } from "./Aside";
 import { fmtDateTime, fmtNumber, missingPack, t, timeAgo, useLang } from "./i18n";
 import { tipProps } from "./Tooltip";
 import { AttachmentList } from "./Attachments";
+import { DocPane, docMeta, type PaneContext, type PaneHandle, type PendingAnchor, type RevisionView } from "./DocPane";
 import { isRecordOf, isStringArray, readStored } from "./stored";
 import {
   dirtyPaths,
@@ -134,13 +127,6 @@ import {
   type SaveState,
 } from "./openDocs";
 import { closeIn, emptyLayout, isLayout, migrateLayouts, openIn, removePaths, renamePath, setMode as setPaneMode, type Layout, type ViewMode } from "./panes";
-
-interface RevisionView {
-  /** 이 과거 판의 문서. 칸이 다른 문서로 바뀌면 버린다 */
-  path: string;
-  commit: CommitInfo;
-  content: string | null;
-}
 
 /** 칸이 없는 배치(매번 새 객체를 만들지 않게 하나만 둔다) */
 const NO_PANES: Layout = emptyLayout();
@@ -222,137 +208,6 @@ function nodeExists(node: string, paths: string[]): boolean {
   });
 }
 
-/**
- * 문서 위 큰 제목 칸: 고치고 Enter나 포커스 이탈 때 노드 이름을 바꾼다(노트와 하위를 같이). 앞에 아이콘(누르면 고르기).
- * 데일리 노트는 날짜 부분을 고정된 앞머리(흐린 글자)로 보이고 그 뒤 제목만 고친다. 날짜를 누르면 전체 이름을 고친다.
- */
-function InlineTitle({
-  path,
-  readOnly,
-  focusSignal,
-  daily,
-  icon,
-  onIcon,
-  onFocused,
-  onRename,
-  onDone,
-}: {
-  path: string;
-  readOnly: boolean;
-  focusSignal: number;
-  daily: DailyNote | null;
-  icon: string | null;
-  onIcon?: (at: { x: number; y: number }) => void;
-  onFocused: () => void;
-  onRename: (stem: string) => Promise<boolean>;
-  onDone: () => void;
-}) {
-  const stem = stemOf(path);
-  const [full, setFull] = useState(false);
-  const split = !!daily && !full;
-  const initial = split ? daily!.title : stem;
-  const [v, setV] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => setV(initial), [initial]);
-  useEffect(() => setFull(false), [path]);
-  useEffect(() => {
-    if (!focusSignal) return;
-    // 에디터가 열리며 포커스를 가져간 뒤에 잡는다
-    const timer = setTimeout(() => {
-      ref.current?.focus();
-      ref.current?.select();
-      onFocused();
-    }, 30);
-    return () => clearTimeout(timer);
-  }, [focusSignal]);
-  /** 칸의 글 → 새 이름(확장자 없이) */
-  const nameOf = (text: string) => (split ? (text.trim() ? `${daily!.datePart}${daily!.sep || " "}${text.trim()}` : daily!.datePart) : text.trim());
-  const next = nameOf(v);
-  const err = next === stem ? null : invalidNameReason(next);
-  // 전체 이름을 고치다 날짜를 지우면 데일리 노트가 아니게 된다
-  const warn = daily && full && !next.startsWith(daily.datePart) ? t("title.dailyWarn") : null;
-  const commit = async () => {
-    if (busy || next === stem) {
-      setV(initial);
-      setFull(false);
-      return;
-    }
-    if (err) return;
-    setBusy(true);
-    const ok = await onRename(next);
-    setBusy(false);
-    if (!ok) setV(initial);
-    setFull(false);
-  };
-  return (
-    <div className="inline-title-wrap">
-      <div className="inline-title-row">
-        {onIcon || icon ? (
-          <button
-            type="button"
-            className={`title-icon${icon ? "" : " empty"}`}
-            aria-disabled={!onIcon || undefined}
-            {...tipProps({ label: icon ? t("title.changeIcon") : t("title.addIcon") })}
-            aria-label={icon ? t("title.changeIconOf", { icon }) : t("title.addIcon")}
-            onClick={(e) => {
-              if (!onIcon) return;
-              const r = e.currentTarget.getBoundingClientRect();
-              onIcon({ x: r.left, y: r.bottom + 4 });
-            }}
-          >
-            {icon ?? <SmilePlus size={22} strokeWidth={1.5} aria-hidden />}
-          </button>
-        ) : null}
-        {split && (
-          <button
-            type="button"
-            className="title-date"
-            disabled={readOnly}
-            {...tipProps({ label: t("title.dailyDate") })}
-            onClick={() => {
-              setFull(true);
-              setTimeout(() => ref.current?.focus(), 0);
-            }}
-          >
-            {daily!.datePart}
-          </button>
-        )}
-        <input
-          ref={ref}
-          className="inline-title"
-          value={v}
-          readOnly={readOnly}
-          placeholder={split ? t("title.dailyPlaceholder") : undefined}
-          aria-label={split ? t("title.dailyLabel") : t("title.label")}
-          aria-invalid={!!err}
-          spellCheck={false}
-          onChange={(e) => setV(e.target.value)}
-          onBlur={() => void commit()}
-          onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
-            if (e.key === "Enter" || (e.key === "ArrowDown" && !err)) {
-              e.preventDefault();
-              void commit().then(onDone);
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              e.stopPropagation();
-              setV(initial);
-              setFull(false);
-              onDone();
-            }
-          }}
-        />
-      </div>
-      {(err || warn) && (
-        <p className={err ? "inline-title-error" : "inline-title-warn"} role="alert">
-          {err ?? warn}
-        </p>
-      )}
-    </div>
-  );
-}
-
 /** 탭·마지막 문서를 기억하는 범위 이름: 워크스페이스, 모든 워크스페이스면 "*" */
 const scopeKeyOf = (all: boolean, ws: string) => (all ? "*" : ws);
 
@@ -408,11 +263,17 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [searchMode, setSearchMode] = useState<"text" | "semantic">("text");
   /** 볼트 내용이 바뀔 때마다 올려 태그·백링크·위젯을 다시 불러온다. */
   const [vaultVersion, setVaultVersion] = useState(0);
-  const editorHandle = useRef<EditorHandle | null>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
+  /** 칸마다 에디터·칸 동작. 명령·패널은 활성 칸의 것을 쓴다 */
+  const paneHandles = [useRef<EditorHandle | null>(null), useRef<EditorHandle | null>(null)];
+  const paneApis = [useRef<PaneHandle | null>(null), useRef<PaneHandle | null>(null)];
+  /** 활성 칸의 에디터 */
+  const editorHandle = {
+    get current() {
+      return paneHandles[curLayout().focused]?.current ?? null;
+    },
+  };
   const treeRef = useRef<TreeHandle>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
   const [ingestOpen, setIngestOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsSection | null>(settingsFromLocation);
   const [keysOpen, setKeysOpen] = useState(false);
@@ -420,7 +281,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [fileView, setFileView] = useState<string | null>(null);
   const [docMenu, setDocMenu] = useState<{ x: number; y: number } | null>(null);
   const [wsMenu, setWsMenu] = useState<{ x: number; y: number } | null>(null);
-  const [cursor, setCursor] = useState({ line: 1, col: 1 });
+  const [cursors, setCursors] = useState([
+    { line: 1, col: 1 },
+    { line: 1, col: 1 },
+  ]);
   /** 제목 칸에 커서를 둘 문서(새 문서·F2). 문서가 열린 뒤 에디터보다 늦게 잡는다 */
   const [titleFocus, setTitleFocus] = useState<{ path: string; n: number } | null>(null);
   const focusTitle = (path: string) => setTitleFocus({ path, n: Date.now() });
@@ -433,7 +297,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [moveTarget, setMoveTarget] = useState<{ path: string; kind: "node" | "file" } | null>(null);
   const shared = useVaultSettings();
   const [propStats, setPropStats] = useState<PropertyStat[]>([]);
-  const [pendingAnchor, setPendingAnchor] = useState<{ path: string; heading?: string; block?: string; line?: number; text?: string } | null>(null);
+  const [pendingAnchor, setPendingAnchor] = useState<PendingAnchor | null>(null);
   // 앱 안 PDF 보기(주석 달기)
   const [pdfView, setPdfView] = useState<{ path: string; page?: number } | null>(null);
   /** 브라우저 로컬 볼트의 첨부(blob URL)가 준비되면 올려 미리보기를 다시 그린다 */
@@ -621,16 +485,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   }, [resolver]);
   const dirty = doc !== null && doc.draft !== doc.saved;
 
-  // 지금 문서의 속성: 개수(오른쪽 패널 탭·접힌 프런트매터 줄)와 아이콘. 저장 전 초안 기준
-  const docFm = useMemo(() => {
-    const text = doc?.draft ?? "";
-    const block = /^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(text)?.[0] ?? "";
-    return block ? parseFrontmatter(block).data : null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc?.draft]);
-  const propCount = docFm ? Object.keys(docFm).length : 0;
-  const docIcon = typeof docFm?.icon === "string" && docFm.icon.trim() ? docFm.icon.trim() : null;
-  const docDaily = doc ? dailyOfPath(doc.path, daily) : null;
+  // 지금 문서의 속성: 개수(오른쪽 패널 탭)와 아이콘. 저장 전 초안 기준
+  const { propCount, icon: docIcon } = useMemo(() => docMeta(doc?.draft ?? ""), [doc?.draft]);
 
   /** 노드 아이콘(트리에서 받은 노트의 icon, 지금 문서는 초안의 icon) */
   const iconMap = useMemo(() => {
@@ -1263,9 +1119,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 붙여넣거나 끌어 놓은 파일을 워크스페이스 첨부 폴더(공통 설정, 트리에서 숨김)에 올린다(이름이 겹치면 " 2"…).
    * 넣을 링크: 이미지는 ![[이름]], 나머지는 [[이름]]. 같은 이름이 볼트에 또 있으면 전체 경로로.
    */
-  const uploadFiles = async (files: File[]): Promise<string[]> => {
-    if (!doc) return [];
-    const dir = attachmentDirFor(getVaultSettings(), wsOfPath(doc.path), uiLang);
+  const uploadFiles = async (files: File[], from = doc?.path): Promise<string[]> => {
+    if (!from) return [];
+    const dir = attachmentDirFor(getVaultSettings(), wsOfPath(from), uiLang);
     const taken = new Set(resolver.paths.map((p) => p.toLowerCase()));
     const vt = vaultText(vaultLang());
     const out: string[] = [];
@@ -1306,14 +1162,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return out;
   };
 
-  const saveConflictCopy = async () => {
-    if (!doc) return;
-    const copy = conflictCopyPath(doc.path, vaultText(vaultLang()).conflictCopy);
+  const saveConflictCopy = async (path: string) => {
+    const d = docsRef.current[path]?.doc;
+    if (!d) return;
+    const copy = conflictCopyPath(path, vaultText(vaultLang()).conflictCopy);
     try {
-      await api.write(copy, doc.draft, null);
+      await api.write(copy, d.draft, null);
       vaultChanged();
       await refreshTree();
-      await load(doc.path);
+      await load(path);
       toast(t("save.copySaved", { path: copy }), { kind: "success", action: { label: t("common.open"), run: () => void open(copy, { newTab: true }) } });
     } catch (e) {
       toastError(e);
@@ -1800,13 +1657,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const rollback = async () => {
-    if (!doc || !revision) return;
-    if (dirty && !(await confirmDialog(t("history.discardRollback"), t("history.rollback")))) return;
+  /** 그 칸이 보고 있는 과거 판으로 되돌린다 */
+  const rollback = async (pane: number) => {
+    const rev = revisionOf(pane);
+    const d = rev ? docsRef.current[rev.path]?.doc : undefined;
+    if (!rev || !d) return;
+    if (d.draft !== d.saved && !(await confirmDialog(t("history.discardRollback"), t("history.rollback")))) return;
     try {
-      await api.rollback(doc.path, revision.commit.rev, doc.hash);
+      await api.rollback(d.path, rev.commit.rev, d.hash);
       vaultChanged();
-      await load(doc.path);
+      await load(d.path);
       toast(t("history.rolledBack"), { kind: "success" });
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) toast(t("doc.changedReload"), { kind: "error" });
@@ -1814,11 +1674,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  /** 위젯에서 문서를 바꿨을 때: 지금 연 문서면(저장 안 한 변경이 없을 때) 다시 불러온다. */
+  /** 위젯에서 문서를 바꿨을 때: 열린 문서면(저장 안 한 변경이 없을 때) 다시 불러온다. */
   const onWidgetChanged = (path: string) => {
     setVaultVersion((v) => v + 1);
-    if (doc?.path === path) {
-      if (doc.draft === doc.saved) void load(path);
+    const d = docsRef.current[path]?.doc;
+    if (d) {
+      if (d.draft === d.saved) void load(path);
       else toast(t("doc.changedByWidget"), { kind: "warn", duration: 0 });
     }
   };
@@ -1828,7 +1689,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const followLink = (target: string, anchor: { heading?: string; block?: string } | null, aside: boolean, page?: string) => {
     if (target.toLowerCase().endsWith(".md")) {
       if (aside) return setAside(target);
-      if (anchor && target === doc?.path) scrollToAnchor(anchor);
+      if (anchor && target === doc?.path) paneApis[curLayout().focused].current?.scrollToAnchor(anchor);
       else {
         if (anchor) setPendingAnchor({ path: target, ...anchor });
         void open(target);
@@ -1858,79 +1719,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         .catch(toastError);
     });
   };
-
-  const onPreviewClick = (e: MouseEvent<HTMLDivElement>) => {
-    const fold = (e.target as HTMLElement).closest<HTMLElement>(".pv-fold");
-    if (fold && doc && !revision) {
-      e.preventDefault();
-      togglePreviewFold(doc.path, doc.draft, Number(fold.dataset.foldLine));
-      return;
-    }
-    const box = (e.target as HTMLElement).closest<HTMLInputElement>("input.task[data-task-line]");
-    if (box) {
-      // 체크박스는 편집 중인 초안을 바꾼다(저장해야 반영). 과거 버전 보기에서는 바꾸지 않는다.
-      if (revision || !editorHandle.current) {
-        e.preventDefault();
-        return;
-      }
-      editorHandle.current.toggleTask(Number(box.dataset.taskLine), box.checked);
-      return;
-    }
-    // 각주 등 문서 안 앵커(#fn1): 주소의 #/문서 경로를 건드리지 않고 그 위치로 스크롤
-    const localA = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]:not([data-wikilink])');
-    if (localA) {
-      const id = decodeURIComponent(localA.getAttribute("href")!.slice(1));
-      if (!id.startsWith("/")) {
-        e.preventDefault();
-        const el = id ? previewRef.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`) : null;
-        el?.scrollIntoView({ block: "center" });
-        return;
-      }
-    }
-    const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-wikilink]");
-    if (!a) return;
-    e.preventDefault();
-    followLinkEl(a, e.ctrlKey || e.metaKey);
-  };
-
-  /**
-   * [[문서#제목]]·[[문서#^블록]]: 그 위치로 가서 잠깐 표시한다. 접혀 있으면 편다.
-   * 편집 화면이면 에디터의 그 줄로, 미리보기면 미리보기의 그 블록으로.
-   */
-  const scrollToAnchor = (anchor: { heading?: string; block?: string }) => {
-    const cur = docRef.current;
-    if (!cur) return;
-    if (modeRef.current !== "preview" && !revisionRef.current) {
-      let line = 0;
-      if (anchor.block) line = blockRange(cur.draft, anchor.block)?.start ?? 0;
-      else line = headings(cur.draft).find((h) => h.text.toLowerCase() === (anchor.heading ?? "").toLowerCase())?.line ?? 0;
-      if (line) return editorHandle.current?.gotoLine(line);
-    }
-    const root = previewRef.current;
-    if (!root) return;
-    const find = () =>
-      anchor.block
-        ? root.querySelector<HTMLElement>(`[data-block="${CSS.escape(anchor.block)}"]`)
-        : root.querySelector<HTMLElement>(`[data-heading="${CSS.escape(anchor.heading ?? "")}"]`);
-    let el = find();
-    if (!el) return;
-    // 접힌 곳 안이면 편다(겹쳐 접힌 것까지)
-    for (let i = 0; i < 6 && !revisionRef.current && revealInPreview(el, cur.path, cur.draft); i++) {
-      applyPreviewFolds(root, cur.path, cur.draft);
-      el = find() ?? el;
-    }
-    el.scrollIntoView({ block: "start" });
-    el.classList.add("anchor-flash");
-    setTimeout(() => el!.classList.remove("anchor-flash"), 1600);
-  };
-
-  const previewSource = revision ? (revision.content ?? "") : (doc?.draft ?? "");
-  const rendered = useMemo(
-    // 속성 화면이 열려 있으면 미리보기에서는 프런트매터 상자를 빼고 본다(같은 내용을 두 번 보이지 않게)
-    () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc }) : { html: "", widgets: [] }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [previewSource, resolver, doc?.path, assetVersion, prefs.propsInDoc],
-  );
 
   // ── 패널
   const toggleLeft = () => {
@@ -2291,38 +2079,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     [rightOpen, drawer, rightTab, doc?.draft],
   );
 
-  // 수식·다이어그램·문서 임베드는 그린 뒤에 채운다(enhance.ts)
-  useEffect(() => {
-    if (!previewRef.current || !doc) return;
-    return enhance(previewRef.current, { resolver, docPath: doc.path });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, mode]);
-
-  // 접기: 미리보기에 단추를 달고 기억한 대로 접는다. 에디터·개요에서 바꾸면 따라간다
+  // 개요의 접힘 표시: 에디터·미리보기에서 바꾸면 따라간다
   useEffect(() => onFoldsChange((path) => path === docRef.current?.path && setFoldVersion((v) => v + 1)), []);
-  useLayoutEffect(() => {
-    if (!previewRef.current || !doc || revision) return;
-    applyPreviewFolds(previewRef.current, doc.path, doc.draft);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, mode, foldVersion, revision]);
-
-  // 다른 문서의 제목·블록 링크나 검색 결과로 왔으면 그 위치로
-  useEffect(() => {
-    if (!pendingAnchor || doc?.path !== pendingAnchor.path) return;
-    const anchor = pendingAnchor;
-    setPendingAnchor(null);
-    // 그린 직후(임베드·다이어그램이 자리를 잡을 틈을 조금 두고)
-    setTimeout(() => {
-      if (anchor.line) editorHandle.current?.gotoLine(anchor.line, anchor.text);
-      else scrollToAnchor(anchor);
-    }, 80);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, doc?.path, pendingAnchor]);
-
-  // innerHTML이 바뀐 뒤 위젯 자리를 찾아 React 포털로 위젯을 그린다.
-  useLayoutEffect(() => {
-    setWidgetSlots(Array.from(previewRef.current?.querySelectorAll<HTMLElement>(".widget-slot") ?? []));
-  }, [rendered.html, mode]);
 
   const treeActions: TreeActions = {
     open: (n, o) => void openNode(n, o),
@@ -2766,7 +2524,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 <button
                   onClick={() => {
                     editorHandle.current?.gotoLine(h.line);
-                    scrollToAnchor({ heading: h.text.toLowerCase() });
+                    paneApis[layout.focused].current?.scrollToAnchor({ heading: h.text.toLowerCase() });
                   }}
                 >
                   {h.text}
@@ -2862,14 +2620,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       ]
     : [];
 
-  /** 빵부스러기: 상위 노드들(누르면 그 노드를 연다) */
-  const crumbs = doc
-    ? docNode
-        .split("/")
-        .slice(0, -1)
-        .map((_, i, all) => all.slice(0, i + 1).join("/"))
-    : [];
-
   const saveLabel = (() => {
     if (!doc || doc.generated) return null;
     if (conflict || saveState.kind === "conflict") return { cls: "warn", text: t("status.conflict") };
@@ -2935,7 +2685,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           </span>
           {mode !== "preview" && !revision && (
             <span className="status-item muted">
-              {cursor.line}:{cursor.col}
+              {cursors[layout.focused].line}:{cursors[layout.focused].col}
             </span>
           )}
           <button
@@ -2990,170 +2740,79 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </nav>
   );
 
-  const center = doc ? (
-    <>
-      <header className="doc-head">
-        <nav className="crumbs" aria-label={t("doc.crumbs")}>
-          {crumbs.map((c) => (
-            <span key={c} className="crumb">
-              <button className="crumb-btn" onClick={() => void openNode(c)}>
-                {iconOf(`${c}.md`) && <DocIcon icon={iconOf(`${c}.md`)} />}
-                {stemOf(c)}
-              </button>
-              <ChevronRight size={12} aria-hidden />
-            </span>
-          ))}
-          <span className="crumb current">{stemOf(doc.path)}</span>
-        </nav>
-        {docDaily && (
-          <span className="daily-nav" aria-label={t("daily.nav")}>
-            <IconButton icon={ChevronLeft} label={t("cmd.dailyPrev")} onClick={() => dailyStep(-1)} size={16} />
-            <button type="button" className="daily-nav-date" {...tipProps({ label: t("cmd.daily") })} onClick={() => void openDaily(0)}>
-              {friendlyDate(docDaily.date, new Date(), lang)}
-            </button>
-            <IconButton icon={ChevronRight} label={t("cmd.dailyNext")} onClick={() => dailyStep(1)} size={16} />
-          </span>
-        )}
-        <div className="doc-tools">
-          <Segmented
-            label={t("doc.view")}
-            value={revision ? "preview" : mode}
-            onChange={(m) => setFocusedMode(m)}
-            options={[
-              {
-                value: "edit",
-                label: <Pencil size={15} aria-label={t("cmd.modeEditShort")} />,
-                title: `${t("cmd.modeEditShort")} (${formatCombo(keyOf("toggle-mode"))})`,
-              },
-              { value: "split", label: <Columns2 size={15} aria-label={t("cmd.modeSplitShort")} />, title: t("cmd.modeSplit") },
-              {
-                value: "preview",
-                label: <Eye size={15} aria-label={t("cmd.modePreviewShort")} />,
-                title: `${t("cmd.modePreviewShort")} (${formatCombo(keyOf("toggle-mode"))})`,
-              },
-            ]}
-          />
-          <IconButton
-            icon={SlidersHorizontal}
-            label={propCount ? t("doc.propsCount", { count: propCount }) : t("doc.props")}
-            active={propsShown}
-            badge={!propsShown && propCount ? propCount : undefined}
-            onClick={() => toggleRight("props")}
-            size={16}
-          />
-          <IconButton
-            icon={ListTree}
-            label={t("doc.rightPanel")}
-            keys={keyOf("right")}
-            active={rightOpen}
-            badge={!rightOpen && linkCount ? linkCount : undefined}
-            onClick={() => toggleRight()}
-            size={16}
-          />
-          <IconButton
-            icon={Ellipsis}
-            label={t("doc.menu")}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              setDocMenu({ x: r.right - 220, y: r.bottom + 4 });
-            }}
-            size={16}
-          />
-        </div>
-      </header>
+  /** 칸마다 똑같이 넘기는 값·동작 */
+  const paneCtx: PaneContext = {
+    prefs,
+    lang,
+    local,
+    resolver,
+    resolverRef,
+    daily,
+    linkCandidates,
+    vaultVersion,
+    assetVersion,
+    iconOf,
+    docLabel,
+    keyOf,
+    open,
+    openNode: (node) => void openNode(node),
+    load,
+    save,
+    onDraft: (path, draft) => patchDoc(path, (prev) => (prev.draft === draft ? prev : { ...prev, draft })),
+    onChanges: () => undefined,
+    uploadFiles,
+    renameNode,
+    setIconPick,
+    followLinkEl,
+    onWidgetChanged,
+    showRight,
+    toggleRight,
+    propsShown,
+    rightOpen,
+    linkCount,
+    setRevision: (pane, rev) =>
+      setRevisions((rs) => {
+        const next = [...rs];
+        next[pane] = rev;
+        return next;
+      }),
+    saveConflictCopy,
+    rollback,
+    setMode: (pane, m) => setLayout((l) => setPaneMode(l, pane, m)),
+    setCursor: (pane, c) =>
+      setCursors((cs) => {
+        if (cs[pane]?.line === c.line && cs[pane]?.col === c.col) return cs;
+        const next = [...cs];
+        next[pane] = c;
+        return next;
+      }),
+    onFocus: () => undefined,
+    setDocMenu,
+    dailyStep,
+    openDaily: (offset) => void openDaily(offset),
+    clearTitleFocus: () => setTitleFocus(null),
+    setPendingAnchor,
+  };
 
-      {doc.cachedOffline && <div className="banner info">{t("doc.cachedOffline")}</div>}
-      {doc.virtual && <div className="banner info">{t("node.emptyBanner")}</div>}
-      {doc.generated && <div className="banner generated">{local ? t("doc.generatedApp") : t("doc.generatedServer")}</div>}
-      {conflict && (
-        <div className="banner conflict" role="alert">
-          {conflict.currentHash === null ? t("doc.deletedElsewhere") : local ? t("doc.conflictLocal") : t("doc.conflictServer")}
-          <button onClick={saveConflictCopy}>{t("doc.saveCopy")}</button>
-          {conflict.currentHash !== null && (
-            <button onClick={async () => (await confirmDialog(local ? t("doc.reloadAskLocal") : t("doc.reloadAskServer"), t("doc.reload"))) && load(doc.path)}>
-              {local ? t("doc.reloadLocal") : t("doc.reloadServer")}
-            </button>
-          )}
-        </div>
-      )}
-      {revision && (
-        <div className="banner revision">
-          {t("history.viewing", { rev: revision.commit.rev.slice(0, 7), author: revision.commit.author, date: fmtDateTime(revision.commit.date) })}
-          {revision.content !== null && <button onClick={rollback}>{t("history.rollbackThis")}</button>}
-          <button onClick={() => setRevision(null)}>{t("common.close")}</button>
-        </div>
-      )}
-
-      <div className="doc-area">
-        <div
-          className={`panes mode-${revision ? "preview" : mode}${prefs.readableWidth ? " readable" : ""} font-${prefs.editorFont}`}
-          style={{ ["--editor-size" as string]: `${prefs.editorSize}px` }}
-        >
-          <div className="pane edit-pane">
-            <div className="page">
-              <InlineTitle
-                path={doc.path}
-                readOnly={doc.generated || !!revision || isWsDoc}
-                focusSignal={titleFocus?.path === doc.path ? titleFocus.n : 0}
-                daily={docDaily}
-                icon={docIcon}
-                onIcon={doc.generated || revision ? undefined : (at) => setIconPick({ ...at, node: docNode })}
-                onFocused={() => setTitleFocus(null)}
-                onRename={(stem) => renameNode(docNode, stem)}
-                onDone={() => editorHandle.current?.focus()}
-              />
-              <Editor
-                docKey={`${doc.path}#${doc.seq}`}
-                initial={doc.draft}
-                onChange={(draft) => patchDoc(doc.path, (prev) => (prev.draft === draft ? prev : { ...prev, draft }))}
-                onSave={() => void save(doc.path)}
-                linkCandidates={() => linkCandidates}
-                handle={editorHandle}
-                onFiles={uploadFiles}
-                live={live}
-                lineNumbers={prefs.lineNumbers}
-                foldFrontmatter
-                onShowProps={() => showRight("props")}
-                foldKey={revision ? undefined : doc.path}
-                renderContext={() => (docRef.current ? { resolver: resolverRef.current, docPath: docRef.current.path, onLink: followLinkEl } : null)}
-                readOnly={doc.generated}
-                onCursor={(line, col) => setCursor({ line, col })}
-                onBlur={() => prefs.autosave && void saveRef.current(doc.path, { auto: true })}
-              />
-            </div>
-          </div>
-          <div className="pane preview-pane" onClick={onPreviewClick}>
-            <div className="page">
-              {(mode === "preview" || revision) && (
-                <h1 className="inline-title static">
-                  {prefs.showIcons && <DocIcon icon={docIcon} />}
-                  {docLabel(doc.path, { plain: true })}
-                </h1>
-              )}
-              <div className="markdown-body" ref={previewRef} dangerouslySetInnerHTML={{ __html: rendered.html }} />
-              {widgetSlots.map((el, i) =>
-                rendered.widgets[i] === undefined
-                  ? null
-                  : createPortal(<Widget source={rendered.widgets[i]} onOpen={open} onChanged={onWidgetChanged} />, el, `${i}:${rendered.widgets[i]}`),
-              )}
-              {prefs.backlinksInDoc && !revision && refs && (
-                <References
-                  refs={refs}
-                  onOpen={(p, anchor) => {
-                    if (anchor) setPendingAnchor({ path: p, ...(anchor.startsWith("^") ? { block: anchor.slice(1) } : { heading: anchor.toLowerCase() }) });
-                    void open(p);
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-        {aside && (
+  const center = entry ? (
+    <DocPane
+      pane={layout.focused}
+      entry={entry}
+      mode={mode}
+      focused
+      revision={revision}
+      handle={paneHandles[layout.focused]}
+      paneApi={paneApis[layout.focused]}
+      titleFocus={titleFocus?.path === entry.doc.path ? titleFocus.n : 0}
+      pendingAnchor={pendingAnchor}
+      ctx={paneCtx}
+      extra={
+        aside && (
           <AsidePreview
             path={aside}
             resolver={resolver}
             version={vaultVersion}
-            live={aside === doc.path ? doc.draft : undefined}
+            live={aside === entry.doc.path ? entry.doc.draft : undefined}
             onNavigate={setAside}
             onEdit={(p) => {
               setAside(null);
@@ -3161,9 +2820,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             }}
             onClose={() => setAside(null)}
           />
-        )}
-      </div>
-    </>
+        )
+      }
+    />
   ) : (
     <Home
       workspace={allWs ? null : ws}
