@@ -41,6 +41,8 @@ export interface LinkCandidate {
 }
 
 export interface EditorHandle {
+  /** 이 에디터를 만든 문서(docKey). 칸의 배치가 바뀌어도 다시 만들기 전까지는 옛 문서의 것이다 */
+  readonly docKey: string;
   /** 줄(1부터)의 할 일 체크 상태를 바꾼다. 에디터 실행 취소 기록에 남는다. */
   toggleTask(line: number, done: boolean): void;
   /** 그 줄(1부터)로 커서를 옮기고 보이게 한다. text가 그 줄(또는 가까운 줄)에 있으면 그 글을 고른다 */
@@ -127,7 +129,7 @@ interface Props {
   initial: string;
   onChange: (value: string) => void;
   /** 이 칸에서 생긴 변경(다른 칸에서 받은 것은 빼고). 같은 문서를 연 다른 칸에 전달한다 */
-  onChanges?: (changes: ChangeSet) => void;
+  onChanges?: (changes: ChangeSet, docKey: string) => void;
   onSave: () => void;
   /** 위키링크 자동완성 후보. 호출 시점의 최신 목록을 돌려준다. */
   linkCandidates: () => LinkCandidate[];
@@ -322,6 +324,8 @@ export function Editor({
   foldKeyRef.current = foldKey;
   const autoFocusRef = useRef(autoFocus);
   autoFocusRef.current = autoFocus;
+  const docKeyRef = useRef(docKey);
+  docKeyRef.current = docKey;
   const callbacks = useRef({ onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
   callbacks.current = { onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
   const showProps = () => callbacks.current.onShowProps?.();
@@ -340,6 +344,8 @@ export function Editor({
   };
 
   useEffect(() => {
+    /** 이 뷰를 만든 문서. 다시 그려 docKey 가 바뀌면 이 뷰는 곧 없어질 낡은 뷰다 */
+    const createdKey = docKey;
     const view = new EditorView({
       parent: host.current!,
       state: EditorState.create({
@@ -393,10 +399,13 @@ export function Editor({
             },
           }),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) {
+            // 초안은 이 칸에서 친 변경으로만 고친다. 다른 칸에서 받은 변경(mirrored)은 원본(저장소)에 이미 들어 있고,
+            // 낡은 뷰(docKey 가 바뀐 뒤 다시 만들기 전)의 콜백은 새 문서에 묶여 있어 부르면 다른 문서의 초안을 덮는다
+            const own = u.transactions.filter((tr) => tr.docChanged && tr.annotation(mirrored) !== true);
+            if (own.length && docKeyRef.current === createdKey) {
               // 초안을 먼저 고친다: 다른 칸이 변경을 못 맞추면 이 최신 초안으로 맞춘다
               callbacks.current.onChange(u.state.doc.toString());
-              for (const tr of u.transactions) if (tr.docChanged && tr.annotation(mirrored) !== true) callbacks.current.onChanges?.(tr.changes);
+              for (const tr of own) callbacks.current.onChanges?.(tr.changes, createdKey);
             }
             // 접은 것을 이 기기에 기억한다(내용이 바뀌어 줄이 밀리면 새 줄로)
             const foldChanged = u.transactions.some((t) => t.effects.some((e) => e.is(foldEffect) || e.is(unfoldEffect)));
@@ -415,6 +424,7 @@ export function Editor({
     });
     if (handle) {
       handle.current = {
+        docKey: createdKey,
         toggleTask(lineNo, done) {
           if (lineNo < 1 || lineNo > view.state.doc.lines) return;
           const line = view.state.doc.line(lineNo);

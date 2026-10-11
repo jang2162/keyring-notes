@@ -75,7 +75,7 @@ export interface PaneContext {
   save: (path: string, opts?: { auto?: boolean }) => Promise<boolean>;
   onDraft: (path: string, draft: string) => void;
   /** 이 칸에서 생긴 에디터 변경(같은 문서를 연 다른 칸에 전달) */
-  onChanges: (pane: number, path: string, changes: ChangeSet) => void;
+  onChanges: (pane: number, path: string, changes: ChangeSet, docKey: string) => void;
   uploadFiles: (files: File[], from: string) => Promise<string[]>;
   renameNode: (node: string, name: string) => Promise<boolean>;
   setIconPick: (p: { x: number; y: number; node: string }) => void;
@@ -512,7 +512,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 docKey={`${doc.path}#${doc.seq}`}
                 initial={doc.draft}
                 onChange={(draft) => ctx.onDraft(doc.path, draft)}
-                onChanges={(changes) => ctx.onChanges(pane, doc.path, changes)}
+                onChanges={(changes, key) => ctx.onChanges(pane, doc.path, changes, key)}
                 onSave={() => void ctx.save(doc.path)}
                 linkCandidates={() => ctx.linkCandidates}
                 handle={handle}

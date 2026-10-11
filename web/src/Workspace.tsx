@@ -111,6 +111,7 @@ import { FileViewer } from "./Aside";
 import { fmtDateTime, fmtNumber, missingPack, t, timeAgo, useLang } from "./i18n";
 import { tipProps } from "./Tooltip";
 import { AttachmentList } from "./Attachments";
+import { mirrorTargets } from "./mirror";
 import { DocPane, docMeta, type PaneContext, type PaneHandle, type PendingAnchor, type RevisionView } from "./DocPane";
 import { isRecordOf, isStringArray, readStored } from "./stored";
 import {
@@ -137,7 +138,6 @@ import {
   migrateLayouts,
   moveTab,
   openIn,
-  panesWith,
   removePaths,
   renamePath,
   setMode as setPaneMode,
@@ -2888,13 +2888,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     load,
     save,
     onDraft: (path, draft) => patchDoc(path, (prev) => (prev.draft === draft ? prev : { ...prev, draft })),
-    onChanges: (pane, path, changes) => {
-      // 같은 문서를 보고 있는 다른 칸의 에디터에 같은 변경을 넣는다(원본은 저장소 하나, 에디터는 칸마다)
-      const l = curLayout();
-      for (const j of panesWith(l, path)) {
-        if (j === pane || l.panes[j].active !== path) continue;
+    onChanges: (pane, path, changes, key) => {
+      // 같은 문서를 같은 판으로 보고 있는 다른 칸의 에디터에 같은 변경을 넣는다(원본은 저장소 하나, 에디터는 칸마다).
+      // 배치(layoutsRef)는 즉시 바뀌고 에디터는 다시 그린 뒤에 바뀌므로, 칸이 아니라 그 칸의 에디터가 어느 문서의 것인지로 고른다
+      const editorKeys = paneHandles.map((h) => h.current?.docKey ?? null);
+      for (const j of mirrorTargets(pane, path, key, curLayout().panes, editorKeys))
         paneHandles[j].current?.applyChanges(changes, docsRef.current[path]?.doc.draft ?? "");
-      }
     },
     uploadFiles,
     renameNode,
