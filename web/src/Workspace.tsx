@@ -120,41 +120,13 @@ import { fmtDateTime, fmtNumber, missingPack, t, timeAgo, useLang } from "./i18n
 import { tipProps } from "./Tooltip";
 import { AttachmentList } from "./Attachments";
 import { isRecordOf, isString, isStringArray, readStored } from "./stored";
-
-type ViewMode = "split" | "edit" | "preview";
-
-interface OpenDoc {
-  path: string;
-  /** 서버에 저장된 내용과 그 해시. 저장할 때 baseHash로 보낸다(노트 없는 노드는 ""). */
-  saved: string;
-  hash: string;
-  draft: string;
-  /** 에디터를 새 내용으로 다시 만들 때 올린다. */
-  seq: number;
-  /** 서버가 만드는 문서(위키 index·log): 읽기 전용 */
-  generated: boolean;
-  /** 연결이 없어 이 기기의 사본을 보여 주는 중 */
-  cachedOffline?: boolean;
-  /** 노트 없는 노드(A/만 있음): 내용을 쓰면 그때 A.md를 만든다 */
-  virtual?: boolean;
-}
-
-interface Conflict {
-  currentHash: string | null;
-}
+import type { Conflict, OpenDoc, SaveState } from "./openDocs";
+import type { ViewMode } from "./panes";
 
 interface RevisionView {
   commit: CommitInfo;
   content: string | null;
 }
-
-type SaveState =
-  | { kind: "idle" }
-  | { kind: "saving" }
-  | { kind: "saved"; at: number }
-  | { kind: "queued" }
-  | { kind: "error"; message: string }
-  | { kind: "conflict" };
 
 /** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
 const SETTINGS_HASH = "#/:settings";
