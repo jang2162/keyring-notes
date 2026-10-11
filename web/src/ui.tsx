@@ -80,7 +80,7 @@ export type MenuEntry = MenuItem | "-";
 /**
  * 띄우는 메뉴(⋯ 메뉴·오른쪽 클릭 메뉴). at: 화면 좌표. ↑↓ Enter Esc로 다룬다.
  */
-export function Menu({ at, items, onClose }: { at: { x: number; y: number }; items: MenuEntry[]; onClose: () => void }) {
+export function Menu({ at, items, onClose, label }: { at: { x: number; y: number }; items: MenuEntry[]; onClose: () => void; label?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState(at);
   const [sel, setSel] = useState(-1);
@@ -119,6 +119,7 @@ export function Menu({ at, items, onClose }: { at: { x: number; y: number }; ite
       ref={ref}
       className="menu"
       role="menu"
+      aria-label={label}
       tabIndex={-1}
       style={{ left: pos.x, top: pos.y }}
       onKeyDown={(e) => {
@@ -177,8 +178,10 @@ export function Resizer({
   onChange,
   onReset,
   label,
+  className,
 }: {
   side: "left" | "right";
+  className?: string;
   width: number;
   min: number;
   max: number;
@@ -189,7 +192,7 @@ export function Resizer({
   const start = useRef<{ x: number; w: number } | null>(null);
   return (
     <div
-      className={`resizer resizer-${side}`}
+      className={`resizer resizer-${side}${className ? ` ${className}` : ""}`}
       role="separator"
       aria-orientation="vertical"
       aria-label={label}

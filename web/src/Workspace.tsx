@@ -1,14 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BrushCleaning,
   CalendarDays,
   Check,
-  ChevronRight,
   Columns2,
   Copy,
   Ellipsis,
-  Eye,
   FilePlus,
   Files,
   FolderInput,
@@ -21,7 +18,6 @@ import {
   Link2,
   Paperclip,
   ListChecks,
-  ListTree,
   LocateFixed,
   LogOut,
   Menu as MenuIcon,
@@ -30,7 +26,6 @@ import {
   Search,
   Settings as SettingsIcon,
   SmilePlus,
-  ChevronLeft,
   SlidersHorizontal,
   TableOfContents,
   Tag,
@@ -40,19 +35,18 @@ import {
   X,
 } from "lucide-react";
 import { api, ApiError, appMode, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
-import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
+import type { EditorHandle, LinkCandidate } from "./Editor";
 import { LintPanel, ReviewPanel } from "./Curation";
 import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
-import { invalidateWidgets, Widget } from "./Widget";
+import { invalidateWidgets } from "./Widget";
 import { isNetworkError, offline } from "./offline";
-import { LinkResolver, renderMarkdown } from "./markdown";
-import { enhance, invalidateEmbeds } from "./enhance";
+import { LinkResolver } from "./markdown";
+import { invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
 import {
   applyTemplate,
   attachmentDirFor,
-  blockRange,
   buildNodeTree,
   countNode,
   dailyLookup,
@@ -71,7 +65,6 @@ import {
   officialLangOf,
   orderWorkspaces,
   parentNode,
-  parseFrontmatter,
   planDailyMigration,
   setFrontmatterField,
   sha256Hex,
@@ -114,47 +107,47 @@ import {
 } from "./vaultSettings";
 import { DocIcon, IconLookup, IconPicker } from "./IconPicker";
 import { getFolds, moveFolds, onFoldsChange, resolveFolds } from "./folds";
-import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
-import { AsidePreview, FileViewer } from "./Aside";
+import { FileViewer } from "./Aside";
 import { fmtDateTime, fmtNumber, missingPack, t, timeAgo, useLang } from "./i18n";
 import { tipProps } from "./Tooltip";
 import { AttachmentList } from "./Attachments";
-import { isRecordOf, isString, isStringArray, readStored } from "./stored";
+import { mirrorTargets } from "./mirror";
+import { DocPane, docMeta, type PaneContext, type PaneHandle, type PendingAnchor, type RevisionView } from "./DocPane";
+import { isRecordOf, isStringArray, readStored } from "./stored";
+import {
+  dirtyPaths,
+  dropUnused,
+  isDirty,
+  patchDoc as patchStoreDoc,
+  renameDoc,
+  setConflict as setStoreConflict,
+  setSave as setStoreSave,
+  upsertDoc,
+  type DocStore,
+  type OpenDoc,
+  type SaveState,
+} from "./openDocs";
+import {
+  canSplit,
+  closeIn,
+  emptyLayout,
+  focusPane,
+  isLayout,
+  MIN_PANE_WIDTH,
+  mergePanes,
+  migrateLayouts,
+  moveTab,
+  openIn,
+  removePaths,
+  renamePath,
+  setMode as setPaneMode,
+  type Layout,
+  type ViewMode,
+} from "./panes";
 
-type ViewMode = "split" | "edit" | "preview";
-
-interface OpenDoc {
-  path: string;
-  /** 서버에 저장된 내용과 그 해시. 저장할 때 baseHash로 보낸다(노트 없는 노드는 ""). */
-  saved: string;
-  hash: string;
-  draft: string;
-  /** 에디터를 새 내용으로 다시 만들 때 올린다. */
-  seq: number;
-  /** 서버가 만드는 문서(위키 index·log): 읽기 전용 */
-  generated: boolean;
-  /** 연결이 없어 이 기기의 사본을 보여 주는 중 */
-  cachedOffline?: boolean;
-  /** 노트 없는 노드(A/만 있음): 내용을 쓰면 그때 A.md를 만든다 */
-  virtual?: boolean;
-}
-
-interface Conflict {
-  currentHash: string | null;
-}
-
-interface RevisionView {
-  commit: CommitInfo;
-  content: string | null;
-}
-
-type SaveState =
-  | { kind: "idle" }
-  | { kind: "saving" }
-  | { kind: "saved"; at: number }
-  | { kind: "queued" }
-  | { kind: "error"; message: string }
-  | { kind: "conflict" };
+/** 칸이 없는 배치(매번 새 객체를 만들지 않게 하나만 둔다) */
+const NO_PANES: Layout = emptyLayout();
+const IDLE: SaveState = { kind: "idle" };
 
 /** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
 const SETTINGS_HASH = "#/:settings";
@@ -203,12 +196,14 @@ function uniquePath(dir: string, stem: string, taken: string[], ext = ".md"): st
 }
 
 /** 이 기기에 기억하는 값(localStorage JSON). 모양이 맞지 않는 저장값(예전 형식 등)은 버리고 initial로 시작한다. */
-function useStored<T>(key: string, initial: T, valid: (v: unknown) => v is T): [T, (v: T | ((p: T) => T)) => void] {
+function useStored<T>(key: string, initial: T | (() => T), valid: (v: unknown) => v is T): [T, (v: T | ((p: T) => T)) => void] {
   const [v, setV] = useState<T>(() => {
+    const init = () => (typeof initial === "function" ? (initial as () => T)() : initial);
     try {
-      return readStored(localStorage.getItem(key), initial, valid);
+      const raw = localStorage.getItem(key);
+      return raw === null ? init() : readStored(raw, init(), valid);
     } catch {
-      return initial;
+      return init();
     }
   });
   useEffect(() => {
@@ -230,137 +225,6 @@ function nodeExists(node: string, paths: string[]): boolean {
   });
 }
 
-/**
- * 문서 위 큰 제목 칸: 고치고 Enter나 포커스 이탈 때 노드 이름을 바꾼다(노트와 하위를 같이). 앞에 아이콘(누르면 고르기).
- * 데일리 노트는 날짜 부분을 고정된 앞머리(흐린 글자)로 보이고 그 뒤 제목만 고친다. 날짜를 누르면 전체 이름을 고친다.
- */
-function InlineTitle({
-  path,
-  readOnly,
-  focusSignal,
-  daily,
-  icon,
-  onIcon,
-  onFocused,
-  onRename,
-  onDone,
-}: {
-  path: string;
-  readOnly: boolean;
-  focusSignal: number;
-  daily: DailyNote | null;
-  icon: string | null;
-  onIcon?: (at: { x: number; y: number }) => void;
-  onFocused: () => void;
-  onRename: (stem: string) => Promise<boolean>;
-  onDone: () => void;
-}) {
-  const stem = stemOf(path);
-  const [full, setFull] = useState(false);
-  const split = !!daily && !full;
-  const initial = split ? daily!.title : stem;
-  const [v, setV] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => setV(initial), [initial]);
-  useEffect(() => setFull(false), [path]);
-  useEffect(() => {
-    if (!focusSignal) return;
-    // 에디터가 열리며 포커스를 가져간 뒤에 잡는다
-    const timer = setTimeout(() => {
-      ref.current?.focus();
-      ref.current?.select();
-      onFocused();
-    }, 30);
-    return () => clearTimeout(timer);
-  }, [focusSignal]);
-  /** 칸의 글 → 새 이름(확장자 없이) */
-  const nameOf = (text: string) => (split ? (text.trim() ? `${daily!.datePart}${daily!.sep || " "}${text.trim()}` : daily!.datePart) : text.trim());
-  const next = nameOf(v);
-  const err = next === stem ? null : invalidNameReason(next);
-  // 전체 이름을 고치다 날짜를 지우면 데일리 노트가 아니게 된다
-  const warn = daily && full && !next.startsWith(daily.datePart) ? t("title.dailyWarn") : null;
-  const commit = async () => {
-    if (busy || next === stem) {
-      setV(initial);
-      setFull(false);
-      return;
-    }
-    if (err) return;
-    setBusy(true);
-    const ok = await onRename(next);
-    setBusy(false);
-    if (!ok) setV(initial);
-    setFull(false);
-  };
-  return (
-    <div className="inline-title-wrap">
-      <div className="inline-title-row">
-        {onIcon || icon ? (
-          <button
-            type="button"
-            className={`title-icon${icon ? "" : " empty"}`}
-            aria-disabled={!onIcon || undefined}
-            {...tipProps({ label: icon ? t("title.changeIcon") : t("title.addIcon") })}
-            aria-label={icon ? t("title.changeIconOf", { icon }) : t("title.addIcon")}
-            onClick={(e) => {
-              if (!onIcon) return;
-              const r = e.currentTarget.getBoundingClientRect();
-              onIcon({ x: r.left, y: r.bottom + 4 });
-            }}
-          >
-            {icon ?? <SmilePlus size={22} strokeWidth={1.5} aria-hidden />}
-          </button>
-        ) : null}
-        {split && (
-          <button
-            type="button"
-            className="title-date"
-            disabled={readOnly}
-            {...tipProps({ label: t("title.dailyDate") })}
-            onClick={() => {
-              setFull(true);
-              setTimeout(() => ref.current?.focus(), 0);
-            }}
-          >
-            {daily!.datePart}
-          </button>
-        )}
-        <input
-          ref={ref}
-          className="inline-title"
-          value={v}
-          readOnly={readOnly}
-          placeholder={split ? t("title.dailyPlaceholder") : undefined}
-          aria-label={split ? t("title.dailyLabel") : t("title.label")}
-          aria-invalid={!!err}
-          spellCheck={false}
-          onChange={(e) => setV(e.target.value)}
-          onBlur={() => void commit()}
-          onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
-            if (e.key === "Enter" || (e.key === "ArrowDown" && !err)) {
-              e.preventDefault();
-              void commit().then(onDone);
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              e.stopPropagation();
-              setV(initial);
-              setFull(false);
-              onDone();
-            }
-          }}
-        />
-      </div>
-      {(err || warn) && (
-        <p className={err ? "inline-title-error" : "inline-title-warn"} role="alert">
-          {err ?? warn}
-        </p>
-      )}
-    </div>
-  );
-}
-
 /** 탭·마지막 문서를 기억하는 범위 이름: 워크스페이스, 모든 워크스페이스면 "*" */
 const scopeKeyOf = (all: boolean, ws: string) => (all ? "*" : ws);
 
@@ -370,7 +234,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const local = appMode.local;
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [treeLoaded, setTreeLoaded] = useState(false);
-  const [doc, setDoc] = useState<OpenDoc | null>(null);
+  /** 열린 문서 전부(경로 → 초안·저장 상태·충돌). 어느 칸에서 열었든 같은 문서는 원본이 하나다 */
+  const [docs, setDocs] = useState<DocStore>({});
+  /** 늘 최신 저장소. 저장·이동처럼 await 사이에 읽는 곳이 낡은 값을 보지 않게 바꾸는 즉시 고친다 */
+  const docsRef = useRef(docs);
+  const updateDocs = (fn: (s: DocStore) => DocStore) => {
+    const next = fn(docsRef.current);
+    if (next === docsRef.current) return;
+    docsRef.current = next;
+    setDocs(next);
+  };
   // 좁은 화면에서는 나란히 보기 대신 미리보기로 시작. Live Preview가 기본이라 넓은 화면은 편집으로
   const narrow = () => window.matchMedia?.("(max-width: 800px)").matches ?? false;
   const [isNarrow, setIsNarrow] = useState(narrow);
@@ -384,17 +257,28 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
   }, []);
-  const [mode, setMode] = useState<ViewMode>(() => (narrow() ? "preview" : "edit"));
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
+  /** 가운데(main.center) 폭: 둘째 칸을 열 수 있는지, 칸 경계를 어디에 둘지 */
+  const centerRef = useRef<HTMLElement>(null);
+  const [centerWidth, setCenterWidth] = useState(0);
+  const centerWidthRef = useRef(centerWidth);
+  centerWidthRef.current = centerWidth;
+  const isNarrowRef = useRef(isNarrow);
+  isNarrowRef.current = isNarrow;
+  useEffect(() => {
+    const el = centerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setCenterWidth(el.clientWidth));
+    ro.observe(el);
+    setCenterWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
   /** 접힌 상태가 바뀔 때 올린다(미리보기·개요를 다시 맞춘다) */
   const [foldVersion, setFoldVersion] = useState(0);
-  const [conflict, setConflict] = useState<Conflict | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
-  const saveStateRef = useRef(saveState);
-  saveStateRef.current = saveState;
   const [commits, setCommits] = useState<CommitInfo[]>([]);
-  const [revision, setRevision] = useState<RevisionView | null>(null);
+  /** 칸마다 보고 있는 과거 판 */
+  const [revisions, setRevisions] = useState<(RevisionView | null)[]>([null, null]);
+  const revisionsRef = useRef(revisions);
+  revisionsRef.current = revisions;
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<(SearchHit & { score?: number })[] | null>(null);
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
@@ -411,24 +295,35 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [searchMode, setSearchMode] = useState<"text" | "semantic">("text");
   /** 볼트 내용이 바뀔 때마다 올려 태그·백링크·위젯을 다시 불러온다. */
   const [vaultVersion, setVaultVersion] = useState(0);
-  const editorHandle = useRef<EditorHandle | null>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
+  /** 칸마다 에디터·칸 동작. 명령·패널은 활성 칸의 것을 쓴다 */
+  const paneHandles = [useRef<EditorHandle | null>(null), useRef<EditorHandle | null>(null)];
+  const paneApis = [useRef<PaneHandle | null>(null), useRef<PaneHandle | null>(null)];
+  /** 활성 칸의 에디터 */
+  const editorHandle = {
+    get current() {
+      return paneHandles[curLayout().focused]?.current ?? null;
+    },
+  };
   const treeRef = useRef<TreeHandle>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
   const [ingestOpen, setIngestOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsSection | null>(settingsFromLocation);
   const [keysOpen, setKeysOpen] = useState(false);
-  const [aside, setAside] = useState<string | null>(null);
   const [fileView, setFileView] = useState<string | null>(null);
   const [docMenu, setDocMenu] = useState<{ x: number; y: number } | null>(null);
+  /** 탭 오른쪽 클릭 메뉴 */
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; pane: number; path: string } | null>(null);
+  /** 끌고 있는 탭을 놓을 수 있는 칸(탭 바 강조) */
+  const [tabDrop, setTabDrop] = useState<number | null>(null);
   const [wsMenu, setWsMenu] = useState<{ x: number; y: number } | null>(null);
-  const [cursor, setCursor] = useState({ line: 1, col: 1 });
+  const [cursors, setCursors] = useState([
+    { line: 1, col: 1 },
+    { line: 1, col: 1 },
+  ]);
   /** 제목 칸에 커서를 둘 문서(새 문서·F2). 문서가 열린 뒤 에디터보다 늦게 잡는다 */
   const [titleFocus, setTitleFocus] = useState<{ path: string; n: number } | null>(null);
   const focusTitle = (path: string) => setTitleFocus({ path, n: Date.now() });
   const [now, setNow] = useState(Date.now());
-  const tabCache = useRef(new Map<string, OpenDoc>());
   const closedTabs = useRef<string[]>([]);
   const [recent, setRecent] = useStored<string[]>("keyring:recent", [], isStringArray);
   /** 열어 본 문서 기록(뒤로·앞으로) */
@@ -437,18 +332,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [moveTarget, setMoveTarget] = useState<{ path: string; kind: "node" | "file" } | null>(null);
   const shared = useVaultSettings();
   const [propStats, setPropStats] = useState<PropertyStat[]>([]);
-  const [pendingAnchor, setPendingAnchor] = useState<{ path: string; heading?: string; block?: string; line?: number; text?: string } | null>(null);
+  const [pendingAnchor, setPendingAnchor] = useState<PendingAnchor | null>(null);
   // 앱 안 PDF 보기(주석 달기)
   const [pdfView, setPdfView] = useState<{ path: string; page?: number } | null>(null);
   /** 브라우저 로컬 볼트의 첨부(blob URL)가 준비되면 올려 미리보기를 다시 그린다 */
   const [assetVersion, setAssetVersion] = useState(0);
   const syncStatus = useSyncStatus(localContext);
-  const docRef = useRef<OpenDoc | null>(null);
-  docRef.current = doc;
-  const conflictRef = useRef(conflict);
-  conflictRef.current = conflict;
-  const revisionRef = useRef(revision);
-  revisionRef.current = revision;
 
   // ── 워크스페이스: 볼트 루트 노드. 트리·빠른 열기·검색·태그·그래프·홈을 지금 워크스페이스로 좁힌다
   const wsNames = useMemo(() => orderWorkspaces(shared, workspacesOf(tree)), [shared, tree]);
@@ -459,14 +348,104 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const scopeRef = useRef({ allWs, ws, scopeKey });
   scopeRef.current = { allWs, ws, scopeKey };
   const inScope = (p: string) => !scope || inWorkspace(p, scope);
-  /** 워크스페이스마다 열린 탭·마지막 문서(이 기기) */
-  const [tabsByScope, setTabsByScope] = useStored<Record<string, string[]>>("keyring:tabs", {}, isRecordOf(isStringArray));
-  const [lastByScope, setLastByScope] = useStored<Record<string, string>>("keyring:last-doc", {}, isRecordOf(isString));
-  const tabs = tabsByScope[scopeKey] ?? [];
-  const tabsRef = useRef(tabs);
-  tabsRef.current = tabs;
-  const setTabsFor = (key: string, fn: (t: string[]) => string[]) => setTabsByScope((m) => ({ ...m, [key]: fn(m[key] ?? []) }));
-  const setTabs = (fn: (t: string[]) => string[]) => setTabsFor(scopeRef.current.scopeKey, fn);
+  /**
+   * 워크스페이스마다 칸 배치(칸·탭·보고 있는 문서·보기 모드, 이 기기). 처음에는 예전 탭 목록(keyring:tabs)과
+   * 마지막 문서(keyring:last-doc)를 옮겨 온다 — 모양이 달라 같은 키를 덮어쓰면 예전 판으로 돌아갈 때 깨진다.
+   */
+  const [layoutByScope, setLayoutByScope] = useStored<Record<string, Layout>>(
+    "keyring:panes",
+    () => {
+      try {
+        return migrateLayouts(localStorage.getItem("keyring:tabs"), localStorage.getItem("keyring:last-doc"), narrow() ? "preview" : "edit");
+      } catch {
+        return {};
+      }
+    },
+    isRecordOf(isLayout),
+  );
+  useEffect(() => {
+    try {
+      localStorage.removeItem("keyring:tabs");
+      localStorage.removeItem("keyring:last-doc");
+    } catch {
+      /* 저장소를 못 쓰는 환경 */
+    }
+  }, []);
+  /** 늘 최신 배치(docsRef 와 같은 이유) */
+  const layoutsRef = useRef(layoutByScope);
+  const setLayouts = (fn: (m: Record<string, Layout>) => Record<string, Layout>) => {
+    const next = fn(layoutsRef.current);
+    if (next === layoutsRef.current) return;
+    layoutsRef.current = next;
+    setLayoutByScope(next);
+  };
+  const setLayoutFor = (key: string, fn: (l: Layout) => Layout) =>
+    setLayouts((m) => {
+      const cur = m[key] ?? NO_PANES;
+      const next = fn(cur);
+      if (next === cur) return m;
+      const out = { ...m, [key]: next };
+      if (!next.panes.length) delete out[key];
+      return out;
+    });
+  /** 모든 워크스페이스의 배치를 같은 규칙으로 고친다(이동·삭제는 범위를 가리지 않는다) */
+  const setAllLayouts = (fn: (l: Layout) => Layout) =>
+    setLayouts((m) => {
+      let changed = false;
+      const out: Record<string, Layout> = {};
+      for (const [k, l] of Object.entries(m)) {
+        const next = fn(l);
+        if (next !== l) changed = true;
+        if (next.panes.length) out[k] = next;
+      }
+      return changed ? out : m;
+    });
+  const setLayout = (fn: (l: Layout) => Layout) => setLayoutFor(scopeRef.current.scopeKey, fn);
+  const curLayout = () => layoutsRef.current[scopeRef.current.scopeKey] ?? NO_PANES;
+  const layout = layoutByScope[scopeKey] ?? NO_PANES;
+  const focusedPane = layout.panes[layout.focused] as Layout["panes"][number] | undefined;
+  /** 지금 배치의 모든 칸의 탭 */
+  const allTabs = layout.panes.flatMap((p) => p.tabs);
+  /** 활성 칸의 문서(오른쪽 패널·상태 표시줄·명령의 대상) */
+  const entry = focusedPane?.active ? docs[focusedPane.active] : undefined;
+  const doc: OpenDoc | null = entry?.doc ?? null;
+  const saveState = entry?.save ?? IDLE;
+  const conflict = entry?.conflict ?? null;
+  /** 지금 활성 칸의 문서(늘 최신 저장소·배치에서 읽는다) */
+  const docRef = useMemo(
+    () => ({
+      get current(): OpenDoc | null {
+        const l = layoutsRef.current[scopeRef.current.scopeKey] ?? NO_PANES;
+        const p = l.panes[l.focused]?.active;
+        return p ? (docsRef.current[p]?.doc ?? null) : null;
+      },
+    }),
+    [],
+  );
+  const revisionOf = (pane: number): RevisionView | null => {
+    const r = revisions[pane];
+    return r && r.path === layout.panes[pane]?.active ? r : null;
+  };
+  const revision = revisionOf(layout.focused);
+  const revisionRef = useRef(revision);
+  revisionRef.current = revision;
+  const setRevision = (r: RevisionView | null) =>
+    setRevisions((rs) => {
+      const next = [...rs];
+      next[curLayout().focused] = r;
+      return next;
+    });
+  /** 칸에 새로 만들 때의 보기 모드: 마지막으로 쓴 것(처음에는 좁은 화면이면 미리보기) */
+  const lastMode = useRef<ViewMode>(narrow() ? "preview" : "edit");
+  if (focusedPane) lastMode.current = focusedPane.mode;
+  const mode: ViewMode = focusedPane?.mode ?? lastMode.current;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const setFocusedMode = (m: ViewMode | ((m: ViewMode) => ViewMode)) =>
+    setLayout((l) => {
+      const cur = l.panes[l.focused]?.mode ?? lastMode.current;
+      return setPaneMode(l, l.focused, typeof m === "function" ? m(cur) : m);
+    });
 
   const uiLang = officialLangOf(lang);
   const daily = useMemo(() => dailyLookup(shared, () => wsNames, uiLang), [shared, wsNames, uiLang]);
@@ -502,18 +481,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           .map((_, i, a) => a.slice(0, i + 1).join("/")),
       ),
     );
-    // 지금 연 노트·저장 안 한 탭(오프라인에서 만든 것 포함)은 남긴다
-    const keep = (p: string) => p === docRef.current?.path || (tabCache.current.get(p)?.draft ?? "") !== (tabCache.current.get(p)?.saved ?? "");
+    // 지금 보고 있는 노트·저장 안 한 탭(오프라인에서 만든 것 포함)은 남긴다
+    const shown = new Set(curLayout().panes.map((p) => p.active));
+    const keep = (p: string) => shown.has(p) || (!!docsRef.current[p] && isDirty(docsRef.current[p]));
     const alive = (p: string) => files.has(p) || dirs.has(stripMd(p)) || keep(p);
-    setTabsByScope((m) => {
-      let changed = false;
-      const next: Record<string, string[]> = {};
-      for (const [k, list] of Object.entries(m)) {
-        next[k] = list.filter(alive);
-        if (next[k].length !== list.length) changed = true;
-      }
-      return changed ? next : m;
-    });
+    setAllLayouts((l) => removePaths(l, (p) => !alive(p)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolver]);
   const resolverRef = useRef(resolver);
@@ -547,16 +519,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   }, [resolver]);
   const dirty = doc !== null && doc.draft !== doc.saved;
 
-  // 지금 문서의 속성: 개수(오른쪽 패널 탭·접힌 프런트매터 줄)와 아이콘. 저장 전 초안 기준
-  const docFm = useMemo(() => {
-    const text = doc?.draft ?? "";
-    const block = /^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(text)?.[0] ?? "";
-    return block ? parseFrontmatter(block).data : null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc?.draft]);
-  const propCount = docFm ? Object.keys(docFm).length : 0;
-  const docIcon = typeof docFm?.icon === "string" && docFm.icon.trim() ? docFm.icon.trim() : null;
-  const docDaily = doc ? dailyOfPath(doc.path, daily) : null;
+  // 지금 문서의 속성: 개수(오른쪽 패널 탭)와 아이콘. 저장 전 초안 기준
+  const { propCount, icon: docIcon } = useMemo(() => docMeta(doc?.draft ?? ""), [doc?.draft]);
 
   /** 노드 아이콘(트리에서 받은 노트의 icon, 지금 문서는 초안의 icon) */
   const iconMap = useMemo(() => {
@@ -699,66 +663,61 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return () => clearTimeout(timer);
   }, [query, vaultVersion, searchMode, scope]);
 
-  const remember = (path: string) => {
-    setRecent((r) => [path, ...r.filter((p) => p !== path)].slice(0, 30));
-    const key = scopeRef.current.scopeKey;
-    setLastByScope((m) => (m[key] === path ? m : { ...m, [key]: path }));
-  };
+  const remember = (path: string) => setRecent((r) => [path, ...r.filter((p) => p !== path)].slice(0, 30));
 
-  const load = useCallback(async (path: string) => {
+  /** 문서를 읽는다(저장소에는 넣지 않는다). 노트 없는 노드면 빈 노드로. 못 읽으면 알리고 null */
+  const fetchDoc = useCallback(async (path: string): Promise<Omit<OpenDoc, "seq"> | null> => {
     try {
       const d = await api.read(path);
-      setDoc((prev) => ({
-        path: d.path,
-        saved: d.content,
-        hash: d.hash,
-        draft: d.content,
-        seq: (prev?.seq ?? 0) + 1,
-        generated: d.generated === true,
-        cachedOffline: d.cachedOffline === true,
-      }));
-      setConflict(null);
-      setRevision(null);
-      setSaveState({ kind: "idle" });
-      remember(d.path);
-      if (pathFromLocation() !== d.path && !settingsFromLocation()) history.replaceState(null, "", `#/${encodeURIComponent(d.path)}`);
+      return { path, saved: d.content, hash: d.hash, draft: d.content, generated: d.generated === true, cachedOffline: d.cachedOffline === true };
     } catch (e) {
       // 노트 없는 노드(A/만 있음): 빈 노드로 연다. 내용을 쓰면 그때 A.md를 만든다
       if (e instanceof ApiError && e.status === 404 && /\.md$/i.test(path) && nodeExists(stripMd(path), resolverRef.current.paths)) {
-        setDoc((prev) => ({ path, saved: "", hash: "", draft: "", seq: (prev?.seq ?? 0) + 1, generated: false, virtual: true }));
-        setConflict(null);
-        setRevision(null);
-        setSaveState({ kind: "idle" });
-        remember(path);
-        if (pathFromLocation() !== path && !settingsFromLocation()) history.replaceState(null, "", `#/${encodeURIComponent(path)}`);
-        return;
+        return { path, saved: "", hash: "", draft: "", generated: false, virtual: true };
       }
       toastError(e);
+      return null;
     }
+  }, []);
+
+  /** 문서를 (다시) 읽어 저장소에 넣는다. 그 문서를 보는 칸의 에디터를 새로 만들고 과거 판 보기를 닫는다 */
+  const loadingRef = useRef(new Set<string>());
+  const load = useCallback(async (path: string): Promise<boolean> => {
+    loadingRef.current.add(path);
+    const d = await fetchDoc(path).finally(() => loadingRef.current.delete(path));
+    if (!d) return false;
+    updateDocs((s) => upsertDoc(s, d));
+    setRevisions((rs) => (rs.some((r) => r?.path === path) ? rs.map((r) => (r?.path === path ? null : r)) : rs));
+    remember(path);
+    return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** 문서 하나의 변경을 그 탭(지금 문서 또는 뒤의 탭)에 반영한다 */
-  const patchDoc = (path: string, patch: (d: OpenDoc) => OpenDoc) => {
-    if (docRef.current?.path === path) setDoc((prev) => (prev && prev.path === path ? patch(prev) : prev));
-    const c = tabCache.current.get(path);
-    if (c) tabCache.current.set(path, patch(c));
-  };
+  /** 문서 하나의 변경을 저장소에 반영한다(그 문서를 연 모든 칸이 따라간다) */
+  const patchDoc = (path: string, patch: (d: OpenDoc) => OpenDoc) => updateDocs((s) => patchStoreDoc(s, path, patch));
+  const setDocSave = (path: string, save: SaveState) => updateDocs((s) => setStoreSave(s, path, save));
 
-  // ── 저장(자동 저장 포함). 늘 지금 상태(docRef)를 읽어 오래된 값으로 덮어쓰지 않는다
-  const savingRef = useRef(false);
-  const againRef = useRef(false);
+  /** 어느 칸이든 그 문서를 과거 판으로 보는 중인가(그동안은 저장하지 않는다) */
+  const viewingRevision = (path: string) => curLayout().panes.some((p, i) => p.active === path && revisionsRef.current[i]?.path === path);
+
+  // ── 저장(자동 저장 포함). 문서마다 따로 돈다. 늘 지금 저장소(docsRef)를 읽어 오래된 값으로 덮어쓰지 않는다
+  const savingRef = useRef(new Set<string>());
+  const againRef = useRef(new Set<string>());
   const save = useCallback(
-    async (opts: { auto?: boolean } = {}): Promise<boolean> => {
-      const d = docRef.current;
-      if (!d || d.generated || d.draft === d.saved) return true;
-      if (conflictRef.current || revisionRef.current) return false;
-      if (savingRef.current) {
-        againRef.current = true;
+    async (path?: string, opts: { auto?: boolean } = {}): Promise<boolean> => {
+      const p = path ?? docRef.current?.path;
+      const e = p ? docsRef.current[p] : undefined;
+      if (!p || !e) return true;
+      const d = e.doc;
+      if (d.generated || d.draft === d.saved) return true;
+      if (e.conflict || viewingRevision(p)) return false;
+      if (savingRef.current.has(p)) {
+        againRef.current.add(p);
         return false;
       }
-      savingRef.current = true;
-      setSaveState({ kind: "saving" });
+      savingRef.current.add(p);
+      const wasError = e.save.kind === "error";
+      setDocSave(p, { kind: "saving" });
       const content = d.draft;
       let ok = false;
       try {
@@ -767,7 +726,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         setOutboxCount((await offline.pending().catch(() => [])).length);
         // 저장하는 동안 더 입력한 내용(draft)은 그대로 둔다.
         patchDoc(d.path, (prev) => ({ ...prev, saved: content, hash: r.hash, virtual: false }));
-        setSaveState({ kind: "saved", at: Date.now() });
+        setDocSave(d.path, { kind: "saved", at: Date.now() });
         ok = true;
         // 노트 없는 노드에 처음 쓰면 노트가 생겼다(트리 아이콘·노드 모양)
         if (d.virtual) void refreshTree();
@@ -779,15 +738,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           await offline.queue(d.path, content, d.hash || null, d.hash ? d.saved : null);
           patchDoc(d.path, (prev) => ({ ...prev, saved: content }));
           setOutboxCount((await offline.pending()).length);
-          setSaveState({ kind: "queued" });
+          setDocSave(d.path, { kind: "queued" });
           ok = true;
         } else if (e instanceof ApiError && e.status === 409) {
           // 다른 곳(다른 탭·에이전트·동기화)에서 먼저 고쳤다: 서로 다른 부분이면 자동으로 합친다
           const merged = e.currentHash && d.hash ? await saveMerged(d.path, d.saved, content).catch(() => null) : null;
-          const prev = docRef.current;
+          const prev = docsRef.current[d.path]?.doc;
           // 저장하는 동안 더 입력했다면 그 입력도 합친다
           const draft =
-            merged && prev && prev.path === d.path
+            merged && prev
               ? prev.draft === content
                 ? merged.text
                 : (() => {
@@ -795,31 +754,38 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                     return more.ok ? more.text : null;
                   })()
               : null;
-          if (merged && prev && prev.path === d.path && draft !== null) {
-            setDoc({ ...prev, saved: merged.text, hash: merged.hash, draft, seq: prev.seq + 1 });
-            setConflict(null);
-            setSaveState({ kind: "saved", at: Date.now() });
+          if (merged && prev && draft !== null) {
+            updateDocs((s) =>
+              setStoreSave(
+                setStoreConflict(
+                  patchStoreDoc(s, d.path, (x) => ({ ...x, saved: merged.text, hash: merged.hash, draft, seq: x.seq + 1 })),
+                  d.path,
+                  null,
+                ),
+                d.path,
+                { kind: "saved", at: Date.now() },
+              ),
+            );
             toast(t("save.merged"), { kind: "info" });
             ok = true;
             vaultChanged();
           } else {
-            if (docRef.current?.path === d.path) setConflict({ currentHash: merged?.hash ?? e.currentHash ?? null });
-            setSaveState({ kind: "conflict" });
+            updateDocs((s) => setStoreSave(setStoreConflict(s, d.path, { currentHash: merged?.hash ?? e.currentHash ?? null }), d.path, { kind: "conflict" }));
             toast(t("save.conflict"), { kind: "warn", duration: 8000 });
           }
         } else {
           const message = errorText(e);
-          setSaveState({ kind: "error", message });
+          setDocSave(d.path, { kind: "error", message });
           // 자동 저장이 잇달아 실패하면 처음 한 번만 알린다(상태 표시줄에는 계속 보인다)
-          if (!opts.auto || saveStateRef.current.kind !== "error")
-            toast(t("save.failed", { message }), { kind: "error", action: { label: t("common.retry"), run: () => void save() } });
+          if (!opts.auto || !wasError)
+            toast(t("save.failed", { message }), { kind: "error", action: { label: t("common.retry"), run: () => void save(d.path) } });
         }
       } finally {
-        savingRef.current = false;
+        savingRef.current.delete(p);
       }
-      if (againRef.current) {
-        againRef.current = false;
-        void save(opts);
+      if (againRef.current.has(p)) {
+        againRef.current.delete(p);
+        void save(p, opts);
       }
       return ok;
     },
@@ -829,27 +795,50 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const saveRef = useRef(save);
   saveRef.current = save;
 
-  /** 다른 일(탭 바꾸기·이동·이름 바꾸기) 전에 지금 문서를 저장한다. 저장 못 했으면 false */
-  const flush = async (): Promise<boolean> => {
-    const d = docRef.current;
-    if (!d || d.draft === d.saved || d.generated) return true;
-    if (!prefs.autosave) return true;
-    await saveRef.current({ auto: true });
-    const after = docRef.current;
-    return !after || after.path !== d.path || after.draft === after.saved;
+  /** 다른 일(이동·이름 바꾸기·워크스페이스 바꾸기) 전에 문서를 저장한다(기본은 저장 안 한 문서 전부). 못 한 것이 있으면 false */
+  const flush = async (paths?: string[]): Promise<boolean> => {
+    const list = (paths ?? dirtyPaths(docsRef.current)).filter((p) => docsRef.current[p] && isDirty(docsRef.current[p]));
+    if (!list.length || !prefsRef.current.autosave) return true;
+    for (const p of list) await saveRef.current(p, { auto: true });
+    return list.every((p) => !docsRef.current[p] || !isDirty(docsRef.current[p]));
   };
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
 
-  // 자동 저장: 입력이 멈추고 잠시 뒤
+  // 자동 저장: 문서마다 타이머 하나. 그 문서의 입력이 멈추고 잠시 뒤. 충돌·과거 판 보기 중인 문서는 건너뛴다
+  const autosaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  /** 타이머를 건 때의 초안·저장본·간격. 같으면 다시 걸지 않는다(실패한 저장을 혼자 되풀이하지 않게) */
+  const autosaveArmed = useRef(new Map<string, string>());
   useEffect(() => {
-    if (!prefs.autosave || !doc || doc.generated || doc.draft === doc.saved || conflict || revision) return;
-    const timer = setTimeout(() => void saveRef.current({ auto: true }), prefs.autosaveDelay);
-    return () => clearTimeout(timer);
-  }, [doc?.draft, doc?.saved, doc?.path, prefs.autosave, prefs.autosaveDelay, conflict, revision]);
+    const want = new Map<string, string>();
+    if (prefs.autosave)
+      for (const p of dirtyPaths(docs))
+        if (!docs[p].conflict && !viewingRevision(p)) want.set(p, `${prefs.autosaveDelay}\u0000${docs[p].doc.saved}\u0000${docs[p].doc.draft}`);
+    for (const [p, timer] of autosaveTimers.current)
+      if (want.get(p) !== autosaveArmed.current.get(p)) {
+        clearTimeout(timer);
+        autosaveTimers.current.delete(p);
+      }
+    for (const p of autosaveArmed.current.keys()) if (want.get(p) !== autosaveArmed.current.get(p)) autosaveArmed.current.delete(p);
+    for (const [p, armed] of want) {
+      if (autosaveArmed.current.get(p) === armed) continue;
+      autosaveArmed.current.set(p, armed);
+      autosaveTimers.current.set(
+        p,
+        setTimeout(() => {
+          autosaveTimers.current.delete(p);
+          void saveRef.current(p, { auto: true });
+        }, prefs.autosaveDelay),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs, prefs.autosave, prefs.autosaveDelay, revisions, layout]);
+  useEffect(() => () => autosaveTimers.current.forEach(clearTimeout), []);
 
-  // 창에서 포커스가 빠지거나 숨겨질 때도 저장
+  // 창에서 포커스가 빠지거나 숨겨질 때도 저장(저장 안 한 문서 전부)
   useEffect(() => {
     if (!prefs.autosave) return;
-    const go = () => void saveRef.current({ auto: true });
+    const go = () => void flushRef.current();
     const vis = () => document.visibilityState === "hidden" && go();
     window.addEventListener("blur", go);
     document.addEventListener("visibilitychange", vis);
@@ -866,62 +855,58 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     n.i = n.list.length - 1;
   };
 
-  const showDoc = (path: string) => {
-    const cached = tabCache.current.get(path);
-    if (cached) {
-      tabCache.current.delete(path);
-      setDoc({ ...cached, seq: cached.seq + 1 });
-      setConflict(null);
-      setRevision(null);
-      setSaveState({ kind: "idle" });
-      remember(path);
-      if (pathFromLocation() !== path) history.replaceState(null, "", `#/${encodeURIComponent(path)}`);
-    } else void load(path);
-  };
-
   /**
-   * 문서 열기. 탭: 이미 열린 탭이면 그 탭으로(저장 안 한 초안은 탭마다 그대로), newTab이면 새 탭에,
-   * 아니면 지금 탭을 바꾼다. 자동 저장이 켜져 있으면 먼저 저장한다(못 하면 묻는다).
+   * 문서 열기. 탭: 그 칸에 이미 열린 탭이면 그 탭으로, newTab이면 새 탭에, 아니면 그 칸의 지금 탭을 바꾼다.
+   * 바꿔친 문서의 저장 안 한 초안은 저장소에 남고 자동 저장이 이어진다. pane 은 열 칸(기본은 활성 칸, 칸 수와 같으면 새 칸).
    * 다른 워크스페이스의 문서면(모든 워크스페이스 보기가 아닐 때) 그 워크스페이스로 바꾼다.
    */
   const open = useCallback(
-    async (path: string, opts: { newTab?: boolean; noHistory?: boolean } = {}) => {
+    async (path: string, opts: { newTab?: boolean; noHistory?: boolean; pane?: number } = {}) => {
       if (/\.pdf$/i.test(path)) return setPdfView({ path });
       if (!/\.md$/i.test(path)) return setFileView(path);
       if (settingsFromLocation()) closeSettings(false);
-      const cur = docRef.current;
       setDrawer(null);
-      if (cur?.path === path) return;
       const sc = scopeRef.current;
       const target = workspaceOf(path);
       const switching = !sc.allWs && !!target && target !== sc.ws;
       const key = switching ? scopeKeyOf(false, target) : sc.scopeKey;
-      const keep = (!switching && tabsRef.current.includes(path)) || opts.newTab || switching;
-      if (cur) {
-        await flush();
-        const nowDoc = docRef.current;
-        if (nowDoc && nowDoc.path === cur.path) {
-          if (keep || tabsRef.current.includes(nowDoc.path)) tabCache.current.set(nowDoc.path, nowDoc);
-          else if (nowDoc.draft !== nowDoc.saved && !(await confirmDialog(t("doc.discardAndOpen"), t("doc.discard")))) return;
-        }
-      }
+      const before = layoutsRef.current[key] ?? NO_PANES;
+      const pane = switching ? Math.min(before.focused, Math.max(before.panes.length - 1, 0)) : (opts.pane ?? before.focused);
+      if (!switching && pane === before.focused && before.panes[pane]?.active === path) return;
+      // 읽은 문서를 저장소와 배치에 같은 틈에 넣는다(안 쓰는 문서 정리가 그 사이에 치우지 않게)
+      const fresh = docsRef.current[path] ? null : await fetchDoc(path);
+      if (!docsRef.current[path] && !fresh) return;
+      if (fresh && !docsRef.current[path]) updateDocs((s) => upsertDoc(s, fresh));
       if (switching) {
         setPrefs({ workspace: target! });
         scopeRef.current = { allWs: false, ws: target!, scopeKey: key };
       }
-      setTabsFor(key, (list) => {
-        if (list.includes(path)) return list;
-        if (switching || !cur || keep || !list.includes(cur.path)) return [...list, path];
-        return list.map((x) => (x === cur.path ? path : x));
-      });
+      setLayoutFor(key, (l) => openIn(l, pane, path, { newTab: switching || opts.newTab, mode: l.panes.length ? undefined : lastMode.current }));
+      remember(path);
       if (!opts.noHistory) pushNav(path);
-      showDoc(path);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [load, prefs.autosave],
+    [fetchDoc],
   );
   const openRef = useRef(open);
   openRef.current = open;
+
+  /** 활성 칸이 아닌 칸(칸이 하나면 새로 만들 둘째 칸) */
+  const otherPane = () => {
+    const l = curLayout();
+    return l.panes.length === 2 ? 1 - l.focused : l.panes.length;
+  };
+  /** 다른 칸에 새 탭으로 연다. 가운데가 좁아 나눌 수 없으면 같은 칸의 새 탭으로 */
+  const openOther = (path: string) =>
+    canSplit(centerWidthRef.current, isNarrowRef.current) ? open(path, { pane: otherPane(), newTab: true }) : open(path, { newTab: true });
+  /** 활성 탭을 다른 칸으로(칸이 하나면 둘째 칸을 만든다) */
+  const moveActiveTabOther = () => {
+    const l = curLayout();
+    const active = l.panes[l.focused]?.active;
+    if (!active || (l.panes.length < 2 && !canSplit(centerWidthRef.current, isNarrowRef.current))) return;
+    const to = otherPane();
+    setLayout((x) => moveTab(x, x.focused, to, active));
+  };
 
   /** 노드 열기: 노트가 있으면 그 노트, 없으면 빈 노드(쓰면 노트가 생긴다) */
   const openNode = (node: string | VaultNode, opts: { newTab?: boolean } = {}) => {
@@ -937,73 +922,105 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     void open(n.list[i], { noHistory: true });
   };
 
-  /** 탭 닫기. 닫는 탭에 저장 안 한 변경이 있으면 저장(자동 저장)하거나 묻는다 */
-  const closeTab = async (path: string) => {
-    const cur = docRef.current;
-    if (cur?.path === path) await flush();
-    const nowDoc = docRef.current;
-    const target = nowDoc?.path === path ? nowDoc : tabCache.current.get(path);
-    if (target && target.draft !== target.saved && !(await confirmDialog(t("tab.discardClose", { name: stemOf(path) }), t("tab.discardCloseButton")))) return;
-    tabCache.current.delete(path);
-    closedTabs.current = [path, ...closedTabs.current.filter((p) => p !== path)].slice(0, 20);
-    const list = tabsRef.current;
-    const i = list.indexOf(path);
-    const rest = list.filter((p) => p !== path);
-    setTabs(() => rest);
-    if (nowDoc?.path === path) {
-      const next = rest[Math.min(i, rest.length - 1)];
-      if (next) showDoc(next);
-      else {
-        setDoc(null);
-        history.replaceState(null, "", "#");
+  /** 그 칸의 탭 닫기. 닫는 탭에 저장 안 한 변경이 있으면 저장(자동 저장)하거나 묻는다(다른 칸에도 열려 있으면 그냥 닫는다) */
+  const closeTab = async (pane: number, path: string) => {
+    const elsewhere = curLayout().panes.some((p, i) => i !== pane && p.tabs.includes(path));
+    let discard = false;
+    if (!elsewhere && docsRef.current[path] && isDirty(docsRef.current[path])) {
+      await flush([path]);
+      const after = docsRef.current[path];
+      if (after && isDirty(after)) {
+        if (!(await confirmDialog(t("tab.discardClose", { name: stemOf(path) }), t("tab.discardCloseButton")))) return;
+        discard = true;
       }
     }
+    closedTabs.current = [path, ...closedTabs.current.filter((p) => p !== path)].slice(0, 20);
+    setLayout((l) => closeIn(l, pane, path));
+    // 버리기로 한 초안은 저장소에서도 지운다(남겨 두면 자동 저장이 되살린다)
+    if (discard)
+      updateDocs((s) => {
+        const out = { ...s };
+        delete out[path];
+        return out;
+      });
   };
 
   /**
-   * 워크스페이스 바꾸기(또는 모든 워크스페이스 보기 켜고 끄기). 지금 문서를 저장하고, 그 범위에서 마지막으로 연 문서를 연다.
+   * 워크스페이스 바꾸기(또는 모든 워크스페이스 보기 켜고 끄기). 저장 안 한 문서를 저장하고, 그 범위의 칸 배치(마지막으로 본 문서)로 돌아간다.
+   * 지금 문서가 새 범위에도 들면 그 문서를 계속 본다.
    */
   const switchScope = async (next: { workspace?: string; all?: boolean }) => {
     await flush();
     const cur = docRef.current;
-    if (cur) tabCache.current.set(cur.path, cur);
     const all = next.all ?? (next.workspace ? false : prefs.allWorkspaces);
     const wsName = next.workspace ?? ws;
     setPrefs({ workspace: wsName, allWorkspaces: all });
     const key = scopeKeyOf(all || !wsName, wsName);
     scopeRef.current = { allWs: all || !wsName, ws: wsName, scopeKey: key };
     setDrawer(null);
-    const last = lastByScope[key];
-    const keepCur = cur && (all || inWorkspace(cur.path, wsName));
-    if (keepCur) return;
-    if (last && resolverRef.current.paths.includes(last)) showDoc(last);
-    else {
-      setDoc(null);
-      history.replaceState(null, "", "#");
-    }
+    if (cur && (all || inWorkspace(cur.path, wsName)))
+      setLayoutFor(key, (l) =>
+        l.panes[l.focused]?.active === cur.path ? l : openIn(l, l.focused, cur.path, { newTab: true, mode: l.panes.length ? undefined : lastMode.current }),
+      );
   };
 
   useEffect(() => {
     void refreshTree();
     const initial = pathFromLocation();
     if (initial) {
-      setTabs((list) => (list.includes(initial) ? list : [...list, initial]));
+      setLayout((l) => openIn(l, l.panes.length ? l.focused : 0, initial, { newTab: true, mode: l.panes.length ? undefined : lastMode.current }));
       pushNav(initial);
       void load(initial);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTree, load]);
 
-  // 처음 열 때 주소에 문서가 없으면 이 워크스페이스에서 마지막으로 연 문서
-  const restored = useRef(false);
+  // 칸이 보고 있는데 아직 읽지 않은 문서(새로고침 뒤 복원한 탭, 닫은 탭의 이웃, 워크스페이스를 바꾼 뒤)를 읽는다.
+  // 트리를 받은 뒤에, 볼트에 있는 것만(사라진 탭은 트리 정리가 치운다)
   useEffect(() => {
-    if (restored.current || !treeLoaded) return;
-    restored.current = true;
-    if (pathFromLocation() || settingsFromLocation() || docRef.current) return;
-    const last = lastByScope[scopeKey];
-    if (last && resolver.paths.includes(last)) void open(last);
+    if (!treeLoaded) return;
+    for (const p of layout.panes) {
+      const path = p.active;
+      if (!path || docs[path] || loadingRef.current.has(path)) continue;
+      if (!resolver.paths.includes(path) && !nodeExists(stripMd(path), resolver.paths)) continue;
+      void load(path);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [treeLoaded]);
+  }, [treeLoaded, layout, docs, resolver]);
+
+  // 어느 칸에도(어느 워크스페이스에도) 없는 문서는 저장소에서 치운다. 저장 안 한 것은 저장될 때까지 남긴다
+  useEffect(() => {
+    const inUse = (p: string) => Object.values(layoutsRef.current).some((l) => l.panes.some((pn) => pn.tabs.includes(p)));
+    updateDocs((s) => dropUnused(s, inUse));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs, layoutByScope]);
+
+  // 좁은 화면(800px 이하)이 되거나 가운데가 두 칸을 담지 못하면(560px 미만) 한 칸으로 합친다.
+  // 둘째 칸의 탭은 첫째 칸 뒤에 붙고 초안은 저장소에 그대로 있다. 다시 넓어져도 저절로 나누지 않는다
+  useEffect(() => {
+    // 폭을 아직 재지 않았으면(처음 그릴 때 0) 기다린다
+    if (layout.panes.length < 2 || centerWidth === 0 || canSplit(centerWidth, isNarrow)) return;
+    const f = layout.focused;
+    setRevisions((rs) => [rs[f] ?? null, null]);
+    setCursors((cs) => [cs[f] ?? cs[0], { line: 1, col: 1 }]);
+    setLayout(mergePanes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNarrow, centerWidth, layout.panes.length]);
+
+  // 칸이 다른 문서로 바뀌면 그 칸의 과거 판 보기를 닫는다
+  useEffect(() => {
+    setRevisions((rs) =>
+      rs.some((r, i) => r && r.path !== layout.panes[i]?.active) ? rs.map((r, i) => (r && r.path === layout.panes[i]?.active ? r : null)) : rs,
+    );
+  }, [layout]);
+
+  // 주소는 활성 칸의 문서를 따른다(설정 화면이 열려 있을 때는 그대로)
+  const activePath = focusedPane?.active ?? null;
+  useEffect(() => {
+    if (settingsFromLocation()) return;
+    const want = activePath ? `#/${encodeURIComponent(activePath)}` : "#";
+    if (activePath ? pathFromLocation() !== activePath : pathFromLocation() !== null) history.replaceState(null, "", want);
+  }, [activePath, settings]);
 
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -1032,10 +1049,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   // 저장 안 한 변경(지금 문서 또는 뒤에 있는 탭)이 있으면 창을 닫기 전에 저장을 시도하고 묻는다
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
-      const cur = docRef.current;
-      const any = (cur && cur.draft !== cur.saved) || [...tabCache.current.values()].some((d) => d.draft !== d.saved);
-      if (!any) return;
-      void saveRef.current({ auto: true });
+      if (!dirtyPaths(docsRef.current).length) return;
+      void flushRef.current();
       e.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
@@ -1087,8 +1102,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (synced.length || conflicts.length || merged.length) {
       vaultChanged();
       void refreshTree();
-      const cur = docRef.current;
-      if (cur && (synced.includes(cur.path) || merged.includes(cur.path) || conflicts.length) && cur.draft === cur.saved) await load(cur.path);
+      // 열린 문서 중 보낸 것(사본을 만들었으면 전부)을 저장 안 한 변경이 없을 때 다시 읽는다
+      for (const e of Object.values(docsRef.current))
+        if ((synced.includes(e.doc.path) || merged.includes(e.doc.path) || conflicts.length) && e.doc.draft === e.doc.saved) await load(e.doc.path);
       toast(
         [
           t("offline.sent", { count: synced.length + conflicts.length + merged.length }),
@@ -1145,9 +1161,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       if (source === "local") return;
       vaultChanged();
       void refreshTree();
-      const cur = docRef.current;
-      if (cur && paths.includes(cur.path)) {
-        if (cur.draft === cur.saved) void load(cur.path);
+      // 열린 문서(어느 칸이든)가 바뀌었으면 다시 읽는다. 저장 안 한 변경이 있으면 알리기만
+      for (const p of paths) {
+        const e = docsRef.current[p];
+        if (!e) continue;
+        if (e.doc.draft === e.doc.saved) void load(p);
         else toast(source === "sync" ? t("doc.changedBySync") : t("doc.changedOutside"), { kind: "warn", duration: 0 });
       }
     });
@@ -1164,9 +1182,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 붙여넣거나 끌어 놓은 파일을 워크스페이스 첨부 폴더(공통 설정, 트리에서 숨김)에 올린다(이름이 겹치면 " 2"…).
    * 넣을 링크: 이미지는 ![[이름]], 나머지는 [[이름]]. 같은 이름이 볼트에 또 있으면 전체 경로로.
    */
-  const uploadFiles = async (files: File[]): Promise<string[]> => {
-    if (!doc) return [];
-    const dir = attachmentDirFor(getVaultSettings(), wsOfPath(doc.path), uiLang);
+  const uploadFiles = async (files: File[], from = doc?.path): Promise<string[]> => {
+    if (!from) return [];
+    const dir = attachmentDirFor(getVaultSettings(), wsOfPath(from), uiLang);
     const taken = new Set(resolver.paths.map((p) => p.toLowerCase()));
     const vt = vaultText(vaultLang());
     const out: string[] = [];
@@ -1207,14 +1225,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return out;
   };
 
-  const saveConflictCopy = async () => {
-    if (!doc) return;
-    const copy = conflictCopyPath(doc.path, vaultText(vaultLang()).conflictCopy);
+  const saveConflictCopy = async (path: string) => {
+    const d = docsRef.current[path]?.doc;
+    if (!d) return;
+    const copy = conflictCopyPath(path, vaultText(vaultLang()).conflictCopy);
     try {
-      await api.write(copy, doc.draft, null);
+      await api.write(copy, d.draft, null);
       vaultChanged();
       await refreshTree();
-      await load(doc.path);
+      await load(path);
       toast(t("save.copySaved", { path: copy }), { kind: "success", action: { label: t("common.open"), run: () => void open(copy, { newTab: true }) } });
     } catch (e) {
       toastError(e);
@@ -1260,7 +1279,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
     focusTitle(path);
     await open(path, { newTab: true });
-    setMode((m) => (m === "preview" ? "edit" : m));
+    setFocusedMode((m) => (m === "preview" ? "edit" : m));
   };
 
   /** 템플릿 문서 원문(없으면 null) */
@@ -1317,7 +1336,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       if (!(e instanceof ApiError && e.status === 409)) return toastError(e);
     }
     await open(path);
-    setMode((m) => (m === "preview" ? "edit" : m));
+    setFocusedMode((m) => (m === "preview" ? "edit" : m));
   };
   const openDaily = (offset = 0) => openDailyOn(shiftDays(new Date(), offset));
 
@@ -1344,8 +1363,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (!migration) return;
     const moves = migration.moves;
     const dirtyDoc = moves.find((m) => {
-      const d = m.from === docRef.current?.path ? docRef.current : tabCache.current.get(m.from);
-      return d && d.draft !== d.saved;
+      const e = docsRef.current[m.from];
+      return e && e.doc.draft !== e.doc.saved;
     });
     if (dirtyDoc) return toast(t("doc.saveFirst", { name: stemOf(dirtyDoc.from) }), { kind: "error" });
     try {
@@ -1399,20 +1418,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  /** 문서 해시: 지금 문서면 저장한 뒤의 것, 아니면 읽어서 */
+  /** 문서 해시: 열린 문서면 저장한 뒤의 것, 아니면 읽어서 */
   const hashOf = async (path: string): Promise<string | null> => {
-    const cur = docRef.current;
-    if (cur?.path === path) {
-      if (!(await flush()) || docRef.current!.draft !== docRef.current!.saved) {
-        toast(t("doc.unsavedNoMove"), { kind: "error" });
+    if (docsRef.current[path]) {
+      const shown = docRef.current?.path === path;
+      if (!(await flush([path])) || docsRef.current[path].doc.draft !== docsRef.current[path].doc.saved) {
+        toast(shown ? t("doc.unsavedNoMove") : t("doc.saveTabFirst", { name: stemOf(path) }), { kind: "error" });
         return null;
       }
-      return docRef.current!.hash;
-    }
-    const cached = tabCache.current.get(path);
-    if (cached && cached.draft !== cached.saved) {
-      toast(t("doc.saveTabFirst", { name: stemOf(path) }), { kind: "error" });
-      return null;
+      return docsRef.current[path].doc.hash;
     }
     return (await api.read(path, { fresh: true })).hash;
   };
@@ -1420,28 +1434,21 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /** 이동이 끝난 뒤: 탭·열린 문서·기록의 경로를 바꾼다. content가 null이면(여러 개를 옮김) 그 문서를 다시 읽는다 */
   const afterMove = async (from: string, to: string, content: string | null, hash: string | null) => {
     moveFolds(from, to);
-    setTabsByScope((m) => {
-      const out: Record<string, string[]> = {};
-      for (const [k, list] of Object.entries(m)) out[k] = list.map((p) => (p === from ? to : p));
-      return out;
-    });
-    setLastByScope((m) => Object.fromEntries(Object.entries(m).map(([k, p]) => [k, p === from ? to : p])));
+    setAllLayouts((l) => renamePath(l, from, to));
     setRecent((r) => r.map((p) => (p === from ? to : p)));
     nav.current.list = nav.current.list.map((p) => (p === from ? to : p));
-    const cached = tabCache.current.get(from);
-    if (cached) {
-      tabCache.current.delete(from);
-      if (content !== null && hash !== null) tabCache.current.set(to, { ...cached, path: to, saved: content, draft: content, hash, seq: cached.seq + 1 });
-    }
-    const cur = docRef.current;
-    if (cur?.path === from) {
-      history.replaceState(null, "", `#/${encodeURIComponent(to)}`);
-      if (content === null || hash === null) await load(to);
-      // 내용이 그대로면(상대 링크를 고치지 않았으면) 에디터를 다시 만들지 않는다
-      else if (cur.draft === content) setDoc({ ...cur, path: to, saved: content, hash });
-      else setDoc({ ...cur, path: to, saved: content, draft: content, hash, seq: cur.seq + 1 });
-    }
-    if (aside === from) setAside(to);
+    const opened = !!docsRef.current[from];
+    updateDocs((s) =>
+      renameDoc(s, from, to, (d) =>
+        content === null || hash === null
+          ? d
+          : // 내용이 그대로면(상대 링크를 고치지 않았으면) 에디터를 다시 만들지 않는다
+            d.draft === content
+            ? { ...d, saved: content, hash }
+            : { ...d, saved: content, draft: content, hash, seq: d.seq + 1 },
+      ),
+    );
+    if (opened && (content === null || hash === null)) await load(to);
   };
 
   /** 첨부 하나 옮기기·이름 바꾸기. 이 첨부를 가리키던 링크는 서버가 같이 고친다 */
@@ -1488,7 +1495,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
     await flush();
     const inside = (p: string) => p === `${from}.md` || p.startsWith(from + "/");
-    const dirtyDoc = [docRef.current, ...tabCache.current.values()].find((d) => d && inside(d.path) && d.draft !== d.saved);
+    const dirtyDoc = Object.values(docsRef.current)
+      .map((e) => e.doc)
+      .find((d) => inside(d.path) && d.draft !== d.saved);
     if (dirtyDoc) {
       toast(t("doc.saveFirst", { name: stemOf(dirtyDoc.path) }), { kind: "error" });
       return false;
@@ -1557,18 +1566,17 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return true;
   };
 
-  /** 탭·기록에서 지운 노드의 문서를 뺀다 */
+  /** 탭·기록·저장소에서 지운 노드의 문서를 뺀다(저장 안 한 초안도: 남기면 자동 저장이 되살린다) */
   const forget = (gone: (p: string) => boolean) => {
-    for (const p of tabCache.current.keys()) if (gone(p)) tabCache.current.delete(p);
-    setTabsByScope((m) => Object.fromEntries(Object.entries(m).map(([k, list]) => [k, list.filter((p) => !gone(p))])));
+    setAllLayouts((l) => removePaths(l, gone));
+    updateDocs((s) => {
+      const dead = Object.keys(s).filter(gone);
+      if (!dead.length) return s;
+      const out = { ...s };
+      for (const p of dead) delete out[p];
+      return out;
+    });
     setRecent((r) => r.filter((p) => !gone(p)));
-    const cur = docRef.current;
-    if (cur && gone(cur.path)) {
-      setDoc(null);
-      history.replaceState(null, "", "#");
-      const rest = tabsRef.current.filter((p) => !gone(p));
-      if (rest.length) showDoc(rest[rest.length - 1]);
-    }
   };
 
   /**
@@ -1705,19 +1713,22 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const showRevision = async (commit: CommitInfo) => {
     if (!doc) return;
     try {
-      setRevision({ commit, content: await api.revision(doc.path, commit.rev) });
+      setRevision({ path: doc.path, commit, content: await api.revision(doc.path, commit.rev) });
     } catch (e) {
       toastError(e);
     }
   };
 
-  const rollback = async () => {
-    if (!doc || !revision) return;
-    if (dirty && !(await confirmDialog(t("history.discardRollback"), t("history.rollback")))) return;
+  /** 그 칸이 보고 있는 과거 판으로 되돌린다 */
+  const rollback = async (pane: number) => {
+    const rev = revisionOf(pane);
+    const d = rev ? docsRef.current[rev.path]?.doc : undefined;
+    if (!rev || !d) return;
+    if (d.draft !== d.saved && !(await confirmDialog(t("history.discardRollback"), t("history.rollback")))) return;
     try {
-      await api.rollback(doc.path, revision.commit.rev, doc.hash);
+      await api.rollback(d.path, rev.commit.rev, d.hash);
       vaultChanged();
-      await load(doc.path);
+      await load(d.path);
       toast(t("history.rolledBack"), { kind: "success" });
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) toast(t("doc.changedReload"), { kind: "error" });
@@ -1725,21 +1736,25 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  /** 위젯에서 문서를 바꿨을 때: 지금 연 문서면(저장 안 한 변경이 없을 때) 다시 불러온다. */
+  /** 위젯에서 문서를 바꿨을 때: 열린 문서면(저장 안 한 변경이 없을 때) 다시 불러온다. */
   const onWidgetChanged = (path: string) => {
     setVaultVersion((v) => v + 1);
-    if (doc?.path === path) {
-      if (doc.draft === doc.saved) void load(path);
+    const d = docsRef.current[path]?.doc;
+    if (d) {
+      if (d.draft === d.saved) void load(path);
       else toast(t("doc.changedByWidget"), { kind: "warn", duration: 0 });
     }
   };
 
-  const followLinkRef = useRef<(target: string, anchor: { heading?: string; block?: string } | null, aside: boolean, page?: string) => void>(() => undefined);
-  /** 링크 대상 열기: Mod+클릭이면 옆 칸 */
-  const followLink = (target: string, anchor: { heading?: string; block?: string } | null, aside: boolean, page?: string) => {
+  const followLinkRef = useRef<(target: string, anchor: { heading?: string; block?: string } | null, other: boolean, page?: string) => void>(() => undefined);
+  /** 링크 대상 열기: Mod+클릭이면 다른 칸 */
+  const followLink = (target: string, anchor: { heading?: string; block?: string } | null, other: boolean, page?: string) => {
     if (target.toLowerCase().endsWith(".md")) {
-      if (aside) return setAside(target);
-      if (anchor && target === doc?.path) scrollToAnchor(anchor);
+      if (other) {
+        if (anchor) setPendingAnchor({ path: target, ...anchor });
+        return void openOther(target);
+      }
+      if (anchor && target === doc?.path) paneApis[curLayout().focused].current?.scrollToAnchor(anchor);
       else {
         if (anchor) setPendingAnchor({ path: target, ...anchor });
         void open(target);
@@ -1769,79 +1784,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         .catch(toastError);
     });
   };
-
-  const onPreviewClick = (e: MouseEvent<HTMLDivElement>) => {
-    const fold = (e.target as HTMLElement).closest<HTMLElement>(".pv-fold");
-    if (fold && doc && !revision) {
-      e.preventDefault();
-      togglePreviewFold(doc.path, doc.draft, Number(fold.dataset.foldLine));
-      return;
-    }
-    const box = (e.target as HTMLElement).closest<HTMLInputElement>("input.task[data-task-line]");
-    if (box) {
-      // 체크박스는 편집 중인 초안을 바꾼다(저장해야 반영). 과거 버전 보기에서는 바꾸지 않는다.
-      if (revision || !editorHandle.current) {
-        e.preventDefault();
-        return;
-      }
-      editorHandle.current.toggleTask(Number(box.dataset.taskLine), box.checked);
-      return;
-    }
-    // 각주 등 문서 안 앵커(#fn1): 주소의 #/문서 경로를 건드리지 않고 그 위치로 스크롤
-    const localA = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]:not([data-wikilink])');
-    if (localA) {
-      const id = decodeURIComponent(localA.getAttribute("href")!.slice(1));
-      if (!id.startsWith("/")) {
-        e.preventDefault();
-        const el = id ? previewRef.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`) : null;
-        el?.scrollIntoView({ block: "center" });
-        return;
-      }
-    }
-    const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-wikilink]");
-    if (!a) return;
-    e.preventDefault();
-    followLinkEl(a, e.ctrlKey || e.metaKey);
-  };
-
-  /**
-   * [[문서#제목]]·[[문서#^블록]]: 그 위치로 가서 잠깐 표시한다. 접혀 있으면 편다.
-   * 편집 화면이면 에디터의 그 줄로, 미리보기면 미리보기의 그 블록으로.
-   */
-  const scrollToAnchor = (anchor: { heading?: string; block?: string }) => {
-    const cur = docRef.current;
-    if (!cur) return;
-    if (modeRef.current !== "preview" && !revisionRef.current) {
-      let line = 0;
-      if (anchor.block) line = blockRange(cur.draft, anchor.block)?.start ?? 0;
-      else line = headings(cur.draft).find((h) => h.text.toLowerCase() === (anchor.heading ?? "").toLowerCase())?.line ?? 0;
-      if (line) return editorHandle.current?.gotoLine(line);
-    }
-    const root = previewRef.current;
-    if (!root) return;
-    const find = () =>
-      anchor.block
-        ? root.querySelector<HTMLElement>(`[data-block="${CSS.escape(anchor.block)}"]`)
-        : root.querySelector<HTMLElement>(`[data-heading="${CSS.escape(anchor.heading ?? "")}"]`);
-    let el = find();
-    if (!el) return;
-    // 접힌 곳 안이면 편다(겹쳐 접힌 것까지)
-    for (let i = 0; i < 6 && !revisionRef.current && revealInPreview(el, cur.path, cur.draft); i++) {
-      applyPreviewFolds(root, cur.path, cur.draft);
-      el = find() ?? el;
-    }
-    el.scrollIntoView({ block: "start" });
-    el.classList.add("anchor-flash");
-    setTimeout(() => el!.classList.remove("anchor-flash"), 1600);
-  };
-
-  const previewSource = revision ? (revision.content ?? "") : (doc?.draft ?? "");
-  const rendered = useMemo(
-    // 속성 화면이 열려 있으면 미리보기에서는 프런트매터 상자를 빼고 본다(같은 내용을 두 번 보이지 않게)
-    () => (doc ? renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc }) : { html: "", widgets: [] }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [previewSource, resolver, doc?.path, assetVersion, prefs.propsInDoc],
-  );
 
   // ── 패널
   const toggleLeft = () => {
@@ -1889,7 +1831,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (d && d.draft === d.saved && !d.virtual) void load(d.path);
   };
 
-  const toggleMode = () => setMode((m) => (m === "preview" ? "edit" : "preview"));
+  const toggleMode = () => setFocusedMode((m) => (m === "preview" ? "edit" : "preview"));
 
   /** 워크스페이스 만들기·이름 바꾸기·순서(설정 → 워크스페이스) */
   const workspaceOps: WorkspaceOps = {
@@ -1926,8 +1868,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           ["vault", "workspaceOrder"],
           s.workspaceOrder.map((w) => (w === from ? n : w)),
         );
-      setTabsByScope((m) => {
-        const next = { ...m, [n]: (m[from] ?? []).map((p) => (p.startsWith(from + "/") || p === `${from}.md` ? moveNodePath(p, from, n) : p)) };
+      // 문서 경로는 afterMove 가 바꿨다. 워크스페이스 이름으로 기억하던 배치만 새 이름으로 옮긴다
+      setLayouts((m) => {
+        if (!m[from]) return m;
+        const next = { ...m, [n]: m[from] };
         delete next[from];
         return next;
       });
@@ -1976,10 +1920,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       run: () =>
         void (async () => {
           await flush();
-          if (docRef.current) tabCache.current.set(docRef.current.path, docRef.current);
-          setDoc(null);
+          // 탭은 그대로 두고 활성 칸에서 보던 문서만 내린다
+          setLayout((l) => ({ ...l, panes: l.panes.map((p, i) => (i === l.focused ? { ...p, active: null } : p)) }));
           closeSettings(false);
-          history.replaceState(null, "", "#");
         })(),
     },
     ...wsNames
@@ -2030,7 +1973,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           },
         ]
       : []),
-    { id: "close-tab", group: g.tab, label: t("cmd.closeTab"), keys: "Mod+W", webKeys: "Alt+W", run: () => doc && void closeTab(doc.path) },
+    {
+      id: "close-tab",
+      group: g.tab,
+      label: t("cmd.closeTab"),
+      keys: "Mod+W",
+      webKeys: "Alt+W",
+      run: () => doc && void closeTab(curLayout().focused, doc.path),
+    },
     {
       id: "reopen-tab",
       group: g.tab,
@@ -2049,7 +1999,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       webKeys: `Alt+${i + 1}`,
       hidden: true,
       run: () => {
-        const list = tabsRef.current;
+        const list = curLayout().panes[curLayout().focused]?.tabs ?? [];
         const p = i === 8 ? list[list.length - 1] : list[i];
         if (p) void open(p);
       },
@@ -2061,15 +2011,33 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { id: "fold-all", group: g.fold, label: t("cmd.foldAll"), keys: "Ctrl+Alt+[", run: () => editorHandle.current?.fold("all") },
     { id: "unfold-all", group: g.fold, label: t("cmd.unfoldAll"), keys: "Ctrl+Alt+]", run: () => editorHandle.current?.fold("unfold-all") },
     { id: "fold-level", group: g.fold, label: t("cmd.foldLevel"), run: () => editorHandle.current?.fold("level") },
-    { id: "mode-edit", group: g.view, label: t("cmd.modeEdit"), run: () => setMode("edit") },
-    { id: "mode-split", group: g.view, label: t("cmd.modeSplit"), run: () => setMode("split") },
-    { id: "mode-preview", group: g.view, label: t("cmd.modePreview"), run: () => setMode("preview") },
+    { id: "mode-edit", group: g.view, label: t("cmd.modeEdit"), run: () => setFocusedMode("edit") },
+    { id: "mode-split", group: g.view, label: t("cmd.modeSplit"), run: () => setFocusedMode("split") },
+    { id: "mode-preview", group: g.view, label: t("cmd.modePreview"), run: () => setFocusedMode("preview") },
     {
-      id: "aside",
+      id: "split",
       group: g.view,
-      label: aside ? t("cmd.asideClose") : t("cmd.asideOpen"),
+      label: layout.panes.length === 2 ? t("cmd.splitClose") : t("cmd.splitOpen"),
       keys: "Mod+\\",
-      run: () => setAside((a) => (a ? null : (doc?.path ?? null))),
+      run: () => {
+        if (curLayout().panes.length === 2) return setLayout(mergePanes);
+        const cur = docRef.current;
+        if (cur && canSplit(centerWidthRef.current, isNarrowRef.current)) void open(cur.path, { pane: 1, newTab: true });
+      },
+    },
+    { id: "move-tab-other", group: g.tab, label: t("cmd.moveTabOther"), keys: "Mod+Shift+.", run: () => moveActiveTabOther() },
+    {
+      id: "focus-other-pane",
+      group: g.view,
+      label: t("cmd.focusOtherPane"),
+      keys: "Mod+Shift+,",
+      run: () => {
+        const l = curLayout();
+        if (l.panes.length < 2) return;
+        const other = 1 - l.focused;
+        setLayout((x) => focusPane(x, other));
+        setTimeout(() => paneHandles[other].current?.focus(), 0);
+      },
     },
     // 패널 키는 접기 기본 키(Ctrl+Alt+[ 등, CodeMirror foldKeymap)와 겹치지 않게
     { id: "left", group: g.view, label: t("cmd.left"), keys: "Mod+Shift+E", run: toggleLeft },
@@ -2117,7 +2085,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   function cycleTab(dir: number) {
-    const list = tabsRef.current;
+    const list = curLayout().panes[curLayout().focused]?.tabs ?? [];
     if (list.length < 2 || !docRef.current) return;
     const i = list.indexOf(docRef.current.path);
     void open(list[(i + dir + list.length) % list.length]);
@@ -2144,7 +2112,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   // 빠른 전환: 지금 워크스페이스의 문서(열린 탭, 최근 문서가 먼저)
   const fileItems = useMemo<PaletteItem[]>(() => {
     const docs = resolver.paths.filter((p) => /\.md$/i.test(p) && !isVaultSettingsPath(p) && (!scope || inWorkspace(p, scope)));
-    const order = (p: string) => (tabs.includes(p) ? 0 : recent.includes(p) ? 1 + recent.indexOf(p) / 100 : 2);
+    const order = (p: string) => (allTabs.includes(p) ? 0 : recent.includes(p) ? 1 + recent.indexOf(p) / 100 : 2);
     return docs
       .sort((a, b) => order(a) - order(b) || a.localeCompare(b, "ko"))
       .map((p) => {
@@ -2161,7 +2129,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         };
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolver, tabs, recent, daily, iconMap, prefs.showIcons, prefs.dailyFriendly, scope, lang]);
+  }, [resolver, allTabs.join("\n"), recent, daily, iconMap, prefs.showIcons, prefs.dailyFriendly, scope, lang]);
 
   const commandItems: PaletteItem[] = commands
     .filter((c) => !c.hidden)
@@ -2194,38 +2162,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     [rightOpen, drawer, rightTab, doc?.draft],
   );
 
-  // 수식·다이어그램·문서 임베드는 그린 뒤에 채운다(enhance.ts)
-  useEffect(() => {
-    if (!previewRef.current || !doc) return;
-    return enhance(previewRef.current, { resolver, docPath: doc.path });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, mode]);
-
-  // 접기: 미리보기에 단추를 달고 기억한 대로 접는다. 에디터·개요에서 바꾸면 따라간다
+  // 개요의 접힘 표시: 에디터·미리보기에서 바꾸면 따라간다
   useEffect(() => onFoldsChange((path) => path === docRef.current?.path && setFoldVersion((v) => v + 1)), []);
-  useLayoutEffect(() => {
-    if (!previewRef.current || !doc || revision) return;
-    applyPreviewFolds(previewRef.current, doc.path, doc.draft);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, mode, foldVersion, revision]);
-
-  // 다른 문서의 제목·블록 링크나 검색 결과로 왔으면 그 위치로
-  useEffect(() => {
-    if (!pendingAnchor || doc?.path !== pendingAnchor.path) return;
-    const anchor = pendingAnchor;
-    setPendingAnchor(null);
-    // 그린 직후(임베드·다이어그램이 자리를 잡을 틈을 조금 두고)
-    setTimeout(() => {
-      if (anchor.line) editorHandle.current?.gotoLine(anchor.line, anchor.text);
-      else scrollToAnchor(anchor);
-    }, 80);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, doc?.path, pendingAnchor]);
-
-  // innerHTML이 바뀐 뒤 위젯 자리를 찾아 React 포털로 위젯을 그린다.
-  useLayoutEffect(() => {
-    setWidgetSlots(Array.from(previewRef.current?.querySelectorAll<HTMLElement>(".widget-slot") ?? []));
-  }, [rendered.html, mode]);
 
   const treeActions: TreeActions = {
     open: (n, o) => void openNode(n, o),
@@ -2239,7 +2177,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     remove: (p, kind) => void (kind === "node" ? deleteNode(p) : deleteAttachment(p)),
     copyPath: (p) => void copyText(p, "path"),
     copyLink: (p) => void copyText(`[[${linkTo(p)}]]`, "link"),
-    openAside: (p) => setAside(p),
+    openOther: (p) => void openOther(p),
     pickIcon: (n, at) => setIconPick({ ...at, node: n.path }),
   };
 
@@ -2669,7 +2607,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 <button
                   onClick={() => {
                     editorHandle.current?.gotoLine(h.line);
-                    scrollToAnchor({ heading: h.text.toLowerCase() });
+                    paneApis[layout.focused].current?.scrollToAnchor({ heading: h.text.toLowerCase() });
                   }}
                 >
                   {h.text}
@@ -2749,8 +2687,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           },
         },
         "-",
-        { label: t("cmd.asideOpen"), icon: Columns2, keys: keyOf("aside"), run: () => setAside(doc.path) },
-        { label: t("cmd.modeSplit"), run: () => setMode("split") },
+        { label: t("doc.openOther"), icon: Columns2, keys: keyOf("split"), run: () => void openOther(doc.path) },
+        { label: t("cmd.modeSplit"), run: () => setFocusedMode("split") },
         {
           label: t("cmd.reveal"),
           icon: LocateFixed,
@@ -2763,14 +2701,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         "-",
         { label: t("tree.deleteNode"), icon: Trash2, danger: true, disabled: doc.generated || isWsDoc, run: () => void deleteNode(docNode) },
       ]
-    : [];
-
-  /** 빵부스러기: 상위 노드들(누르면 그 노드를 연다) */
-  const crumbs = doc
-    ? docNode
-        .split("/")
-        .slice(0, -1)
-        .map((_, i, all) => all.slice(0, i + 1).join("/"))
     : [];
 
   const saveLabel = (() => {
@@ -2838,7 +2768,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           </span>
           {mode !== "preview" && !revision && (
             <span className="status-item muted">
-              {cursor.line}:{cursor.col}
+              {cursors[layout.focused].line}:{cursors[layout.focused].col}
             </span>
           )}
           <button
@@ -2853,25 +2783,72 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </footer>
   );
 
-  const tabBar = (
+  /** 탭을 끌어 옮길 때 dataTransfer 에 싣는 형식(트리의 끌기와 섞이지 않게 따로) */
+  const TAB_DRAG = "application/x-keyring-tab";
+  /** 칸 하나의 탭 바(칸이 없으면 빈 탭 바). 칸이 둘이면 탭을 끌어 다른 칸의 탭 바에 놓아 옮긴다 */
+  const renderTabBar = (pane: number) => (
     <nav className="tabbar" aria-label={t("tab.label")}>
-      <IconButton className="nav-toggle" icon={MenuIcon} label={t("tab.docList")} onClick={() => setDrawer((d) => (d === "left" ? null : "left"))} size={18} />
-      <div className="tab-list" role="tablist">
-        {tabs.map((tp) => {
-          const cached = tp === doc?.path ? doc : tabCache.current.get(tp);
-          const isDirty = !!cached && cached.draft !== cached.saved;
+      {pane === 0 && (
+        <IconButton
+          className="nav-toggle"
+          icon={MenuIcon}
+          label={t("tab.docList")}
+          onClick={() => setDrawer((d) => (d === "left" ? null : "left"))}
+          size={18}
+        />
+      )}
+      <div
+        className={`tab-list${tabDrop === pane ? " drop-target" : ""}`}
+        role="tablist"
+        onDragOver={(e) => {
+          // 끌기로는 칸을 새로 만들지 않는다(칸이 둘일 때만)
+          if (layout.panes.length < 2 || !e.dataTransfer.types.includes(TAB_DRAG)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (tabDrop !== pane) setTabDrop(pane);
+        }}
+        onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setTabDrop(null)}
+        onDrop={(e) => {
+          setTabDrop(null);
+          const raw = e.dataTransfer.getData(TAB_DRAG);
+          if (!raw) return;
+          e.preventDefault();
+          const { pane: from, path } = JSON.parse(raw) as { pane: number; path: string };
+          if (from !== pane) setLayout((l) => moveTab(l, from, pane, path));
+        }}
+      >
+        {(layout.panes[pane]?.tabs ?? []).map((tp) => {
+          const cached = docs[tp]?.doc;
+          const tabDirty = !!cached && cached.draft !== cached.saved;
+          const on = tp === layout.panes[pane]?.active;
           return (
-            <span key={tp} className={`tab${tp === doc?.path ? " on" : ""}`} {...tipProps({ label: tp })} role="tab" aria-selected={tp === doc?.path}>
-              <button className="tab-name" onClick={() => void open(tp)} onAuxClick={(e) => e.button === 1 && void closeTab(tp)}>
+            <span
+              key={tp}
+              className={`tab${on ? " on" : ""}`}
+              {...tipProps({ label: tp })}
+              role="tab"
+              aria-selected={on}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData(TAB_DRAG, JSON.stringify({ pane, path: tp }));
+              }}
+              onDragEnd={() => setTabDrop(null)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setTabMenu({ x: e.clientX, y: e.clientY, pane, path: tp });
+              }}
+            >
+              <button className="tab-name" onClick={() => void open(tp, { pane })} onAuxClick={(e) => e.button === 1 && void closeTab(pane, tp)}>
                 <DocIcon icon={iconOf(tp)} />
                 {docLabel(tp)}
               </button>
-              {isDirty ? <span className="tab-dirty" aria-label={t("status.unsaved")} /> : null}
+              {tabDirty ? <span className="tab-dirty" aria-label={t("status.unsaved")} /> : null}
               <button
                 className="tab-close"
                 aria-label={t("tab.closeName", { name: stemOf(tp) })}
                 {...tipProps({ label: t("cmd.closeTab"), keys: keyOf("close-tab") })}
-                onClick={() => void closeTab(tp)}
+                onClick={() => void closeTab(pane, tp)}
               >
                 <X size={13} aria-hidden />
               </button>
@@ -2892,186 +2869,71 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </nav>
   );
 
-  const center = doc ? (
-    <>
-      <header className="doc-head">
-        <nav className="crumbs" aria-label={t("doc.crumbs")}>
-          {crumbs.map((c) => (
-            <span key={c} className="crumb">
-              <button className="crumb-btn" onClick={() => void openNode(c)}>
-                {iconOf(`${c}.md`) && <DocIcon icon={iconOf(`${c}.md`)} />}
-                {stemOf(c)}
-              </button>
-              <ChevronRight size={12} aria-hidden />
-            </span>
-          ))}
-          <span className="crumb current">{stemOf(doc.path)}</span>
-        </nav>
-        {docDaily && (
-          <span className="daily-nav" aria-label={t("daily.nav")}>
-            <IconButton icon={ChevronLeft} label={t("cmd.dailyPrev")} onClick={() => dailyStep(-1)} size={16} />
-            <button type="button" className="daily-nav-date" {...tipProps({ label: t("cmd.daily") })} onClick={() => void openDaily(0)}>
-              {friendlyDate(docDaily.date, new Date(), lang)}
-            </button>
-            <IconButton icon={ChevronRight} label={t("cmd.dailyNext")} onClick={() => dailyStep(1)} size={16} />
-          </span>
-        )}
-        <div className="doc-tools">
-          <Segmented
-            label={t("doc.view")}
-            value={revision ? "preview" : mode}
-            onChange={(m) => setMode(m)}
-            options={[
-              {
-                value: "edit",
-                label: <Pencil size={15} aria-label={t("cmd.modeEditShort")} />,
-                title: `${t("cmd.modeEditShort")} (${formatCombo(keyOf("toggle-mode"))})`,
-              },
-              { value: "split", label: <Columns2 size={15} aria-label={t("cmd.modeSplitShort")} />, title: t("cmd.modeSplit") },
-              {
-                value: "preview",
-                label: <Eye size={15} aria-label={t("cmd.modePreviewShort")} />,
-                title: `${t("cmd.modePreviewShort")} (${formatCombo(keyOf("toggle-mode"))})`,
-              },
-            ]}
-          />
-          <IconButton
-            icon={SlidersHorizontal}
-            label={propCount ? t("doc.propsCount", { count: propCount }) : t("doc.props")}
-            active={propsShown}
-            badge={!propsShown && propCount ? propCount : undefined}
-            onClick={() => toggleRight("props")}
-            size={16}
-          />
-          <IconButton
-            icon={ListTree}
-            label={t("doc.rightPanel")}
-            keys={keyOf("right")}
-            active={rightOpen}
-            badge={!rightOpen && linkCount ? linkCount : undefined}
-            onClick={() => toggleRight()}
-            size={16}
-          />
-          <IconButton
-            icon={Ellipsis}
-            label={t("doc.menu")}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              setDocMenu({ x: r.right - 220, y: r.bottom + 4 });
-            }}
-            size={16}
-          />
-        </div>
-      </header>
+  /** 칸마다 똑같이 넘기는 값·동작 */
+  const paneCtx: PaneContext = {
+    prefs,
+    lang,
+    local,
+    resolver,
+    resolverRef,
+    daily,
+    linkCandidates,
+    vaultVersion,
+    assetVersion,
+    iconOf,
+    docLabel,
+    keyOf,
+    open,
+    openNode: (node) => void openNode(node),
+    load,
+    save,
+    onDraft: (path, draft) => patchDoc(path, (prev) => (prev.draft === draft ? prev : { ...prev, draft })),
+    onChanges: (pane, path, changes, key) => {
+      // 같은 문서를 같은 판으로 보고 있는 다른 칸의 에디터에 같은 변경을 넣는다(원본은 저장소 하나, 에디터는 칸마다).
+      // 배치(layoutsRef)는 즉시 바뀌고 에디터는 다시 그린 뒤에 바뀌므로, 칸이 아니라 그 칸의 에디터가 어느 문서의 것인지로 고른다
+      const editorKeys = paneHandles.map((h) => h.current?.docKey ?? null);
+      for (const j of mirrorTargets(pane, path, key, curLayout().panes, editorKeys))
+        paneHandles[j].current?.applyChanges(changes, docsRef.current[path]?.doc.draft ?? "");
+    },
+    uploadFiles,
+    renameNode,
+    setIconPick,
+    followLinkEl,
+    onWidgetChanged,
+    showRight,
+    toggleRight,
+    propsShown,
+    rightOpen,
+    linkCount,
+    setRevision: (pane, rev) =>
+      setRevisions((rs) => {
+        const next = [...rs];
+        next[pane] = rev;
+        return next;
+      }),
+    saveConflictCopy,
+    rollback,
+    setMode: (pane, m) => setLayout((l) => setPaneMode(l, pane, m)),
+    setCursor: (pane, c) =>
+      setCursors((cs) => {
+        if (cs[pane]?.line === c.line && cs[pane]?.col === c.col) return cs;
+        const next = [...cs];
+        next[pane] = c;
+        return next;
+      }),
+    setDocMenu,
+    dailyStep,
+    openDaily: (offset) => void openDaily(offset),
+    clearTitleFocus: () => setTitleFocus(null),
+    setPendingAnchor,
+  };
 
-      {doc.cachedOffline && <div className="banner info">{t("doc.cachedOffline")}</div>}
-      {doc.virtual && <div className="banner info">{t("node.emptyBanner")}</div>}
-      {doc.generated && <div className="banner generated">{local ? t("doc.generatedApp") : t("doc.generatedServer")}</div>}
-      {conflict && (
-        <div className="banner conflict" role="alert">
-          {conflict.currentHash === null ? t("doc.deletedElsewhere") : local ? t("doc.conflictLocal") : t("doc.conflictServer")}
-          <button onClick={saveConflictCopy}>{t("doc.saveCopy")}</button>
-          {conflict.currentHash !== null && (
-            <button onClick={async () => (await confirmDialog(local ? t("doc.reloadAskLocal") : t("doc.reloadAskServer"), t("doc.reload"))) && load(doc.path)}>
-              {local ? t("doc.reloadLocal") : t("doc.reloadServer")}
-            </button>
-          )}
-        </div>
-      )}
-      {revision && (
-        <div className="banner revision">
-          {t("history.viewing", { rev: revision.commit.rev.slice(0, 7), author: revision.commit.author, date: fmtDateTime(revision.commit.date) })}
-          {revision.content !== null && <button onClick={rollback}>{t("history.rollbackThis")}</button>}
-          <button onClick={() => setRevision(null)}>{t("common.close")}</button>
-        </div>
-      )}
-
-      <div className="doc-area">
-        <div
-          className={`panes mode-${revision ? "preview" : mode}${prefs.readableWidth ? " readable" : ""} font-${prefs.editorFont}`}
-          style={{ ["--editor-size" as string]: `${prefs.editorSize}px` }}
-        >
-          <div className="pane edit-pane">
-            <div className="page">
-              <InlineTitle
-                path={doc.path}
-                readOnly={doc.generated || !!revision || isWsDoc}
-                focusSignal={titleFocus?.path === doc.path ? titleFocus.n : 0}
-                daily={docDaily}
-                icon={docIcon}
-                onIcon={doc.generated || revision ? undefined : (at) => setIconPick({ ...at, node: docNode })}
-                onFocused={() => setTitleFocus(null)}
-                onRename={(stem) => renameNode(docNode, stem)}
-                onDone={() => editorHandle.current?.focus()}
-              />
-              <Editor
-                docKey={`${doc.path}#${doc.seq}`}
-                initial={doc.draft}
-                onChange={(draft) => setDoc((prev) => (prev ? { ...prev, draft } : prev))}
-                onSave={() => void save()}
-                linkCandidates={() => linkCandidates}
-                handle={editorHandle}
-                onFiles={uploadFiles}
-                live={live}
-                lineNumbers={prefs.lineNumbers}
-                foldFrontmatter
-                onShowProps={() => showRight("props")}
-                foldKey={revision ? undefined : doc.path}
-                renderContext={() => (docRef.current ? { resolver: resolverRef.current, docPath: docRef.current.path, onLink: followLinkEl } : null)}
-                readOnly={doc.generated}
-                onCursor={(line, col) => setCursor({ line, col })}
-                onBlur={() => prefs.autosave && void saveRef.current({ auto: true })}
-              />
-            </div>
-          </div>
-          <div className="pane preview-pane" onClick={onPreviewClick}>
-            <div className="page">
-              {(mode === "preview" || revision) && (
-                <h1 className="inline-title static">
-                  {prefs.showIcons && <DocIcon icon={docIcon} />}
-                  {docLabel(doc.path, { plain: true })}
-                </h1>
-              )}
-              <div className="markdown-body" ref={previewRef} dangerouslySetInnerHTML={{ __html: rendered.html }} />
-              {widgetSlots.map((el, i) =>
-                rendered.widgets[i] === undefined
-                  ? null
-                  : createPortal(<Widget source={rendered.widgets[i]} onOpen={open} onChanged={onWidgetChanged} />, el, `${i}:${rendered.widgets[i]}`),
-              )}
-              {prefs.backlinksInDoc && !revision && refs && (
-                <References
-                  refs={refs}
-                  onOpen={(p, anchor) => {
-                    if (anchor) setPendingAnchor({ path: p, ...(anchor.startsWith("^") ? { block: anchor.slice(1) } : { heading: anchor.toLowerCase() }) });
-                    void open(p);
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-        {aside && (
-          <AsidePreview
-            path={aside}
-            resolver={resolver}
-            version={vaultVersion}
-            live={aside === doc.path ? doc.draft : undefined}
-            onNavigate={setAside}
-            onEdit={(p) => {
-              setAside(null);
-              void open(p, { newTab: true });
-            }}
-            onClose={() => setAside(null)}
-          />
-        )}
-      </div>
-    </>
-  ) : (
+  const home = (
     <Home
       workspace={allWs ? null : ws}
       wsIcon={allWs ? null : wsIcon(ws)}
       recent={recent.filter((p) => resolver.paths.includes(p) && inScope(p))}
-      tabs={tabs}
+      tabs={allTabs}
       onOpen={(p) => void open(p)}
       onOpenWorkspace={() => void openNode(ws)}
       onNew={() => void createDoc()}
@@ -3086,6 +2948,66 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       local={local}
       keyOf={keyOf}
     />
+  );
+
+  const two = layout.panes.length === 2;
+  /** 왼쪽 칸 폭(두 칸일 때). 칸마다 최소 폭을 지킨다 */
+  const leftPaneWidth = Math.round(Math.min(Math.max(prefs.splitRatio * centerWidth, MIN_PANE_WIDTH), Math.max(centerWidth - MIN_PANE_WIDTH, MIN_PANE_WIDTH)));
+  const renderPane = (pane: number) => {
+    const p = layout.panes[pane];
+    const e = p.active ? docs[p.active] : undefined;
+    const focused = pane === layout.focused;
+    return (
+      <section
+        key={pane}
+        className={`split-pane${focused ? " focused" : ""}`}
+        aria-label={two ? t("pane.label", { n: pane + 1 }) : undefined}
+        style={two && pane === 0 ? { flex: `0 0 ${leftPaneWidth}px` } : undefined}
+        onFocusCapture={() => !focused && setLayout((l) => focusPane(l, pane))}
+        onMouseDownCapture={() => !focused && setLayout((l) => focusPane(l, pane))}
+      >
+        {renderTabBar(pane)}
+        {e ? (
+          <DocPane
+            pane={pane}
+            entry={e}
+            mode={p.mode}
+            focused={focused}
+            revision={revisionOf(pane)}
+            handle={paneHandles[pane]}
+            paneApi={paneApis[pane]}
+            titleFocus={focused && titleFocus?.path === e.doc.path ? titleFocus.n : 0}
+            pendingAnchor={focused ? pendingAnchor : null}
+            ctx={paneCtx}
+          />
+        ) : (
+          home
+        )}
+      </section>
+    );
+  };
+  const center = layout.panes.length ? (
+    <div className={`split-root${two ? " two" : ""}`}>
+      {renderPane(0)}
+      {two && !isNarrow && (
+        <Resizer
+          side="left"
+          className="split-divider"
+          label={t("pane.width")}
+          width={leftPaneWidth}
+          min={MIN_PANE_WIDTH}
+          max={Math.max(centerWidth - MIN_PANE_WIDTH, MIN_PANE_WIDTH)}
+          onChange={(w) => centerWidth > 0 && setPrefs({ splitRatio: w / centerWidth })}
+          onReset={() => setPrefs({ splitRatio: DEFAULT_PREFS.splitRatio })}
+        />
+      )}
+      {two && renderPane(1)}
+    </div>
+  ) : (
+    <>
+      {renderTabBar(0)}
+      {home}
+    </>
   );
 
   return (
@@ -3110,8 +3032,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             onReset={() => setPrefs({ leftWidth: DEFAULT_PREFS.leftWidth })}
           />
         )}
-        <main className="center">
-          {tabBar}
+        <main className="center" ref={centerRef}>
           {center}
         </main>
         {doc && ((rightOpen && !isNarrow) || drawer === "right") && (
@@ -3133,6 +3054,27 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         {statusBar}
 
         {docMenu && <Menu at={docMenu} items={docMenuItems} onClose={() => setDocMenu(null)} />}
+        {tabMenu && (
+          <Menu
+            at={tabMenu}
+            label={t("tab.menu")}
+            items={[
+              { label: t("cmd.closeTab"), icon: X, keys: keyOf("close-tab"), run: () => void closeTab(tabMenu.pane, tabMenu.path) },
+              // 다른 칸으로: 칸이 하나면 둘째 칸을 만들며 옮긴다. 가운데가 좁아 나눌 수 없으면 숨긴다
+              ...(canSplit(centerWidth, isNarrow)
+                ? [
+                    {
+                      label: t("tab.moveOther"),
+                      icon: Columns2,
+                      keys: tabMenu.pane === layout.focused ? keyOf("move-tab-other") : undefined,
+                      run: () => setLayout((l) => moveTab(l, tabMenu.pane, l.panes.length === 2 ? 1 - tabMenu.pane : 1, tabMenu.path)),
+                    },
+                  ]
+                : []),
+            ]}
+            onClose={() => setTabMenu(null)}
+          />
+        )}
         {wsMenu && <Menu at={wsMenu} items={wsMenuItems} onClose={() => setWsMenu(null)} />}
 
         {reviewOpen && (

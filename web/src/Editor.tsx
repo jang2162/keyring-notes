@@ -22,13 +22,14 @@ import {
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState, type StateEffect } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Transaction, type ChangeSet, type StateEffect } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 import { t } from "./i18n";
+import { canMirror, mirrored } from "./mirror";
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -40,6 +41,8 @@ export interface LinkCandidate {
 }
 
 export interface EditorHandle {
+  /** 이 에디터를 만든 문서(docKey). 칸의 배치가 바뀌어도 다시 만들기 전까지는 옛 문서의 것이다 */
+  readonly docKey: string;
   /** 줄(1부터)의 할 일 체크 상태를 바꾼다. 에디터 실행 취소 기록에 남는다. */
   toggleTask(line: number, done: boolean): void;
   /** 그 줄(1부터)로 커서를 옮기고 보이게 한다. text가 그 줄(또는 가까운 줄)에 있으면 그 글을 고른다 */
@@ -48,6 +51,8 @@ export interface EditorHandle {
   insertText(text: string, opts?: { keepSelection?: boolean; ownLine?: boolean }): void;
   /** 내용을 바꾼다(속성 입력 화면). 달라진 부분만 바꿔 커서·실행 취소 기록을 지킨다 */
   setContent(next: string): void;
+  /** 같은 문서를 연 다른 칸의 변경을 받는다. 이 칸의 실행 취소 기록에는 남기지 않는다. 길이가 어긋나면 fallback 내용으로 맞춘다 */
+  applyChanges(changes: ChangeSet, fallback: string): void;
   focus(): void;
   /** 접기: 지금 위치 접기·펴기, 모두 접기·펴기, 이 수준 제목만 보기, 그 줄(1부터) 접기 바꾸기 */
   fold(what: "here" | "unfold-here" | "all" | "unfold-all" | "level"): void;
@@ -123,6 +128,8 @@ interface Props {
   docKey: string;
   initial: string;
   onChange: (value: string) => void;
+  /** 이 칸에서 생긴 변경(다른 칸에서 받은 것은 빼고). 같은 문서를 연 다른 칸에 전달한다 */
+  onChanges?: (changes: ChangeSet, docKey: string) => void;
   onSave: () => void;
   /** 위키링크 자동완성 후보. 호출 시점의 최신 목록을 돌려준다. */
   linkCandidates: () => LinkCandidate[];
@@ -145,6 +152,18 @@ interface Props {
   foldKey?: string;
   /** Live Preview가 블록(콜아웃·수식·임베드…)을 그릴 때 쓸 링크 해석 */
   renderContext?: () => LiveRenderContext | null;
+  /** 만들어질 때 포커스를 가져갈지(기본 true). 두 칸이면 활성 칸의 것만 — 아니면 나중에 만든 칸이 활성 칸을 빼앗는다 */
+  autoFocus?: boolean;
+}
+
+/** 두 글의 앞뒤 같은 부분을 빼고 달라진 한 구간. 같으면 null */
+function diffChange(cur: string, next: string): { from: number; to: number; insert: string } | null {
+  if (cur === next) return null;
+  let a = 0;
+  while (a < cur.length && a < next.length && cur[a] === next[a]) a++;
+  let b = 0;
+  while (b < cur.length - a && b < next.length - a && cur[cur.length - 1 - b] === next[next.length - 1 - b]) b++;
+  return { from: a, to: cur.length - b, insert: next.slice(a, next.length - b) };
 }
 
 /** 블록의 접힌 줄들(접힌 범위가 시작하는 줄) */
@@ -271,6 +290,7 @@ export function Editor({
   docKey,
   initial,
   onChange,
+  onChanges,
   onSave,
   linkCandidates,
   handle,
@@ -284,6 +304,7 @@ export function Editor({
   onShowProps,
   foldKey,
   renderContext,
+  autoFocus = true,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -301,8 +322,12 @@ export function Editor({
   const getCtx = () => ctxRef.current?.() ?? null;
   const foldKeyRef = useRef(foldKey);
   foldKeyRef.current = foldKey;
-  const callbacks = useRef({ onChange, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
-  callbacks.current = { onChange, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
+  const autoFocusRef = useRef(autoFocus);
+  autoFocusRef.current = autoFocus;
+  const docKeyRef = useRef(docKey);
+  docKeyRef.current = docKey;
+  const callbacks = useRef({ onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
+  callbacks.current = { onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
   const showProps = () => callbacks.current.onShowProps?.();
 
   /** 올리는 동안 자리 표시를 넣었다가 링크로 바꾼다(실패하면 지운다) */
@@ -319,6 +344,8 @@ export function Editor({
   };
 
   useEffect(() => {
+    /** 이 뷰를 만든 문서. 다시 그려 docKey 가 바뀌면 이 뷰는 곧 없어질 낡은 뷰다 */
+    const createdKey = docKey;
     const view = new EditorView({
       parent: host.current!,
       state: EditorState.create({
@@ -372,7 +399,14 @@ export function Editor({
             },
           }),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) callbacks.current.onChange(u.state.doc.toString());
+            // 초안은 이 칸에서 친 변경으로만 고친다. 다른 칸에서 받은 변경(mirrored)은 원본(저장소)에 이미 들어 있고,
+            // 낡은 뷰(docKey 가 바뀐 뒤 다시 만들기 전)의 콜백은 새 문서에 묶여 있어 부르면 다른 문서의 초안을 덮는다
+            const own = u.transactions.filter((tr) => tr.docChanged && tr.annotation(mirrored) !== true);
+            if (own.length && docKeyRef.current === createdKey) {
+              // 초안을 먼저 고친다: 다른 칸이 변경을 못 맞추면 이 최신 초안으로 맞춘다
+              callbacks.current.onChange(u.state.doc.toString());
+              for (const tr of own) callbacks.current.onChanges?.(tr.changes, createdKey);
+            }
             // 접은 것을 이 기기에 기억한다(내용이 바뀌어 줄이 밀리면 새 줄로)
             const foldChanged = u.transactions.some((t) => t.effects.some((e) => e.is(foldEffect) || e.is(unfoldEffect)));
             if (foldKeyRef.current && (foldChanged || (u.docChanged && foldedRanges(u.state).size))) {
@@ -390,6 +424,7 @@ export function Editor({
     });
     if (handle) {
       handle.current = {
+        docKey: createdKey,
         toggleTask(lineNo, done) {
           if (lineNo < 1 || lineNo > view.state.doc.lines) return;
           const line = view.state.doc.line(lineNo);
@@ -413,13 +448,17 @@ export function Editor({
           view.focus();
         },
         setContent(next) {
-          const cur = view.state.doc.toString();
-          if (cur === next) return;
-          let a = 0;
-          while (a < cur.length && a < next.length && cur[a] === next[a]) a++;
-          let b = 0;
-          while (b < cur.length - a && b < next.length - a && cur[cur.length - 1 - b] === next[next.length - 1 - b]) b++;
-          view.dispatch({ changes: { from: a, to: cur.length - b, insert: next.slice(a, next.length - b) } });
+          const changes = diffChange(view.state.doc.toString(), next);
+          if (changes) view.dispatch({ changes });
+        },
+        applyChanges(changes, fallback) {
+          const annotations = [mirrored.of(true), Transaction.addToHistory.of(false)];
+          if (canMirror(view.state.doc.length, changes)) view.dispatch({ changes, annotations });
+          else {
+            // 두 뷰가 어긋났으면(예: 다시 만드는 중) 내용 전체 기준으로 달라진 곳만 맞춘다
+            const diff = diffChange(view.state.doc.toString(), fallback);
+            if (diff) view.dispatch({ changes: diff, annotations });
+          }
         },
         focus() {
           view.focus();
@@ -488,7 +527,7 @@ export function Editor({
       if (source !== view && path === foldKeyRef.current) applyFolds();
     });
     viewRef.current = view;
-    if (!readOnly) view.focus();
+    if (!readOnly && autoFocusRef.current) view.focus();
     return () => {
       offFolds();
       viewRef.current = null;
