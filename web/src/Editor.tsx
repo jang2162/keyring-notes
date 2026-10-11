@@ -22,13 +22,14 @@ import {
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState, type StateEffect } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Transaction, type ChangeSet, type StateEffect } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 import { t } from "./i18n";
+import { canMirror, mirrored } from "./mirror";
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -48,6 +49,8 @@ export interface EditorHandle {
   insertText(text: string, opts?: { keepSelection?: boolean; ownLine?: boolean }): void;
   /** 내용을 바꾼다(속성 입력 화면). 달라진 부분만 바꿔 커서·실행 취소 기록을 지킨다 */
   setContent(next: string): void;
+  /** 같은 문서를 연 다른 칸의 변경을 받는다. 이 칸의 실행 취소 기록에는 남기지 않는다. 길이가 어긋나면 fallback 내용으로 맞춘다 */
+  applyChanges(changes: ChangeSet, fallback: string): void;
   focus(): void;
   /** 접기: 지금 위치 접기·펴기, 모두 접기·펴기, 이 수준 제목만 보기, 그 줄(1부터) 접기 바꾸기 */
   fold(what: "here" | "unfold-here" | "all" | "unfold-all" | "level"): void;
@@ -123,6 +126,8 @@ interface Props {
   docKey: string;
   initial: string;
   onChange: (value: string) => void;
+  /** 이 칸에서 생긴 변경(다른 칸에서 받은 것은 빼고). 같은 문서를 연 다른 칸에 전달한다 */
+  onChanges?: (changes: ChangeSet) => void;
   onSave: () => void;
   /** 위키링크 자동완성 후보. 호출 시점의 최신 목록을 돌려준다. */
   linkCandidates: () => LinkCandidate[];
@@ -145,6 +150,16 @@ interface Props {
   foldKey?: string;
   /** Live Preview가 블록(콜아웃·수식·임베드…)을 그릴 때 쓸 링크 해석 */
   renderContext?: () => LiveRenderContext | null;
+}
+
+/** 두 글의 앞뒤 같은 부분을 빼고 달라진 한 구간. 같으면 null */
+function diffChange(cur: string, next: string): { from: number; to: number; insert: string } | null {
+  if (cur === next) return null;
+  let a = 0;
+  while (a < cur.length && a < next.length && cur[a] === next[a]) a++;
+  let b = 0;
+  while (b < cur.length - a && b < next.length - a && cur[cur.length - 1 - b] === next[next.length - 1 - b]) b++;
+  return { from: a, to: cur.length - b, insert: next.slice(a, next.length - b) };
 }
 
 /** 블록의 접힌 줄들(접힌 범위가 시작하는 줄) */
@@ -271,6 +286,7 @@ export function Editor({
   docKey,
   initial,
   onChange,
+  onChanges,
   onSave,
   linkCandidates,
   handle,
@@ -301,8 +317,8 @@ export function Editor({
   const getCtx = () => ctxRef.current?.() ?? null;
   const foldKeyRef = useRef(foldKey);
   foldKeyRef.current = foldKey;
-  const callbacks = useRef({ onChange, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
-  callbacks.current = { onChange, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
+  const callbacks = useRef({ onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
+  callbacks.current = { onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
   const showProps = () => callbacks.current.onShowProps?.();
 
   /** 올리는 동안 자리 표시를 넣었다가 링크로 바꾼다(실패하면 지운다) */
@@ -372,7 +388,10 @@ export function Editor({
             },
           }),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) callbacks.current.onChange(u.state.doc.toString());
+            if (u.docChanged) {
+              for (const tr of u.transactions) if (tr.docChanged && tr.annotation(mirrored) !== true) callbacks.current.onChanges?.(tr.changes);
+              callbacks.current.onChange(u.state.doc.toString());
+            }
             // 접은 것을 이 기기에 기억한다(내용이 바뀌어 줄이 밀리면 새 줄로)
             const foldChanged = u.transactions.some((t) => t.effects.some((e) => e.is(foldEffect) || e.is(unfoldEffect)));
             if (foldKeyRef.current && (foldChanged || (u.docChanged && foldedRanges(u.state).size))) {
@@ -413,13 +432,17 @@ export function Editor({
           view.focus();
         },
         setContent(next) {
-          const cur = view.state.doc.toString();
-          if (cur === next) return;
-          let a = 0;
-          while (a < cur.length && a < next.length && cur[a] === next[a]) a++;
-          let b = 0;
-          while (b < cur.length - a && b < next.length - a && cur[cur.length - 1 - b] === next[next.length - 1 - b]) b++;
-          view.dispatch({ changes: { from: a, to: cur.length - b, insert: next.slice(a, next.length - b) } });
+          const changes = diffChange(view.state.doc.toString(), next);
+          if (changes) view.dispatch({ changes });
+        },
+        applyChanges(changes, fallback) {
+          const annotations = [mirrored.of(true), Transaction.addToHistory.of(false)];
+          if (canMirror(view.state.doc.length, changes)) view.dispatch({ changes, annotations });
+          else {
+            // 두 뷰가 어긋났으면(예: 다시 만드는 중) 내용 전체 기준으로 달라진 곳만 맞춘다
+            const diff = diffChange(view.state.doc.toString(), fallback);
+            if (diff) view.dispatch({ changes: diff, annotations });
+          }
         },
         focus() {
           view.focus();
