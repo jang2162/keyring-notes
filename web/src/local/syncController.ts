@@ -131,14 +131,7 @@ export class SyncController {
       return report;
     } catch (e) {
       const offline = e instanceof TypeError;
-      const message =
-        e instanceof UnauthorizedError
-          ? t("sync.unauthorized")
-          : offline
-            ? t("sync.offline")
-            : e instanceof Error
-              ? errorText(e)
-              : String(e);
+      const message = e instanceof UnauthorizedError ? t("sync.unauthorized") : offline ? t("sync.offline") : e instanceof Error ? errorText(e) : String(e);
       this.set({ running: false, lastError: message });
       return null;
     }

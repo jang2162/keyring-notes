@@ -165,8 +165,17 @@ describe("데일리 태그", () => {
       const a = analyze(path, content);
       return { path, title: a.title, summary: a.summary, hash: "h", mtime: Date.now(), size: 1, frontmatter: a.frontmatter, tags: a.tags };
     };
-    const report = lintVault({ docs: [meta("개인/일기/2026-10-08.md", c), meta("개인/일기/2026-10-07.md", c)], files: ["개인/일기/2026-10-08.md", "개인/일기/2026-10-07.md"], links: [], canRead: () => true, folder: "", daily: cfg });
-    expect(report.issues.map((i) => [i.kind, i.path, i.params?.date, i.params?.tags])).toEqual([["daily_mismatch", "개인/일기/2026-10-08.md", "2026-10-08", "데일리/2026/10/07, 10-07, 수요일"]]);
+    const report = lintVault({
+      docs: [meta("개인/일기/2026-10-08.md", c), meta("개인/일기/2026-10-07.md", c)],
+      files: ["개인/일기/2026-10-08.md", "개인/일기/2026-10-07.md"],
+      links: [],
+      canRead: () => true,
+      folder: "",
+      daily: cfg,
+    });
+    expect(report.issues.map((i) => [i.kind, i.path, i.params?.date, i.params?.tags])).toEqual([
+      ["daily_mismatch", "개인/일기/2026-10-08.md", "2026-10-08", "데일리/2026/10/07, 10-07, 수요일"],
+    ]);
   });
   it("위젯: 태그로 해마다 오늘·그달·그주", () => {
     const meta = (path: string, d: Date): DocMeta => {
@@ -188,7 +197,10 @@ describe("데일리 태그", () => {
 describe("형식 옮기기·링크", () => {
   it("이름에서 날짜를 읽어 새 형식으로(제목 유지)", () => {
     const cfg: DailyConfig = { folder: "일기", format: "GGGG/[W]WW/YYYY-MM-DD" };
-    const plan = planDailyMigration(["일기/2026-10-07.md", "일기/2026-12-31 회고.md", "일기/20270101_새해.md", "일기/메모.md", "일기/2026/W41/2026-10-08.md", "다른/2026-10-07.md"], cfg);
+    const plan = planDailyMigration(
+      ["일기/2026-10-07.md", "일기/2026-12-31 회고.md", "일기/20270101_새해.md", "일기/메모.md", "일기/2026/W41/2026-10-08.md", "다른/2026-10-07.md"],
+      cfg,
+    );
     expect(plan.moves.map((m) => [m.from, m.to])).toEqual([
       ["일기/2026-10-07.md", "일기/2026/W41/2026-10-07.md"],
       ["일기/2026-12-31 회고.md", "일기/2026/W53/2026-12-31 회고.md"],
@@ -204,7 +216,14 @@ describe("형식 옮기기·링크", () => {
     expect(rewriteLinks("[[2026-10-07]] 참고", "a.md", "a.md", { moves, before, after, daily })?.content).toBe("[[2026-10-07 회의]] 참고");
     // 데일리 폴더 안에서 제목만 바꾸면 그대로 둔다
     const after2 = ["일기/2026-10-07 결정.md", "a.md"];
-    expect(rewriteLinks("[[2026-10-07]]", "a.md", "a.md", { moves: new Map([["일기/2026-10-07 회의.md", "일기/2026-10-07 결정.md"]]), before, after: after2, daily })).toBeNull();
+    expect(
+      rewriteLinks("[[2026-10-07]]", "a.md", "a.md", {
+        moves: new Map([["일기/2026-10-07 회의.md", "일기/2026-10-07 결정.md"]]),
+        before,
+        after: after2,
+        daily,
+      }),
+    ).toBeNull();
   });
 });
 
@@ -212,7 +231,11 @@ describe("공통 설정 파일", () => {
   it("읽기·쓰기·기본값(워크스페이스별, 볼트 언어의 폴더 이름)", () => {
     expect(workspaceSettings(parseVaultSettings(null), "개인").daily.folder).toBe("Daily");
     let c = setVaultSetting(null, ["vault", "language"], "ko", "ko");
-    expect(workspaceSettings(parseVaultSettings(c), "개인")).toMatchObject({ daily: { folder: "데일리 노트", format: "YYYY-MM-DD", template: "템플릿/데일리.md" }, attachmentFolder: "_첨부", templateFolder: "템플릿" });
+    expect(workspaceSettings(parseVaultSettings(c), "개인")).toMatchObject({
+      daily: { folder: "데일리 노트", format: "YYYY-MM-DD", template: "템플릿/데일리.md" },
+      attachmentFolder: "_첨부",
+      templateFolder: "템플릿",
+    });
     c = setVaultSetting(c, ["workspaces", "업무", "daily", "format"], "GGGG/[W]WW/YYYY-MM-DD");
     c = setVaultSetting(c, ["workspaces", "업무", "daily", "weekStart"], "sunday");
     c = setVaultSetting(c, ["workspaces", "개인", "daily", "enabled"], false);

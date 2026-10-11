@@ -27,7 +27,9 @@ const env = (name: string): string | undefined => process.env[name] || undefined
 // KEYRING_DATA 하나만 주면(도커의 /data) 볼트·설정·백업이 모두 그 아래에 놓인다.
 const dataDir = env("KEYRING_DATA") ? path.resolve(env("KEYRING_DATA")!) : null;
 const vaultDir = path.resolve(env("KEYRING_VAULT") ?? (dataDir ? path.join(dataDir, "vault") : path.join(here, "../../vault")));
-const configFile = path.resolve(env("KEYRING_CONFIG") ?? (dataDir ? path.join(dataDir, "config", "keyring.json") : path.join(here, "../../config/keyring.json")));
+const configFile = path.resolve(
+  env("KEYRING_CONFIG") ?? (dataDir ? path.join(dataDir, "config", "keyring.json") : path.join(here, "../../config/keyring.json")),
+);
 const backupDir = path.resolve(env("KEYRING_BACKUP_DIR") ?? (dataDir ? path.join(dataDir, "backups") : path.join(here, "../../backups")));
 const publicUrl = process.env.KEYRING_PUBLIC_URL?.replace(/\/+$/, "") || undefined;
 const allowedHosts = (env("KEYRING_ALLOWED_HOSTS") ?? (publicUrl ? new URL(publicUrl).hostname : ""))
@@ -55,8 +57,7 @@ const started = Date.now();
 // S3(선택): 원격 백업과 큰 첨부 보관
 const s3Config = s3ConfigFromEnv();
 const s3 = s3Config ? new S3Client(s3Config) : null;
-const blobs =
-  s3 && process.env.KEYRING_S3_BLOBS === "1" ? new BlobStore(vault, s3, Math.max(0, Number(env("KEYRING_S3_BLOB_MIN_KB") ?? 256)) * 1024) : null;
+const blobs = s3 && process.env.KEYRING_S3_BLOBS === "1" ? new BlobStore(vault, s3, Math.max(0, Number(env("KEYRING_S3_BLOB_MIN_KB") ?? 256)) * 1024) : null;
 // S3에 올리기 전 암호화(선택). 키를 주면 백업·첨부 모두 암호화해 올린다.
 const s3Secret = await encryptionSecretFromEnv();
 if (s3Secret && !s3) throw new Error(serverText("server.s3_key_without_s3"));
@@ -71,9 +72,7 @@ await vault.init();
 await wiki.init();
 const synced = await index.sync(vault);
 for (const t of wiki.topics) await wiki.regenerate(t);
-console.log(
-  serverText("server.index_synced", { updated: synced.updated, removed: synced.removed, topics: wiki.topics.size, ms: Date.now() - started }),
-);
+console.log(serverText("server.index_synced", { updated: synced.updated, removed: synced.removed, topics: wiki.topics.size, ms: Date.now() - started }));
 // 순서가 중요하다: 인덱스를 먼저 고친 뒤 그 인덱스로 위키 index·log를 만든다.
 vault.onChange((paths) => index.refresh(vault.root, paths));
 vault.onChange((paths) => wiki.onChange(paths));
@@ -97,7 +96,10 @@ if (s3) {
 // 처음 설치: 비밀번호가 없으면 일회용 설정 코드를 만들어 로그에만 보여 준다(웹에서 비밀번호 설정).
 let setupCode: string | null = null;
 if (config.get().owner.passwordHash === null) {
-  setupCode = randomBytes(6).toString("hex").toUpperCase().replace(/(.{4})(?=.)/g, "$1-");
+  setupCode = randomBytes(6)
+    .toString("hex")
+    .toUpperCase()
+    .replace(/(.{4})(?=.)/g, "$1-");
 }
 
 const review = new ReviewQueue(vault, config);
@@ -178,9 +180,7 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
     // 묶어 둔 doc.changed는 기다리지 않고 지금 보낸다
     automation.flushDocs(true);
     server.close();
-    void vault
-      .maintenance(async () => index.close())
-      .finally(() => process.exit(0));
+    void vault.maintenance(async () => index.close()).finally(() => process.exit(0));
     setTimeout(() => process.exit(1), 10_000).unref();
   });
 }

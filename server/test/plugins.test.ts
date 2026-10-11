@@ -31,7 +31,11 @@ beforeEach(async () => {
   token = config.issueToken("a");
   config.setRules("a", { 업무: "read" });
   app = createApp({ ...v, config, admin: { backups: new BackupService(v.vault, config, path.join(t.dir, "b"), async () => undefined) }, pluginsDir });
-  const login = await app.request("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: "correct horse" }) });
+  const login = await app.request("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password: "correct horse" }),
+  });
   cookie = login.headers.get("set-cookie")!.split(";")[0];
   owner = new ScopedVault(v.vault, ownerPrincipal, v.index, v.wiki);
   agent = new ScopedVault(v.vault, agentPrincipal("a", { 업무: "read" }), v.index, v.wiki);
@@ -63,7 +67,13 @@ describe("위젯 플러그인", () => {
 
   it("type: plugin 위젯은 같은 쿼리(권한 포함)를 돌려 행과 options를 넘긴다", async () => {
     const r = await owner.widget("type: plugin\nplugin: kanban\nshow: [title, status]\noptions:\n  group: status\n  columns: [todo, done]");
-    expect(r).toMatchObject({ type: "plugin", plugin: "kanban", options: { group: "status", columns: ["todo", "done"] }, columns: ["title", "status"], total: 3 });
+    expect(r).toMatchObject({
+      type: "plugin",
+      plugin: "kanban",
+      options: { group: "status", columns: ["todo", "done"] },
+      columns: ["title", "status"],
+      total: 3,
+    });
     const a = await agent.widget("type: plugin\nplugin: kanban\nshow: [status]");
     if (a.type !== "plugin") throw new Error();
     expect(a.rows.map((x) => x.path)).toEqual(["업무/a.md", "업무/b.md"]);

@@ -31,7 +31,18 @@ export async function startFakeS3(bucket = "notes") {
       url.searchParams.forEach((v, k) => (query[k] = v));
       const headers = m ? Object.fromEntries(m[4].split(";").map((h) => [h, String(req.headers[h] ?? "")])) : {};
       const expected = m
-        ? signV4({ method: req.method!, path: url.pathname, query, headers, payloadHash, region: m[3], service: "s3", accessKeyId: m[1], secretAccessKey: FAKE_KEY.secretAccessKey, amzDate: String(req.headers["x-amz-date"]) })
+        ? signV4({
+            method: req.method!,
+            path: url.pathname,
+            query,
+            headers,
+            payloadHash,
+            region: m[3],
+            service: "s3",
+            accessKeyId: m[1],
+            secretAccessKey: FAKE_KEY.secretAccessKey,
+            amzDate: String(req.headers["x-amz-date"]),
+          })
         : "";
       const bodyOk = req.method !== "PUT" || createHash("sha256").update(body).digest("hex") === payloadHash;
       if (!m || m[1] !== FAKE_KEY.accessKeyId || expected !== auth || !bodyOk || !m[4].split(";").includes("host")) {

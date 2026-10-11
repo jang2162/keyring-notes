@@ -288,9 +288,7 @@ export class Vault {
           nodes.push({ name: e.name, path: rel, type: "file" });
         }
       }
-      return nodes.sort((a, b) =>
-        a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name, "ko"),
-      );
+      return nodes.sort((a, b) => (a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name, "ko")));
     };
     return walk(this.root, "");
   }
@@ -356,7 +354,11 @@ export class Vault {
    * 여러 연산을 하나의 커밋으로 적용한다. 하나라도 실패하면(충돌, 권한, 파일 오류, 커밋 오류)
    * 아무것도 바뀌지 않는다. 연산은 앞 연산의 결과 위에서 차례로 검사된다.
    */
-  async batch(ops: Op[], author: Author, opts: { message?: string; guard?: Guard; dryRun?: boolean; links?: LinkUpdateOptions; coalesce?: boolean } = {}): Promise<BatchResult> {
+  async batch(
+    ops: Op[],
+    author: Author,
+    opts: { message?: string; guard?: Guard; dryRun?: boolean; links?: LinkUpdateOptions; coalesce?: boolean } = {},
+  ): Promise<BatchResult> {
     if (ops.length === 0) throw new PathError("ops_empty");
     if (ops.length > 500) throw new PathError("ops_too_many", { max: 500 });
     const guard = opts.guard ?? (() => undefined);
@@ -550,7 +552,10 @@ export class Vault {
         // 제목은 연산만으로 정한다(볼트 언어). 링크 갱신은 본문에. 숨김 경로 가리기는 메시지가 아니라
         // 커밋의 변경 목록으로 한다(ScopedVault.history) — 메시지가 어떤 언어여도 안전하게
         const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0].text : T.batch(verbs.length));
-        const lines = [...(verbs.length > 1 || opts.message ? verbs.map((v) => v.text) : []), ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => T.linkUpdate(p))];
+        const lines = [
+          ...(verbs.length > 1 || opts.message ? verbs.map((v) => v.text) : []),
+          ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => T.linkUpdate(p)),
+        ];
         const body = lines.length > 0 ? `${message}\n\n${lines.join("\n")}` : message;
         const rev = await this.commitOrAmend(body, author, changed, verbs, opts.coalesce === true && !opts.message);
         if (changed.some(([rel]) => !rel.includes("/"))) this.refreshRoots();
@@ -585,7 +590,13 @@ export class Vault {
    */
   private async commitOrAmend(body: string, author: Author, changed: [string, Slot][], verbs: { kind: string }[], coalesce: boolean): Promise<string | null> {
     const paths = changed.map(([rel]) => rel);
-    const single = coalesce && changed.length === 1 && verbs.length === 1 && (verbs[0].kind === "modify" || verbs[0].kind === "create") && changed[0][1].bytes === undefined && changed[0][1].content !== null;
+    const single =
+      coalesce &&
+      changed.length === 1 &&
+      verbs.length === 1 &&
+      (verbs[0].kind === "modify" || verbs[0].kind === "create") &&
+      changed[0][1].bytes === undefined &&
+      changed[0][1].content !== null;
     if (!single) return this.commitChanges(body, author, paths);
     const rel = paths[0];
     const a = this.amendable;

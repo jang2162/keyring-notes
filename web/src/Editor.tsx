@@ -267,7 +267,24 @@ function wikilinkSource(get: () => LinkCandidate[]) {
   };
 }
 
-export function Editor({ docKey, initial, onChange, onSave, linkCandidates, handle, readOnly = false, onFiles, live = false, lineNumbers: showLines = false, onCursor, onBlur, foldFrontmatter = false, onShowProps, foldKey, renderContext }: Props) {
+export function Editor({
+  docKey,
+  initial,
+  onChange,
+  onSave,
+  linkCandidates,
+  handle,
+  readOnly = false,
+  onFiles,
+  live = false,
+  lineNumbers: showLines = false,
+  onCursor,
+  onBlur,
+  foldFrontmatter = false,
+  onShowProps,
+  foldKey,
+  renderContext,
+}: Props) {
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const liveSlot = useRef(new Compartment());
@@ -388,7 +405,11 @@ export function Editor({ docKey, initial, onChange, onSave, linkCandidates, hand
           const before = from > 0 && view.state.sliceDoc(from - 1, from) !== "\n" ? "\n" : "";
           const after = r.to < view.state.doc.length && view.state.sliceDoc(r.to, r.to + 1) !== "\n" ? "\n" : "";
           const insert = opts?.ownLine ? before + text + after : text;
-          view.dispatch({ changes: { from, to: r.to, insert }, selection: { anchor: from + (opts?.ownLine ? before.length + text.length : text.length) }, scrollIntoView: true });
+          view.dispatch({
+            changes: { from, to: r.to, insert },
+            selection: { anchor: from + (opts?.ownLine ? before.length + text.length : text.length) },
+            scrollIntoView: true,
+          });
           view.focus();
         },
         setContent(next) {

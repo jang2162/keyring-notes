@@ -11,7 +11,16 @@ import { isLevel, type Level } from "./access.js";
 import { parseCron, type Automation } from "./automation.js";
 import type { BackupService } from "./backup.js";
 import { randomBytes } from "node:crypto";
-import { AGENT_NAME_RE, SESSION_COOKIE, validateBackupSettings, validateJobs, validateWebhooks, WEBHOOK_EVENTS, type ConfigStore, type WebhookConfig } from "./config.js";
+import {
+  AGENT_NAME_RE,
+  SESSION_COOKIE,
+  validateBackupSettings,
+  validateJobs,
+  validateWebhooks,
+  WEBHOOK_EVENTS,
+  type ConfigStore,
+  type WebhookConfig,
+} from "./config.js";
 import type { NoteIndex } from "./noteindex.js";
 import { PathError } from "./paths.js";
 import type { ScopedVault } from "./scoped.js";
@@ -66,8 +75,14 @@ async function dirSize(dir: string, skip: (name: string) => boolean): Promise<{ 
 }
 
 function compareVersions(a: string, b: string): number {
-  const pa = a.replace(/^v/, "").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
-  const pb = b.replace(/^v/, "").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  const pa = a
+    .replace(/^v/, "")
+    .split(/[.-]/)
+    .map((x) => Number.parseInt(x, 10) || 0);
+  const pb = b
+    .replace(/^v/, "")
+    .split(/[.-]/)
+    .map((x) => Number.parseInt(x, 10) || 0);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
   }
@@ -101,7 +116,13 @@ export function adminRoutes(deps: AdminDeps) {
     const list = await backups.list();
     const cfg = config.get();
     return c.json({
-      app: { version: APP_VERSION, node: process.version, startedAt: startedAt.toISOString(), uptimeSec: Math.round(process.uptime()), memoryMb: Math.round(process.memoryUsage().rss / 1048576) },
+      app: {
+        version: APP_VERSION,
+        node: process.version,
+        startedAt: startedAt.toISOString(),
+        uptimeSec: Math.round(process.uptime()),
+        memoryMb: Math.round(process.memoryUsage().rss / 1048576),
+      },
       vault: {
         path: vault.root,
         documents: docs.length,
@@ -124,7 +145,9 @@ export function adminRoutes(deps: AdminDeps) {
       agents: cfg.agents.map((a) => ({ name: a.name, lastUsed: config.lastUsed.get(a.name)?.toISOString() ?? null })),
       storage: {
         s3: deps.s3 ? deps.s3.describe() : null,
-        remoteBackups: deps.s3 ? { enabled: cfg.backup.remote, encrypted: backups.crypto !== null, lastUpload: backups.lastRemoteUpload, lastError: backups.lastRemoteError } : null,
+        remoteBackups: deps.s3
+          ? { enabled: cfg.backup.remote, encrypted: backups.crypto !== null, lastUpload: backups.lastRemoteUpload, lastError: backups.lastRemoteError }
+          : null,
         blobs: deps.blobs ? deps.blobs.status() : null,
       },
       security: {

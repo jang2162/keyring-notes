@@ -168,7 +168,14 @@ export function validateBackupSettings(raw: unknown): BackupSettings {
   if (!Number.isInteger(out.keep) || out.keep < 1 || out.keep > 365) throw new PathError("config.backup_keep");
   if (typeof out.remote !== "boolean") throw new PathError("config.backup_remote");
   if (!Number.isInteger(out.remoteKeep) || out.remoteKeep < 1 || out.remoteKeep > 3650) throw new PathError("config.backup_remote_keep");
-  return { enabled: out.enabled, intervalHours: out.intervalHours, keep: out.keep, includeConfig: out.includeConfig, remote: out.remote, remoteKeep: out.remoteKeep };
+  return {
+    enabled: out.enabled,
+    intervalHours: out.intervalHours,
+    keep: out.keep,
+    includeConfig: out.includeConfig,
+    remote: out.remote,
+    remoteKeep: out.remoteKeep,
+  };
 }
 
 export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -210,7 +217,14 @@ const B64URL = /^[A-Za-z0-9_-]+$/;
 
 function validatePasskeys(raw: unknown): PasskeyConfig[] {
   return (Array.isArray(raw) ? raw : []).map((k: Partial<PasskeyConfig>) => {
-    if (typeof k?.id !== "string" || !B64URL.test(k.id) || typeof k.publicKey !== "string" || !B64URL.test(k.publicKey) || typeof k.rpID !== "string" || !k.rpID) {
+    if (
+      typeof k?.id !== "string" ||
+      !B64URL.test(k.id) ||
+      typeof k.publicKey !== "string" ||
+      !B64URL.test(k.publicKey) ||
+      typeof k.rpID !== "string" ||
+      !k.rpID
+    ) {
       throw new PathError("config.passkeys");
     }
     return {

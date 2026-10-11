@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addPdfAnnotation, cleanPdfQuote, newPdfAnnotationId, parseFrontmatter, pdfAnnotations, pdfCompanionPath, removePdfAnnotation, resolveLink, setFrontmatterField, translate, type PdfAnnotation } from "@keyring-notes/core";
+import {
+  addPdfAnnotation,
+  cleanPdfQuote,
+  newPdfAnnotationId,
+  parseFrontmatter,
+  pdfAnnotations,
+  pdfCompanionPath,
+  removePdfAnnotation,
+  resolveLink,
+  setFrontmatterField,
+  translate,
+  type PdfAnnotation,
+} from "@keyring-notes/core";
 import { api, ApiError } from "./api";
 import { t } from "./i18n";
 import type { LinkResolver } from "./markdown";
@@ -91,7 +103,10 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
 
   const companionIsOpen = companion !== null && from?.path === companion.path;
   const companionText = companionIsOpen ? from!.draft : (companion?.content ?? "");
-  const resolve = useCallback((x: string) => resolver.resolve(x, companion?.path ?? from?.path) ?? resolveLink(x, [path]), [resolver, path, companion?.path, from?.path]);
+  const resolve = useCallback(
+    (x: string) => resolver.resolve(x, companion?.path ?? from?.path) ?? resolveLink(x, [path]),
+    [resolver, path, companion?.path, from?.path],
+  );
   const notes = useMemo(() => pdfAnnotations(companionText, resolve, path), [companionText, resolve, path]);
 
   // 보이는 쪽만 그린다
@@ -210,7 +225,11 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     onSaved(companion.path);
   };
 
-  const target = companion ? (resolver.resolve(stem(companion.path), from?.path) === companion.path || !resolver.resolve(stem(companion.path), from?.path) ? stem(companion.path) : companion.path.replace(/\.md$/i, "")) : "";
+  const target = companion
+    ? resolver.resolve(stem(companion.path), from?.path) === companion.path || !resolver.resolve(stem(companion.path), from?.path)
+      ? stem(companion.path)
+      : companion.path.replace(/\.md$/i, "")
+    : "";
   const pdfTarget = resolver.resolve(path.split("/").pop()!, companion?.path) === path ? path.split("/").pop()! : path;
 
   const save = async () => {
@@ -289,7 +308,11 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
             <button onClick={() => goto(current + 1)} aria-label={t("pdf.nextPage")} {...tipProps({ label: t("pdf.nextPage") })}>
               ›
             </button>
-            <button onClick={() => setScale((s) => Math.max(0.5, +(s - 0.2).toFixed(1)))} aria-label={t("pdf.zoomOut")} {...tipProps({ label: t("pdf.zoomOut") })}>
+            <button
+              onClick={() => setScale((s) => Math.max(0.5, +(s - 0.2).toFixed(1)))}
+              aria-label={t("pdf.zoomOut")}
+              {...tipProps({ label: t("pdf.zoomOut") })}
+            >
               −
             </button>
             <button onClick={() => setScale((s) => Math.min(3, +(s + 0.2).toFixed(1)))} aria-label={t("pdf.zoomIn")} {...tipProps({ label: t("pdf.zoomIn") })}>
@@ -316,7 +339,9 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
           <h4>{t("pdf.annotations", { count: notes.length })}</h4>
           {companion && (
             <p className="meta">
-              {t("pdf.savesTo", { target: companionIsOpen ? t("pdf.thisNote") : companion.content === null ? t("pdf.createdOnFirst", { path: companion.path }) : companion.path })}
+              {t("pdf.savesTo", {
+                target: companionIsOpen ? t("pdf.thisNote") : companion.content === null ? t("pdf.createdOnFirst", { path: companion.path }) : companion.path,
+              })}
             </p>
           )}
           {notes.length === 0 && <p className="meta">{t("pdf.empty")}</p>}
@@ -330,11 +355,19 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
                 {a.note && <div className="pdf-note">{a.note}</div>}
                 <div className="pdf-actions">
                   {canCite && (
-                    <button className="link-btn" disabled={fromSources.includes(sourceLink(a))} onClick={() => cite(a)} title={t("pdf.citeTip", { path: from!.path, link: sourceLink(a) })}>
+                    <button
+                      className="link-btn"
+                      disabled={fromSources.includes(sourceLink(a))}
+                      onClick={() => cite(a)}
+                      title={t("pdf.citeTip", { path: from!.path, link: sourceLink(a) })}
+                    >
                       {fromSources.includes(sourceLink(a)) ? t("pdf.cited") : t("pdf.cite")}
                     </button>
                   )}
-                  <button className="link-btn" onClick={() => void navigator.clipboard?.writeText(sourceLink(a)).then(() => setMessage(t("pdf.copied", { link: sourceLink(a) })))}>
+                  <button
+                    className="link-btn"
+                    onClick={() => void navigator.clipboard?.writeText(sourceLink(a)).then(() => setMessage(t("pdf.copied", { link: sourceLink(a) })))}
+                  >
                     {t("pdf.copyLink")}
                   </button>
                   {!companionIsOpen && (
@@ -358,7 +391,13 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
               <span className="pdf-pick-quote">
                 {t("pdf.pageShort", { page: pick.page })} “{pick.text.length > 80 ? `${pick.text.slice(0, 80)}…` : pick.text}”
               </span>
-              <input placeholder={t("pdf.notePlaceholder")} aria-label={t("pdf.noteLabel")} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void save()} />
+              <input
+                placeholder={t("pdf.notePlaceholder")}
+                aria-label={t("pdf.noteLabel")}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void save()}
+              />
               <button className="primary" disabled={busy || !companion} onClick={() => void save()}>
                 {t("pdf.annotate")}
               </button>

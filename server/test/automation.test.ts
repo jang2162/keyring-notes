@@ -68,12 +68,27 @@ beforeEach(async () => {
   owner = new ScopedVault(vault, ownerPrincipal, index, wiki, review);
   automation = new Automation({ vault, wiki, config, lint: (folder) => owner.lint({ folder }), retryDelays: [10, 10, 10], docChangedQuietMs: 60 });
   vault.onChange(() => automation.onCommit());
-  review.onCreate((p) => automation.emit("proposal.created", { id: p.id, agent: p.agent, topic: p.preview[0] ? wiki.topicOf(p.preview[0].path) : null, files: p.preview.map((f) => ({ path: f.path })) }));
+  review.onCreate((p) =>
+    automation.emit("proposal.created", {
+      id: p.id,
+      agent: p.agent,
+      topic: p.preview[0] ? wiki.topicOf(p.preview[0].path) : null,
+      files: p.preview.map((f) => ({ path: f.path })),
+    }),
+  );
   await owner.createTopic("업무/경제");
   await owner.createTopic("업무/보고");
   config.update((c) => {
     c.webhooks = [
-      { id: "agent", name: "위키 에이전트", url: `${base}/hook`, secret: SECRET, events: ["raw.added", "proposal.created", "schedule"], topics: ["업무/경제"], enabled: true },
+      {
+        id: "agent",
+        name: "위키 에이전트",
+        url: `${base}/hook`,
+        secret: SECRET,
+        events: ["raw.added", "proposal.created", "schedule"],
+        topics: ["업무/경제"],
+        enabled: true,
+      },
       { id: "all", name: "전체 기록", url: `${base}/all`, secret: SECRET, events: ["doc.changed"], topics: [], enabled: true },
     ];
   });
@@ -173,7 +188,16 @@ describe("정기 작업", () => {
     received = [];
     config.update((c) => {
       c.jobs = [
-        { id: "weekly-lint", name: "주간 정리", cron: "0 9 * * 1", webhook: "agent", topic: "업무/경제", lint: true, instructions: "SCHEMA의 정리 절차대로", enabled: true },
+        {
+          id: "weekly-lint",
+          name: "주간 정리",
+          cron: "0 9 * * 1",
+          webhook: "agent",
+          topic: "업무/경제",
+          lint: true,
+          instructions: "SCHEMA의 정리 절차대로",
+          enabled: true,
+        },
         { id: "off", name: "꺼짐", cron: "* * * * *", webhook: "agent", topic: null, lint: false, instructions: null, enabled: false },
       ];
     });
@@ -200,25 +224,47 @@ describe("정기 작업", () => {
       review,
       admin: { backups: new BackupService(vault, config, path.join(root, "backups"), () => wiki.resync()), automation },
     });
-    const login = await app.request("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: "correct horse" }) });
+    const login = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "correct horse" }),
+    });
     const cookie = login.headers.get("set-cookie")!.split(";")[0];
     const h = { "content-type": "application/json", cookie };
     let res = await app.request("/api/admin/automation/webhooks", {
       method: "PUT",
       headers: h,
-      body: JSON.stringify({ webhooks: [...config.get().webhooks.map((w) => ({ ...w, secret: "" })), { id: "n8n", url: `${base}/n8n`, events: ["raw.added"] }] }),
+      body: JSON.stringify({
+        webhooks: [...config.get().webhooks.map((w) => ({ ...w, secret: "" })), { id: "n8n", url: `${base}/n8n`, events: ["raw.added"] }],
+      }),
     });
     const saved = await res.json();
     expect(saved.newSecrets.n8n).toHaveLength(32);
     expect(saved.webhooks.find((w: { id: string }) => w.id === "agent").secret).toBe("s3cr…");
     expect(config.get().webhooks.find((w) => w.id === "agent")!.secret).toBe(SECRET); // 비워 보내면 기존 값 유지
-    res = await app.request("/api/admin/automation/webhooks", { method: "PUT", headers: h, body: JSON.stringify({ webhooks: [{ id: "x", url: "ftp://x", events: [] }] }) });
+    res = await app.request("/api/admin/automation/webhooks", {
+      method: "PUT",
+      headers: h,
+      body: JSON.stringify({ webhooks: [{ id: "x", url: "ftp://x", events: [] }] }),
+    });
     expect(res.status).toBe(400);
-    res = await app.request("/api/admin/automation/jobs", { method: "PUT", headers: h, body: JSON.stringify({ jobs: [{ id: "j", cron: "61 * * * *", webhook: "agent" }] }) });
+    res = await app.request("/api/admin/automation/jobs", {
+      method: "PUT",
+      headers: h,
+      body: JSON.stringify({ jobs: [{ id: "j", cron: "61 * * * *", webhook: "agent" }] }),
+    });
     expect(res.status).toBe(400);
-    res = await app.request("/api/admin/automation/jobs", { method: "PUT", headers: h, body: JSON.stringify({ jobs: [{ id: "j", cron: "0 3 * * *", webhook: "nope" }] }) });
+    res = await app.request("/api/admin/automation/jobs", {
+      method: "PUT",
+      headers: h,
+      body: JSON.stringify({ jobs: [{ id: "j", cron: "0 3 * * *", webhook: "nope" }] }),
+    });
     expect(res.status).toBe(400);
-    res = await app.request("/api/admin/automation/jobs", { method: "PUT", headers: h, body: JSON.stringify({ jobs: [{ id: "daily", name: "매일", cron: "0 3 * * *", webhook: "agent", topic: "업무/경제", lint: true }] }) });
+    res = await app.request("/api/admin/automation/jobs", {
+      method: "PUT",
+      headers: h,
+      body: JSON.stringify({ jobs: [{ id: "daily", name: "매일", cron: "0 3 * * *", webhook: "agent", topic: "업무/경제", lint: true }] }),
+    });
     expect((await res.json()).jobs[0].next).toMatch(/T/);
     const ping = await (await app.request("/api/admin/automation/webhooks/n8n/test", { method: "POST", headers: h, body: "{}" })).json();
     expect(ping).toMatchObject({ event: "ping", status: "ok" });

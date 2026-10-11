@@ -41,7 +41,14 @@ beforeEach(async () => {
   config.setRule("wiki-work", "업무/경제/wiki", "delete");
   workToken = config.issueToken("openclaw-work");
   config.setRule("openclaw-work", "업무", "read");
-  app = createApp({ vault, index, config, wiki, ingestor, admin: { backups: new BackupService(vault, config, path.join(vault.root, ".keyring", "backups"), () => wiki.resync()) } });
+  app = createApp({
+    vault,
+    index,
+    config,
+    wiki,
+    ingestor,
+    admin: { backups: new BackupService(vault, config, path.join(vault.root, ".keyring", "backups"), () => wiki.resync()) },
+  });
   cookie = (await login()).cookie;
   for (const [p, c] of Object.entries({
     "업무/경제/raw/기사.md": "# 기사\n원문\n",

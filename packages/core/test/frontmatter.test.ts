@@ -45,11 +45,20 @@ describe("속성 입력 화면", () => {
     doc = setFrontmatterField(doc, "done", true);
     doc = setFrontmatterField(doc, "aliases", ["가", "나"]);
     doc = setFrontmatterField(doc, "code", "007");
-    expect(doc).toBe("---\ndue: 2026-10-06\ndone: true\naliases:\n  - 가\n  - 나\ncode: \"007\"\n---\n# 글\n");
+    expect(doc).toBe('---\ndue: 2026-10-06\ndone: true\naliases:\n  - 가\n  - 나\ncode: "007"\n---\n# 글\n');
     expect(parseFrontmatter(doc).data).toEqual({ due: "2026-10-06", done: true, aliases: ["가", "나"], code: "007" });
   });
   it("종류 알아내기·통계·바꾸기", () => {
-    expect([1, true, ["a"], { a: 1 }, "2026-10-06", "2026-10-06T09:30", "글", null].map(propertyType)).toEqual(["number", "checkbox", "list", "object", "date", "datetime", "text", null]);
+    expect([1, true, ["a"], { a: 1 }, "2026-10-06", "2026-10-06T09:30", "글", null].map(propertyType)).toEqual([
+      "number",
+      "checkbox",
+      "list",
+      "object",
+      "date",
+      "datetime",
+      "text",
+      null,
+    ]);
     const stats = propertyStats([
       { frontmatter: { status: "진행", tags: ["a"] } },
       { frontmatter: { status: "완료", due: "2026-10-01" } },

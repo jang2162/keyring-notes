@@ -1,16 +1,9 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "noEmit": true,
-    "customConditions": [
-      "keyring-source"
-    ]
+    "customConditions": ["keyring-source"]
   },
-  "include": [
-    "src",
-    "test"
-  ]
+  "include": ["src", "test"]
 }

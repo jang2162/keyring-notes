@@ -18,7 +18,9 @@ function TopicPicker({ value, onChange, workspace }: { value: string; onChange: 
     api
       .topics()
       .then((ts) => {
-        const wikis = ts.filter((x) => x.wiki).sort((a, b) => Number(!(workspace && a.name.startsWith(workspace + "/"))) - Number(!(workspace && b.name.startsWith(workspace + "/"))));
+        const wikis = ts
+          .filter((x) => x.wiki)
+          .sort((a, b) => Number(!(workspace && a.name.startsWith(workspace + "/"))) - Number(!(workspace && b.name.startsWith(workspace + "/"))));
         setTopics(wikis);
         if (!value && wikis[0]) onChange(wikis[0].name);
       })
@@ -78,7 +80,15 @@ function IngestGuard({ busy, unsaved }: { busy: boolean; unsaved: boolean }) {
 }
 
 /** 원본 수집. 처음에는 URL 칸에 포커스를 둔다(바로 붙여넣을 수 있게) */
-export function IngestDialog({ workspace, onClose, onDone }: { workspace?: string; onClose: () => void; onDone: (results: IngestResult[], openPath?: string) => void }) {
+export function IngestDialog({
+  workspace,
+  onClose,
+  onDone,
+}: {
+  workspace?: string;
+  onClose: () => void;
+  onDone: (results: IngestResult[], openPath?: string) => void;
+}) {
   const [topic, setTopic] = useState("");
   const [tab, setTab] = useState<Tab>("url");
   const [busy, setBusy] = useState(false);
@@ -168,7 +178,15 @@ export function IngestDialog({ workspace, onClose, onDone }: { workspace?: strin
       )}
       {tab === "url" && (
         <form onSubmit={submitUrl} className="ingest-form">
-          <textarea rows={3} data-autofocus placeholder={t("ingest.urlPlaceholder")} aria-label="URL" value={url} onChange={(e) => setUrl(e.target.value)} required />
+          <textarea
+            rows={3}
+            data-autofocus
+            placeholder={t("ingest.urlPlaceholder")}
+            aria-label="URL"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            required
+          />
           <input placeholder={t("ingest.urlTitle")} value={title} onChange={(e) => setTitle(e.target.value)} />
           <button type="submit" disabled={busy}>
             {t("ingest.fetch")}

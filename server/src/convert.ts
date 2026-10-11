@@ -58,9 +58,13 @@ export function cleanTitle(title: string, site?: string): string {
 }
 
 function tidy(md: string): string {
-  return md
-    .replace(/^(\s*)([-*]|\d+\.)\s{2,}/gm, "$1$2 ")
-    .replace(/\n{3,}/g, "\n\n").replace(/[ \t]+$/gm, "").trim() + "\n";
+  return (
+    md
+      .replace(/^(\s*)([-*]|\d+\.)\s{2,}/gm, "$1$2 ")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/[ \t]+$/gm, "")
+      .trim() + "\n"
+  );
 }
 
 /**

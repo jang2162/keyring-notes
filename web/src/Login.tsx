@@ -61,8 +61,22 @@ export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; 
               (Docker: <code>docker compose logs keyring</code>)
             </p>
             <input autoFocus placeholder={t("login.code")} value={code} onChange={(e) => setCode(e.target.value)} />
-            <input type="password" autoComplete="new-password" placeholder={t("login.newPassword")} minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
-            <input type="password" autoComplete="new-password" placeholder={t("login.again")} minLength={8} value={again} onChange={(e) => setAgain(e.target.value)} />
+            <input
+              type="password"
+              autoComplete="new-password"
+              placeholder={t("login.newPassword")}
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <input
+              type="password"
+              autoComplete="new-password"
+              placeholder={t("login.again")}
+              minLength={8}
+              value={again}
+              onChange={(e) => setAgain(e.target.value)}
+            />
           </>
         )}
         <button type="submit" disabled={busy || !password || (!passwordSet && !code)}>

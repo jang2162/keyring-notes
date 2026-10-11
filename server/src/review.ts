@@ -201,7 +201,11 @@ export class ReviewQueue {
     const links = p.links?.enabled
       ? { enabled: true, fullPaths: true, only: new Set(p.links.paths), canSee: (rel: string) => (policy ? atLeast(policy.level(rel), "read") : false) }
       : { enabled: false };
-    const res = await this.vault.batch(ops, { name: p.agent, email: p.agentEmail }, { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, links });
+    const res = await this.vault.batch(
+      ops,
+      { name: p.agent, email: p.agentEmail },
+      { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, links },
+    );
     p.status = "approved";
     p.decidedAt = new Date().toISOString();
     p.decidedBy = approver;

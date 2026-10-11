@@ -53,7 +53,12 @@ export function Properties({ content, onChange, stats, readOnly, onPickIcon }: P
     }
   };
 
-  if (fm.error) return <div className="properties"><p className="prop-error">{t("props.yamlError", { error: fm.error })}</p></div>;
+  if (fm.error)
+    return (
+      <div className="properties">
+        <p className="prop-error">{t("props.yamlError", { error: fm.error })}</p>
+      </div>
+    );
   const entries = Object.entries(fm.data ?? {});
   const typeOf = (key: string, value: unknown): PropertyType => propertyType(value) ?? chosen[key] ?? statOf.get(key)?.type ?? "text";
 
@@ -144,12 +149,24 @@ export function Properties({ content, onChange, stats, readOnly, onPickIcon }: P
                         {value || <SmilePlus size={16} strokeWidth={1.75} aria-hidden />}
                       </button>
                     ) : (
-                      <ValueInput name={key} type={type} value={value} suggestions={statOf.get(key)?.values ?? []} readOnly={readOnly} onSet={(v) => set(key, v)} />
+                      <ValueInput
+                        name={key}
+                        type={type}
+                        value={value}
+                        suggestions={statOf.get(key)?.values ?? []}
+                        readOnly={readOnly}
+                        onSet={(v) => set(key, v)}
+                      />
                     )}
                   </td>
                   <td>
                     {!readOnly && (
-                      <button className="link-btn" {...tipProps({ label: t("props.removeTip", { key }) })} aria-label={t("props.removeTip", { key })} onClick={() => remove(key)}>
+                      <button
+                        className="link-btn"
+                        {...tipProps({ label: t("props.removeTip", { key }) })}
+                        aria-label={t("props.removeTip", { key })}
+                        onClick={() => remove(key)}
+                      >
                         ×
                       </button>
                     )}
@@ -197,7 +214,21 @@ export function Properties({ content, onChange, stats, readOnly, onPickIcon }: P
   );
 }
 
-function ValueInput({ name, type, value, suggestions, readOnly, onSet }: { name: string; type: PropertyType; value: unknown; suggestions: string[]; readOnly?: boolean; onSet: (v: unknown) => void }) {
+function ValueInput({
+  name,
+  type,
+  value,
+  suggestions,
+  readOnly,
+  onSet,
+}: {
+  name: string;
+  type: PropertyType;
+  value: unknown;
+  suggestions: string[];
+  readOnly?: boolean;
+  onSet: (v: unknown) => void;
+}) {
   const listId = `prop-values-${name.replace(/[^\w가-힣-]/g, "_")}`;
   const options = suggestions.length > 0 && (
     <datalist id={listId}>
@@ -240,7 +271,9 @@ function ValueInput({ name, type, value, suggestions, readOnly, onSet }: { name:
         />
       );
     case "list":
-      return <ListInput name={name} items={Array.isArray(value) ? value.map(String) : []} listId={listId} options={options} readOnly={readOnly} onSet={onSet} />;
+      return (
+        <ListInput name={name} items={Array.isArray(value) ? value.map(String) : []} listId={listId} options={options} readOnly={readOnly} onSet={onSet} />
+      );
     case "object":
       return <code className="prop-object">{JSON.stringify(value)}</code>;
     default:
@@ -262,7 +295,21 @@ function ValueInput({ name, type, value, suggestions, readOnly, onSet }: { name:
   }
 }
 
-function ListInput({ name, items, listId, options, readOnly, onSet }: { name: string; items: string[]; listId: string; options: ReactNode; readOnly?: boolean; onSet: (v: unknown) => void }) {
+function ListInput({
+  name,
+  items,
+  listId,
+  options,
+  readOnly,
+  onSet,
+}: {
+  name: string;
+  items: string[];
+  listId: string;
+  options: ReactNode;
+  readOnly?: boolean;
+  onSet: (v: unknown) => void;
+}) {
   const [draft, setDraft] = useState("");
   const push = () => {
     const add = draft
@@ -278,7 +325,11 @@ function ListInput({ name, items, listId, options, readOnly, onSet }: { name: st
         <span key={`${i}:${it}`} className="prop-chip">
           {it}
           {!readOnly && (
-            <button aria-label={t("props.removeItem", { item: it })} {...tipProps({ label: t("props.removeItem", { item: it }) })} onClick={() => onSet(items.filter((_, j) => j !== i))}>
+            <button
+              aria-label={t("props.removeItem", { item: it })}
+              {...tipProps({ label: t("props.removeItem", { item: it }) })}
+              onClick={() => onSet(items.filter((_, j) => j !== i))}
+            >
               ×
             </button>
           )}

@@ -76,7 +76,7 @@ describe("링크 자동 갱신", () => {
     expect(rw("[계획](<업무/계획.md#일정>)", c)).toBe("[계획](<보관/2026 계획.md#일정>)");
     expect(rw("[회의](업무/회의록.md)", c, "노트.md")).toBeNull();
     // 같은 폴더의 다른 문서에서
-    expect(rw("[계획](계획.md \"제목\")", c, "업무/회의록.md")).toBe('[계획](../보관/2026%20계획.md "제목")');
+    expect(rw('[계획](계획.md "제목")', c, "업무/회의록.md")).toBe('[계획](../보관/2026%20계획.md "제목")');
   });
 
   it("이동한 문서 자신의 상대 링크를 새 위치 기준으로 다시 계산한다", () => {
@@ -91,8 +91,23 @@ describe("링크 자동 갱신", () => {
   });
 
   it("연쇄 이동을 합친다", () => {
-    expect([...chainMoves([["a.md", "b.md"], ["b.md", "c.md"], ["x.md", "y.md"]])]).toEqual([["a.md", "c.md"], ["x.md", "y.md"]]);
-    const c = ctx(["a.md", "n.md"], [["a.md", "b.md"], ["b.md", "c.md"]]);
+    expect([
+      ...chainMoves([
+        ["a.md", "b.md"],
+        ["b.md", "c.md"],
+        ["x.md", "y.md"],
+      ]),
+    ]).toEqual([
+      ["a.md", "c.md"],
+      ["x.md", "y.md"],
+    ]);
+    const c = ctx(
+      ["a.md", "n.md"],
+      [
+        ["a.md", "b.md"],
+        ["b.md", "c.md"],
+      ],
+    );
     expect(rw("[[a]]", c, "n.md")).toBe("[[c]]");
   });
 
@@ -145,7 +160,10 @@ describe("블록 단위 출처", () => {
     store.touch("위키.md", "---\nsources: ['[[기사#^p1]]', '[[기사#^사라짐]]', '[[기사#결론]]', '[[기사#없는 제목]]']\n---\n본문 [[기사]]");
     const v = new LocalVault(store);
     await v.open();
-    const issues = v.lint().issues.filter((i) => i.kind === "broken_source").map((i) => i.target);
+    const issues = v
+      .lint()
+      .issues.filter((i) => i.kind === "broken_source")
+      .map((i) => i.target);
     expect(issues.sort()).toEqual(["기사#^사라짐", "기사#없는 제목"]);
     const s = await v.sources("위키.md");
     expect(s.sources[0]).toEqual({ target: "기사", path: "raw/기사.md", anchor: "^p1" });

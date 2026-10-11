@@ -13,38 +13,46 @@ export const BUILTIN_FIELDS = new Set(["path", "title", "folder", "name", "tags"
  */
 export function setFrontmatterField(content: string, key: string, value: unknown, opts: { keepEmpty?: boolean; flow?: boolean } = {}): string {
   checkKey(key);
-  return editFrontmatter(content, (doc) => {
-    if (value === null || value === undefined) {
-      if (opts.keepEmpty) doc.set(key, null);
-      else doc.delete(key);
-    } else {
-      // 원래 값의 모양을 잇는다: 글자 값은 그 자리만 바꿔 뒤 주석을 지키고, [a, b] 목록은 한 줄 목록으로
-      const prev = doc.get(key, true);
-      const node = doc.createNode(value);
-      if (isScalar(prev) && isScalar(node) && prev.value !== null) {
-        // 따옴표 모양은 같은 종류(글자→글자)일 때만 잇는다
-        if (typeof prev.value !== typeof node.value) prev.type = undefined;
-        prev.value = node.value;
+  return editFrontmatter(
+    content,
+    (doc) => {
+      if (value === null || value === undefined) {
+        if (opts.keepEmpty) doc.set(key, null);
+        else doc.delete(key);
       } else {
-        // 새로 만드는 목록은 flow면 한 줄 목록으로
-        if (isSeq(node) && ((isSeq(prev) && prev.flow) || (opts.flow && !isSeq(prev)))) node.flow = true;
-        doc.set(key, node);
+        // 원래 값의 모양을 잇는다: 글자 값은 그 자리만 바꿔 뒤 주석을 지키고, [a, b] 목록은 한 줄 목록으로
+        const prev = doc.get(key, true);
+        const node = doc.createNode(value);
+        if (isScalar(prev) && isScalar(node) && prev.value !== null) {
+          // 따옴표 모양은 같은 종류(글자→글자)일 때만 잇는다
+          if (typeof prev.value !== typeof node.value) prev.type = undefined;
+          prev.value = node.value;
+        } else {
+          // 새로 만드는 목록은 flow면 한 줄 목록으로
+          if (isSeq(node) && ((isSeq(prev) && prev.flow) || (opts.flow && !isSeq(prev)))) node.flow = true;
+          doc.set(key, node);
+        }
       }
-    }
-  }, opts.keepEmpty && (value === null || value === undefined) ? key : null);
+    },
+    opts.keepEmpty && (value === null || value === undefined) ? key : null,
+  );
 }
 
 /** 필드 이름을 바꾼다(자리·값·주석은 그대로). 새 이름이 이미 있으면 오류. */
 export function renameFrontmatterField(content: string, from: string, to: string): string {
   checkKey(to);
   if (from === to) return content;
-  return editFrontmatter(content, (doc) => {
-    if (doc.has(to)) throw new PathError("field_exists", { field: to });
-    const map = doc.contents;
-    const pair = isMap(map) ? map.items.find((p) => isScalar(p.key) && p.key.value === from) : undefined;
-    if (!pair) throw new PathError("field_missing", { field: from });
-    pair.key = doc.createNode(to);
-  }, null);
+  return editFrontmatter(
+    content,
+    (doc) => {
+      if (doc.has(to)) throw new PathError("field_exists", { field: to });
+      const map = doc.contents;
+      const pair = isMap(map) ? map.items.find((p) => isScalar(p.key) && p.key.value === from) : undefined;
+      if (!pair) throw new PathError("field_missing", { field: from });
+      pair.key = doc.createNode(to);
+    },
+    null,
+  );
 }
 
 function checkKey(key: string) {
@@ -63,7 +71,11 @@ function editFrontmatter(content: string, edit: (doc: ReturnType<typeof parseDoc
   edit(doc);
   // 다른 필드의 모양이 바뀌지 않게([a, b]를 [ a, b ]로 바꾸지 않는 등)
   let out = doc.toString({ flowCollectionPadding: false, lineWidth: 0 }).replace(/\n+$/, "");
-  if (emptyKey !== null) out = out.split("\n").map((l) => (l === `${emptyKey}: null` ? `${emptyKey}:` : l)).join("\n");
+  if (emptyKey !== null)
+    out = out
+      .split("\n")
+      .map((l) => (l === `${emptyKey}: null` ? `${emptyKey}:` : l))
+      .join("\n");
   if (!out || out === "{}") return body;
   return `---\n${out}\n---\n${body}`;
 }
@@ -110,7 +122,7 @@ export function propertyStats(docs: { frontmatter: Record<string, unknown> | nul
       }
     }
   }
-  const top = <T,>(m: Map<T, number>) => [...m.entries()].sort((x, y) => y[1] - x[1]).map(([k]) => k);
+  const top = <T>(m: Map<T, number>) => [...m.entries()].sort((x, y) => y[1] - x[1]).map(([k]) => k);
   return [...acc.entries()]
     .map(([key, a]) => ({ key, type: top(a.types)[0] ?? "text", count: a.count, values: top(a.values).slice(0, 30) }))
     .sort((x, y) => y.count - x.count || x.key.localeCompare(y.key));

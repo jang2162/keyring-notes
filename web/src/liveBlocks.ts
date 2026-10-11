@@ -301,7 +301,9 @@ function buildInline(view: EditorView, getCtx: GetCtx): DecorationSet {
           const target = m[1].trim();
           const resolved = ctx.resolver.resolve(target, ctx.docPath);
           if (!resolved || !IMAGE_EXT.test(resolved) || inCode(at(m.index!))) continue;
-          items.push(Decoration.replace({ widget: new InlineImage(api.rawUrl(resolved), target, m[2] ?? null) }).range(at(m.index!), at(m.index! + m[0].length)));
+          items.push(
+            Decoration.replace({ widget: new InlineImage(api.rawUrl(resolved), target, m[2] ?? null) }).range(at(m.index!), at(m.index! + m[0].length)),
+          );
         }
       }
       // 인라인 수식 $…$(여는 $ 뒤·닫는 $ 앞이 공백이 아니고, 닫는 $ 뒤가 숫자가 아님)
@@ -354,7 +356,8 @@ function inlinePlugin(getCtx: GetCtx) {
         this.decorations = buildInline(view, getCtx);
       }
       update(u: ViewUpdate) {
-        if (u.docChanged || u.viewportChanged || u.selectionSet || syntaxTree(u.state) !== syntaxTree(u.startState)) this.decorations = buildInline(u.view, getCtx);
+        if (u.docChanged || u.viewportChanged || u.selectionSet || syntaxTree(u.state) !== syntaxTree(u.startState))
+          this.decorations = buildInline(u.view, getCtx);
       }
     },
     { decorations: (v) => v.decorations },

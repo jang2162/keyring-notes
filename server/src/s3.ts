@@ -47,7 +47,15 @@ export function s3ConfigFromEnv(e: NodeJS.ProcessEnv = process.env): S3Config | 
   const ps = env(e, "KEYRING_S3_PATH_STYLE");
   let prefix = env(e, "KEYRING_S3_PREFIX") ?? "keyring/";
   if (prefix && !prefix.endsWith("/")) prefix += "/";
-  return { endpoint, region, bucket, accessKeyId, secretAccessKey, prefix: prefix.replace(/^\/+/, ""), pathStyle: ps ? ps === "1" || ps === "true" : custom !== undefined };
+  return {
+    endpoint,
+    region,
+    bucket,
+    accessKeyId,
+    secretAccessKey,
+    prefix: prefix.replace(/^\/+/, ""),
+    pathStyle: ps ? ps === "1" || ps === "true" : custom !== undefined,
+  };
 }
 
 const sha256hex = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
@@ -104,7 +112,10 @@ export function signV4(i: SignInput): string {
 }
 
 function amzDate(d = new Date()): string {
-  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  return d
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}/, "");
 }
 
 function xmlValue(xml: string, tag: string): string | undefined {

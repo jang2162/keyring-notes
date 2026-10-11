@@ -192,7 +192,14 @@ describe("REST·MCP: 노드 API와 에이전트 언어", () => {
     token = config.issueToken("bot");
     config.setRule("bot", "업무", "read");
     config.setRule("bot", "업무/비밀", "hidden");
-    app = createApp({ vault, index, config, wiki, ingestor, admin: { backups: new BackupService(vault, config, path.join(t.dir, "backups"), () => wiki.resync()) } });
+    app = createApp({
+      vault,
+      index,
+      config,
+      wiki,
+      ingestor,
+      admin: { backups: new BackupService(vault, config, path.join(t.dir, "backups"), () => wiki.resync()) },
+    });
     const res = await app.request("/api/auth/login", { method: "POST", headers: json, body: JSON.stringify({ password: "correct horse" }) });
     cookie = res.headers.get("set-cookie")!.split(";")[0];
     await owner.batch([

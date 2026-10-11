@@ -143,14 +143,20 @@ describe("로컬 볼트", () => {
 describe("공통 설정·노드 이동", () => {
   it("설정 파일은 검색·위젯·속성 통계에서 빠지고, [[날짜]]는 같은 워크스페이스의 그날 데일리 노트로", async () => {
     const { v } = await vault({
-      "keyring-settings.md": "---\nkeyring: settings\nvault:\n  language: ko\nworkspaces:\n  개인:\n    daily:\n      format: YYYY/YYYY-MM-DD\n---\n# Keyring Notes 설정\n일기",
+      "keyring-settings.md":
+        "---\nkeyring: settings\nvault:\n  language: ko\nworkspaces:\n  개인:\n    daily:\n      format: YYYY/YYYY-MM-DD\n---\n# Keyring Notes 설정\n일기",
       "개인/데일리 노트/2026/2026-10-07 회의.md": "---\nicon: 📅\n---\n회의 일기",
       "업무/데일리 노트/2026-10-07.md": "업무 일기",
       "개인/a.md": "[[2026-10-07]] 일기",
       "업무/b.md": "[[2026-10-07]]",
     });
     expect(v.daily().of("개인")).toMatchObject({ folder: "개인/데일리 노트", format: "YYYY/YYYY-MM-DD" });
-    expect(v.search("일기").map((h) => h.path).sort()).toEqual(["개인/a.md", "개인/데일리 노트/2026/2026-10-07 회의.md", "업무/데일리 노트/2026-10-07.md"]);
+    expect(
+      v
+        .search("일기")
+        .map((h) => h.path)
+        .sort(),
+    ).toEqual(["개인/a.md", "개인/데일리 노트/2026/2026-10-07 회의.md", "업무/데일리 노트/2026-10-07.md"]);
     expect(v.properties().map((p) => p.key)).toEqual(["icon"]);
     const w = v.widget("type: query\nfrom: 개인");
     expect(w.type === "query" && w.rows.map((r) => r.path).sort()).toEqual(["개인/a.md", "개인/데일리 노트/2026/2026-10-07 회의.md"]);
@@ -170,9 +176,21 @@ describe("공통 설정·노드 이동", () => {
     await v.rescan();
     const r = await v.moveNode("업무/프로젝트", "보관/2026 프로젝트");
     // 처음 고치는 문서의 "기존 내용" 기록 뒤에 이동 한 건
-    expect(v.entries().map((e) => e.message).slice(-2)).toEqual(["기존 내용", "노드 이동: 업무/프로젝트 → 보관/2026 프로젝트"]);
-    expect(r.moved.map(([, t]) => t).sort()).toEqual(["보관/2026 프로젝트.md", "보관/2026 프로젝트/계획.md", "보관/2026 프로젝트/도식.png", "보관/2026 프로젝트/참고.md"]);
-    expect((await v.read("업무/밖.md")).content).toBe("[[2026 프로젝트]] [[보관/2026 프로젝트/참고]] ![[보관/2026 프로젝트/도식.png]] [x](../보관/2026%20프로젝트/도식.png)");
+    expect(
+      v
+        .entries()
+        .map((e) => e.message)
+        .slice(-2),
+    ).toEqual(["기존 내용", "노드 이동: 업무/프로젝트 → 보관/2026 프로젝트"]);
+    expect(r.moved.map(([, t]) => t).sort()).toEqual([
+      "보관/2026 프로젝트.md",
+      "보관/2026 프로젝트/계획.md",
+      "보관/2026 프로젝트/도식.png",
+      "보관/2026 프로젝트/참고.md",
+    ]);
+    expect((await v.read("업무/밖.md")).content).toBe(
+      "[[2026 프로젝트]] [[보관/2026 프로젝트/참고]] ![[보관/2026 프로젝트/도식.png]] [x](../보관/2026%20프로젝트/도식.png)",
+    );
     expect((await v.read("보관/2026 프로젝트/계획.md")).content).toBe("![[도식.png]] ![](도식.png) [[참고]]");
     expect(new TextDecoder().decode(await v.readBytes("보관/2026 프로젝트/도식.png"))).toBe("PNG");
     await expect(v.readBytes("업무/프로젝트/도식.png")).rejects.toBeInstanceOf(NotFoundError);

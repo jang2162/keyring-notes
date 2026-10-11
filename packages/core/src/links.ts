@@ -206,7 +206,14 @@ export function rewriteLinks(content: string, oldPath: string, newPath: string, 
       const head = line.slice(0, line.length - value.length);
       const flow = /^(\s*)\[(.*)\](\s*)$/.exec(value);
       lines[i] = flow
-        ? head + flow[1] + "[" + splitFlow(flow[2]).map((t) => rw.sourceValue(t)).join(",") + "]" + flow[3]
+        ? head +
+          flow[1] +
+          "[" +
+          splitFlow(flow[2])
+            .map((t) => rw.sourceValue(t))
+            .join(",") +
+          "]" +
+          flow[3]
         : head + rw.sourceValue(value);
       continue;
     }

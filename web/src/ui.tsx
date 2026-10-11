@@ -169,7 +169,23 @@ export function Menu({ at, items, onClose }: { at: { x: number; y: number }; ite
  * 끌어서 폭을 바꾸는 경계. side: 패널이 경계의 어느 쪽에 있는지(left면 오른쪽으로 끌수록 넓어진다).
  * 두 번 누르면 기본 폭.
  */
-export function Resizer({ side, width, min, max, onChange, onReset, label }: { side: "left" | "right"; width: number; min: number; max: number; onChange: (w: number) => void; onReset: () => void; label: string }) {
+export function Resizer({
+  side,
+  width,
+  min,
+  max,
+  onChange,
+  onReset,
+  label,
+}: {
+  side: "left" | "right";
+  width: number;
+  min: number;
+  max: number;
+  onChange: (w: number) => void;
+  onReset: () => void;
+  label: string;
+}) {
   const start = useRef<{ x: number; w: number } | null>(null);
   return (
     <div
@@ -208,11 +224,29 @@ export function Resizer({ side, width, min, max, onChange, onReset, label }: { s
 }
 
 /** 오른쪽 패널 등에서 쓰는 작은 탭 줄 */
-export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: ReactNode; title?: string }[]; onChange: (v: T) => void; label: string }) {
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: { value: T; label: ReactNode; title?: string }[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
   return (
     <div className="segmented" role="tablist" aria-label={label}>
       {options.map((o) => (
-        <button key={o.value} type="button" role="tab" aria-selected={value === o.value} {...(o.title ? tipProps({ label: o.title }) : {})} className={value === o.value ? "on" : ""} onClick={() => onChange(o.value)}>
+        <button
+          key={o.value}
+          type="button"
+          role="tab"
+          aria-selected={value === o.value}
+          {...(o.title ? tipProps({ label: o.title }) : {})}
+          className={value === o.value ? "on" : ""}
+          onClick={() => onChange(o.value)}
+        >
           {o.label}
         </button>
       ))}

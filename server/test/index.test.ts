@@ -125,10 +125,7 @@ describe("백링크", () => {
     expect(a).toEqual(["개인/가계부.md", "업무/프로젝트A/회의록.md"]);
     // 경로를 쓴 링크는 정확히 그 문서로
     expect((await owner.backlinks("업무/프로젝트B/계획.md")).map((x) => x.path)).toEqual([]);
-    expect((await owner.backlinks("업무/프로젝트A/회의록.md")).map((x) => x.path)).toEqual([
-      "업무/프로젝트A/계획.md",
-      "업무/프로젝트B/계획.md",
-    ]);
+    expect((await owner.backlinks("업무/프로젝트A/회의록.md")).map((x) => x.path)).toEqual(["업무/프로젝트A/계획.md", "업무/프로젝트B/계획.md"]);
   });
 
   it("숨김 문서에서 온 백링크는 빠진다", async () => {
@@ -168,7 +165,9 @@ describe("위젯", () => {
     const r = await w(owner, "type: query\nfrom: 업무/프로젝트A\nwhere: status != done\nshow: [title, due]\nsort: due");
     expect(r).toMatchObject({ type: "query", columns: ["title", "due"], total: 1 });
     if (r.type !== "query") throw new Error();
-    expect(r.rows.map(({ hash: _h, ...rest }) => rest)).toEqual([{ path: "업무/프로젝트A/계획.md", title: "프로젝트A 계획", values: { title: "프로젝트A 계획", due: "2026-10-20" } }]);
+    expect(r.rows.map(({ hash: _h, ...rest }) => rest)).toEqual([
+      { path: "업무/프로젝트A/계획.md", title: "프로젝트A 계획", values: { title: "프로젝트A 계획", due: "2026-10-20" } },
+    ]);
   });
 
   it("table: 여러 조건, 역순 정렬, 태그 from", async () => {
@@ -206,13 +205,21 @@ describe("위젯", () => {
   it("chart: 필드별 개수·합계, 직접 입력 data", async () => {
     const r = await w(owner, "type: chart\nx: status");
     if (r.type !== "chart") throw new Error();
-    expect(r.series).toEqual(expect.arrayContaining([{ label: "todo", value: 2 }, { label: "doing", value: 1 }]));
+    expect(r.series).toEqual(
+      expect.arrayContaining([
+        { label: "todo", value: 2 },
+        { label: "doing", value: 1 },
+      ]),
+    );
     const s = await w(owner, "type: chart\nchart: line\nx: status\ny: priority\nagg: sum\nfrom: 업무");
     if (s.type !== "chart") throw new Error();
     expect(s.series.find((x) => x.label === "todo")?.value).toBe(3);
     const d = await w(owner, "type: chart\ndata:\n  - {label: 1월, value: 3}\n  - {label: 2월, value: 5}");
     if (d.type !== "chart") throw new Error();
-    expect(d.series).toEqual([{ label: "1월", value: 3 }, { label: "2월", value: 5 }]);
+    expect(d.series).toEqual([
+      { label: "1월", value: 3 },
+      { label: "2월", value: 5 },
+    ]);
     const hidden = await w(agent, "type: chart\nx: status");
     if (hidden.type !== "chart") throw new Error();
     expect(hidden.series.find((x) => x.label === "todo")?.value).toBe(1); // 가계부 제외

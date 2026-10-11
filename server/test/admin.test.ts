@@ -52,7 +52,10 @@ describe("백업", () => {
     expect(b.name).toMatch(/^keyring-\d{8}-\d{6}-manual\.tar\.gz$/);
     expect(b).toMatchObject({ kind: "manual", head: git(vault, "rev-parse", "HEAD"), includesConfig: true });
     expect(((await stat(path.join(backups.dir, b.name))).mode & 0o777).toString(8)).toBe("600");
-    const listed = execFileSync("tar", ["-tzf", path.join(backups.dir, b.name)], { encoding: "utf8" }).trim().split("\n").sort();
+    const listed = execFileSync("tar", ["-tzf", path.join(backups.dir, b.name)], { encoding: "utf8" })
+      .trim()
+      .split("\n")
+      .sort();
     expect(listed).toEqual(["config.json", "manifest.json", "vault.bundle"]);
     const noCfg = await backups.create("manual", { includeConfig: false });
     expect(noCfg.includesConfig).toBe(false);
@@ -162,13 +165,25 @@ describe("관리 API·설치·보안", () => {
   }
 
   beforeEach(async () => {
-    app = createApp({ vault, index, config, wiki, ingestor: undefined as never, admin: { backups, allowedHosts: ["notes.example.com"], updateUrl: "" }, setupCode: () => setup });
+    app = createApp({
+      vault,
+      index,
+      config,
+      wiki,
+      ingestor: undefined as never,
+      admin: { backups, allowedHosts: ["notes.example.com"], updateUrl: "" },
+      setupCode: () => setup,
+    });
     cookie = await login();
   });
 
   it("에이전트 토큰으로는 관리 API를 쓸 수 없다", async () => {
     const token = config.issueToken("wiki-work");
-    for (const [method, url] of [["GET", "/api/admin/status"], ["GET", "/api/admin/agents"], ["POST", "/api/admin/backups"]] as const) {
+    for (const [method, url] of [
+      ["GET", "/api/admin/status"],
+      ["GET", "/api/admin/agents"],
+      ["POST", "/api/admin/backups"],
+    ] as const) {
       const res = await app.request(url, { method, headers: { ...json, authorization: `Bearer ${token}` }, body: method === "POST" ? "{}" : undefined });
       expect(res.status, url).toBe(403);
     }
@@ -187,7 +202,9 @@ describe("관리 API·설치·보안", () => {
   });
 
   it("에이전트 만들기·권한 표 바꾸기·토큰 재발급·삭제", async () => {
-    const created = await (await app.request("/api/admin/agents", { method: "POST", headers: { ...json, cookie }, body: JSON.stringify({ name: "wiki-work" }) })).json();
+    const created = await (
+      await app.request("/api/admin/agents", { method: "POST", headers: { ...json, cookie }, body: JSON.stringify({ name: "wiki-work" }) })
+    ).json();
     expect(created.token).toMatch(/^kn_/);
     let res = await app.request("/api/admin/agents/wiki-work/rules", {
       method: "PUT",
@@ -195,9 +212,17 @@ describe("관리 API·설치·보안", () => {
       body: JSON.stringify({ rules: { "업무/경제/raw/": "append", "업무/경제/wiki": "delete", "/": "read" } }),
     });
     expect((await res.json()).rules).toEqual({ "업무/경제/raw": "append", "업무/경제/wiki": "delete", "/": "read" });
-    res = await app.request("/api/admin/agents/wiki-work/rules", { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify({ rules: { "../x": "read" } }) });
+    res = await app.request("/api/admin/agents/wiki-work/rules", {
+      method: "PUT",
+      headers: { ...json, cookie },
+      body: JSON.stringify({ rules: { "../x": "read" } }),
+    });
     expect(res.status).toBe(400);
-    res = await app.request("/api/admin/agents/wiki-work/rules", { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify({ rules: { "업무/경제": "admin" } }) });
+    res = await app.request("/api/admin/agents/wiki-work/rules", {
+      method: "PUT",
+      headers: { ...json, cookie },
+      body: JSON.stringify({ rules: { "업무/경제": "admin" } }),
+    });
     expect(res.status).toBe(400);
     // 새 토큰으로 바로 쓸 수 있고 마지막 사용 시각이 남는다
     expect((await app.request("/api/whoami", { headers: { authorization: `Bearer ${created.token}` } })).status).toBe(200);
@@ -212,9 +237,17 @@ describe("관리 API·설치·보안", () => {
 
   it("비밀번호 변경: 지금 브라우저는 유지, 다른 세션은 끊김", async () => {
     const other = await login();
-    const bad = await app.request("/api/admin/password", { method: "POST", headers: { ...json, cookie }, body: JSON.stringify({ current: "wrong", next: "new password 1" }) });
+    const bad = await app.request("/api/admin/password", {
+      method: "POST",
+      headers: { ...json, cookie },
+      body: JSON.stringify({ current: "wrong", next: "new password 1" }),
+    });
     expect(bad.status).toBe(403);
-    const res = await app.request("/api/admin/password", { method: "POST", headers: { ...json, cookie }, body: JSON.stringify({ current: "correct horse", next: "new password 1" }) });
+    const res = await app.request("/api/admin/password", {
+      method: "POST",
+      headers: { ...json, cookie },
+      body: JSON.stringify({ current: "correct horse", next: "new password 1" }),
+    });
     expect(res.status).toBe(200);
     const fresh = res.headers.get("set-cookie")!.split(";")[0];
     expect((await app.request("/api/tree", { headers: { cookie: fresh } })).status).toBe(200);
@@ -248,10 +281,19 @@ describe("관리 API·설치·보안", () => {
     const fresh = await openServer("c");
     try {
       setup = "ABCD-EF12-3456";
-      const a2 = createApp({ ...fresh, ingestor: undefined as never, admin: { backups: fresh.backups }, setupCode: () => (fresh.config.get().owner.passwordHash ? null : setup) });
+      const a2 = createApp({
+        ...fresh,
+        ingestor: undefined as never,
+        admin: { backups: fresh.backups },
+        setupCode: () => (fresh.config.get().owner.passwordHash ? null : setup),
+      });
       let st = await (await a2.request("/api/auth/status")).json();
       expect(st.passwordSet).toBe(false);
-      let res = await a2.request("/api/auth/setup", { method: "POST", headers: json, body: JSON.stringify({ code: "WRONG-CODE-0000", password: "first password" }) });
+      let res = await a2.request("/api/auth/setup", {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify({ code: "WRONG-CODE-0000", password: "first password" }),
+      });
       expect(res.status).toBe(401);
       res = await a2.request("/api/auth/setup", { method: "POST", headers: json, body: JSON.stringify({ code: "abcdef123456", password: "first password" }) });
       expect(res.status).toBe(200);

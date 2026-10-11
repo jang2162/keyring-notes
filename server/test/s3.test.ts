@@ -35,12 +35,22 @@ describe("SigV4", () => {
   it("환경 변수 설정", () => {
     expect(s3ConfigFromEnv({})).toBeNull();
     expect(() => s3ConfigFromEnv({ KEYRING_S3_BUCKET: "b" })).toThrow(/ACCESS_KEY/);
-    expect(s3ConfigFromEnv({ KEYRING_S3_BUCKET: "b", KEYRING_S3_ACCESS_KEY_ID: "a", KEYRING_S3_SECRET_ACCESS_KEY: "s", KEYRING_S3_REGION: "ap-northeast-2" })).toMatchObject({
+    expect(
+      s3ConfigFromEnv({ KEYRING_S3_BUCKET: "b", KEYRING_S3_ACCESS_KEY_ID: "a", KEYRING_S3_SECRET_ACCESS_KEY: "s", KEYRING_S3_REGION: "ap-northeast-2" }),
+    ).toMatchObject({
       endpoint: "https://s3.ap-northeast-2.amazonaws.com",
       pathStyle: false,
       prefix: "keyring/",
     });
-    expect(s3ConfigFromEnv({ KEYRING_S3_BUCKET: "b", KEYRING_S3_ACCESS_KEY_ID: "a", KEYRING_S3_SECRET_ACCESS_KEY: "s", KEYRING_S3_ENDPOINT: "http://minio:9000/", KEYRING_S3_PREFIX: "notes" })).toMatchObject({
+    expect(
+      s3ConfigFromEnv({
+        KEYRING_S3_BUCKET: "b",
+        KEYRING_S3_ACCESS_KEY_ID: "a",
+        KEYRING_S3_SECRET_ACCESS_KEY: "s",
+        KEYRING_S3_ENDPOINT: "http://minio:9000/",
+        KEYRING_S3_PREFIX: "notes",
+      }),
+    ).toMatchObject({
       endpoint: "http://minio:9000",
       pathStyle: true,
       prefix: "notes/",
@@ -104,7 +114,9 @@ async function setup(opts: { blobs?: boolean; minBytes?: number } = {}) {
 }
 
 const git = (vaultDir: string, ...args: string[]) =>
-  execFileSync("git", ["--git-dir", path.join(vaultDir, ".history"), "--work-tree", vaultDir, "-c", "core.quotePath=false", ...args], { encoding: "utf8" }).trim();
+  execFileSync("git", ["--git-dir", path.join(vaultDir, ".history"), "--work-tree", vaultDir, "-c", "core.quotePath=false", ...args], {
+    encoding: "utf8",
+  }).trim();
 
 describe("S3 원격 백업", () => {
   it("백업을 만들면 S3에도 올라가고, S3에서 받아 복원할 수 있다", async () => {

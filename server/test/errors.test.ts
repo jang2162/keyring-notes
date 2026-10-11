@@ -21,7 +21,14 @@ beforeEach(async () => {
   const { vault, index, wiki, ingestor } = await openVault(path.join(t.dir, "vault"));
   const config = new ConfigStore(path.join(t.dir, "config", "keyring.json"));
   config.setPassword("correct horse");
-  app = createApp({ vault, index, config, wiki, ingestor, admin: { backups: new BackupService(vault, config, path.join(vault.root, ".keyring", "backups"), () => wiki.resync()) } });
+  app = createApp({
+    vault,
+    index,
+    config,
+    wiki,
+    ingestor,
+    admin: { backups: new BackupService(vault, config, path.join(vault.root, ".keyring", "backups"), () => wiki.resync()) },
+  });
   const res = await app.request("/api/auth/login", { method: "POST", headers: json, body: JSON.stringify({ password: "correct horse" }) });
   cookie = (res.headers.get("set-cookie") ?? "").split(";")[0];
 });

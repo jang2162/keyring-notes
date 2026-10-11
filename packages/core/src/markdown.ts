@@ -132,7 +132,15 @@ export function section(content: string, opts: { heading?: string; startLine?: n
     return { heading: `^${id}`, startLine: r.start, endLine: r.end, totalLines: total, content: lines.slice(r.start - 1, r.end).join("\n") };
   }
   if (opts.heading) {
-    const want = opts.heading.split(">").map((s) => s.trim().replace(/^#+\s*/, "").toLowerCase()).filter(Boolean);
+    const want = opts.heading
+      .split(">")
+      .map((s) =>
+        s
+          .trim()
+          .replace(/^#+\s*/, "")
+          .toLowerCase(),
+      )
+      .filter(Boolean);
     const hs = headings(content);
     const match = hs.find((h, idx) => {
       if (h.text.toLowerCase() !== want[want.length - 1]) return false;

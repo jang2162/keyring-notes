@@ -65,7 +65,10 @@ export interface TreeHandle {
   startRename: (path: string) => void;
 }
 
-type Row = { kind: "node"; node: VaultNode; depth: number } | { kind: "attachments"; node: VaultNode; depth: number } | { kind: "file"; path: string; owner: VaultNode; depth: number };
+type Row =
+  | { kind: "node"; node: VaultNode; depth: number }
+  | { kind: "attachments"; node: VaultNode; depth: number }
+  | { kind: "file"; path: string; owner: VaultNode; depth: number };
 
 const rowKey = (r: Row) => (r.kind === "node" ? r.node.path : r.kind === "attachments" ? `${r.node.path}/\u0000att` : r.path);
 
@@ -513,7 +516,13 @@ export const Tree = forwardRef<
             <span className={`tree-chevron${isOpen ? " open" : ""}${canExpand ? " can" : ""}`} aria-hidden>
               {canExpand && <ChevronRight size={14} strokeWidth={2} />}
             </span>
-            {emoji ? <span className="doc-icon tree-emoji" aria-hidden>{emoji}</span> : <FileText size={15} strokeWidth={1.75} aria-hidden className="tree-icon" />}
+            {emoji ? (
+              <span className="doc-icon tree-emoji" aria-hidden>
+                {emoji}
+              </span>
+            ) : (
+              <FileText size={15} strokeWidth={1.75} aria-hidden className="tree-icon" />
+            )}
             {renaming === n.path ? (
               <RenameInput
                 initial={n.name}
@@ -588,7 +597,11 @@ function RenameInput({ initial, onDone }: { initial: string; onDone: (name: stri
         }}
         onBlur={() => finish(err ? null : v)}
       />
-      {err && <span className="tree-rename-error" role="alert">{err}</span>}
+      {err && (
+        <span className="tree-rename-error" role="alert">
+          {err}
+        </span>
+      )}
     </span>
   );
 }

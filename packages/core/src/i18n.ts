@@ -81,7 +81,13 @@ export function lookup(chain: { messages: Messages; locale: string }[], key: str
 /** 공식 언어로 바로(서버 오류·에이전트 글·CLI) */
 export function translate(lang: string | null | undefined, key: string, params?: Params): string {
   const l = officialLangOf(lang);
-  const chain = l === BASE_LANG ? [{ messages: OFFICIAL_MESSAGES.en, locale: "en" }] : [{ messages: OFFICIAL_MESSAGES[l], locale: l }, { messages: OFFICIAL_MESSAGES.en, locale: "en" }];
+  const chain =
+    l === BASE_LANG
+      ? [{ messages: OFFICIAL_MESSAGES.en, locale: "en" }]
+      : [
+          { messages: OFFICIAL_MESSAGES[l], locale: l },
+          { messages: OFFICIAL_MESSAGES.en, locale: "en" },
+        ];
   return lookup(chain, key, params);
 }
 

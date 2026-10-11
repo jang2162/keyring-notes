@@ -64,7 +64,11 @@ export class BlobStore {
   }
 
   private async writeIndex() {
-    const files = Object.fromEntries(Object.keys(this.index).sort().map((k) => [k, this.index[k]]));
+    const files = Object.fromEntries(
+      Object.keys(this.index)
+        .sort()
+        .map((k) => [k, this.index[k]]),
+    );
     const tmp = this.abs(`${BLOB_INDEX}.tmp`);
     await writeFile(tmp, JSON.stringify({ version: 1, files }, null, 1) + "\n");
     await rename(tmp, this.abs(BLOB_INDEX));

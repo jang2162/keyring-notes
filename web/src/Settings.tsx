@@ -24,7 +24,18 @@ import {
   type SettingPath,
   type VaultSettings,
 } from "@keyring-notes/core";
-import { DEFAULT_PREFS, isLocalOverride, resetDevicePrefs, resetSharedPrefs, setLocalOverride, setPrefs, sharedPref, usePrefs, type Prefs, type SyncedKey } from "./prefs";
+import {
+  DEFAULT_PREFS,
+  isLocalOverride,
+  resetDevicePrefs,
+  resetSharedPrefs,
+  setLocalOverride,
+  setPrefs,
+  sharedPref,
+  usePrefs,
+  type Prefs,
+  type SyncedKey,
+} from "./prefs";
 import { commandKey, eventCombo, formatCombo, inApp, keyCapture, normalizeCombo, type Command } from "./shortcuts";
 import { Modal, useModalControl } from "./Modal";
 import { SERVER_SECTIONS, ServerSettings, type ServerSection } from "./Admin";
@@ -97,7 +108,10 @@ function Row({
         <div className="setting-label">
           {t(label)}
           {synced ? (
-            <span className={local ? "badge-device" : "badge-shared"} {...tipProps({ label: local ? t("settings.scope.deviceOnlyTip") : t("settings.scope.allTip") })}>
+            <span
+              className={local ? "badge-device" : "badge-shared"}
+              {...tipProps({ label: local ? t("settings.scope.deviceOnlyTip") : t("settings.scope.allTip") })}
+            >
               {local ? t("settings.scope.device") : t("settings.scope.all")}
             </span>
           ) : scope === "vault" ? (
@@ -105,7 +119,9 @@ function Row({
               {t("settings.scope.all")}
             </span>
           ) : scope === "device" ? (
-            <span className="badge-device" {...tipProps({ label: t("settings.scope.deviceTip") })}>{t("settings.scope.device")}</span>
+            <span className="badge-device" {...tipProps({ label: t("settings.scope.deviceTip") })}>
+              {t("settings.scope.device")}
+            </span>
           ) : null}
         </div>
         {(hint || hintNode) && <div className="setting-hint">{hintNode ?? t(hint!)}</div>}
@@ -132,7 +148,17 @@ function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: bool
   );
 }
 
-function Choice<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string }) {
+function Choice<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
   return (
     <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value as T)}>
       {options.map((o) => (
@@ -145,7 +171,19 @@ function Choice<T extends string>({ value, options, onChange, label }: { value: 
 }
 
 /** 공통 설정 파일에 쓰는 글자 칸: Enter·포커스 이탈 때 저장(입력마다 쓰지 않는다). check가 이유를 돌려주면 저장하지 않는다 */
-function SharedText({ value, label, placeholder, check, onSave }: { value: string; label: string; placeholder?: string; check?: (v: string) => string | null; onSave: (v: string) => Promise<void> }) {
+function SharedText({
+  value,
+  label,
+  placeholder,
+  check,
+  onSave,
+}: {
+  value: string;
+  label: string;
+  placeholder?: string;
+  check?: (v: string) => string | null;
+  onSave: (v: string) => Promise<void>;
+}) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
   const err = v.trim() === value ? null : (check?.(v.trim()) ?? null);
@@ -173,7 +211,11 @@ function SharedText({ value, label, placeholder, check, onSave }: { value: strin
           }
         }}
       />
-      {err && <span className="setting-error" role="alert">{err}</span>}
+      {err && (
+        <span className="setting-error" role="alert">
+          {err}
+        </span>
+      )}
     </span>
   );
 }
@@ -256,7 +298,17 @@ export function SettingsModal({
       {shown.map((id) => (
         <section key={id} className={`settings-section${sections.find((s) => s.id === id)?.keywords ? " keep" : ""}`}>
           <h2>{sectionLabel(id)}</h2>
-          <SectionBody id={id} query={query} commands={commands} folders={folders} workspaces={workspaces} dailyWorkspace={dailyWorkspace} onOpen={onOpen} onMigrateDaily={onMigrateDaily} local={local} />
+          <SectionBody
+            id={id}
+            query={query}
+            commands={commands}
+            folders={folders}
+            workspaces={workspaces}
+            dailyWorkspace={dailyWorkspace}
+            onOpen={onOpen}
+            onMigrateDaily={onMigrateDaily}
+            local={local}
+          />
         </section>
       ))}
       {q && <p className="meta settings-noresult">{t("settings.noResult")}</p>}
@@ -286,7 +338,13 @@ function SettingsNav({
         <Search size={14} aria-hidden />
         <input type="search" placeholder={t("settings.search")} value={query} onChange={(e) => onQuery(e.target.value)} aria-label={t("settings.search")} />
         {query && (
-          <button type="button" className="icon-btn" aria-label={t("settings.searchClear")} {...tipProps({ label: t("settings.searchClear") })} onClick={() => onQuery("")}>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t("settings.searchClear")}
+            {...tipProps({ label: t("settings.searchClear") })}
+            onClick={() => onQuery("")}
+          >
             <X size={14} aria-hidden />
           </button>
         )}
@@ -336,7 +394,10 @@ function SectionBody({
 }) {
   const prefs = usePrefs();
   const shared = useVaultSettings();
-  const set = <K extends keyof Prefs>(k: K) => (v: Prefs[K]) => setPrefs({ [k]: v } as Partial<Prefs>);
+  const set =
+    <K extends keyof Prefs>(k: K) =>
+    (v: Prefs[K]) =>
+      setPrefs({ [k]: v } as Partial<Prefs>);
   const themeLabel = (v: Prefs["theme"]) => t(`theme.${v}`);
   const onOff = (v: boolean) => (v ? t("common.on") : t("common.off"));
   switch (id) {
@@ -344,7 +405,12 @@ function SectionBody({
       return (
         <>
           <Row label="settings.theme" hint="settings.themeHint" query={query} synced="theme" sharedText={themeLabel(sharedPref("theme"))}>
-            <Choice label={t("settings.theme")} value={prefs.theme} onChange={set("theme")} options={(["system", "light", "dark"] as const).map((v) => ({ value: v, label: themeLabel(v) }))} />
+            <Choice
+              label={t("settings.theme")}
+              value={prefs.theme}
+              onChange={set("theme")}
+              options={(["system", "light", "dark"] as const).map((v) => ({ value: v, label: themeLabel(v) }))}
+            />
           </Row>
           <Row label="settings.showIcons" hint="settings.showIconsHint" query={query} synced="showIcons" sharedText={onOff(sharedPref("showIcons"))}>
             <Toggle label={t("settings.showIcons")} value={prefs.showIcons} onChange={set("showIcons")} />
@@ -352,7 +418,13 @@ function SectionBody({
           <Row label="settings.railLabels" hint="settings.railLabelsHint" query={query} synced="railLabels" sharedText={onOff(sharedPref("railLabels"))}>
             <Toggle label={t("settings.railLabels")} value={prefs.railLabels} onChange={set("railLabels")} />
           </Row>
-          <Row label="settings.sharedFile" hintNode={t("settings.sharedFileHint", { file: VAULT_SETTINGS_PATH })} hint="settings.sharedFileHint" query={query} scope="vault">
+          <Row
+            label="settings.sharedFile"
+            hintNode={t("settings.sharedFileHint", { file: VAULT_SETTINGS_PATH })}
+            hint="settings.sharedFileHint"
+            query={query}
+            scope="vault"
+          >
             <button type="button" onClick={() => onOpen(VAULT_SETTINGS_PATH)}>
               {t("settings.openRaw")}
             </button>
@@ -363,10 +435,7 @@ function SectionBody({
             </button>
           </Row>
           <Row label="settings.resetShared" hint="settings.resetSharedHint" query={query} scope="vault">
-            <button
-              type="button"
-              onClick={() => void confirmDialog(t("settings.resetSharedAsk"), t("common.reset")).then((ok) => ok && resetSharedPrefs())}
-            >
+            <button type="button" onClick={() => void confirmDialog(t("settings.resetSharedAsk"), t("common.reset")).then((ok) => ok && resetSharedPrefs())}>
               {t("common.reset")}
             </button>
           </Row>
@@ -380,7 +449,13 @@ function SectionBody({
           <Row label="settings.autosave" hint="settings.autosaveHint" query={query} synced="autosave" sharedText={onOff(sharedPref("autosave"))}>
             <Toggle label={t("settings.autosave")} value={prefs.autosave} onChange={set("autosave")} />
           </Row>
-          <Row label="settings.autosaveDelay" hint="settings.autosaveDelayHint" query={query} synced="autosaveDelay" sharedText={t("settings.seconds", { n: sharedPref("autosaveDelay") / 1000 })}>
+          <Row
+            label="settings.autosaveDelay"
+            hint="settings.autosaveDelayHint"
+            query={query}
+            synced="autosaveDelay"
+            sharedText={t("settings.seconds", { n: sharedPref("autosaveDelay") / 1000 })}
+          >
             <Choice
               label={t("settings.autosaveDelay")}
               value={String(prefs.autosaveDelay)}
@@ -392,7 +467,12 @@ function SectionBody({
             <Toggle label="Live Preview" value={prefs.live} onChange={set("live")} />
           </Row>
           <Row label="settings.font" query={query} synced="editorFont" sharedText={t(`font.${sharedPref("editorFont")}`)}>
-            <Choice label={t("settings.font")} value={prefs.editorFont} onChange={set("editorFont")} options={(["sans", "serif", "mono"] as const).map((v) => ({ value: v, label: t(`font.${v}`) }))} />
+            <Choice
+              label={t("settings.font")}
+              value={prefs.editorFont}
+              onChange={set("editorFont")}
+              options={(["sans", "serif", "mono"] as const).map((v) => ({ value: v, label: t(`font.${v}`) }))}
+            />
           </Row>
           <Row label="settings.fontSize" query={query} synced="editorSize" sharedText={`${sharedPref("editorSize")}px`}>
             <FontSize value={prefs.editorSize} onChange={(v) => setPrefs({ editorSize: v })} />
@@ -412,18 +492,55 @@ function SectionBody({
       return (
         <>
           <Row label="settings.linkFormat" hint="settings.linkFormatHint" query={query} scope="vault">
-            <Choice label={t("settings.linkFormat")} value={shared.linkFormat} onChange={(v) => void saveShared(["vault", "linkFormat"])(v)} options={[{ value: "shortest", label: t("settings.linkShortest") }, { value: "full", label: t("settings.linkFull") }]} />
+            <Choice
+              label={t("settings.linkFormat")}
+              value={shared.linkFormat}
+              onChange={(v) => void saveShared(["vault", "linkFormat"])(v)}
+              options={[
+                { value: "shortest", label: t("settings.linkShortest") },
+                { value: "full", label: t("settings.linkFull") },
+              ]}
+            />
           </Row>
-          <Row label="settings.treeAttachments" hint="settings.treeAttachmentsHint" query={query} synced="treeAttachments" sharedText={t(`settings.attach.${sharedPref("treeAttachments")}`)}>
-            <Choice label={t("settings.treeAttachments")} value={prefs.treeAttachments} onChange={set("treeAttachments")} options={(["show", "hide"] as const).map((v) => ({ value: v, label: t(`settings.attach.${v}`) }))} />
+          <Row
+            label="settings.treeAttachments"
+            hint="settings.treeAttachmentsHint"
+            query={query}
+            synced="treeAttachments"
+            sharedText={t(`settings.attach.${sharedPref("treeAttachments")}`)}
+          >
+            <Choice
+              label={t("settings.treeAttachments")}
+              value={prefs.treeAttachments}
+              onChange={set("treeAttachments")}
+              options={(["show", "hide"] as const).map((v) => ({ value: v, label: t(`settings.attach.${v}`) }))}
+            />
           </Row>
-          <Row label="settings.backlinksInDoc" hint="settings.backlinksInDocHint" query={query} synced="backlinksInDoc" sharedText={onOff(sharedPref("backlinksInDoc"))}>
+          <Row
+            label="settings.backlinksInDoc"
+            hint="settings.backlinksInDocHint"
+            query={query}
+            synced="backlinksInDoc"
+            sharedText={onOff(sharedPref("backlinksInDoc"))}
+          >
             <Toggle label={t("settings.backlinksInDoc")} value={prefs.backlinksInDoc} onChange={set("backlinksInDoc")} />
           </Row>
-          <Row label="settings.dailyFriendly" hint="settings.dailyFriendlyHint" query={query} synced="dailyFriendly" sharedText={onOff(sharedPref("dailyFriendly"))}>
+          <Row
+            label="settings.dailyFriendly"
+            hint="settings.dailyFriendlyHint"
+            query={query}
+            synced="dailyFriendly"
+            sharedText={onOff(sharedPref("dailyFriendly"))}
+          >
             <Toggle label={t("settings.dailyFriendly")} value={prefs.dailyFriendly} onChange={set("dailyFriendly")} />
           </Row>
-          <Row label="settings.dailySortDesc" hint="settings.dailySortDescHint" query={query} synced="dailySortDesc" sharedText={onOff(sharedPref("dailySortDesc"))}>
+          <Row
+            label="settings.dailySortDesc"
+            hint="settings.dailySortDescHint"
+            query={query}
+            synced="dailySortDesc"
+            sharedText={onOff(sharedPref("dailySortDesc"))}
+          >
             <Toggle label={t("settings.dailySortDesc")} value={prefs.dailySortDesc} onChange={set("dailySortDesc")} />
           </Row>
         </>
@@ -452,7 +569,19 @@ function FontSize({ value, onChange }: { value: number; onChange: (v: number) =>
 const WEEK = ["monday", "sunday"] as const;
 
 /** 워크스페이스: 만들기·이름·아이콘·순서, 워크스페이스별 데일리·템플릿·첨부 폴더(공통 설정 파일) */
-function WorkspaceSettings({ query, shared, ops, initial, onMigrate }: { query: string; shared: VaultSettings; ops: WorkspaceOps; initial: string; onMigrate: (ws: string) => void }) {
+function WorkspaceSettings({
+  query,
+  shared,
+  ops,
+  initial,
+  onMigrate,
+}: {
+  query: string;
+  shared: VaultSettings;
+  ops: WorkspaceOps;
+  initial: string;
+  onMigrate: (ws: string) => void;
+}) {
   const [sel, setSel] = useState(ops.names.includes(initial) ? initial : (ops.names[0] ?? ""));
   useEffect(() => {
     if (!ops.names.includes(sel)) setSel(ops.names.includes(initial) ? initial : (ops.names[0] ?? ""));
@@ -509,10 +638,24 @@ function WorkspaceSettings({ query, shared, ops, initial, onMigrate }: { query: 
                 {name === ops.current && <span className="meta"> · {t("ws.currentShort")}</span>}
               </button>
               <span className="ws-tools">
-                <button type="button" className="icon-btn" aria-label={t("ws.up", { name })} {...tipProps({ label: t("ws.upShort") })} aria-disabled={i === 0 || undefined} onClick={() => i > 0 && move(i, -1)}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={t("ws.up", { name })}
+                  {...tipProps({ label: t("ws.upShort") })}
+                  aria-disabled={i === 0 || undefined}
+                  onClick={() => i > 0 && move(i, -1)}
+                >
                   <ArrowUp size={14} aria-hidden />
                 </button>
-                <button type="button" className="icon-btn" aria-label={t("ws.down", { name })} {...tipProps({ label: t("ws.downShort") })} aria-disabled={i === ops.names.length - 1 || undefined} onClick={() => i < ops.names.length - 1 && move(i, 1)}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={t("ws.down", { name })}
+                  {...tipProps({ label: t("ws.downShort") })}
+                  aria-disabled={i === ops.names.length - 1 || undefined}
+                  onClick={() => i < ops.names.length - 1 && move(i, 1)}
+                >
                   <ArrowDown size={14} aria-hidden />
                 </button>
                 <button type="button" onClick={() => ops.open(name)}>
@@ -554,9 +697,23 @@ function WorkspaceSettings({ query, shared, ops, initial, onMigrate }: { query: 
           {w.daily.enabled && (
             <>
               <Row label="settings.dailyFolder" hint="settings.dailyFolderHint" query={query} scope="vault">
-                <SharedText label={t("settings.dailyFolder")} value={w.daily.folder} check={(v) => (nameCheck(v) ?? (dailyFormatProblem(v, w.daily.format, vaultLang()) ? formatProblemText(dailyFormatProblem(v, w.daily.format, vaultLang())!) : null))} onSave={(v) => updateVaultSetting(path("daily", "folder"), v.replace(/^\/+|\/+$/g, ""))} />
+                <SharedText
+                  label={t("settings.dailyFolder")}
+                  value={w.daily.folder}
+                  check={(v) =>
+                    nameCheck(v) ??
+                    (dailyFormatProblem(v, w.daily.format, vaultLang()) ? formatProblemText(dailyFormatProblem(v, w.daily.format, vaultLang())!) : null)
+                  }
+                  onSave={(v) => updateVaultSetting(path("daily", "folder"), v.replace(/^\/+|\/+$/g, ""))}
+                />
               </Row>
-              <Row label="settings.dailyGrouping" hintNode={isCustom ? t("settings.dailyTokens") : t("settings.dailyGroupingHint")} hint="settings.dailyGroupingHint" query={query} scope="vault">
+              <Row
+                label="settings.dailyGrouping"
+                hintNode={isCustom ? t("settings.dailyTokens") : t("settings.dailyGroupingHint")}
+                hint="settings.dailyGroupingHint"
+                query={query}
+                scope="vault"
+              >
                 <select
                   aria-label={t("settings.dailyGrouping")}
                   value={isCustom ? "custom" : preset}
@@ -573,14 +730,36 @@ function WorkspaceSettings({ query, shared, ops, initial, onMigrate }: { query: 
                   ))}
                   <option value="custom">{t("daily.preset.custom")}</option>
                 </select>
-                {isCustom && <SharedText label={t("settings.dailyFormat")} value={w.daily.format} placeholder="YYYY-MM-DD" check={check} onSave={(v) => updateVaultSetting(path("daily", "format"), v)} />}
+                {isCustom && (
+                  <SharedText
+                    label={t("settings.dailyFormat")}
+                    value={w.daily.format}
+                    placeholder="YYYY-MM-DD"
+                    check={check}
+                    onSave={(v) => updateVaultSetting(path("daily", "format"), v)}
+                  />
+                )}
               </Row>
-              <Row label="settings.weekStart" hint={w.daily.weekStart === "sunday" ? "settings.weekStartSundayHint" : "settings.weekStartMondayHint"} query={query} scope="vault">
-                <Choice label={t("settings.weekStart")} value={w.daily.weekStart} onChange={(v) => void saveShared(path("daily", "weekStart"))(v)} options={WEEK.map((v) => ({ value: v, label: t(`settings.week.${v}`) }))} />
+              <Row
+                label="settings.weekStart"
+                hint={w.daily.weekStart === "sunday" ? "settings.weekStartSundayHint" : "settings.weekStartMondayHint"}
+                query={query}
+                scope="vault"
+              >
+                <Choice
+                  label={t("settings.weekStart")}
+                  value={w.daily.weekStart}
+                  onChange={(v) => void saveShared(path("daily", "weekStart"))(v)}
+                  options={WEEK.map((v) => ({ value: v, label: t(`settings.week.${v}`) }))}
+                />
               </Row>
               {!query && <DailyPreview folder={`${ws}/${w.daily.folder}`} format={w.daily.format} weekStart={w.daily.weekStart} />}
               <Row label="settings.dailyTemplate" hint="settings.dailyTemplateHint" query={query} scope="vault">
-                <SharedText label={t("settings.dailyTemplate")} value={w.daily.template} onSave={(v) => updateVaultSetting(path("daily", "template"), v.replace(/^\/+/, ""))} />
+                <SharedText
+                  label={t("settings.dailyTemplate")}
+                  value={w.daily.template}
+                  onSave={(v) => updateVaultSetting(path("daily", "template"), v.replace(/^\/+/, ""))}
+                />
               </Row>
               <Row label="settings.dailyIcon" hint="settings.dailyIconHint" query={query} scope="vault">
                 <button
@@ -603,17 +782,34 @@ function WorkspaceSettings({ query, shared, ops, initial, onMigrate }: { query: 
             </>
           )}
           <Row label="settings.templateFolder" hint="settings.templateFolderHint" query={query} scope="vault">
-            <SharedText label={t("settings.templateFolder")} value={w.templateFolder} onSave={(v) => updateVaultSetting(path("templateFolder"), v.replace(/^\/+|\/+$/g, ""))} />
+            <SharedText
+              label={t("settings.templateFolder")}
+              value={w.templateFolder}
+              onSave={(v) => updateVaultSetting(path("templateFolder"), v.replace(/^\/+|\/+$/g, ""))}
+            />
           </Row>
           <Row label="settings.attachmentFolder" hint="settings.attachmentFolderHint" query={query} scope="vault">
-            <SharedText label={t("settings.attachmentFolder")} value={w.attachmentFolder} check={nameCheck} onSave={(v) => updateVaultSetting(path("attachmentFolder"), v.replace(/^\/+|\/+$/g, ""))} />
+            <SharedText
+              label={t("settings.attachmentFolder")}
+              value={w.attachmentFolder}
+              check={nameCheck}
+              onSave={(v) => updateVaultSetting(path("attachmentFolder"), v.replace(/^\/+|\/+$/g, ""))}
+            />
           </Row>
           <Row label="settings.wsDefaults" hint="settings.wsDefaultsHint" query={query} scope="vault">
             <button type="button" onClick={() => void saveShared(["workspaces", ws])(null)}>
               {t("settings.wsDefaultsRun")}
             </button>
           </Row>
-          {picker && <IconPicker at={picker} value={w.daily.icon} title={t("settings.dailyIcon")} onClose={() => setPicker(null)} onPick={(icon) => void saveShared(path("daily", "icon"))(icon ?? "")} />}
+          {picker && (
+            <IconPicker
+              at={picker}
+              value={w.daily.icon}
+              title={t("settings.dailyIcon")}
+              onClose={() => setPicker(null)}
+              onPick={(icon) => void saveShared(path("daily", "icon"))(icon ?? "")}
+            />
+          )}
         </>
       )}
     </>
@@ -681,7 +877,12 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
   const fileInput = useRef<HTMLInputElement>(null);
   const [mergeInto, setMergeInto] = useState<string | null>(null);
   const list = languages();
-  const nameOf = (id: string) => (id === "" ? t("lang.system", { name: list.find((l) => l.id === systemLanguage())?.name ?? systemLanguage() }) : id === PSEUDO ? t("lang.pseudo") : (list.find((l) => l.id === id)?.name ?? id));
+  const nameOf = (id: string) =>
+    id === ""
+      ? t("lang.system", { name: list.find((l) => l.id === systemLanguage())?.name ?? systemLanguage() })
+      : id === PSEUDO
+        ? t("lang.pseudo")
+        : (list.find((l) => l.id === id)?.name ?? id);
   const sharedLang = sharedPref("language");
 
   const onFile = async (file: File | undefined) => {
@@ -719,7 +920,10 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
       <Row label="lang.pack.download" hint="lang.pack.downloadHint" query={query} scope="device">
         <span className="row-inline">
           <Choice label={t("lang.pack.base")} value={base} onChange={setBase} options={OFFICIAL_LANGS.map((l) => ({ value: l, label: OFFICIAL_NAMES[l] }))} />
-          <button type="button" onClick={() => download(`keyring-${base}.json`, JSON.stringify(packTemplate(base, { id: "xx", name: "New language" }), null, 1))}>
+          <button
+            type="button"
+            onClick={() => download(`keyring-${base}.json`, JSON.stringify(packTemplate(base, { id: "xx", name: "New language" }), null, 1))}
+          >
             <Download size={14} aria-hidden /> {t("lang.pack.downloadRun")}
           </button>
         </span>
@@ -756,7 +960,12 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
               </div>
               <div className="setting-control">
                 {missing.length > 0 && (
-                  <button type="button" onClick={() => download(`keyring-${pack.meta.id}-missing.json`, JSON.stringify(packTemplate(pack.meta.base, { ...pack.meta }, missing), null, 1))}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      download(`keyring-${pack.meta.id}-missing.json`, JSON.stringify(packTemplate(pack.meta.base, { ...pack.meta }, missing), null, 1))
+                    }
+                  >
                     {t("lang.pack.downloadMissing")}
                   </button>
                 )}
@@ -777,7 +986,9 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
                   className="danger"
                   aria-label={t("lang.pack.remove", { name: pack.meta.name })}
                   {...tipProps({ label: t("lang.pack.remove", { name: pack.meta.name }) })}
-                  onClick={() => void confirmDialog(t("lang.pack.removeAsk", { name: pack.meta.name }), t("common.delete")).then((ok) => ok && removePack(pack.meta.id))}
+                  onClick={() =>
+                    void confirmDialog(t("lang.pack.removeAsk", { name: pack.meta.name }), t("common.delete")).then((ok) => ok && removePack(pack.meta.id))
+                  }
                 >
                   <Trash2 size={14} aria-hidden />
                 </button>
@@ -821,8 +1032,12 @@ function PackReportView({ state, onClose }: { state: { pack: LanguagePack; repor
         <li>{t("lang.pack.r.translated", { count: Object.keys(pack.messages).length })}</li>
         {report.missing.length > 0 && <li>{t("lang.pack.r.missing", { count: report.missing.length })}</li>}
         {report.unknown.length > 0 && <li>{t("lang.pack.r.unknown", { count: report.unknown.length, keys: sample(report.unknown) })}</li>}
-        {report.placeholderMismatch.length > 0 && <li className="warn">{t("lang.pack.r.placeholders", { count: report.placeholderMismatch.length, keys: sample(report.placeholderMismatch) })}</li>}
-        {report.notString.length > 0 && <li className="warn">{t("lang.pack.r.notString", { count: report.notString.length, keys: sample(report.notString) })}</li>}
+        {report.placeholderMismatch.length > 0 && (
+          <li className="warn">{t("lang.pack.r.placeholders", { count: report.placeholderMismatch.length, keys: sample(report.placeholderMismatch) })}</li>
+        )}
+        {report.notString.length > 0 && (
+          <li className="warn">{t("lang.pack.r.notString", { count: report.notString.length, keys: sample(report.notString) })}</li>
+        )}
         {report.htmlLike.length > 0 && <li className="warn">{t("lang.pack.r.html", { count: report.htmlLike.length, keys: sample(report.htmlLike) })}</li>}
       </ul>
       {existing && <p className="meta">{merge ? t("lang.pack.willMerge") : t("lang.pack.willReplace")}</p>}
@@ -848,15 +1063,16 @@ function ServerLanguages({ query }: { query: string }) {
       .catch(() => setV(null));
   }, []);
   if (!v) return null;
-  const save = (patch: Partial<{ language: string | null; agentLanguage: string }>) =>
-    admin
-      .setLanguage(patch)
-      .then(setV)
-      .catch(toastError);
+  const save = (patch: Partial<{ language: string | null; agentLanguage: string }>) => admin.setLanguage(patch).then(setV).catch(toastError);
   return (
     <>
       <Row label="settings.agentLanguage" hint="settings.agentLanguageHint" query={query}>
-        <Choice label={t("settings.agentLanguage")} value={v.agentLanguage} onChange={(x) => void save({ agentLanguage: x })} options={OFFICIAL_LANGS.map((l) => ({ value: l, label: OFFICIAL_NAMES[l] }))} />
+        <Choice
+          label={t("settings.agentLanguage")}
+          value={v.agentLanguage}
+          onChange={(x) => void save({ agentLanguage: x })}
+          options={OFFICIAL_LANGS.map((l) => ({ value: l, label: OFFICIAL_NAMES[l] }))}
+        />
       </Row>
       <Row label="settings.serverLanguage" hint="settings.serverLanguageHint" query={query}>
         <Choice
@@ -913,7 +1129,13 @@ export function KeySettings({ commands, query, readOnly = false }: { commands: C
   return (
     <div className="key-settings">
       {!readOnly && (
-        <Row label="settings.keysSynced" hint="settings.keysSyncedHint" query="" synced="keys" sharedText={t("keys.changedCount", { count: Object.keys(sharedPref("keys")).length })}>
+        <Row
+          label="settings.keysSynced"
+          hint="settings.keysSyncedHint"
+          query=""
+          synced="keys"
+          sharedText={t("keys.changedCount", { count: Object.keys(sharedPref("keys")).length })}
+        >
           <span />
         </Row>
       )}
@@ -932,7 +1154,15 @@ export function KeySettings({ commands, query, readOnly = false }: { commands: C
                   return (
                     <tr key={c.id}>
                       <td>{c.label}</td>
-                      <td className="key-cell">{capturing === c.id ? <span className="meta">{t("keys.pressNew")}</span> : k ? <kbd>{formatCombo(k)}</kbd> : <span className="meta">{t("common.none")}</span>}</td>
+                      <td className="key-cell">
+                        {capturing === c.id ? (
+                          <span className="meta">{t("keys.pressNew")}</span>
+                        ) : k ? (
+                          <kbd>{formatCombo(k)}</kbd>
+                        ) : (
+                          <span className="meta">{t("common.none")}</span>
+                        )}
+                      </td>
                       {!readOnly && (
                         <td className="key-actions">
                           <button type="button" onClick={() => setCapturing(c.id)}>

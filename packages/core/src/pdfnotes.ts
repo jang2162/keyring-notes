@@ -49,7 +49,9 @@ export function cleanPdfQuote(text: string): string {
 /** 새 블록 ID: pdf-<쪽>-<임의 4글자>. 문서에 이미 있으면 다시 뽑는다 */
 export function newPdfAnnotationId(content: string, page: number, random: () => number = Math.random): string {
   for (;;) {
-    const id = `pdf-${page}-${Math.floor(random() * 36 ** 4).toString(36).padStart(4, "0")}`;
+    const id = `pdf-${page}-${Math.floor(random() * 36 ** 4)
+      .toString(36)
+      .padStart(4, "0")}`;
     if (!content.includes(`^${id}`)) return id;
   }
 }
@@ -65,7 +67,11 @@ export function formatPdfAnnotation(a: { pdf: string; page: number; quote: strin
  * 같은 쪽끼리 모이도록 쪽 순서를 지켜 넣는다.
  */
 /** lang: 볼트 언어(절 제목·쪽 표시) */
-export function addPdfAnnotation(content: string, a: { pdf: string; page: number; quote: string; note?: string; id: string }, lang?: VaultLang | string | null): string {
+export function addPdfAnnotation(
+  content: string,
+  a: { pdf: string; page: number; quote: string; note?: string; id: string },
+  lang?: VaultLang | string | null,
+): string {
   const line = formatPdfAnnotation(a, lang);
   const heading = pdfNotesHeading(lang);
   const lines = content.split("\n");

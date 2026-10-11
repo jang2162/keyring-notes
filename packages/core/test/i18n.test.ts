@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { baseKey, checkPack, interpolate, KeyedError, lookup, mergePacks, OFFICIAL_MESSAGES, packTemplate, parsePack, PathError, placeholders, translate } from "../src/index.js";
+import {
+  baseKey,
+  checkPack,
+  interpolate,
+  KeyedError,
+  lookup,
+  mergePacks,
+  OFFICIAL_MESSAGES,
+  packTemplate,
+  parsePack,
+  PathError,
+  placeholders,
+  translate,
+} from "../src/index.js";
 
 const en = OFFICIAL_MESSAGES.en;
 const ko = OFFICIAL_MESSAGES.ko;
@@ -30,7 +43,6 @@ describe("메시지 묶음", () => {
     const html = Object.entries({ ...en, ...ko }).filter(([, v]) => /<\/?[a-z][a-z0-9]*(\s[^>]*)?>/i.test(v));
     expect(html.map(([k]) => k)).toEqual([]);
   });
-
 });
 
 describe("번역", () => {
@@ -58,7 +70,8 @@ describe("번역", () => {
 });
 
 describe("비공식 언어팩", () => {
-  const pack = (messages: Record<string, unknown>, meta: Record<string, unknown> = {}) => JSON.stringify({ meta: { id: "ja", name: "日本語", base: "en", ...meta }, messages });
+  const pack = (messages: Record<string, unknown>, meta: Record<string, unknown> = {}) =>
+    JSON.stringify({ meta: { id: "ja", name: "日本語", base: "en", ...meta }, messages });
 
   it("검사 보고: 모르는 키·빠진 키·자리 불일치·글 아닌 값·HTML", () => {
     const r = parsePack(pack({ "common.save": "保存", "common.nope": "x", "name.badChar": "{oops}", "common.close": 3, "common.open": "<b>開く</b>" }));

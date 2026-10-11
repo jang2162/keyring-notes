@@ -170,8 +170,14 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   app.get("/api/health", (c) => c.json({ ok: true }));
 
   /** 오류 응답: error(종류)·code(메시지 키 error.<code>)·params(끼워 넣을 값)·message(서버 언어의 글). 화면은 code로 번역한다 */
-  const fail = (c: Context, status: 400 | 401 | 403 | 404 | 409 | 415 | 500, error: string, code: string, params: Record<string, string | number> = {}, extra: Record<string, unknown> = {}) =>
-    c.json({ error, code, params, message: serverText(`error.${code}`, params), ...extra }, status);
+  const fail = (
+    c: Context,
+    status: 400 | 401 | 403 | 404 | 409 | 415 | 500,
+    error: string,
+    code: string,
+    params: Record<string, string | number> = {},
+    extra: Record<string, unknown> = {},
+  ) => c.json({ error, code, params, message: serverText(`error.${code}`, params), ...extra }, status);
   const keyed = (err: KeyedError) => ({ code: err.code, params: err.params as Record<string, string | number> });
 
   app.onError((err, c) => {
@@ -240,7 +246,8 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (c.req.path === "/api/admin/backups/upload") return next();
     // 업로드·웹 클립(페이지 HTML 전체)은 크게, 나머지는 10MB까지
     // 일괄 쓰기는 노드 되살리기(첨부 base64)를 실을 수 있어 크게
-    const max = c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" || c.req.path === "/api/batch" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
+    const max =
+      c.req.path === "/api/ingest/file" || c.req.path === "/api/attachment" || c.req.path === "/api/batch" ? 50 : c.req.path === "/api/ingest" ? 25 : 10;
     return bodyLimit({ maxSize: max * 1024 * 1024 })(c, next);
   });
 
@@ -392,7 +399,11 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   });
 
   api.get("/frontmatter", async (c) => {
-    const fields = c.req.query("fields")?.split(",").map((s) => s.trim()).filter(Boolean);
+    const fields = c.req
+      .query("fields")
+      ?.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     return c.json({ documents: await c.var.scoped.frontmatterList(c.req.query("folder"), fields) });
   });
 
@@ -470,7 +481,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.get("/semantic/status", (c) => c.json(semantic ? semantic.status() : { enabled: false }));
   api.get("/semantic", async (c) => {
     const limit = Number.parseInt(c.req.query("limit") ?? "", 10);
-    return c.json({ hits: await c.var.scoped.semantic(c.req.query("q") ?? "", { folder: c.req.query("folder"), limit: Number.isFinite(limit) ? limit : undefined }) });
+    return c.json({
+      hits: await c.var.scoped.semantic(c.req.query("q") ?? "", { folder: c.req.query("folder"), limit: Number.isFinite(limit) ? limit : undefined }),
+    });
   });
 
   api.get("/graph", async (c) => c.json(await c.var.scoped.graph(c.req.query("folder"))));
@@ -518,7 +531,8 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.post("/move", async (c) => {
     const body = await c.req.json();
     // 노드 옮기기: 노드 노트와 하위 문서·첨부를 한 커밋으로(baseHash 없이, 지금 내용 기준)
-    if (body.node === true) return c.json(await c.var.scoped.moveNode(requirePath(body.from), requirePath(body.to), { updateLinks: optionalBool(body.updateLinks) }));
+    if (body.node === true)
+      return c.json(await c.var.scoped.moveNode(requirePath(body.from), requirePath(body.to), { updateLinks: optionalBool(body.updateLinks) }));
     return c.json(
       await c.var.scoped.move(requirePath(body.from), requirePath(body.to), requireHash(body.baseHash), { updateLinks: optionalBool(body.updateLinks) }),
     );

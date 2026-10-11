@@ -86,31 +86,31 @@ export function Palette({ placeholder, items, onClose, hint }: { placeholder: st
 
   return (
     <Modal title={placeholder} label={placeholder} size="palette" hideHead escapeFromInputs onClose={onClose} className="palette">
-        <input autoFocus placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey} aria-label={placeholder} />
-        <ul ref={listRef} role="listbox">
-          {shown.map((it, i) => (
-            <li
-              key={it.id}
-              data-i={i}
-              role="option"
-              aria-selected={i === sel}
-              className={i === sel ? "on" : ""}
-              onMouseEnter={() => setSel(i)}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                choose(i, e.ctrlKey || e.metaKey);
-              }}
-            >
-              <span className="palette-label">
-                {it.icon}
-                {it.display ?? it.label}
-              </span>
-              {it.detail && <span className="palette-detail">{it.detail}</span>}
-            </li>
-          ))}
-          {shown.length === 0 && <li className="meta">{t("palette.none")}</li>}
-        </ul>
-        {hint && <p className="meta palette-hint">{hint}</p>}
+      <input autoFocus placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey} aria-label={placeholder} />
+      <ul ref={listRef} role="listbox">
+        {shown.map((it, i) => (
+          <li
+            key={it.id}
+            data-i={i}
+            role="option"
+            aria-selected={i === sel}
+            className={i === sel ? "on" : ""}
+            onMouseEnter={() => setSel(i)}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              choose(i, e.ctrlKey || e.metaKey);
+            }}
+          >
+            <span className="palette-label">
+              {it.icon}
+              {it.display ?? it.label}
+            </span>
+            {it.detail && <span className="palette-detail">{it.detail}</span>}
+          </li>
+        ))}
+        {shown.length === 0 && <li className="meta">{t("palette.none")}</li>}
+      </ul>
+      {hint && <p className="meta palette-hint">{hint}</p>}
     </Modal>
   );
 }

@@ -208,15 +208,17 @@ export class NoteIndex {
   docs(): DocMeta[] {
     const tagMap = new Map<string, string[]>();
     for (const r of this.tagRows()) tagMap.set(r.path, [...(tagMap.get(r.path) ?? []), r.tag]);
-    return (this.db.prepare("SELECT path, title, summary, hash, mtime, size, fm FROM docs ORDER BY path").all() as {
-      path: string;
-      title: string;
-      summary: string;
-      hash: string;
-      mtime: number;
-      size: number;
-      fm: string | null;
-    }[]).map((r) => ({
+    return (
+      this.db.prepare("SELECT path, title, summary, hash, mtime, size, fm FROM docs ORDER BY path").all() as {
+        path: string;
+        title: string;
+        summary: string;
+        hash: string;
+        mtime: number;
+        size: number;
+        fm: string | null;
+      }[]
+    ).map((r) => ({
       path: r.path,
       title: r.title,
       summary: r.summary,
@@ -229,12 +231,14 @@ export class NoteIndex {
   }
 
   tasks(): TaskRow[] {
-    return (this.db.prepare("SELECT path, line, done, text FROM tasks ORDER BY path, line").all() as {
-      path: string;
-      line: number;
-      done: number;
-      text: string;
-    }[]).map((r) => ({ path: r.path, line: r.line, done: r.done === 1, text: r.text }));
+    return (
+      this.db.prepare("SELECT path, line, done, text FROM tasks ORDER BY path, line").all() as {
+        path: string;
+        line: number;
+        done: number;
+        text: string;
+      }[]
+    ).map((r) => ({ path: r.path, line: r.line, done: r.done === 1, text: r.text }));
   }
 }
 

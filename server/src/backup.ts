@@ -178,7 +178,14 @@ export class BackupService {
         entries.push("config.json");
       }
       let name = `keyring-${stamp()}-${kind}.tar.gz`;
-      for (let i = 2; await stat(path.join(this.dir, name)).then(() => true, () => false); i++) {
+      for (
+        let i = 2;
+        await stat(path.join(this.dir, name)).then(
+          () => true,
+          () => false,
+        );
+        i++
+      ) {
         name = `keyring-${stamp()}-${kind}-${i}.tar.gz`;
       }
       const target = path.join(this.dir, name);
@@ -217,7 +224,15 @@ export class BackupService {
     }
     await this.ensureDir();
     const name = `keyring-${stamp(new Date(m.createdAt))}-${m.kind}.tar.gz`;
-    const target = path.join(this.dir, (await stat(path.join(this.dir, name)).then(() => true, () => false)) ? name.replace(".tar.gz", `-${Date.now() % 100000}.tar.gz`) : name);
+    const target = path.join(
+      this.dir,
+      (await stat(path.join(this.dir, name)).then(
+        () => true,
+        () => false,
+      ))
+        ? name.replace(".tar.gz", `-${Date.now() % 100000}.tar.gz`)
+        : name,
+    );
     await copyFile(tmpFile, target);
     await chmod(target, 0o600);
     return (await this.list()).find((b) => b.name === path.basename(target))!;

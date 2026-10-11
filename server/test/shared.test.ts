@@ -15,7 +15,9 @@ let wiki: Wiki;
 let owner: ScopedVault;
 
 const git = (...args: string[]) =>
-  execFileSync("git", ["--git-dir", path.join(vault.root, ".history"), "--work-tree", vault.root, "-c", "core.quotePath=false", ...args], { encoding: "utf8" }).trim();
+  execFileSync("git", ["--git-dir", path.join(vault.root, ".history"), "--work-tree", vault.root, "-c", "core.quotePath=false", ...args], {
+    encoding: "utf8",
+  }).trim();
 
 beforeEach(async () => {
   const t = await tempDir("keyring-shared-");
@@ -121,7 +123,9 @@ describe("노드 이동·삭제", () => {
       "업무/보관/2026 프로젝트/하위/참고.md",
     ]);
     // 경로를 쓴 링크는 전체 경로로 고친다
-    expect((await owner.read("업무/밖.md")).content).toBe("[[2026 프로젝트]] [[업무/보관/2026 프로젝트/계획]] ![[업무/보관/2026 프로젝트/도식.png]] [x](보관/2026%20프로젝트/도식.png)");
+    expect((await owner.read("업무/밖.md")).content).toBe(
+      "[[2026 프로젝트]] [[업무/보관/2026 프로젝트/계획]] ![[업무/보관/2026 프로젝트/도식.png]] [x](보관/2026%20프로젝트/도식.png)",
+    );
     expect((await owner.read("업무/보관/2026 프로젝트/계획.md")).content).toBe("![[도식.png]] ![](도식.png) [[참고]]");
     expect([...(await vault.readRaw("업무/보관/2026 프로젝트/도식.png")).data]).toEqual([1, 2, 3]);
     await expect(vault.readRaw("업무/프로젝트/도식.png")).rejects.toThrow(/파일이 없습니다/);

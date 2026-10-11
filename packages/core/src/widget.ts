@@ -122,12 +122,15 @@ export function parseWidget(source: string): WidgetSpec {
     if (!m) throw new PathError("widget.bad_sort", { sort: str });
     return { field: m[2], desc: m[1] === "-" || m[3]?.toLowerCase() === "desc" };
   });
-  const data = r.data === undefined ? undefined : asList(r.data).map((d) => {
-    const o = d as Record<string, unknown>;
-    const value = Number(o?.value);
-    if (!o || o.label === undefined || Number.isNaN(value)) throw new PathError("widget.data_item");
-    return { label: String(o.label), value };
-  });
+  const data =
+    r.data === undefined
+      ? undefined
+      : asList(r.data).map((d) => {
+          const o = d as Record<string, unknown>;
+          const value = Number(o?.value);
+          if (!o || o.label === undefined || Number.isNaN(value)) throw new PathError("widget.data_item");
+          return { label: String(o.label), value };
+        });
   const status = String(r.status ?? "open");
   if (!["open", "done", "all"].includes(status)) throw new PathError("widget.status");
   const chart = String(r.chart ?? "bar");
@@ -139,7 +142,9 @@ export function parseWidget(source: string): WidgetSpec {
   if (type === "chart" && !data && !r.x) throw new PathError("widget.chart_x");
   return {
     type,
-    from: asList(r.from).map((f) => String(f).trim()).filter(Boolean),
+    from: asList(r.from)
+      .map((f) => String(f).trim())
+      .filter(Boolean),
     where: asList(r.where).map((w) => parseCondition(String(w))),
     show: asList(r.show).map(String),
     sort,
@@ -298,8 +303,7 @@ export function runWidget(spec: WidgetSpec, docs: DocMeta[], tasks: TaskRow[]): 
     }
     const series = [...buckets.entries()].map(([label, vals]) => ({
       label,
-      value:
-        spec.agg === "count" ? vals.length : spec.agg === "avg" ? vals.reduce((a, b) => a + b, 0) / vals.length : vals.reduce((a, b) => a + b, 0),
+      value: spec.agg === "count" ? vals.length : spec.agg === "avg" ? vals.reduce((a, b) => a + b, 0) / vals.length : vals.reduce((a, b) => a + b, 0),
     }));
     // x가 날짜·숫자처럼 순서가 있으면 그 순서, 아니면 값 큰 순
     const ordered = series.every((s) => !Number.isNaN(Number(s.label)) || /^\d{4}-\d{2}/.test(s.label));

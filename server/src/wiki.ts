@@ -60,7 +60,8 @@ export class Wiki {
       if (this.topics.has(t)) continue;
       for (const f of ["index.md", "log.md"]) await rm(path.join(this.vault.root, t, "wiki", f), { force: true });
       const ws = t.split("/")[0];
-      for (const d of [path.join(this.vault.root, t, "wiki"), path.join(this.vault.root, t), path.join(this.vault.root, ws)]) await rmdir(d).catch(() => undefined);
+      for (const d of [path.join(this.vault.root, t, "wiki"), path.join(this.vault.root, t), path.join(this.vault.root, ws)])
+        await rmdir(d).catch(() => undefined);
     }
     await this.updateExcludes();
     await this.index.sync(this.vault);
@@ -92,7 +93,10 @@ export class Wiki {
     for (const p of paths) {
       const topic = schemaTopic(p);
       if (!topic) continue;
-      const exists = await stat(path.join(this.vault.root, p)).then(() => true, () => false);
+      const exists = await stat(path.join(this.vault.root, p)).then(
+        () => true,
+        () => false,
+      );
       if (exists && !this.topics.has(topic)) {
         this.topics.add(topic);
         topicsChanged = true;
@@ -103,7 +107,10 @@ export class Wiki {
     if (topicsChanged) {
       await this.updateExcludes();
       // 새로 위키가 된 토픽의 index·log가 검색 인덱스에 들어 있었다면 뺀다.
-      await this.index.refresh(this.vault.root, [...this.topics].flatMap((t) => [`${t}/wiki/index.md`, `${t}/wiki/log.md`]));
+      await this.index.refresh(
+        this.vault.root,
+        [...this.topics].flatMap((t) => [`${t}/wiki/index.md`, `${t}/wiki/log.md`]),
+      );
     }
     const touched = new Set(paths.map((p) => this.topicOf(p)).filter((t): t is string => t !== null));
     for (const t of touched) await this.regenerate(t);
@@ -113,7 +120,10 @@ export class Wiki {
   async regenerate(topic: string): Promise<void> {
     const dir = path.join(this.vault.root, topic, "wiki");
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, "index.md"), this.renderIndex(topic, () => true));
+    await writeFile(
+      path.join(dir, "index.md"),
+      this.renderIndex(topic, () => true),
+    );
     await writeFile(path.join(dir, "log.md"), await this.renderLog(topic, () => true));
   }
 

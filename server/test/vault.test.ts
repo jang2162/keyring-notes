@@ -179,7 +179,7 @@ describe("일괄 쓰기", () => {
     const b = await me.write("b.md", "B", null);
     const log = await vault.git.log();
     expect(log[0].rev).toBe(b.rev);
-    expect((await vault.git.show(b.rev!, "a.md"))).toBe("A");
+    expect(await vault.git.show(b.rev!, "a.md")).toBe("A");
   });
 });
 

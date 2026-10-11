@@ -35,12 +35,24 @@ function Report({ r, onOpen }: { r: SyncReport; onOpen: (p: string) => void }) {
     <div className="sync-report">
       <p className="meta">
         {fmtDateTime(r.finishedAt)} ·{" "}
-        {t("sync.report.counts", { pulled: r.pulled.length, pushed: r.pushed.length, deleted: r.deletedLocal.length + r.deletedRemote.length, merged: merged.length, conflicts: r.conflicts.length })}
+        {t("sync.report.counts", {
+          pulled: r.pulled.length,
+          pushed: r.pushed.length,
+          deleted: r.deletedLocal.length + r.deletedRemote.length,
+          merged: merged.length,
+          conflicts: r.conflicts.length,
+        })}
       </p>
       {total === 0 && r.errors.length === 0 && (r.settingsConflicts ?? []).length === 0 && <p className="note-ok">{t("sync.report.same")}</p>}
       {merged.length > 0 && (
         <p className="note-ok">
-          {t("sync.report.merged")} {merged.map((p, i) => <span key={p}>{i > 0 && ", "}{link(p)}</span>)}
+          {t("sync.report.merged")}{" "}
+          {merged.map((p, i) => (
+            <span key={p}>
+              {i > 0 && ", "}
+              {link(p)}
+            </span>
+          ))}
         </p>
       )}
       <SettingsConflicts list={r.settingsConflicts ?? []} />
@@ -145,79 +157,75 @@ export function SyncSettings({ ctx, onOpen }: { ctx: LocalContext; onOpen: (p: s
   };
 
   return (
-      <div className="sync-settings">
-        <SyncGuard busy={busy} />
-        <section>
-          <h3>{t("sync.vaultTitle")}</h3>
-          <p className="meta">{ctx.kind === "app" ? t("sync.vaultHintApp") : t("sync.vaultHintWeb")}</p>
-          {ctx.vaultDir && (
-            <p>
-              <code className="vault-dir">{ctx.vaultDir}</code>{" "}
-              {ctx.chooseFolder && (
-                <button onClick={() => ctx.chooseFolder!().catch((e) => setError(msg(e)))} {...tipProps({ label: t("sync.otherFolderTip") })}>
-                  {t("sync.otherFolder")}
-                </button>
-              )}
-            </p>
-          )}
-        </section>
-
-        <section>
-          <h3>{t("sync.serverTitle")}</h3>
-          {error && (
-            <p className="form-error" onClick={() => setError(null)}>
-              {error}
-            </p>
-          )}
-          {!s ? (
-            <form className="sync-form" onSubmit={connect}>
-              <p className="meta">{t("sync.serverHint")}</p>
-              <label>
-                {t("sync.serverUrl")}
-                <input name="server" placeholder="https://notes.example.com" required autoComplete="url" inputMode="url" />
-              </label>
-              <label>
-                {t("sync.deviceName")}
-                <input name="device" defaultValue={defaultDeviceName()} maxLength={40} />
-              </label>
-              <label>
-                {t("sync.serverPassword")}
-                <input name="password" type="password" required autoComplete="current-password" />
-              </label>
-              <button type="submit" disabled={busy}>
-                {busy ? t("sync.connecting") : t("sync.connect")}
+    <div className="sync-settings">
+      <SyncGuard busy={busy} />
+      <section>
+        <h3>{t("sync.vaultTitle")}</h3>
+        <p className="meta">{ctx.kind === "app" ? t("sync.vaultHintApp") : t("sync.vaultHintWeb")}</p>
+        {ctx.vaultDir && (
+          <p>
+            <code className="vault-dir">{ctx.vaultDir}</code>{" "}
+            {ctx.chooseFolder && (
+              <button onClick={() => ctx.chooseFolder!().catch((e) => setError(msg(e)))} {...tipProps({ label: t("sync.otherFolderTip") })}>
+                {t("sync.otherFolder")}
               </button>
-            </form>
-          ) : (
-            <>
-              <p>
-                <strong>{s.server}</strong> · {s.device}
-                <br />
-                <span className="meta">
-                  {status.running ? t("sync.running") : status.lastSync ? t("sync.last", { date: fmtDateTime(status.lastSync) }) : t("sync.never")}
-                </span>
-              </p>
-              {status.lastError && <p className="form-error">{status.lastError}</p>}
-              <p className="sync-actions">
-                <button disabled={status.running} onClick={() => void ctx.sync.run()}>
-                  {t("sync.now")}
-                </button>
-                <label>
-                  <input type="checkbox" checked={s.auto} onChange={(e) => ctx.sync.setAuto(e.target.checked)} /> {t("sync.auto")}
-                </label>
-                <button
-                  onClick={async () =>
-                    (await confirmDialog(t("sync.disconnectAsk"), t("sync.disconnect"))) && ctx.sync.disconnect()
-                  }
-                >
-                  {t("sync.disconnect")}
-                </button>
-              </p>
-              {status.lastReport && <Report r={status.lastReport} onOpen={onOpen} />}
-            </>
-          )}
-        </section>
-      </div>
+            )}
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h3>{t("sync.serverTitle")}</h3>
+        {error && (
+          <p className="form-error" onClick={() => setError(null)}>
+            {error}
+          </p>
+        )}
+        {!s ? (
+          <form className="sync-form" onSubmit={connect}>
+            <p className="meta">{t("sync.serverHint")}</p>
+            <label>
+              {t("sync.serverUrl")}
+              <input name="server" placeholder="https://notes.example.com" required autoComplete="url" inputMode="url" />
+            </label>
+            <label>
+              {t("sync.deviceName")}
+              <input name="device" defaultValue={defaultDeviceName()} maxLength={40} />
+            </label>
+            <label>
+              {t("sync.serverPassword")}
+              <input name="password" type="password" required autoComplete="current-password" />
+            </label>
+            <button type="submit" disabled={busy}>
+              {busy ? t("sync.connecting") : t("sync.connect")}
+            </button>
+          </form>
+        ) : (
+          <>
+            <p>
+              <strong>{s.server}</strong> · {s.device}
+              <br />
+              <span className="meta">
+                {status.running ? t("sync.running") : status.lastSync ? t("sync.last", { date: fmtDateTime(status.lastSync) }) : t("sync.never")}
+              </span>
+            </p>
+            {status.lastError && <p className="form-error">{status.lastError}</p>}
+            <p className="sync-actions">
+              <button disabled={status.running} onClick={() => void ctx.sync.run()}>
+                {t("sync.now")}
+              </button>
+              <label>
+                <input type="checkbox" checked={s.auto} onChange={(e) => ctx.sync.setAuto(e.target.checked)} /> {t("sync.auto")}
+              </label>
+              <button onClick={async () => (await confirmDialog(t("sync.disconnectAsk"), t("sync.disconnect"))) && ctx.sync.disconnect()}>
+                {t("sync.disconnect")}
+              </button>
+            </p>
+            {status.lastReport && <Report r={status.lastReport} onOpen={onOpen} />}
+          </>
+        )}
+      </section>
+    </div>
   );
 }
 

@@ -78,7 +78,10 @@ export function chunkDocument(title: string, content: string): Chunk[] {
     flush();
   }
   if (out.length === 0 && (title || summary)) out.push({ heading: "", text: summary || title });
-  return out.map((c) => ({ heading: c.heading, text: `${title}${c.heading && c.heading !== title ? ` › ${c.heading}` : ""}${summary ? `\n${summary}` : ""}\n\n${c.text}` }));
+  return out.map((c) => ({
+    heading: c.heading,
+    text: `${title}${c.heading && c.heading !== title ? ` › ${c.heading}` : ""}${summary ? `\n${summary}` : ""}\n\n${c.text}`,
+  }));
 }
 
 function toBlob(v: number[]): Uint8Array {
@@ -133,14 +136,25 @@ export class SemanticIndex {
   status() {
     const docs = this.index.docs().filter((d) => !this.index.skip(d.path));
     const done = new Map(
-      (this.db.prepare("SELECT path, doc_hash, model FROM embed_chunks WHERE idx = 0").all() as { path: string; doc_hash: string; model: string }[]).map((r) => [r.path, r]),
+      (this.db.prepare("SELECT path, doc_hash, model FROM embed_chunks WHERE idx = 0").all() as { path: string; doc_hash: string; model: string }[]).map(
+        (r) => [r.path, r],
+      ),
     );
     const pending = docs.filter((d) => {
       const r = done.get(d.path);
       return !r || r.doc_hash !== d.hash || r.model !== this.cfg.model;
     }).length;
     const chunks = (this.db.prepare("SELECT count(*) AS n FROM embed_chunks").get() as { n: number }).n;
-    return { enabled: true, model: this.cfg.model, url: this.cfg.url.replace(/\/\/[^@/]*@/, "//"), documents: docs.length, pending, chunks, lastSync: this.lastSync, lastError: this.lastError };
+    return {
+      enabled: true,
+      model: this.cfg.model,
+      url: this.cfg.url.replace(/\/\/[^@/]*@/, "//"),
+      documents: docs.length,
+      pending,
+      chunks,
+      lastSync: this.lastSync,
+      lastError: this.lastError,
+    };
   }
 
   /** 바뀐 문서만 다시 임베딩하고, 사라진 문서의 조각은 지운다. 동시에 한 번만 돈다. */
@@ -214,7 +228,12 @@ export class SemanticIndex {
     if (!q) throw new PathError("query_required");
     const [qv] = await this.embed([q]);
     const qf = fromBlob(toBlob(qv));
-    const rows = this.db.prepare("SELECT path, heading, text, vec FROM embed_chunks WHERE model = ?").all(this.cfg.model) as { path: string; heading: string; text: string; vec: Uint8Array }[];
+    const rows = this.db.prepare("SELECT path, heading, text, vec FROM embed_chunks WHERE model = ?").all(this.cfg.model) as {
+      path: string;
+      heading: string;
+      text: string;
+      vec: Uint8Array;
+    }[];
     const best = new Map<string, { score: number; heading: string; text: string }>();
     for (const r of rows) {
       if (!canRead(r.path)) continue;

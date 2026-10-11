@@ -38,12 +38,18 @@ describe("기기 토큰", () => {
     expect(res.status).toBe(401);
     res = await app.request("/api/auth/device", { method: "POST", headers: json, body: JSON.stringify({ password: "correct horse", name: "" }) });
     expect(res.status).toBe(400);
-    const { token, id, name } = await (await app.request("/api/auth/device", { method: "POST", headers: json, body: JSON.stringify({ password: "correct horse", name: "노트북" }) })).json();
+    const { token, id, name } = await (
+      await app.request("/api/auth/device", { method: "POST", headers: json, body: JSON.stringify({ password: "correct horse", name: "노트북" }) })
+    ).json();
     expect(token).toMatch(/^kd_/);
     expect(name).toBe("노트북");
     const auth = { authorization: `Bearer ${token}` };
 
-    res = await app.request("/api/file", { method: "PUT", headers: { ...json, ...auth }, body: JSON.stringify({ path: "앱에서.md", content: "글", baseHash: null }) });
+    res = await app.request("/api/file", {
+      method: "PUT",
+      headers: { ...json, ...auth },
+      body: JSON.stringify({ path: "앱에서.md", content: "글", baseHash: null }),
+    });
     expect(res.status).toBe(200);
     expect((await vault.history("앱에서.md"))[0].author).toBe("me (노트북)");
     expect((await app.request("/api/admin/status", { headers: auth })).status).toBe(403);
@@ -62,7 +68,10 @@ describe("기기 토큰", () => {
 
   it("CORS: 토큰 요청에만 응답을 연다", async () => {
     const { app, config } = env;
-    const pre = await app.request("/api/sync/manifest", { method: "OPTIONS", headers: { origin: "tauri://localhost", "access-control-request-headers": "authorization" } });
+    const pre = await app.request("/api/sync/manifest", {
+      method: "OPTIONS",
+      headers: { origin: "tauri://localhost", "access-control-request-headers": "authorization" },
+    });
     expect(pre.status).toBe(204);
     expect(pre.headers.get("access-control-allow-headers")).toContain("authorization");
     const { token } = config.issueDeviceToken("폰");
@@ -110,7 +119,11 @@ describe("첨부 올리기 API", () => {
     config.setRules("bot", { 공개: "read" });
     expect((await up("공개/a.png", new Uint8Array([1]), agent)).status).toBe(403);
     // 헤더 없이 보내면(다른 사이트의 폼 전송) 받지 않는다
-    const plain = await app.request(`/api/attachment?path=x.png`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/octet-stream" }, body: new Uint8Array([1]) as Uint8Array<ArrayBuffer> });
+    const plain = await app.request(`/api/attachment?path=x.png`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/octet-stream" },
+      body: new Uint8Array([1]) as Uint8Array<ArrayBuffer>,
+    });
     expect(plain.status).toBe(415);
   });
 });

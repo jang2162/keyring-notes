@@ -60,11 +60,7 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: A
   const server = new McpServer({ name: "keyring-notes", version: "0.7.0" }, { instructions: T.instructions });
   const ro = { readOnlyHint: true, openWorldHint: false };
 
-  server.registerTool(
-    "whoami",
-    { description: T.tools.whoami, annotations: ro },
-    () => run(async () => scoped.whoami()),
-  );
+  server.registerTool("whoami", { description: T.tools.whoami, annotations: ro }, () => run(async () => scoped.whoami()));
 
   server.registerTool(
     "list_topics",
@@ -117,14 +113,11 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: A
       },
       annotations: ro,
     },
-    ({ path, heading, start_line, end_line }) =>
-      run(() => scoped.section(path, { heading, startLine: start_line, endLine: end_line })),
+    ({ path, heading, start_line, end_line }) => run(() => scoped.section(path, { heading, startLine: start_line, endLine: end_line })),
   );
 
-  server.registerTool(
-    "read_document",
-    { description: T.tools.read_document, inputSchema: { path: z.string() }, annotations: ro },
-    ({ path }) => run(() => scoped.read(path)),
+  server.registerTool("read_document", { description: T.tools.read_document, inputSchema: { path: z.string() }, annotations: ro }, ({ path }) =>
+    run(() => scoped.read(path)),
   );
 
   server.registerTool(
@@ -154,10 +147,8 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: A
     ({ query, folder, limit }) => run(() => scoped.search(query, { folder, limit })),
   );
 
-  server.registerTool(
-    "backlinks",
-    { description: T.tools.backlinks, inputSchema: { path: z.string() }, annotations: ro },
-    ({ path }) => run(() => scoped.backlinks(path)),
+  server.registerTool("backlinks", { description: T.tools.backlinks, inputSchema: { path: z.string() }, annotations: ro }, ({ path }) =>
+    run(() => scoped.backlinks(path)),
   );
 
   server.registerTool(
@@ -181,10 +172,11 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: A
       annotations: ro,
     },
     // 정리 점검 설명(detail)은 에이전트 언어로 붙인다
-    ({ folder, stale_days }) => run(async () => {
-      const r = await scoped.lint({ folder, staleDays: stale_days });
-      return { ...r, issues: r.issues.map((i) => ({ ...i, detail: T.lint(i) })) };
-    }),
+    ({ folder, stale_days }) =>
+      run(async () => {
+        const r = await scoped.lint({ folder, staleDays: stale_days });
+        return { ...r, issues: r.issues.map((i) => ({ ...i, detail: T.lint(i) })) };
+      }),
   );
 
   server.registerTool(
@@ -207,11 +199,7 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: A
     ({ query, folder, limit }) => run(() => scoped.semantic(query, { folder, limit })),
   );
 
-  server.registerTool(
-    "list_tags",
-    { description: T.tools.list_tags, annotations: ro },
-    () => run(() => scoped.tags()),
-  );
+  server.registerTool("list_tags", { description: T.tools.list_tags, annotations: ro }, () => run(() => scoped.tags()));
 
   server.registerTool(
     "query",

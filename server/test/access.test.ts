@@ -12,7 +12,7 @@ const WIKI_WORK = {
   "업무/경제/SCHEMA.md": "read",
 } as const;
 const OPENCLAW_WORK = {
-  "업무": "read",
+  업무: "read",
   "에이전트 작업함": "delete",
 } as const;
 const OPENCLAW_PERSONAL = {
@@ -50,7 +50,7 @@ afterEach(() => cleanup());
 
 describe("AccessPolicy", () => {
   it("가장 구체적인 경로 규칙이 이기고, 규칙이 없으면 숨김", () => {
-    const p = new AccessPolicy({ "/": "read", "업무": "write", "업무/비밀": "hidden", "업무/비밀/공개.md": "read" });
+    const p = new AccessPolicy({ "/": "read", 업무: "write", "업무/비밀": "hidden", "업무/비밀/공개.md": "read" });
     expect(p.level("아무거나.md")).toBe("read");
     expect(p.level("업무/a.md")).toBe("write");
     expect(p.level("업무/비밀/a.md")).toBe("hidden");

@@ -223,7 +223,13 @@ function TipBox({ shown }: { shown: Shown }) {
     setPos({ left: Math.max(4, Math.min(p.left, vw - w - 4)), top: Math.max(4, Math.min(p.top, vh - h - 4)), side });
   }, [shown]);
   return (
-    <div ref={ref} id={TIP_ID} role="tooltip" className={`tooltip tip-${pos?.side ?? shown.side}`} style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: -9999 }}>
+    <div
+      ref={ref}
+      id={TIP_ID}
+      role="tooltip"
+      className={`tooltip tip-${pos?.side ?? shown.side}`}
+      style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: -9999 }}
+    >
       <span className="tip-label">{shown.label}</span>
       {shown.keys && <kbd className="tip-keys">{formatCombo(shown.keys)}</kbd>}
       {shown.why && <span className="tip-why">{shown.why}</span>}

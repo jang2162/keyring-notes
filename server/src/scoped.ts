@@ -189,9 +189,7 @@ export class ScopedVault {
   /** 읽을 수 있는 문서 목록(평면). */
   async documents(folder?: string): Promise<{ path: string; access: Level }[]> {
     const f = normalizeFolder(folder);
-    return (await this.visibleMarkdown())
-      .filter((p) => !f || p.startsWith(f + "/"))
-      .map((p) => ({ path: p, access: this.level(p) }));
+    return (await this.visibleMarkdown()).filter((p) => !f || p.startsWith(f + "/")).map((p) => ({ path: p, access: this.level(p) }));
   }
 
   private async visibleMarkdown(): Promise<string[]> {
@@ -254,7 +252,10 @@ export class ScopedVault {
     if (!isTopicName(topic)) throw new PathError("topic_name");
     if (this.wiki?.topics.has(topic)) throw new ConflictError(null, "topic_exists_name", { topic });
     const schema = `${topic}/SCHEMA.md`;
-    await this.batch([{ op: "write", path: schema, content: schemaTemplate(topic, this.vault.language()), baseHash: null }], this.vault.text().commit.createTopic(topic));
+    await this.batch(
+      [{ op: "write", path: schema, content: schemaTemplate(topic, this.vault.language()), baseHash: null }],
+      this.vault.text().commit.createTopic(topic),
+    );
     return { topic, schema };
   }
 
@@ -352,11 +353,7 @@ export class ScopedVault {
     if (tagTerms.length > 0) {
       const byPath = new Map<string, string[]>();
       for (const r of this.index.tagRows()) byPath.set(r.path, [...(byPath.get(r.path) ?? []), r.tag]);
-      tagged = new Set(
-        [...byPath.entries()]
-          .filter(([, tags]) => tagTerms.every((t) => tags.some((x) => x === t || x.startsWith(t + "/"))))
-          .map(([p]) => p),
-      );
+      tagged = new Set([...byPath.entries()].filter(([, tags]) => tagTerms.every((t) => tags.some((x) => x === t || x.startsWith(t + "/")))).map(([p]) => p));
     }
     const lowered = textTerms.map((t) => t.toLowerCase());
     const hits: SearchHit[] = [];
@@ -441,7 +438,11 @@ export class ScopedVault {
     const withTitle = (paths: string[]) => paths.filter((p) => this.canRead(p)).map((p) => ({ path: p, title: titles.get(p) ?? p }));
     return {
       path: doc.path,
-      sources: sourceRefs(fm).map((r) => ({ target: r.target, path: resolveLink(r.target, files, this.linkOpts(doc.path)), ...(r.anchor ? { anchor: r.anchor } : {}) })),
+      sources: sourceRefs(fm).map((r) => ({
+        target: r.target,
+        path: resolveLink(r.target, files, this.linkOpts(doc.path)),
+        ...(r.anchor ? { anchor: r.anchor } : {}),
+      })),
       citedBy: withTitle(this.index.backlinks(doc.path, "source", this.vault.daily())),
       linkedBy: withTitle(this.index.backlinks(doc.path, "link", this.vault.daily())),
     };
@@ -462,7 +463,10 @@ export class ScopedVault {
         if (!r.anchor) continue;
         const to = resolveLink(r.target, files, this.linkOpts(d.path));
         if (!to || !/\.md$/i.test(to)) continue;
-        const content = await this.vault.read(to).then((x) => x.content, () => null);
+        const content = await this.vault.read(to).then(
+          (x) => x.content,
+          () => null,
+        );
         if (content !== null && !anchorExists(content, r.anchor)) missingAnchors.push({ src: d.path, target: r.target, anchor: r.anchor });
       }
     }
@@ -499,7 +503,11 @@ export class ScopedVault {
     if (!this.semanticIndex) throw new PathError("semantic_off");
     const f = normalizeFolder(opts.folder);
     const limit = Math.min(Math.max(opts.limit ?? 10, 1), 50);
-    return this.semanticIndex.search(query, (p) => this.canRead(p) && !this.wiki?.isGenerated(p) && !isVaultSettingsPath(p) && (!f || p.startsWith(f + "/")), limit);
+    return this.semanticIndex.search(
+      query,
+      (p) => this.canRead(p) && !this.wiki?.isGenerated(p) && !isVaultSettingsPath(p) && (!f || p.startsWith(f + "/")),
+      limit,
+    );
   }
 
   /** 읽을 수 있는 문서에 쓰인 태그와 개수. */
@@ -523,7 +531,11 @@ export class ScopedVault {
     const spec = parseWidget(source);
     const visible = this.visibleDocs();
     const paths = new Set(visible.map((d) => d.path));
-    return runWidget(spec, visible, this.index.tasks().filter((t) => paths.has(t.path)));
+    return runWidget(
+      spec,
+      visible,
+      this.index.tasks().filter((t) => paths.has(t.path)),
+    );
   }
 
   /** 할 일 체크 상태를 바꾼다. baseHash가 현재 버전과 같아야 한다. */
@@ -607,17 +619,35 @@ export class ScopedVault {
    * 문서 하나를 바꾼다. 검토 대기열에 올라가면(pending) 볼트는 그대로이고,
    * content·hash는 승인 뒤의 내용·해시를 돌려준다.
    */
-  private async single(op: Op, opts: { updateLinks?: boolean; coalesce?: boolean } = {}): Promise<Doc & { rev: string | null; pending?: PendingInfo; linksUpdated: string[]; linkCount: number }> {
+  private async single(
+    op: Op,
+    opts: { updateLinks?: boolean; coalesce?: boolean } = {},
+  ): Promise<Doc & { rev: string | null; pending?: PendingInfo; linksUpdated: string[]; linkCount: number }> {
     if (op.op === "put") throw new PathError("put_batch_only");
     const res = await this.batch([op], undefined, opts);
     const target = normalizeVaultPath(op.op === "move" ? op.to : op.path);
     if (res.pending) {
       const p = res.preview?.find((f) => f.path === target);
-      return { path: target, content: p?.after ?? "", hash: p?.afterHash ?? "", rev: null, pending: res.pending, linksUpdated: res.linksUpdated, linkCount: res.linkCount };
+      return {
+        path: target,
+        content: p?.after ?? "",
+        hash: p?.afterHash ?? "",
+        rev: null,
+        pending: res.pending,
+        linksUpdated: res.linksUpdated,
+        linkCount: res.linkCount,
+      };
     }
     if (!isMarkdown(target)) {
       // 첨부 이동: 내용 대신 해시만
-      return { path: target, content: "", hash: res.files.find((f) => f.path === target)?.hash ?? "", rev: res.rev, linksUpdated: res.linksUpdated, linkCount: res.linkCount };
+      return {
+        path: target,
+        content: "",
+        hash: res.files.find((f) => f.path === target)?.hash ?? "",
+        rev: res.rev,
+        linksUpdated: res.linksUpdated,
+        linkCount: res.linkCount,
+      };
     }
     const doc = await this.vault.read(target);
     return { ...doc, rev: res.rev, linksUpdated: res.linksUpdated, linkCount: res.linkCount };

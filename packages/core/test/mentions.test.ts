@@ -6,11 +6,15 @@ describe("연결되지 않은 언급", () => {
     const names = mentionNames("경제/기준금리.md", { title: "기준 금리", aliases: ["policy rate", "금리"] });
     expect(names).toEqual(["policy rate", "기준 금리", "기준금리", "금리"]);
     const doc = [
-      "---", "title: 기준금리 메모", "---",
+      "---",
+      "title: 기준금리 메모",
+      "---",
       "오늘 기준금리는 동결. [[기준금리]] 참고, `기준금리` 코드.",
       "%%기준금리%% 주석, [기준금리](x.md) 링크",
       "Policy rate rose. policy rates? 금리가 올랐다",
-      "```", "기준금리", "```",
+      "```",
+      "기준금리",
+      "```",
     ].join("\n");
     const ms = unlinkedMentions(doc, names);
     expect(ms.map((m) => [m.line, m.text])).toEqual([

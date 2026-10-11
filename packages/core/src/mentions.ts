@@ -24,7 +24,10 @@ export function mentionNames(path: string, frontmatter: Record<string, unknown> 
   if (typeof frontmatter?.title === "string") names.add(frontmatter.title);
   const aliases = frontmatter?.aliases ?? frontmatter?.alias;
   for (const a of Array.isArray(aliases) ? aliases : typeof aliases === "string" ? aliases.split(",") : []) if (typeof a === "string") names.add(a);
-  return [...names].map((n) => n.trim()).filter((n) => [...n].length >= 2).sort((a, b) => b.length - a.length);
+  return [...names]
+    .map((n) => n.trim())
+    .filter((n) => [...n].length >= 2)
+    .sort((a, b) => b.length - a.length);
 }
 
 /** 링크·코드·HTML 태그 자리(줄 안 범위). 그 안의 이름은 언급으로 세지 않는다 */

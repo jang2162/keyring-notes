@@ -101,7 +101,14 @@ export function ServerSettings({ section, folders }: { section: ServerSection; f
 function StatusView() {
   const [s, setS] = useState<AdminStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(() => admin.status().then(setS).catch((e) => setError(errorText(e))), []);
+  const load = useCallback(
+    () =>
+      admin
+        .status()
+        .then(setS)
+        .catch((e) => setError(errorText(e))),
+    [],
+  );
   useEffect(() => {
     void load();
   }, [load]);
@@ -113,7 +120,8 @@ function StatusView() {
   if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1" && !s.security.allowedHosts?.length) warnings.push(t("admin.status.warnHosts"));
   if (s.backups.lastError) warnings.push(t("admin.status.warnBackupFailed", { error: s.backups.lastError }));
   if (s.storage?.remoteBackups?.lastError) warnings.push(t("admin.status.warnS3Upload", { error: s.storage.remoteBackups.lastError }));
-  if (s.storage?.blobs?.pending) warnings.push(t("admin.status.warnBlobsPending", { count: s.storage.blobs.pending, error: s.storage.blobs.lastError ?? "" }).trim());
+  if (s.storage?.blobs?.pending)
+    warnings.push(t("admin.status.warnBlobsPending", { count: s.storage.blobs.pending, error: s.storage.blobs.lastError ?? "" }).trim());
   if (!s.backups.last) warnings.push(t("admin.status.warnNoBackup"));
   if (diskUsed !== null && diskUsed > 0.9) warnings.push(t("admin.status.warnDisk", { percent: Math.round(diskUsed * 100) }));
   return (
@@ -148,7 +156,11 @@ function StatusView() {
         <Stat
           label={t("admin.status.disk")}
           value={s.disk ? t("admin.status.free", { size: fmtBytes(s.disk.freeBytes) }) : "—"}
-          sub={s.disk ? t("admin.status.diskSub", { total: fmtBytes(s.disk.totalBytes), history: fmtBytes(s.history.bytes), index: fmtBytes(s.index.bytes) }) : undefined}
+          sub={
+            s.disk
+              ? t("admin.status.diskSub", { total: fmtBytes(s.disk.totalBytes), history: fmtBytes(s.history.bytes), index: fmtBytes(s.index.bytes) })
+              : undefined
+          }
         />
         <Stat
           label={t("admin.status.backups")}
@@ -241,7 +253,14 @@ function TokenNotice({ name, token, onClose }: { name: string; token: string; on
 function DevicesView() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(() => admin.devices().then(setDevices).catch((e) => setError(errorText(e))), []);
+  const load = useCallback(
+    () =>
+      admin
+        .devices()
+        .then(setDevices)
+        .catch((e) => setError(errorText(e))),
+    [],
+  );
   useEffect(() => {
     void load();
   }, [load]);
@@ -297,7 +316,14 @@ function AgentsView({ folders }: { folders: string[] }) {
   const [token, setToken] = useState<{ name: string; token: string } | null>(null);
   // 토큰은 지금만 볼 수 있다: 모르고 닫지 않게
   useCloseGuard(token ? { kind: "confirm", reason: t("admin.agents.tokenGuard", { name: token.name }) } : null);
-  const load = useCallback(() => admin.agents().then(setAgents).catch((e) => setError(errorText(e))), []);
+  const load = useCallback(
+    () =>
+      admin
+        .agents()
+        .then(setAgents)
+        .catch((e) => setError(errorText(e))),
+    [],
+  );
   useEffect(() => {
     void load();
   }, [load]);
@@ -335,13 +361,7 @@ function AgentsView({ folders }: { folders: string[] }) {
       </datalist>
       {agents.length === 0 && <p className="meta">{t("admin.agents.empty")}</p>}
       {agents.map((a) => (
-        <AgentCard
-          key={a.name}
-          agent={a}
-          onToken={setToken}
-          onChanged={load}
-          onError={setError}
-        />
+        <AgentCard key={a.name} agent={a} onToken={setToken} onChanged={load} onError={setError} />
       ))}
     </div>
   );
@@ -433,7 +453,12 @@ function AgentCard({
           {rows.map((r, i) => (
             <tr key={i}>
               <td>
-                <input list="folder-list" value={r.path} placeholder={t("admin.agents.pathPlaceholder")} onChange={(e) => update(i, { path: e.target.value })} />
+                <input
+                  list="folder-list"
+                  value={r.path}
+                  placeholder={t("admin.agents.pathPlaceholder")}
+                  onChange={(e) => update(i, { path: e.target.value })}
+                />
               </td>
               <td>
                 <select value={r.level} onChange={(e) => update(i, { level: e.target.value as Level })}>
@@ -490,7 +515,10 @@ function BackupsView() {
   const [busy, setBusy] = useState<string | null>(null);
   useCloseGuard(
     busy
-      ? { kind: "block", reason: busy === "restore" ? t("admin.backup.busyRestore") : busy === "upload" ? t("admin.backup.busyUpload") : t("admin.backup.busy") }
+      ? {
+          kind: "block",
+          reason: busy === "restore" ? t("admin.backup.busyRestore") : busy === "upload" ? t("admin.backup.busyUpload") : t("admin.backup.busy"),
+        }
       : null,
   );
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -567,14 +595,27 @@ function BackupsView() {
           </label>
           <label>
             {t("admin.backup.interval")}{" "}
-            <input type="number" min={1} max={720} defaultValue={settings.intervalHours} onBlur={(e) => Number(e.target.value) !== settings.intervalHours && saveSettings({ intervalHours: Number(e.target.value) })} />
+            <input
+              type="number"
+              min={1}
+              max={720}
+              defaultValue={settings.intervalHours}
+              onBlur={(e) => Number(e.target.value) !== settings.intervalHours && saveSettings({ intervalHours: Number(e.target.value) })}
+            />
           </label>
           <label>
             {t("admin.backup.keep")}{" "}
-            <input type="number" min={1} max={365} defaultValue={settings.keep} onBlur={(e) => Number(e.target.value) !== settings.keep && saveSettings({ keep: Number(e.target.value) })} />
+            <input
+              type="number"
+              min={1}
+              max={365}
+              defaultValue={settings.keep}
+              onBlur={(e) => Number(e.target.value) !== settings.keep && saveSettings({ keep: Number(e.target.value) })}
+            />
           </label>
           <label>
-            <input type="checkbox" checked={settings.includeConfig} onChange={(e) => saveSettings({ includeConfig: e.target.checked })} /> {t("admin.backup.includeConfig")}
+            <input type="checkbox" checked={settings.includeConfig} onChange={(e) => saveSettings({ includeConfig: e.target.checked })} />{" "}
+            {t("admin.backup.includeConfig")}
           </label>
           <p className="meta">{t("admin.backup.autoHint")}</p>
           {remote?.configured && (
@@ -584,14 +625,24 @@ function BackupsView() {
               </label>
               <label>
                 {t("admin.backup.remoteKeep")}{" "}
-                <input type="number" min={1} max={3650} defaultValue={settings.remoteKeep} onBlur={(e) => Number(e.target.value) !== settings.remoteKeep && saveSettings({ remoteKeep: Number(e.target.value) })} />
+                <input
+                  type="number"
+                  min={1}
+                  max={3650}
+                  defaultValue={settings.remoteKeep}
+                  onBlur={(e) => Number(e.target.value) !== settings.remoteKeep && saveSettings({ remoteKeep: Number(e.target.value) })}
+                />
               </label>
             </>
           )}
         </fieldset>
       )}
       <div className="agent-actions">
-        <button className="on" disabled={busy !== null} onClick={() => run("create", async () => t("admin.backup.created", { name: (await admin.createBackup()).name }))}>
+        <button
+          className="on"
+          disabled={busy !== null}
+          onClick={() => run("create", async () => t("admin.backup.created", { name: (await admin.createBackup()).name }))}
+        >
           {busy === "create" ? t("admin.backup.running") : t("admin.backup.now")}
         </button>
         <button disabled={busy !== null} onClick={() => fileInput.current?.click()}>
@@ -641,7 +692,10 @@ function BackupsView() {
                 </button>
                 <button
                   disabled={busy !== null}
-                  onClick={() => confirm(t("admin.backup.confirmDelete", { name: b.name })) && void run("remove", async () => (await admin.removeBackup(b.name), t("admin.backup.deleted")))}
+                  onClick={() =>
+                    confirm(t("admin.backup.confirmDelete", { name: b.name })) &&
+                    void run("remove", async () => (await admin.removeBackup(b.name), t("admin.backup.deleted")))
+                  }
                 >
                   {t("common.delete")}
                 </button>
@@ -686,7 +740,10 @@ function BackupsView() {
                     {b.local ? (
                       <span className="meta">{t("admin.backup.alsoLocal")}</span>
                     ) : (
-                      <button disabled={busy !== null} onClick={() => void run("fetch", async () => t("admin.backup.fetched", { name: (await admin.fetchRemote(b.name)).name }))}>
+                      <button
+                        disabled={busy !== null}
+                        onClick={() => void run("fetch", async () => t("admin.backup.fetched", { name: (await admin.fetchRemote(b.name)).name }))}
+                      >
                         {t("admin.backup.fetch")}
                       </button>
                     )}
@@ -708,7 +765,11 @@ function BackupsView() {
               {list
                 .filter((b) => !remote.backups.some((r) => r.name === b.name))
                 .map((b) => (
-                  <button key={b.name} disabled={busy !== null} onClick={() => void run("push", async () => (await admin.pushRemote(b.name), t("admin.backup.pushed", { name: b.name })))}>
+                  <button
+                    key={b.name}
+                    disabled={busy !== null}
+                    onClick={() => void run("push", async () => (await admin.pushRemote(b.name), t("admin.backup.pushed", { name: b.name })))}
+                  >
                     {t("admin.backup.pushOne", { date: when(b.createdAt) })}
                   </button>
                 ))}
@@ -775,7 +836,14 @@ function PasskeysView() {
   const [name, setName] = useState("");
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const load = useCallback(() => admin.passkeys().then(setList).catch((e) => setNote({ ok: false, text: errorText(e) })), []);
+  const load = useCallback(
+    () =>
+      admin
+        .passkeys()
+        .then(setList)
+        .catch((e) => setNote({ ok: false, text: errorText(e) })),
+    [],
+  );
   useEffect(() => void load(), [load]);
 
   const register = async () => {
@@ -825,7 +893,13 @@ function PasskeysView() {
       )}
       {passkeySupported() ? (
         <div className="passkey-add">
-          <input placeholder={t("admin.passkeys.namePlaceholder")} value={name} maxLength={40} onChange={(e) => setName(e.target.value)} aria-label={t("admin.passkeys.nameLabel")} />
+          <input
+            placeholder={t("admin.passkeys.namePlaceholder")}
+            value={name}
+            maxLength={40}
+            onChange={(e) => setName(e.target.value)}
+            aria-label={t("admin.passkeys.nameLabel")}
+          />
           <button disabled={busy} onClick={() => void register()}>
             {busy ? t("admin.passkeys.waiting") : t("admin.passkeys.register")}
           </button>
@@ -892,7 +966,8 @@ function eventLabel(ev: string): string {
 }
 
 /** 고칠 수 있는 칸만(정기 작업의 다음·마지막 실행 같은 상태 값은 빼고) 비교용 글로 */
-const editable = (list: object[]) => JSON.stringify(list.map((x) => Object.fromEntries(Object.entries(x).filter(([k]) => !["next", "lastRun", "lastResult", "error"].includes(k)))));
+const editable = (list: object[]) =>
+  JSON.stringify(list.map((x) => Object.fromEntries(Object.entries(x).filter(([k]) => !["next", "lastRun", "lastResult", "error"].includes(k)))));
 
 /** 웹훅·정기 작업(W8). */
 function AutomationView() {
@@ -960,10 +1035,22 @@ function AutomationView() {
               {t("admin.auto.name")} <input value={h.name} onChange={(e) => patchHook(i, { name: e.target.value })} />
             </label>
             <label className="wide">
-              {t("admin.auto.url")} <input value={h.url} onChange={(e) => patchHook(i, { url: e.target.value })} placeholder="https://agent.example.com/hooks/keyring" />
+              {t("admin.auto.url")}{" "}
+              <input value={h.url} onChange={(e) => patchHook(i, { url: e.target.value })} placeholder="https://agent.example.com/hooks/keyring" />
             </label>
             <label className="wide">
-              {t("admin.auto.topics")} <input value={h.topics.join(", ")} onChange={(e) => patchHook(i, { topics: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} />
+              {t("admin.auto.topics")}{" "}
+              <input
+                value={h.topics.join(", ")}
+                onChange={(e) =>
+                  patchHook(i, {
+                    topics: e.target.value
+                      .split(",")
+                      .map((x) => x.trim())
+                      .filter(Boolean),
+                  })
+                }
+              />
             </label>
           </div>
           <div className="event-checks">
@@ -1004,10 +1091,16 @@ function AutomationView() {
             <span className="meta">{h.secret ? `secret ${h.secret}` : t("admin.auto.noSecret")}</span>
             <span className="spacer" />
             {h.secret && (
-              <button onClick={() => act(async () => {
-                const d = await automation.test(h.id);
-                return d.status === "ok" ? t("admin.auto.testOk", { status: String(d.httpStatus) }) : t("admin.auto.testFailed", { error: String(d.error) });
-              })}>
+              <button
+                onClick={() =>
+                  act(async () => {
+                    const d = await automation.test(h.id);
+                    return d.status === "ok"
+                      ? t("admin.auto.testOk", { status: String(d.httpStatus) })
+                      : t("admin.auto.testFailed", { error: String(d.error) });
+                  })
+                }
+              >
                 {t("admin.auto.test")}
               </button>
             )}
@@ -1016,7 +1109,9 @@ function AutomationView() {
         </section>
       ))}
       <div className="agent-actions">
-        <button onClick={() => setHooks((hs) => [...hs, { id: "", name: "", url: "", secret: "", events: ["raw.added"], topics: [], enabled: true }])}>{t("admin.auto.addWebhook")}</button>
+        <button onClick={() => setHooks((hs) => [...hs, { id: "", name: "", url: "", secret: "", events: ["raw.added"], topics: [], enabled: true }])}>
+          {t("admin.auto.addWebhook")}
+        </button>
         <button
           className="on"
           onClick={() =>
@@ -1060,11 +1155,16 @@ function AutomationView() {
               </select>
             </label>
             <label>
-              {t("admin.auto.topic")} <input value={j.topic ?? ""} onChange={(e) => patchJob(i, { topic: e.target.value || null })} placeholder={t("admin.auto.allTopics")} />
+              {t("admin.auto.topic")}{" "}
+              <input value={j.topic ?? ""} onChange={(e) => patchJob(i, { topic: e.target.value || null })} placeholder={t("admin.auto.allTopics")} />
             </label>
             <label className="wide">
               {t("admin.auto.instructions")}{" "}
-              <input value={j.instructions ?? ""} onChange={(e) => patchJob(i, { instructions: e.target.value || null })} placeholder={t("admin.auto.instructionsPlaceholder")} />
+              <input
+                value={j.instructions ?? ""}
+                onChange={(e) => patchJob(i, { instructions: e.target.value || null })}
+                placeholder={t("admin.auto.instructionsPlaceholder")}
+              />
             </label>
           </div>
           <div className="event-checks">
@@ -1077,14 +1177,20 @@ function AutomationView() {
           </div>
           <div className="agent-actions">
             <span className="meta">
-              {j.error ? `⚠ ${j.error}` : `${t("admin.auto.jobStatus", { next: when(j.next), last: when(j.lastRun) })}${j.lastResult ? ` (${j.lastResult})` : ""}`}
+              {j.error
+                ? `⚠ ${j.error}`
+                : `${t("admin.auto.jobStatus", { next: when(j.next), last: when(j.lastRun) })}${j.lastResult ? ` (${j.lastResult})` : ""}`}
             </span>
             <span className="spacer" />
             {j.next !== undefined && (
-              <button onClick={() => act(async () => {
-                const r = await automation.run(j.id);
-                return r.job.lastResult ?? t("admin.auto.ran");
-              })}>
+              <button
+                onClick={() =>
+                  act(async () => {
+                    const r = await automation.run(j.id);
+                    return r.job.lastResult ?? t("admin.auto.ran");
+                  })
+                }
+              >
                 {t("admin.auto.runNow")}
               </button>
             )}
@@ -1095,7 +1201,19 @@ function AutomationView() {
       <div className="agent-actions">
         <button
           onClick={() =>
-            setJobs((js) => [...js, { id: "", name: "", cron: "0 9 * * 1", webhook: hooks.find((h) => h.secret)?.id ?? "", topic: null, lint: true, instructions: null, enabled: true }])
+            setJobs((js) => [
+              ...js,
+              {
+                id: "",
+                name: "",
+                cron: "0 9 * * 1",
+                webhook: hooks.find((h) => h.secret)?.id ?? "",
+                topic: null,
+                lint: true,
+                instructions: null,
+                enabled: true,
+              },
+            ])
           }
         >
           {t("admin.auto.addJob")}

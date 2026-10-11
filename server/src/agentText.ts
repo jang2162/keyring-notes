@@ -31,8 +31,10 @@ const EN: AgentText = {
 - To change several documents together, use batch_write for one commit. If one operation fails, nothing is changed.`,
   tools: {
     whoami: "This token's agent name and per-path permission table",
-    list_topics: "Topics: nodes directly under each workspace (<workspace>/<name>). wiki=true means an LLM Wiki topic (raw/, wiki/, SCHEMA.md): read SCHEMA.md before working",
-    list_children: "Child nodes of a node (a node is the note A.md plus its children under A/). Without path, the workspaces. Each child has its note path (null if the node has no note), whether it has children and its attachment count",
+    list_topics:
+      "Topics: nodes directly under each workspace (<workspace>/<name>). wiki=true means an LLM Wiki topic (raw/, wiki/, SCHEMA.md): read SCHEMA.md before working",
+    list_children:
+      "Child nodes of a node (a node is the note A.md plus its children under A/). Without path, the workspaces. Each child has its note path (null if the node has no note), whether it has children and its attachment count",
     list_documents: "Markdown documents you can read, with your permission on each",
     read_outline: "Document outline: hash, line count, frontmatter, headings (line ranges), wikilink targets. No body.",
     read_section: "Read part of a document: heading (e.g. 'Install > Requirements', a block ID like '^p3') or start_line/end_line (1-based, inclusive)",
@@ -40,13 +42,18 @@ const EN: AgentText = {
     list_frontmatter: "Frontmatter of the documents under a folder at once (no bodies)",
     search: "Full-text search: documents containing every space-separated word, with the first matching line",
     backlinks: "Documents that link to this one with a wikilink",
-    unlinked_mentions: "Other documents where this document's name (file name, title, aliases) appears without a link, with positions (line, column, context). To turn one into a link, edit that document with write_document",
+    unlinked_mentions:
+      "Other documents where this document's name (file name, title, aliases) appears without a link, with positions (line, column, context). To turn one into a link, edit that document with write_document",
     lint: "Structural lint: broken links and sources, orphan wiki pages, pages without sources, missing frontmatter (title, summary), stale pages, uncited sources",
-    sources: "Source links: what this document's frontmatter sources point to (path=null if missing or not visible), pages citing this one as a source, pages linking to it",
-    semantic_search: "Semantic search (embeddings): documents and sections close in meaning even with different words. Only when the server has an embedding model configured",
+    sources:
+      "Source links: what this document's frontmatter sources point to (path=null if missing or not visible), pages citing this one as a source, pages linking to it",
+    semantic_search:
+      "Semantic search (embeddings): documents and sections close in meaning even with different words. Only when the server has an embedding model configured",
     list_tags: "Tags (frontmatter tags + #tags in the body) and document counts",
-    query: 'Pick documents with the same YAML query as widgets. Example: "type: table\\nfrom: Work\\nwhere: status != done\\nshow: [title, due]\\nsort: due". type: query|table|tasks|chart',
-    ingest_url: "Fetch a web page or PDF, convert it to markdown and save it as a source under <topic>/raw/ (PDF originals also go to raw/assets/). Needs append on raw",
+    query:
+      'Pick documents with the same YAML query as widgets. Example: "type: table\\nfrom: Work\\nwhere: status != done\\nshow: [title, due]\\nsort: due". type: query|table|tasks|chart',
+    ingest_url:
+      "Fetch a web page or PDF, convert it to markdown and save it as a source under <topic>/raw/ (PDF originals also go to raw/assets/). Needs append on raw",
     ingest_text: "Save text you already have (a conversation, notes, a document from another tool) as a source under <topic>/raw/",
     my_proposals: "Change proposals you submitted (review queue) and their outcome (pending/approved/rejected, rejection reason)",
     write_document: "Write a whole document. New documents use base_hash=null; existing documents need the hash you last read.",
@@ -73,7 +80,9 @@ const EN: AgentText = {
       case "broken_link":
         return `Link [[${i.target}]] points to a missing or hidden document`;
       case "broken_source":
-        return p.anchor ? `Source "${i.target}" has no ${String(p.anchor).startsWith("^") ? `block ${p.anchor}` : `heading "${p.anchor}"`}` : `Source "${i.target}" is missing or hidden`;
+        return p.anchor
+          ? `Source "${i.target}" has no ${String(p.anchor).startsWith("^") ? `block ${p.anchor}` : `heading "${p.anchor}"`}`
+          : `Source "${i.target}" is missing or hidden`;
       case "orphan":
         return "No other document links to or cites this page";
       case "no_sources":
@@ -104,8 +113,10 @@ const KO: AgentText = {
 - 여러 문서를 함께 고칠 때는 batch_write로 한 커밋에 묶으세요. 하나라도 실패하면 전부 취소됩니다.`,
   tools: {
     whoami: "이 토큰의 에이전트 이름과 경로별 권한 표",
-    list_topics: "토픽 목록: 워크스페이스 바로 아래 노드(<워크스페이스>/<이름>). wiki=true면 LLM Wiki 토픽(raw/·wiki/·SCHEMA.md)이며 작업 전에 SCHEMA.md를 읽는다",
-    list_children: "노드의 하위 노드(노드 = 노트 A.md + A/ 아래 하위). path가 없으면 워크스페이스 목록. 하위마다 노트 경로(노트 없는 노드면 null), 하위가 있는지, 첨부 수",
+    list_topics:
+      "토픽 목록: 워크스페이스 바로 아래 노드(<워크스페이스>/<이름>). wiki=true면 LLM Wiki 토픽(raw/·wiki/·SCHEMA.md)이며 작업 전에 SCHEMA.md를 읽는다",
+    list_children:
+      "노드의 하위 노드(노드 = 노트 A.md + A/ 아래 하위). path가 없으면 워크스페이스 목록. 하위마다 노트 경로(노트 없는 노드면 null), 하위가 있는지, 첨부 수",
     list_documents: "읽을 수 있는 마크다운 문서 목록과 각 문서에 대한 권한",
     read_outline: "문서 개요: 해시, 줄 수, 프런트매터, 제목 목록(줄 범위), 위키링크 대상. 본문은 돌려주지 않는다.",
     read_section: "문서 일부 읽기. heading(예: '설치 > 요구사항', 블록 ID면 '^p3') 또는 start_line/end_line(1부터, 포함)",
@@ -113,12 +124,14 @@ const KO: AgentText = {
     list_frontmatter: "폴더 안 문서들의 프런트매터를 한 번에 조회(본문 없이)",
     search: "전체 텍스트 검색. 공백으로 나눈 모든 단어를 포함한 문서와 첫 일치 줄",
     backlinks: "이 문서를 위키링크로 가리키는 문서 목록",
-    unlinked_mentions: "이 문서의 이름(파일 이름·title·aliases)이 링크 없이 나오는 다른 문서와 그 자리(줄·위치·문맥). 링크로 바꾸려면 write_document로 그 문서를 고친다",
+    unlinked_mentions:
+      "이 문서의 이름(파일 이름·title·aliases)이 링크 없이 나오는 다른 문서와 그 자리(줄·위치·문맥). 링크로 바꾸려면 write_document로 그 문서를 고친다",
     lint: "구조적 정리 점검: 깨진 링크·출처, 고아 위키 페이지, 출처(sources) 없는 페이지, 프런트매터 누락(title·summary), 오래된 페이지, 인용되지 않은 원본",
     sources: "출처 연결: 이 문서의 프런트매터 sources가 가리키는 원본(없거나 볼 수 없으면 path=null), 이 문서를 출처로 인용한 페이지, 본문에서 링크한 페이지",
     semantic_search: "의미 검색(임베딩): 단어가 달라도 뜻이 가까운 문서·절. 서버에 임베딩 모델이 설정됐을 때만 쓸 수 있다",
     list_tags: "태그(프런트매터 tags + 본문 #태그)와 문서 수",
-    query: '위젯과 같은 YAML 쿼리로 문서를 고른다. 예: "type: table\\nfrom: 업무\\nwhere: status != done\\nshow: [title, due]\\nsort: due". type: query|table|tasks|chart',
+    query:
+      '위젯과 같은 YAML 쿼리로 문서를 고른다. 예: "type: table\\nfrom: 업무\\nwhere: status != done\\nshow: [title, due]\\nsort: due". type: query|table|tasks|chart',
     ingest_url: "웹 페이지·PDF를 가져와 마크다운으로 바꿔 <topic>/raw/에 원본으로 저장한다(PDF는 raw/assets/에 원본도). raw에 append 권한 필요",
     ingest_text: "이미 가진 텍스트(대화 기록, 메모, 다른 도구로 얻은 문서)를 <topic>/raw/에 원본으로 저장한다",
     my_proposals: "내가 올린 변경 제안(검토 대기열)과 처리 결과(pending/approved/rejected, 거절 사유)",
@@ -146,7 +159,9 @@ const KO: AgentText = {
       case "broken_link":
         return `링크 [[${i.target}]]의 대상이 없거나 볼 수 없음`;
       case "broken_source":
-        return p.anchor ? `출처 "${i.target}"에 ${String(p.anchor).startsWith("^") ? `블록 ${p.anchor}` : `제목 "${p.anchor}"`}이(가) 없음` : `출처 "${i.target}"가 없거나 볼 수 없음`;
+        return p.anchor
+          ? `출처 "${i.target}"에 ${String(p.anchor).startsWith("^") ? `블록 ${p.anchor}` : `제목 "${p.anchor}"`}이(가) 없음`
+          : `출처 "${i.target}"가 없거나 볼 수 없음`;
       case "orphan":
         return "다른 문서에서 링크하거나 인용하지 않음";
       case "no_sources":

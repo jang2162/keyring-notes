@@ -214,7 +214,9 @@ export class GitHistory {
    */
   async logWithChanges(relPath: string, limit = 100): Promise<(CommitInfo & { files: string[] })[]> {
     const fmt = RECORD + ["%H", "%an", "%ae", "%aI", "%s"].join(FIELD);
-    const res = await this.run(["log", `--max-count=${limit}`, "--full-diff", "--no-renames", "--name-only", `--format=${fmt}`, "--", relPath], { allowFail: true });
+    const res = await this.run(["log", `--max-count=${limit}`, "--full-diff", "--no-renames", "--name-only", `--format=${fmt}`, "--", relPath], {
+      allowFail: true,
+    });
     if (res.code !== 0) return [];
     return res.stdout
       .split(RECORD)

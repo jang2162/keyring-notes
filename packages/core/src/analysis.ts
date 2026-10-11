@@ -80,9 +80,7 @@ export function lintVault(input: {
       if (isWikiPage(r.src)) citedByWiki.add(to);
     }
     if (!to && inScope(r.src)) {
-      issues.push(
-        r.kind === "source" ? { kind: "broken_source", path: r.src, target: r.target } : { kind: "broken_link", path: r.src, target: r.target },
-      );
+      issues.push(r.kind === "source" ? { kind: "broken_source", path: r.src, target: r.target } : { kind: "broken_link", path: r.src, target: r.target });
     }
   }
 
@@ -131,7 +129,9 @@ export function lintVault(input: {
  */
 export function linkGraph(input: { docs: DocMeta[]; links: LinkRow[]; wiki?: WikiTopics; folder: string; daily?: DailyLookup | null }): GraphData {
   const f = input.folder;
-  const docs = input.docs.filter((d) => !input.wiki?.isGenerated(d.path) && !isVaultSettingsPath(d.path) && (!f || d.path === `${f}.md` || d.path.startsWith(f + "/")));
+  const docs = input.docs.filter(
+    (d) => !input.wiki?.isGenerated(d.path) && !isVaultSettingsPath(d.path) && (!f || d.path === `${f}.md` || d.path.startsWith(f + "/")),
+  );
   const ids = new Set(docs.map((d) => d.path));
   const paths = [...ids];
   const seen = new Set<string>();

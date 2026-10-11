@@ -79,7 +79,8 @@ afterEach(async () => {
 });
 
 const as = (rules: Parameters<typeof agentPrincipal>[1], name = "wiki-agent") => new ScopedVault(vault, agentPrincipal(name, rules), index, wiki);
-const git = (...args: string[]) => execFileSync("git", ["--git-dir", path.join(dir, ".history"), "--work-tree", dir, "-c", "core.quotePath=false", ...args], { encoding: "utf8" });
+const git = (...args: string[]) =>
+  execFileSync("git", ["--git-dir", path.join(dir, ".history"), "--work-tree", dir, "-c", "core.quotePath=false", ...args], { encoding: "utf8" });
 
 describe("위키 토픽", () => {
   it("SCHEMA.md 템플릿과 자동 생성 index·log를 만들고, 자동 생성 문서는 Git·검색에서 뺀다", async () => {
@@ -236,7 +237,9 @@ describe("index·log 자동 생성", () => {
 
     const log = (await owner.read("업무/경제/wiki/log.md")).content;
     expect(log).toMatch(/## \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] me \| 수집: 금리 기사\n\n- 추가: \[\[업무\/경제\/raw\//);
-    expect(log).toMatch(/## \[[^\]]+\] wiki-agent \| 수집: 금리 기사\n\n- 추가: \[\[업무\/경제\/wiki\/기준금리\|wiki\/기준금리\]\]\n- 추가: \[\[업무\/경제\/wiki\/환율\|wiki\/환율\]\]/);
+    expect(log).toMatch(
+      /## \[[^\]]+\] wiki-agent \| 수집: 금리 기사\n\n- 추가: \[\[업무\/경제\/wiki\/기준금리\|wiki\/기준금리\]\]\n- 추가: \[\[업무\/경제\/wiki\/환율\|wiki\/환율\]\]/,
+    );
     // 위키 index·log가 새 백링크를 만들지 않는다(검색 인덱스에서 빠짐)
     expect((await owner.backlinks("업무/경제/wiki/기준금리.md")).map((b) => b.path)).toEqual(["업무/경제/wiki/환율.md"]);
   });
@@ -280,7 +283,14 @@ describe("REST 업로드·MCP", () => {
     const token = config.issueToken("wiki-work");
     config.setRule("wiki-work", "업무/경제/raw", "append");
     config.setRule("wiki-work", "업무/경제/wiki", "delete");
-    const app = createApp({ vault, index, config, wiki, ingestor, admin: { backups: new BackupService(vault, config, path.join(vault.root, ".keyring", "backups"), () => wiki.resync()) } });
+    const app = createApp({
+      vault,
+      index,
+      config,
+      wiki,
+      ingestor,
+      admin: { backups: new BackupService(vault, config, path.join(vault.root, ".keyring", "backups"), () => wiki.resync()) },
+    });
     const login = await app.request("/api/auth/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -310,7 +320,9 @@ describe("REST 업로드·MCP", () => {
       body: JSON.stringify({ kind: "text", topic: "업무/경제", title: "에이전트 메모", text: "메모" }),
     });
     expect(text.status).toBe(200);
-    const idx = await (await app.request(`/api/file?path=${encodeURIComponent("업무/경제/wiki/index.md")}`, { headers: { authorization: `Bearer ${token}` } })).json();
+    const idx = await (
+      await app.request(`/api/file?path=${encodeURIComponent("업무/경제/wiki/index.md")}`, { headers: { authorization: `Bearer ${token}` } })
+    ).json();
     expect(idx.generated).toBe(true);
     expect(idx.content).toContain("에이전트 메모");
   });

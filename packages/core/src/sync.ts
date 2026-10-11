@@ -332,10 +332,21 @@ export class SyncEngine {
       if (agreed.length) await this.vault.preserve(agreed);
       if (pulls.length) {
         const apply = (list: typeof pulls, message: string) =>
-          list.length ? this.vault.applySync(list.map(({ path, data, expect }) => ({ path, data, expect })), message) : Promise.resolve([]);
+          list.length
+            ? this.vault.applySync(
+                list.map(({ path, data, expect }) => ({ path, data, expect })),
+                message,
+              )
+            : Promise.resolve([]);
         const applied = new Set([
-          ...(await apply(pulls.filter((p) => !p.merged), this.vault.text().commit.syncPulled)),
-          ...(await apply(pulls.filter((p) => p.merged), this.vault.text().commit.syncMerged)),
+          ...(await apply(
+            pulls.filter((p) => !p.merged),
+            this.vault.text().commit.syncPulled,
+          )),
+          ...(await apply(
+            pulls.filter((p) => p.merged),
+            this.vault.text().commit.syncMerged,
+          )),
         ]);
         for (const p of pulls) {
           if (!applied.has(p.path)) {
@@ -456,4 +467,3 @@ export async function pairDevice(
   }
   return { token: data.token, device: data.name ?? device, server };
 }
-

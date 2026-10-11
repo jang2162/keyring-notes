@@ -134,23 +134,23 @@ export function Widget({ source, onOpen, onChanged }: Props) {
           <div className="widget-empty">{t("widget.noMatch")}</div>
         ) : (
           grouped(r.rows, r.group).map(([key, rows]) => (
-          <ul className="widget-list" key={key}>
-            {r.group && <li className="widget-group">{key}</li>}
-            {rows.map((row) => (
-              <li key={row.path}>
-                {link(row.path, row.title)}
-                {r.columns
-                  .filter((c) => c !== "title")
-                  .map((c) =>
-                    row.values[c] === null || row.values[c] === undefined ? null : (
-                      <span key={c} className="widget-field">
-                        {c}: {formatValue(row.values[c])}
-                      </span>
-                    ),
-                  )}
-              </li>
-            ))}
-          </ul>
+            <ul className="widget-list" key={key}>
+              {r.group && <li className="widget-group">{key}</li>}
+              {rows.map((row) => (
+                <li key={row.path}>
+                  {link(row.path, row.title)}
+                  {r.columns
+                    .filter((c) => c !== "title")
+                    .map((c) =>
+                      row.values[c] === null || row.values[c] === undefined ? null : (
+                        <span key={c} className="widget-field">
+                          {c}: {formatValue(row.values[c])}
+                        </span>
+                      ),
+                    )}
+                </li>
+              ))}
+            </ul>
           ))
         ))}
       {r.type === "table" && (
@@ -221,9 +221,7 @@ export function Widget({ source, onOpen, onChanged }: Props) {
       {r.type === "chart" && <Chart result={r} />}
       {r.type === "plugin" && <PluginWidget result={r} onOpen={onOpen} />}
       {(r.type === "query" || r.type === "table" || r.type === "cards" || r.type === "kanban") && r.total > r.rows.length && (
-        <div className="widget-more">
-          {t("widget.showing", { shown: fmtNumber(r.rows.length), total: fmtNumber(r.total) })}
-        </div>
+        <div className="widget-more">{t("widget.showing", { shown: fmtNumber(r.rows.length), total: fmtNumber(r.total) })}</div>
       )}
     </div>
   );
@@ -285,11 +283,7 @@ function Card({
   extra?: ReactElement;
 }) {
   return (
-    <div
-      className="widget-card"
-      draggable={draggable}
-      onDragStart={draggable ? (e) => e.dataTransfer.setData("text/x-keyring-path", row.path) : undefined}
-    >
+    <div className="widget-card" draggable={draggable} onDragStart={draggable ? (e) => e.dataTransfer.setData("text/x-keyring-path", row.path) : undefined}>
       <div className="widget-card-title">{link(row.path, row.title)}</div>
       {row.summary && <div className="widget-card-summary">{row.summary}</div>}
       {columns
@@ -358,7 +352,12 @@ function Kanban({
                 edit={edit}
                 draggable
                 extra={
-                  <select className="kanban-move" aria-label={t("widget.moveCard", { title: row.title })} value={lane} onChange={(e) => move(row.path, e.target.value)}>
+                  <select
+                    className="kanban-move"
+                    aria-label={t("widget.moveCard", { title: row.title })}
+                    value={lane}
+                    onChange={(e) => move(row.path, e.target.value)}
+                  >
                     {lanes.map((l) => (
                       <option key={l} value={l}>
                         → {l}
@@ -411,12 +410,7 @@ function TaskList({
             {g.tasks.map((task) => (
               <li key={task.line} className={task.done ? "done" : undefined}>
                 <label>
-                  <input
-                    type="checkbox"
-                    checked={task.done}
-                    disabled={busy !== null}
-                    onChange={(e) => toggle(g.path, g.hash, task.line, e.target.checked)}
-                  />{" "}
+                  <input type="checkbox" checked={task.done} disabled={busy !== null} onChange={(e) => toggle(g.path, g.hash, task.line, e.target.checked)} />{" "}
                   {task.text}
                 </label>
               </li>
@@ -516,19 +510,17 @@ function Chart({ result }: { result: Extract<WidgetResult, { type: "chart" }> })
             </text>
           ) : null,
         )}
-        {hover !== null && (
-          <rect x={pad.l + band * hover} y={pad.t} width={band} height={ih} className="chart-hover-band" />
+        {hover !== null && <rect x={pad.l + band * hover} y={pad.t} width={band} height={ih} className="chart-hover-band" />}
+        {result.chart === "bar" ? (
+          data.map((d, i) => <path key={d.label} d={barPath(cx(i) - barW / 2, y(d.value), barW, y(0) - y(d.value))} className="chart-mark" />)
+        ) : (
+          <>
+            <polyline points={data.map((d, i) => `${cx(i)},${y(d.value)}`).join(" ")} className="chart-line" />
+            {data.map((d, i) => (
+              <circle key={d.label} cx={cx(i)} cy={y(d.value)} r={hover === i ? 5 : 4} className="chart-dot" />
+            ))}
+          </>
         )}
-        {result.chart === "bar"
-          ? data.map((d, i) => <path key={d.label} d={barPath(cx(i) - barW / 2, y(d.value), barW, y(0) - y(d.value))} className="chart-mark" />)
-          : (
-            <>
-              <polyline points={data.map((d, i) => `${cx(i)},${y(d.value)}`).join(" ")} className="chart-line" />
-              {data.map((d, i) => (
-                <circle key={d.label} cx={cx(i)} cy={y(d.value)} r={hover === i ? 5 : 4} className="chart-dot" />
-              ))}
-            </>
-          )}
         <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} className="chart-baseline" />
       </svg>
       {hover !== null && (
@@ -601,7 +593,11 @@ function PluginWidget({ result, onOpen }: { result: Extract<WidgetResult, { type
         const render = mod.default?.render;
         if (typeof render !== "function") throw new Error(t("widget.pluginNoRender"));
         host.current.replaceChildren();
-        cleanup = render(host.current, { rows: result.rows, columns: result.columns, total: result.total, title: result.title, options: result.options }, { open: onOpen, h });
+        cleanup = render(
+          host.current,
+          { rows: result.rows, columns: result.columns, total: result.total, title: result.title, options: result.options },
+          { open: onOpen, h },
+        );
       })
       .catch((e) => alive && setError(t("widget.pluginError", { name: result.plugin, error: errorText(e) })));
     return () => {

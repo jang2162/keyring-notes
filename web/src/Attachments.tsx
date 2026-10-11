@@ -35,14 +35,19 @@ export function AttachmentList({
   const [q, setQ] = useState("");
   const shown = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    return paths
-      .filter((p) => words.every((w) => p.toLowerCase().includes(w)))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return paths.filter((p) => words.every((w) => p.toLowerCase().includes(w))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, [paths, q]);
 
   return (
     <div className="attachments-view">
-      <input type="search" className="attachments-filter" placeholder={t("attach.filter")} aria-label={t("attach.filter")} value={q} onChange={(e) => setQ(e.target.value)} />
+      <input
+        type="search"
+        className="attachments-filter"
+        placeholder={t("attach.filter")}
+        aria-label={t("attach.filter")}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
       <ul className="attachments-list">
         {shown.map((p) => {
           const name = p.split("/").pop()!;

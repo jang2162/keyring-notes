@@ -182,7 +182,8 @@ const WIKI_TEXT = {
   ko: {
     by: { server: "서버가", app: "앱이" },
     indexTitle: (t: string) => `# ${t} 위키 목차`,
-    indexNote: (by: string, t: string) => `> ${by} 자동으로 만드는 문서다. 직접 고치지 말 것. 규칙은 [[${t}/SCHEMA|SCHEMA]], 작업 기록은 [[${t}/wiki/log|log]].`,
+    indexNote: (by: string, t: string) =>
+      `> ${by} 자동으로 만드는 문서다. 직접 고치지 말 것. 규칙은 [[${t}/SCHEMA|SCHEMA]], 작업 기록은 [[${t}/wiki/log|log]].`,
     counts: (pages: number, raws: number, pending: number) => `위키 페이지 ${pages}개 · 원본 ${raws}개(미반영 ${pending}개)`,
     noPages: "_아직 위키 페이지가 없다._",
     defaultCategory: "페이지",
@@ -204,7 +205,8 @@ const WIKI_TEXT = {
     by: { server: "the server", app: "the app" },
     indexTitle: (t: string) => `# ${t} wiki index`,
     indexNote: (by: string, t: string) => `> Generated automatically by ${by}. Do not edit. Rules: [[${t}/SCHEMA|SCHEMA]], work log: [[${t}/wiki/log|log]].`,
-    counts: (pages: number, raws: number, pending: number) => `${pages} wiki page${pages === 1 ? "" : "s"} · ${raws} source${raws === 1 ? "" : "s"} (${pending} unprocessed)`,
+    counts: (pages: number, raws: number, pending: number) =>
+      `${pages} wiki page${pages === 1 ? "" : "s"} · ${raws} source${raws === 1 ? "" : "s"} (${pending} unprocessed)`,
     noPages: "_No wiki pages yet._",
     defaultCategory: "Pages",
     sources: (n: number) => (n ? `${n} source${n === 1 ? "" : "s"}` : "no sources"),
@@ -227,7 +229,13 @@ const WIKI_TEXT = {
  * 토픽 목차. docs는 읽을 수 있는 문서(자동 생성 문서 제외), allPaths는 링크 해석에 쓸 경로 전체,
  * links는 이 토픽 wiki/ 아래 문서에서 나간 링크(본문·출처).
  */
-export function renderWikiIndex(topic: string, docs: DocMeta[], allPaths: string[], links: LinkRow[], opts: { by?: "server" | "app"; lang?: VaultLang } = {}): string {
+export function renderWikiIndex(
+  topic: string,
+  docs: DocMeta[],
+  allPaths: string[],
+  links: LinkRow[],
+  opts: { by?: "server" | "app"; lang?: VaultLang } = {},
+): string {
   const T = WIKI_TEXT[vaultLangOf(opts.lang)];
   const maker = T.by[opts.by ?? "server"];
   docs = docs.filter((d) => d.path.startsWith(topic + "/"));
@@ -247,7 +255,14 @@ export function renderWikiIndex(topic: string, docs: DocMeta[], allPaths: string
     const set = targetsBySrc.get(p.path) ?? new Set<string>();
     const sources = p.frontmatter?.sources;
     for (const s of Array.isArray(sources) ? sources : typeof sources === "string" ? [sources] : []) {
-      const to = resolveLink(String(s).replace(/^\[\[|\]\]$/g, "").split("|")[0].split("#")[0], allPaths, { from: p.path });
+      const to = resolveLink(
+        String(s)
+          .replace(/^\[\[|\]\]$/g, "")
+          .split("|")[0]
+          .split("#")[0],
+        allPaths,
+        { from: p.path },
+      );
       if (to) set.add(to);
     }
     for (const to of set) cited.set(to, (cited.get(to) ?? 0) + 1);
@@ -255,11 +270,12 @@ export function renderWikiIndex(topic: string, docs: DocMeta[], allPaths: string
 
   const groups = new Map<string, DocMeta[]>();
   for (const p of pages) {
-    const cat = typeof p.frontmatter?.category === "string" && p.frontmatter.category.trim()
-      ? p.frontmatter.category.trim()
-      : p.path.slice(`${topic}/wiki/`.length).includes("/")
-        ? p.path.slice(`${topic}/wiki/`.length).split("/")[0]
-        : T.defaultCategory;
+    const cat =
+      typeof p.frontmatter?.category === "string" && p.frontmatter.category.trim()
+        ? p.frontmatter.category.trim()
+        : p.path.slice(`${topic}/wiki/`.length).includes("/")
+          ? p.path.slice(`${topic}/wiki/`.length).split("/")[0]
+          : T.defaultCategory;
     groups.set(cat, [...(groups.get(cat) ?? []), p]);
   }
   const sortByTitle = (a: DocMeta, b: DocMeta) => a.title.localeCompare(b.title, "ko");
@@ -287,7 +303,12 @@ export function renderWikiIndex(topic: string, docs: DocMeta[], allPaths: string
 }
 
 /** 토픽 작업 기록. commits는 오래된 것부터, 이 토픽 파일이 들어 있는 변경들. 읽을 수 없는 파일은 뺀다. */
-export function renderWikiLog(topic: string, commits: WikiLogEntry[], canRead: (p: string) => boolean, opts: { by?: "server" | "app"; lang?: VaultLang } = {}): string {
+export function renderWikiLog(
+  topic: string,
+  commits: WikiLogEntry[],
+  canRead: (p: string) => boolean,
+  opts: { by?: "server" | "app"; lang?: VaultLang } = {},
+): string {
   const T = WIKI_TEXT[vaultLangOf(opts.lang)];
   const entries: WikiLogEntry[] = [];
   for (const c of commits) {

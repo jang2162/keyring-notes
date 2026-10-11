@@ -58,10 +58,19 @@ function build(lang: string) {
   const pack = packs[lang];
   if (pack) {
     const base = pack.meta.base;
-    return [{ messages: pack.messages, locale: lang }, ...(base === BASE_LANG ? [] : [{ messages: OFFICIAL_MESSAGES[base], locale: base }]), { messages: OFFICIAL_MESSAGES.en, locale: "en" }];
+    return [
+      { messages: pack.messages, locale: lang },
+      ...(base === BASE_LANG ? [] : [{ messages: OFFICIAL_MESSAGES[base], locale: base }]),
+      { messages: OFFICIAL_MESSAGES.en, locale: "en" },
+    ];
   }
   const l = officialLangOf(lang);
-  return l === BASE_LANG ? [{ messages: OFFICIAL_MESSAGES.en, locale: "en" }] : [{ messages: OFFICIAL_MESSAGES[l], locale: l }, { messages: OFFICIAL_MESSAGES.en, locale: "en" }];
+  return l === BASE_LANG
+    ? [{ messages: OFFICIAL_MESSAGES.en, locale: "en" }]
+    : [
+        { messages: OFFICIAL_MESSAGES[l], locale: l },
+        { messages: OFFICIAL_MESSAGES.en, locale: "en" },
+      ];
 }
 
 /** 화면 언어를 바꾼다(prefs가 부른다). 언어팩이 없는 언어면 기준 언어(모르면 영어)로 보인다 */

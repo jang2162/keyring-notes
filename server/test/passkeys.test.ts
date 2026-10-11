@@ -44,11 +44,25 @@ class SoftAuthenticator {
 
   register(options: { challenge: string; rp: { id: string } }, origin: string) {
     const clientData = Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: options.challenge, origin, crossOrigin: false }));
-    const cose = cbor(new Map<number, unknown>([[1, 2], [3, -7], [-1, 1], [-2, this.pub.x], [-3, this.pub.y]]));
+    const cose = cbor(
+      new Map<number, unknown>([
+        [1, 2],
+        [3, -7],
+        [-1, 1],
+        [-2, this.pub.x],
+        [-3, this.pub.y],
+      ]),
+    );
     const len = Buffer.alloc(2);
     len.writeUInt16BE(this.credId.length);
     const authData = Buffer.concat([sha(options.rp.id), Buffer.from([0x45]), Buffer.alloc(4), Buffer.alloc(16), len, this.credId, cose]);
-    const attestation = cbor(new Map<string, unknown>([["fmt", "none"], ["attStmt", new Map()], ["authData", authData]]));
+    const attestation = cbor(
+      new Map<string, unknown>([
+        ["fmt", "none"],
+        ["attStmt", new Map()],
+        ["authData", authData],
+      ]),
+    );
     return {
       id: b64u(this.credId),
       rawId: b64u(this.credId),
@@ -83,7 +97,11 @@ let config: ConfigStore;
 let cookie = "";
 
 const req = (p: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) =>
-  app.request(`${ORIGIN}${p}`, { method: init.method ?? (init.body !== undefined ? "POST" : "GET"), headers: { ...json, ...init.headers }, body: init.body !== undefined ? JSON.stringify(init.body) : undefined });
+  app.request(`${ORIGIN}${p}`, {
+    method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
+    headers: { ...json, ...init.headers },
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
 
 beforeEach(async () => {
   const t = await tempDir("keyring-passkey-");
@@ -91,7 +109,14 @@ beforeEach(async () => {
   const { vault, index, wiki, ingestor } = await openVault(path.join(t.dir, "vault"));
   config = new ConfigStore(path.join(t.dir, "config", "keyring.json"));
   config.setPassword("correct horse");
-  app = createApp({ vault, index, config, wiki, ingestor, admin: { backups: new BackupService(vault, config, path.join(t.dir, "backups"), () => wiki.resync()) } });
+  app = createApp({
+    vault,
+    index,
+    config,
+    wiki,
+    ingestor,
+    admin: { backups: new BackupService(vault, config, path.join(t.dir, "backups"), () => wiki.resync()) },
+  });
   const res = await req("/api/auth/login", { body: { password: "correct horse" } });
   cookie = res.headers.get("set-cookie")!.split(";")[0];
 });

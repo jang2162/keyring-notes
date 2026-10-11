@@ -149,7 +149,12 @@ export class PasskeyService {
         expectedChallenge: p.challenge,
         expectedOrigin: p.origin,
         expectedRPID: p.rpID,
-        credential: { id: key.id, publicKey: Buffer.from(key.publicKey, "base64url"), counter: key.counter, transports: key.transports as AuthenticatorTransportFuture[] },
+        credential: {
+          id: key.id,
+          publicKey: Buffer.from(key.publicKey, "base64url"),
+          counter: key.counter,
+          transports: key.transports as AuthenticatorTransportFuture[],
+        },
         requireUserVerification: false,
       });
       if (!v.verified) return false;

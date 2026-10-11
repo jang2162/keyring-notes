@@ -17,7 +17,9 @@ let wiki: Wiki;
 let owner: ScopedVault;
 
 const git = (...args: string[]) =>
-  execFileSync("git", ["--git-dir", path.join(vault.root, ".history"), "--work-tree", vault.root, "-c", "core.quotePath=false", ...args], { encoding: "utf8" }).trim();
+  execFileSync("git", ["--git-dir", path.join(vault.root, ".history"), "--work-tree", vault.root, "-c", "core.quotePath=false", ...args], {
+    encoding: "utf8",
+  }).trim();
 
 beforeEach(async () => {
   const t = await tempDir("keyring-movelinks-");
@@ -47,7 +49,9 @@ describe("이동 때 링크 자동 갱신(서버)", () => {
     expect(r.linksUpdated.sort()).toEqual(["공개/읽기만.md", "보관/2026 계획.md", "비밀/숨은.md", "업무/회의록.md", "일기/오늘.md"]);
     expect(r.linkCount).toBe(7);
     expect((await owner.read("업무/회의록.md")).content).toBe("# 회의록\n[[2026 계획]] 참고\n");
-    expect((await owner.read("일기/오늘.md")).content).toBe("---\nsources: ['[[2026 계획]]']\n---\n[[보관/2026 계획#일정|일정]] [본문](../보관/2026%20계획.md)\n");
+    expect((await owner.read("일기/오늘.md")).content).toBe(
+      "---\nsources: ['[[2026 계획]]']\n---\n[[보관/2026 계획#일정|일정]] [본문](../보관/2026%20계획.md)\n",
+    );
     // 커밋 하나, 제목은 이동, 본문에 링크 갱신
     expect(git("log", "-1", "--format=%s")).toBe("이동: 업무/계획.md → 보관/2026 계획.md");
     expect(git("log", "-1", "--format=%b")).toContain("링크 갱신: 일기/오늘.md");

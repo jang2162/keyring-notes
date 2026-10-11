@@ -80,7 +80,8 @@ export function useModalControl(): ModalControl | null {
   return useContext(ModalContext);
 }
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function Modal({
   title,
@@ -230,11 +231,24 @@ export function Modal({
               </h2>
               <div className="kmodal-tools">{head}</div>
               {maximizable && (
-                <button type="button" className="icon-btn kmodal-max" {...tipProps({ label: max ? t("modal.restoreSize") : t("modal.maximize") })} aria-label={max ? t("modal.restoreSize") : t("modal.maximize")} aria-pressed={max} onClick={() => setMax((m) => !m)}>
+                <button
+                  type="button"
+                  className="icon-btn kmodal-max"
+                  {...tipProps({ label: max ? t("modal.restoreSize") : t("modal.maximize") })}
+                  aria-label={max ? t("modal.restoreSize") : t("modal.maximize")}
+                  aria-pressed={max}
+                  onClick={() => setMax((m) => !m)}
+                >
                   {max ? <Minimize2 size={17} strokeWidth={1.75} aria-hidden /> : <Maximize2 size={17} strokeWidth={1.75} aria-hidden />}
                 </button>
               )}
-              <button type="button" className="icon-btn kmodal-close" {...tipProps({ label: t("common.close"), keys: "Escape" })} aria-label={t("common.close")} onClick={() => void attempt()}>
+              <button
+                type="button"
+                className="icon-btn kmodal-close"
+                {...tipProps({ label: t("common.close"), keys: "Escape" })}
+                aria-label={t("common.close")}
+                onClick={() => void attempt()}
+              >
                 <X size={20} strokeWidth={1.75} aria-hidden />
               </button>
             </div>

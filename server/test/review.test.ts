@@ -47,7 +47,9 @@ afterEach(async () => {
 });
 
 const git = (...args: string[]) =>
-  execFileSync("git", ["--git-dir", path.join(vault.root, ".history"), "--work-tree", vault.root, "-c", "core.quotePath=false", ...args], { encoding: "utf8" }).trim();
+  execFileSync("git", ["--git-dir", path.join(vault.root, ".history"), "--work-tree", vault.root, "-c", "core.quotePath=false", ...args], {
+    encoding: "utf8",
+  }).trim();
 
 describe("변경 검토 대기열", () => {
   it("검토 대상 경로에 에이전트가 쓰면 바로 반영하지 않고 제안으로 쌓는다", async () => {
@@ -140,7 +142,11 @@ describe("변경 검토 대기열", () => {
       review,
       admin: { backups: new BackupService(vault, config, path.join(root, "backups"), () => wiki.resync()) },
     });
-    const login = await app.request("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: "correct horse" }) });
+    const login = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "correct horse" }),
+    });
     const cookie = login.headers.get("set-cookie")!.split(";")[0];
     const json = { "content-type": "application/json" };
     const cur = await owner.read("업무/경제/wiki/금리.md");

@@ -48,7 +48,19 @@ function SourceQuote({ path, anchor }: { path: string; anchor: string }) {
  * 연결되지 않은 언급: 다른 문서에 이 문서 이름이 링크 없이 나온 곳. 펼칠 때 찾고(문서마다 원문을 읽으므로),
  * "링크로"를 누르면 그 문서를 읽었던 버전(hash) 기준으로 고쳐 쓴다(그 사이 바뀌었으면 충돌로 막힌다).
  */
-export function UnlinkedMentions({ path, target, version, onOpen, onChanged }: { path: string; target: string; version: number; onOpen: (p: string) => void; onChanged: () => void }) {
+export function UnlinkedMentions({
+  path,
+  target,
+  version,
+  onOpen,
+  onChanged,
+}: {
+  path: string;
+  target: string;
+  version: number;
+  onOpen: (p: string) => void;
+  onChanged: () => void;
+}) {
   const [shown, setShown] = useState(false);
   const [info, setInfo] = useState<MentionsInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +91,10 @@ export function UnlinkedMentions({ path, target, version, onOpen, onChanged }: {
     } catch (e) {
       setError(errorText(e));
       setInfo(null);
-      api.mentions(path).then(setInfo).catch(() => undefined);
+      api
+        .mentions(path)
+        .then(setInfo)
+        .catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -121,7 +136,12 @@ export function UnlinkedMentions({ path, target, version, onOpen, onChanged }: {
                       <mark>{m.context.slice(m.contextAt, m.contextAt + m.text.length)}</mark>
                       {m.context.slice(m.contextAt + m.text.length)}
                     </span>{" "}
-                    <button className="link-btn" disabled={busy} title={t("links.linkOneTip", { line: m.line, text: m.text, target })} onClick={() => void link(d, [m])}>
+                    <button
+                      className="link-btn"
+                      disabled={busy}
+                      title={t("links.linkOneTip", { line: m.line, text: m.text, target })}
+                      onClick={() => void link(d, [m])}
+                    >
                       {t("links.linkOne")}
                     </button>
                   </li>
@@ -157,7 +177,11 @@ export function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: st
           <ul>
             {refs.sources.map((s) => (
               <li key={`${s.target}#${s.anchor ?? ""}`}>
-                {s.path ? link(s.path, s.path.split("/").pop()!.replace(/\.md$/i, "") + (s.anchor ? ` › ${s.anchor.replace(/^\^/, "¶ ")}` : ""), s.anchor) : <span className="broken">{s.target}</span>}{" "}
+                {s.path ? (
+                  link(s.path, s.path.split("/").pop()!.replace(/\.md$/i, "") + (s.anchor ? ` › ${s.anchor.replace(/^\^/, "¶ ")}` : ""), s.anchor)
+                ) : (
+                  <span className="broken">{s.target}</span>
+                )}{" "}
                 <span className="meta">{s.path ?? t("links.sourceMissing")}</span>
                 {s.path && s.anchor && <SourceQuote path={s.path} anchor={s.anchor} />}
               </li>
@@ -192,4 +216,3 @@ export function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: st
     </section>
   );
 }
-

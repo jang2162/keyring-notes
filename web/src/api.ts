@@ -66,7 +66,11 @@ export class ApiError extends Error {
 }
 
 /** 응답 본문 → ApiError */
-export function apiErrorOf(status: number, data: { error?: string; message?: string; currentHash?: string | null; code?: string; params?: Record<string, string | number> }, fallback: string): ApiError {
+export function apiErrorOf(
+  status: number,
+  data: { error?: string; message?: string; currentHash?: string | null; code?: string; params?: Record<string, string | number> },
+  fallback: string,
+): ApiError {
   return new ApiError(status, data.error ?? "error", data.message ?? fallback, data.currentHash, data.code, data.params);
 }
 
@@ -165,7 +169,11 @@ export const passkeySupported = () => typeof window !== "undefined" && window.is
 /** 패스키 로그인(서버 모드). 브라우저 쪽 WebAuthn 도우미는 쓸 때만 불러온다 */
 export async function passkeyLogin(): Promise<void> {
   const { startAuthentication } = await import("@simplewebauthn/browser");
-  const { id, options } = await request<{ id: string; options: Parameters<typeof startAuthentication>[0]["optionsJSON"] }>("POST", "/api/auth/passkey/options", {});
+  const { id, options } = await request<{ id: string; options: Parameters<typeof startAuthentication>[0]["optionsJSON"] }>(
+    "POST",
+    "/api/auth/passkey/options",
+    {},
+  );
   const response = await startAuthentication({ optionsJSON: options });
   await request<{ ok: true }>("POST", "/api/auth/passkey/login", { id, response });
 }
@@ -359,13 +367,13 @@ export const admin = {
   status: () => request<AdminStatus>("GET", "/api/admin/status"),
   /** 서버·CLI 언어(null = LANG)와 에이전트 언어 */
   language: () => request<{ language: string | null; agentLanguage: string }>("GET", "/api/admin/language"),
-  setLanguage: (patch: { language?: string | null; agentLanguage?: string }) => request<{ language: string | null; agentLanguage: string }>("PUT", "/api/admin/language", patch),
+  setLanguage: (patch: { language?: string | null; agentLanguage?: string }) =>
+    request<{ language: string | null; agentLanguage: string }>("PUT", "/api/admin/language", patch),
   update: (force = false) => request<UpdateInfo>("GET", `/api/admin/update${force ? "?force=1" : ""}`),
   agents: () => request<{ agents: AgentInfo[] }>("GET", "/api/admin/agents").then((r) => r.agents),
   createAgent: (name: string) => request<{ name: string; token: string }>("POST", "/api/admin/agents", { name }),
   rotate: (name: string) => request<{ name: string; token: string }>("POST", `/api/admin/agents/${enc(name)}/rotate`, {}),
-  setRules: (name: string, rules: Record<string, Level>) =>
-    request<{ rules: Record<string, Level> }>("PUT", `/api/admin/agents/${enc(name)}/rules`, { rules }),
+  setRules: (name: string, rules: Record<string, Level>) => request<{ rules: Record<string, Level> }>("PUT", `/api/admin/agents/${enc(name)}/rules`, { rules }),
   removeAgent: (name: string) => request<unknown>("DELETE", `/api/admin/agents/${enc(name)}`, {}),
   devices: () => request<{ devices: DeviceInfo[] }>("GET", "/api/admin/devices").then((r) => r.devices),
   removeDevice: (id: string) => request<unknown>("DELETE", `/api/admin/devices/${enc(id)}`, {}),
@@ -373,7 +381,11 @@ export const admin = {
   passkeys: () => request<{ passkeys: PasskeyInfo[]; here: string | null }>("GET", "/api/admin/passkeys"),
   async registerPasskey(name: string): Promise<PasskeyInfo> {
     const { startRegistration } = await import("@simplewebauthn/browser");
-    const { id, options } = await request<{ id: string; options: Parameters<typeof startRegistration>[0]["optionsJSON"] }>("POST", "/api/admin/passkeys/options", {});
+    const { id, options } = await request<{ id: string; options: Parameters<typeof startRegistration>[0]["optionsJSON"] }>(
+      "POST",
+      "/api/admin/passkeys/options",
+      {},
+    );
     const response = await startRegistration({ optionsJSON: options });
     return request<PasskeyInfo>("POST", "/api/admin/passkeys", { id, response, name });
   },
@@ -393,11 +405,7 @@ export const admin = {
       preRestoreBackup: string | null;
       configRestored: boolean;
       attachments?: { downloaded: string[]; removed: string[]; missing: string[] };
-    }>(
-      "POST",
-      `/api/admin/backups/${enc(name)}/restore`,
-      { restoreConfig },
-    ),
+    }>("POST", `/api/admin/backups/${enc(name)}/restore`, { restoreConfig }),
   downloadUrl: (name: string) => `/api/admin/backups/${enc(name)}`,
   async upload(file: File): Promise<BackupInfo> {
     const res = await fetch("/api/admin/backups/upload", {
@@ -451,7 +459,8 @@ const remoteApi = {
   move: (from: string, to: string, baseHash: string, opts: { updateLinks?: boolean } = {}) =>
     request<Doc & { linksUpdated?: string[]; linkCount?: number }>("POST", "/api/move", { from, to, baseHash, updateLinks: opts.updateLinks }),
   /** 노드 옮기기·이름 바꾸기: 노드 노트(A.md)와 하위(A/ 아래 문서·첨부)를 한 커밋으로(링크도 같이 고친다) */
-  moveNode: (from: string, to: string) => request<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }>("POST", "/api/move", { from, to, node: true }),
+  moveNode: (from: string, to: string) =>
+    request<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }>("POST", "/api/move", { from, to, node: true }),
   /**
    * 노드 삭제: 노드 노트와 하위 전체를 한 커밋으로. files(지우기 전에 읽은 경로와 해시)가 그 사이 바뀌었으면 409.
    * 되살릴 수 있게 지운 내용을 돌려준다(부르는 쪽이 미리 읽어 넘긴다)
@@ -461,7 +470,9 @@ const remoteApi = {
   /** 지운 파일 되살리기(노드 삭제 되돌리기): 마크다운은 글, 첨부는 바이트. 한 커밋으로 */
   async restoreFiles(files: { path: string; content?: string; data?: Uint8Array }[]): Promise<void> {
     const operations = files.map((f) =>
-      f.content !== undefined ? { op: "write", path: f.path, content: f.content, baseHash: null } : { op: "put", path: f.path, data: toBase64(f.data ?? new Uint8Array()) },
+      f.content !== undefined
+        ? { op: "write", path: f.path, content: f.content, baseHash: null }
+        : { op: "put", path: f.path, data: toBase64(f.data ?? new Uint8Array()) },
     );
     await request("POST", "/api/batch", { operations });
   },
@@ -472,20 +483,16 @@ const remoteApi = {
     return request("POST", "/api/batch", { operations, message });
   },
   history: (path: string) => request<{ commits: CommitInfo[] }>("GET", `/api/history?path=${q(path)}`).then((r) => r.commits),
-  revision: (path: string, rev: string) =>
-    request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),
-  rollback: (path: string, rev: string, baseHash: string | null) =>
-    request<Doc>("POST", "/api/rollback", { path, rev, baseHash }),
+  revision: (path: string, rev: string) => request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),
+  rollback: (path: string, rev: string, baseHash: string | null) => request<Doc>("POST", "/api/rollback", { path, rev, baseHash }),
   /** 검색(folder: 워크스페이스 안만) */
   search: (query: string, folder?: string) =>
     request<{ hits: SearchHit[] }>("GET", `/api/search?q=${encodeURIComponent(query)}&limit=50${folder ? `&folder=${q(folder)}` : ""}`).then((r) => r.hits),
-  backlinks: (path: string) =>
-    request<{ backlinks: { path: string; title: string }[] }>("GET", `/api/backlinks?path=${q(path)}`).then((r) => r.backlinks),
+  backlinks: (path: string) => request<{ backlinks: { path: string; title: string }[] }>("GET", `/api/backlinks?path=${q(path)}`).then((r) => r.backlinks),
   /** 태그와 문서 수(folder: 워크스페이스·노드 안만) */
   tags: (folder?: string) => request<{ tags: { tag: string; count: number }[] }>("GET", `/api/tags${folder ? `?folder=${q(folder)}` : ""}`).then((r) => r.tags),
   widget: (source: string) => request<WidgetResult>("POST", "/api/widget", { source }),
-  setTask: (path: string, line: number, done: boolean, baseHash: string) =>
-    request<Doc>("POST", "/api/task", { path, line, done, baseHash }),
+  setTask: (path: string, line: number, done: boolean, baseHash: string) => request<Doc>("POST", "/api/task", { path, line, done, baseHash }),
   topics: () => request<{ topics: Topic[] }>("GET", "/api/topics").then((r) => r.topics),
   createTopic: (name: string) => request<{ topic: string; schema: string }>("POST", "/api/topics", { name }),
   ingest: (req: IngestRequest) => request<IngestResult>("POST", "/api/ingest", req),
@@ -517,15 +524,22 @@ const remoteApi = {
   properties: () => request<{ properties: PropertyStat[] }>("GET", "/api/properties").then((r) => r.properties),
   mentions: (path: string) => request<MentionsInfo>("GET", `/api/mentions?path=${q(path)}`),
   graph: (folder?: string) => request<GraphData>("GET", `/api/graph${folder ? `?folder=${q(folder)}` : ""}`),
-  semanticStatus: () => request<{ enabled: boolean; model?: string; pending?: number; chunks?: number; lastError?: string | null }>("GET", "/api/semantic/status"),
+  semanticStatus: () =>
+    request<{ enabled: boolean; model?: string; pending?: number; chunks?: number; lastError?: string | null }>("GET", "/api/semantic/status"),
   semantic: (query: string, folder?: string) =>
-    request<{ hits: { path: string; title: string; score: number; heading: string; snippet: string }[] }>("GET", `/api/semantic?q=${encodeURIComponent(query)}&limit=20${folder ? `&folder=${q(folder)}` : ""}`).then((r) => r.hits),
+    request<{ hits: { path: string; title: string; score: number; heading: string; snippet: string }[] }>(
+      "GET",
+      `/api/semantic?q=${encodeURIComponent(query)}&limit=20${folder ? `&folder=${q(folder)}` : ""}`,
+    ).then((r) => r.hits),
   rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
   /** 첨부 파일 내용(PDF 보기) */
   readBytes: async (path: string): Promise<Uint8Array> => {
     const res = await fetch(`/api/raw?path=${q(path)}`, { credentials: "same-origin" });
     if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
-    if (!res.ok) throw new ApiError(res.status, res.status === 404 ? "not_found" : "error", res.statusText, undefined, res.status === 404 ? "fileNotFound" : undefined, { path });
+    if (!res.ok)
+      throw new ApiError(res.status, res.status === 404 ? "not_found" : "error", res.statusText, undefined, res.status === 404 ? "fileNotFound" : undefined, {
+        path,
+      });
     return new Uint8Array(await res.arrayBuffer());
   },
 };

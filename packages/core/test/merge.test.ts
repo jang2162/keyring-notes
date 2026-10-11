@@ -41,7 +41,10 @@ describe("3방향 병합", () => {
   it("양쪽이 똑같이 고친 줄과 각자 고친 줄이 섞여도 합친다", () => {
     const ours = base.replace("- 예산", "- 예산 확정").replace("- 미정", "- 다음 주");
     const theirs = base.replace("- 예산", "- 예산 확정").replace("## 결정", "## 결정 사항");
-    expect(merge3(base, ours, theirs)).toEqual({ ok: true, text: base.replace("- 예산", "- 예산 확정").replace("- 미정", "- 다음 주").replace("## 결정", "## 결정 사항") });
+    expect(merge3(base, ours, theirs)).toEqual({
+      ok: true,
+      text: base.replace("- 예산", "- 예산 확정").replace("- 미정", "- 다음 주").replace("## 결정", "## 결정 사항"),
+    });
   });
 
   it("삭제와 다른 곳 수정", () => {

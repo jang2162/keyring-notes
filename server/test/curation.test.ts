@@ -34,9 +34,19 @@ beforeEach(async () => {
       baseHash: null,
     },
     { op: "write", path: "업무/경제/wiki/환율.md", content: "---\ntitle: 환율\n---\n# 환율\n[[기준금리]]와 관련\n", baseHash: null },
-    { op: "write", path: "업무/경제/wiki/고아.md", content: `---\ntitle: 고아\nsummary: 아무도 링크 안 함\nsources: ["[[${r1}]]"]\nupdated: 2020-01-01\n---\n# 고아\n`, baseHash: null },
+    {
+      op: "write",
+      path: "업무/경제/wiki/고아.md",
+      content: `---\ntitle: 고아\nsummary: 아무도 링크 안 함\nsources: ["[[${r1}]]"]\nupdated: 2020-01-01\n---\n# 고아\n`,
+      baseHash: null,
+    },
     { op: "write", path: "개인/비밀.md", content: "# 비밀\n", baseHash: null },
-    { op: "write", path: "업무/경제/wiki/비밀 링크.md", content: "---\ntitle: 비밀 링크\nsummary: s\nsources: [x]\n---\n[[비밀]] [[기준금리]]\n", baseHash: null },
+    {
+      op: "write",
+      path: "업무/경제/wiki/비밀 링크.md",
+      content: "---\ntitle: 비밀 링크\nsummary: s\nsources: [x]\n---\n[[비밀]] [[기준금리]]\n",
+      baseHash: null,
+    },
   ]);
 });
 
@@ -55,7 +65,10 @@ describe("출처 연결(W6)", () => {
     const r = await owner.sources(raw1);
     expect(r.citedBy.map((x) => x.path).sort()).toEqual(["업무/경제/wiki/고아.md", "업무/경제/wiki/기준금리.md"]);
     expect(r.linkedBy).toEqual([]); // 본문 링크와 출처 인용은 따로 센다
-    expect((await owner.sources("업무/경제/wiki/기준금리.md")).linkedBy.map((x) => x.path).sort()).toEqual(["업무/경제/wiki/비밀 링크.md", "업무/경제/wiki/환율.md"]);
+    expect((await owner.sources("업무/경제/wiki/기준금리.md")).linkedBy.map((x) => x.path).sort()).toEqual([
+      "업무/경제/wiki/비밀 링크.md",
+      "업무/경제/wiki/환율.md",
+    ]);
   });
 
   it("볼 수 없는 문서는 출처·인용 목록에서 빠진다", async () => {
@@ -91,7 +104,12 @@ describe("구조적 정리(W7)", () => {
   it("에이전트에게 숨김 문서로 가는 링크는 '없거나 볼 수 없음'으로 같이 보인다", async () => {
     const agent = new ScopedVault(vault, agentPrincipal("a", { "업무/경제": "read" }), index, wiki);
     const r = await agent.lint();
-    expect(r.issues.filter((i) => i.kind === "broken_link").map((i) => i.target).sort()).toEqual(["비밀", "없는 페이지"]);
+    expect(
+      r.issues
+        .filter((i) => i.kind === "broken_link")
+        .map((i) => i.target)
+        .sort(),
+    ).toEqual(["비밀", "없는 페이지"]);
     expect(r.issues.some((i) => i.path.startsWith("개인/"))).toBe(false);
   });
 

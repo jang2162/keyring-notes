@@ -51,7 +51,9 @@ export async function encryptionSecretFromEnv(e: NodeJS.ProcessEnv = process.env
 }
 
 const derive = (secret: string, salt: Buffer, m: { N: number; r: number; p: number }) =>
-  new Promise<Buffer>((resolve, reject) => scrypt(secret, salt, 32, { N: m.N, r: m.r, p: m.p, maxmem: SCRYPT.maxmem }, (err, key) => (err ? reject(err) : resolve(key))));
+  new Promise<Buffer>((resolve, reject) =>
+    scrypt(secret, salt, 32, { N: m.N, r: m.r, p: m.p, maxmem: SCRYPT.maxmem }, (err, key) => (err ? reject(err) : resolve(key))),
+  );
 
 const sub = (master: Buffer, info: string) => Buffer.from(hkdfSync("sha256", master, Buffer.alloc(0), `keyring-s3/${info}`, 32));
 
@@ -93,7 +95,16 @@ export class S3Crypto {
         throw new EncryptionError("s3_meta_unreadable", { name: META_NAME });
       }
     } else {
-      meta = { format: "keyring-s3-encryption", version: 1, kdf: "scrypt", N: params.N ?? SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p, salt: randomBytes(16).toString("base64"), check: "" };
+      meta = {
+        format: "keyring-s3-encryption",
+        version: 1,
+        kdf: "scrypt",
+        N: params.N ?? SCRYPT.N,
+        r: SCRYPT.r,
+        p: SCRYPT.p,
+        salt: randomBytes(16).toString("base64"),
+        check: "",
+      };
     }
     const master = await derive(secret, Buffer.from(meta.salt, "base64"), meta);
     const check = createHmac("sha256", sub(master, "check")).update("keyring-s3-check").digest("hex");

@@ -1,18 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
+    "lib": ["ES2022", "DOM"],
     "types": [],
     "noEmit": true,
-    "customConditions": [
-      "keyring-source"
-    ]
+    "customConditions": ["keyring-source"]
   },
-  "include": [
-    "src",
-    "test"
-  ]
+  "include": ["src", "test"]
 }
