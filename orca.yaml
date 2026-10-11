@@ -6,4 +6,6 @@ scripts:
     mise trust
     mise install
     mise exec -- pnpm install --frozen-lockfile
+    # 워크트리마다 자기 codegraph 인덱스(루트 인덱스는 루트 코드로 답한다). 실패해도 셋업은 멈추지 않는다
+    npx -y @colbymchenry/codegraph init || echo "codegraph init 실패: 인덱스 없이 진행"
 setupAgentStartupPolicy: wait-for-setup
