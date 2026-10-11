@@ -403,8 +403,6 @@
   "doc.conflictServer": "The same part of this note was changed elsewhere first (another tab or an agent). It was not overwritten, and autosave is paused.",
   "doc.crumbs": "Path",
   "doc.deletedElsewhere": "This note was deleted elsewhere.",
-  "doc.discard": "Discard and go",
-  "doc.discardAndOpen": "You have unsaved changes. Discard them and go?",
   "doc.generatedApp": "The app generates this note (wiki index, work log). It cannot be edited and is rebuilt when the wiki changes.",
   "doc.generatedServer": "The server generates this note (wiki index, work log). It cannot be edited and is rebuilt when the wiki changes.",
   "doc.menu": "Note menu",
