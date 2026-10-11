@@ -37,7 +37,7 @@ When `KEYRING_PUBLIC_URL` is set, only requests for that host name are accepted 
 
 ### Deploying with Komodo
 
-The settings for deploying as a Komodo Git Repo Stack (stack table, environment, server override file) are in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (Korean).
+How to deploy to your own Komodo as a Git Repo Stack (choosing a setup, compose files, environment) is in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (Korean).
 
 ### Updating
 

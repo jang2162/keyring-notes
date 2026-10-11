@@ -37,7 +37,7 @@ docker compose logs keyring               # "처음 설치: … 설정 코드 �
 
 ### Komodo 로 서버 배포
 
-Komodo 의 Git Repo Stack 으로 올리는 설정(Stack 표, Environment, 서버용 덮어쓰기 파일)은 [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md)에 있다.
+자기 서버의 Komodo 에 Git Repo Stack 으로 올리는 방법(구성 고르기, compose 파일, Environment)은 [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md)에 있다.
 
 ### 업데이트
 

@@ -1,0 +1,17 @@
+# 이미 떠 있는 리버스 프록시(Traefik·Nginx Proxy Manager·Caddy 등) 뒤에 둘 때 docker-compose.yml 뒤에 건다.
+#   docker compose -f docker-compose.yml -f docker/compose.proxy.yaml up -d
+# 호스트 포트를 닫고, 프록시와 같은 외부 네트워크에 붙는다. 프록시는 keyring:8787 로 넘긴다.
+# 쓰는 법: docs/guides/deploy-komodo.md
+services:
+  keyring:
+    ports: !reset []
+    environment:
+      KEYRING_PUBLIC_URL: ${KEYRING_PUBLIC_URL:?KEYRING_PUBLIC_URL is required}
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    name: ${PROXY_NETWORK:?PROXY_NETWORK is required}
+    external: true

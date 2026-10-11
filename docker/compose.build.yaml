@@ -1,0 +1,8 @@
+# 레지스트리 이미지 대신 이 저장소 코드로 서버에서 빌드할 때 docker-compose.yml 뒤에 건다(포크·수정판).
+#   docker compose -f docker-compose.yml -f docker/compose.build.yaml up -d --build
+# 쓰는 법: docs/guides/deploy-komodo.md
+services:
+  keyring:
+    image: keyring-notes:local
+    # 레지스트리에 없는 이미지다: pull 을 건너뛰고 up 할 때마다 저장소 코드로 빌드한다
+    pull_policy: build
