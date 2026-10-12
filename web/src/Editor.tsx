@@ -54,6 +54,7 @@ export interface EditorHandle {
   /** 같은 문서를 연 다른 칸의 변경을 받는다. 이 칸의 실행 취소 기록에는 남기지 않는다. 길이가 어긋나면 fallback 내용으로 맞춘다 */
   applyChanges(changes: ChangeSet, fallback: string): void;
   focus(): void;
+  hasFocus(): boolean;
   /** 접기: 지금 위치 접기·펴기, 모두 접기·펴기, 이 수준 제목만 보기, 그 줄(1부터) 접기 바꾸기 */
   fold(what: "here" | "unfold-here" | "all" | "unfold-all" | "level"): void;
   toggleFoldLine(line: number): void;
@@ -447,6 +448,9 @@ export function Editor({
         },
         focus() {
           view.focus();
+        },
+        hasFocus() {
+          return view.hasFocus;
         },
         fold(what) {
           if (what === "here") foldCode(view);

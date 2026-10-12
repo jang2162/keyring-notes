@@ -73,6 +73,8 @@ export interface PaneContext {
   openNode: (node: string) => void;
   load: (path: string) => Promise<boolean>;
   save: (path: string, opts?: { auto?: boolean }) => Promise<boolean>;
+  /** 이 칸의 에디터에서 포커스가 빠졌다(이탈 저장). 같은 문서를 연 다른 칸의 에디터로 간 것이면 저장하지 않는다 */
+  onEditorBlur: (pane: number, path: string) => void;
   /** 에디터가 친 초안. docKey 는 그 에디터의 판 — 저장소의 판과 다르면(다시 읽은 직후의 옛 뷰) 버린다 */
   onDraft: (path: string, draft: string, docKey: string) => void;
   /** 이 칸에서 생긴 에디터 변경(같은 문서를 연 다른 칸에 전달) */
@@ -527,7 +529,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 readOnly={doc.generated}
                 autoFocus={focused}
                 onCursor={(line, col) => ctx.setCursor(pane, { line, col })}
-                onBlur={() => prefs.autosave && void ctx.save(doc.path, { auto: true })}
+                onBlur={() => ctx.onEditorBlur(pane, doc.path)}
               />
             </div>
           </div>

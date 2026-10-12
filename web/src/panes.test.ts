@@ -15,6 +15,7 @@ import {
   setActive,
   setMode,
   focusPane,
+  otherPaneShowing,
   panesWith,
   type ViewMode,
 } from "./panes";
@@ -195,6 +196,21 @@ describe("칸 배치", () => {
     expect(isLayout({ panes: "x" })).toBe(false);
     expect(isLayout({ panes: [{ tabs: ["a"], active: "a", mode: "edit" }], focused: 3 })).toBe(false);
     expect(isLayout({ panes: [{ tabs: ["a"], active: "a", mode: "wide" }], focused: 0 })).toBe(false);
+  });
+
+  it("otherPaneShowing: 같은 문서를 보고 있는 다른 칸(없으면 -1)", () => {
+    const l: Layout = {
+      panes: [
+        { tabs: ["a", "b"], active: "a", mode: "edit" },
+        { tabs: ["a"], active: "a", mode: "preview" },
+      ],
+      focused: 0,
+    };
+    expect(otherPaneShowing(l, 0, "a")).toBe(1);
+    expect(otherPaneShowing(l, 1, "a")).toBe(0);
+    // 탭으로만 갖고 보고 있지 않으면 아니다
+    expect(otherPaneShowing(l, 1, "b")).toBe(-1);
+    expect(otherPaneShowing({ panes: [l.panes[0]], focused: 0 }, 0, "a")).toBe(-1);
   });
 
   it("canSplit: 560 미만이거나 좁은 화면이면 false", () => {

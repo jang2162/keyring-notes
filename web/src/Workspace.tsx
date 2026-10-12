@@ -139,6 +139,7 @@ import {
   migrateLayouts,
   moveTab,
   openIn,
+  otherPaneShowing,
   removePaths,
   renamePath,
   setMode as setPaneMode,
@@ -2888,6 +2889,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     openNode: (node) => void openNode(node),
     load,
     save,
+    onEditorBlur: (pane, path) => {
+      if (!prefsRef.current.autosave) return;
+      // 포커스가 어디로 갔는지는 다음 틱에 안다. 같은 문서를 연 다른 칸의 에디터면 아직 그 문서를 치는 중이라
+      // 이탈 저장을 건너뛴다(자동 저장 타이머가 맡는다) — 안 그러면 칸을 옮길 때마다 쓰기가 한 건씩 더 나간다
+      setTimeout(() => {
+        const other = otherPaneShowing(curLayout(), pane, path);
+        if (other >= 0 && paneHandles[other].current?.hasFocus()) return;
+        void saveRef.current(path, { auto: true });
+      }, 0);
+    },
     onDraft: (path, draft, key) => updateDocs((s) => setDraft(s, path, draft, key)),
     onChanges: (pane, path, changes, key) => {
       // 같은 문서를 같은 판으로 보고 있는 다른 칸의 에디터에 같은 변경을 넣는다(원본은 저장소 하나, 에디터는 칸마다).
