@@ -300,6 +300,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /** 칸마다 에디터·칸 동작. 명령·패널은 활성 칸의 것을 쓴다 */
   const paneHandles = [useRef<EditorHandle | null>(null), useRef<EditorHandle | null>(null)];
   const paneApis = [useRef<PaneHandle | null>(null), useRef<PaneHandle | null>(null)];
+  /** 칸 요소. 보이는 에디터가 없는 칸(미리보기·과거 판 보기)으로 포커스를 옮길 때 이것에 준다 */
+  const paneEls = [useRef<HTMLElement>(null), useRef<HTMLElement>(null)];
   /** 활성 칸의 에디터 */
   const editorHandle = {
     get current() {
@@ -2038,7 +2040,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         if (l.panes.length < 2) return;
         const other = 1 - l.focused;
         setLayout((x) => focusPane(x, other));
-        setTimeout(() => paneHandles[other].current?.focus(), 0);
+        // 보이는 에디터가 없는 칸(미리보기·과거 판 보기)은 칸 요소에 포커스를 준다 — 숨은(display:none) 에디터는 focus() 가
+        // 무시돼 포커스가 이전 칸의 에디터에 남고, 활성 칸은 바뀌었는데 키 입력은 이전 칸으로 들어간다
+        const editorHidden = l.panes[other].mode === "preview" || !!revisionOf(other);
+        setTimeout(() => (editorHidden ? paneEls[other].current?.focus() : paneHandles[other].current?.focus()), 0);
       },
     },
     // 패널 키는 접기 기본 키(Ctrl+Alt+[ 등, CodeMirror foldKeymap)와 겹치지 않게
@@ -2972,6 +2977,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return (
       <section
         key={pane}
+        ref={paneEls[pane]}
+        tabIndex={-1}
         className={`split-pane${focused ? " focused" : ""}`}
         aria-label={two ? t("pane.label", { n: pane + 1 }) : undefined}
         style={two && pane === 0 ? { flex: `0 0 ${leftPaneWidth}px` } : undefined}
