@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { dirtyPaths, dropUnused, isDirty, patchDoc, renameDoc, setConflict, setSave, upsertDoc, type DocStore, type OpenDoc } from "./openDocs";
+import {
+  dirtyPaths,
+  docKeyOf,
+  dropUnused,
+  isDirty,
+  patchDoc,
+  renameDoc,
+  setConflict,
+  setDraft,
+  setSave,
+  upsertDoc,
+  type DocStore,
+  type OpenDoc,
+} from "./openDocs";
 
 const doc = (path: string, saved: string, draft = saved, extra: Partial<OpenDoc> = {}): Omit<OpenDoc, "seq"> => ({
   path,
@@ -35,6 +48,31 @@ describe("열린 문서 저장소", () => {
   it("patchDoc: 문서가 그대로면 같은 저장소(다른 칸에서 받은 같은 초안이 다시 그리지 않게)", () => {
     const s = upsertDoc({}, doc("a.md", "x"));
     expect(patchDoc(s, "a.md", (d) => d)).toBe(s);
+  });
+
+  describe("setDraft: 뷰가 보낸 초안은 그 뷰의 판(docKey)이 저장소의 판일 때만 받는다", () => {
+    const s1 = upsertDoc({}, doc("a.md", "x"));
+    const key1 = docKeyOf(s1["a.md"].doc);
+
+    it("docKeyOf: 경로#seq", () => {
+      expect(key1).toBe("a.md#1");
+    });
+
+    it("같은 판이면 초안을 바꾼다", () => {
+      expect(setDraft(s1, "a.md", "xy", key1)["a.md"].doc.draft).toBe("xy");
+    });
+
+    it("다시 읽어 판이 오른 뒤(옛 뷰를 다시 만들기 전)에 옛 뷰가 보낸 초안은 버린다", () => {
+      const s2 = upsertDoc(s1, doc("a.md", "server"));
+      expect(docKeyOf(s2["a.md"].doc)).toBe("a.md#2");
+      expect(setDraft(s2, "a.md", "xy", key1)).toBe(s2);
+      expect(s2["a.md"].doc.draft).toBe("server");
+    });
+
+    it("같은 초안이거나 없는 경로면 같은 객체", () => {
+      expect(setDraft(s1, "a.md", "x", key1)).toBe(s1);
+      expect(setDraft(s1, "z.md", "x", "z.md#1")).toBe(s1);
+    });
   });
 
   it("setSave·setConflict: 없는 경로는 같은 객체", () => {

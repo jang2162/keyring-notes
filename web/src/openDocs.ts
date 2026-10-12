@@ -59,6 +59,17 @@ export function patchDoc(s: DocStore, path: string, patch: (d: OpenDoc) => OpenD
   return doc === e.doc ? s : { ...s, [path]: { ...e, doc } };
 }
 
+/** 에디터를 만든 문서 판: 경로#seq. 뷰·핸들이 어느 판의 것인지는 이 키로 가린다 */
+export const docKeyOf = (d: Pick<OpenDoc, "path" | "seq">): string => `${d.path}#${d.seq}`;
+
+/**
+ * fromKey 판의 뷰가 보낸 초안. 저장소의 판이 이미 다르면 버린다 — 다시 읽기·합치기로 seq 가 오른 직후, 그 뷰를 다시 만들기
+ * 전에 들어온 입력은 옛 판의 것이라 받으면 방금 받은 새 판(서버 내용)을 덮고 그대로 자동 저장된다
+ */
+export function setDraft(s: DocStore, path: string, draft: string, fromKey: string): DocStore {
+  return patchDoc(s, path, (d) => (docKeyOf(d) !== fromKey || d.draft === draft ? d : { ...d, draft }));
+}
+
 export const setSave = (s: DocStore, path: string, save: SaveState): DocStore => patchEntry(s, path, (e) => ({ ...e, save }));
 
 export const setConflict = (s: DocStore, path: string, conflict: Conflict | null): DocStore => patchEntry(s, path, (e) => ({ ...e, conflict }));

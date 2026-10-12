@@ -121,6 +121,7 @@ import {
   patchDoc as patchStoreDoc,
   renameDoc,
   setConflict as setStoreConflict,
+  setDraft,
   setSave as setStoreSave,
   upsertDoc,
   type DocStore,
@@ -2887,7 +2888,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     openNode: (node) => void openNode(node),
     load,
     save,
-    onDraft: (path, draft) => patchDoc(path, (prev) => (prev.draft === draft ? prev : { ...prev, draft })),
+    onDraft: (path, draft, key) => updateDocs((s) => setDraft(s, path, draft, key)),
     onChanges: (pane, path, changes, key) => {
       // 같은 문서를 같은 판으로 보고 있는 다른 칸의 에디터에 같은 변경을 넣는다(원본은 저장소 하나, 에디터는 칸마다).
       // 배치(layoutsRef)는 즉시 바뀌고 에디터는 다시 그린 뒤에 바뀌므로, 칸이 아니라 그 칸의 에디터가 어느 문서의 것인지로 고른다

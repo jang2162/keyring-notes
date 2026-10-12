@@ -17,7 +17,7 @@ import { fmtDateTime, t } from "./i18n";
 import { DocIcon } from "./IconPicker";
 import { References } from "./Links";
 import { LinkResolver, renderMarkdown } from "./markdown";
-import type { DocEntry } from "./openDocs";
+import { docKeyOf, type DocEntry } from "./openDocs";
 import type { ViewMode } from "./panes";
 import type { Prefs } from "./prefs";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
@@ -73,7 +73,8 @@ export interface PaneContext {
   openNode: (node: string) => void;
   load: (path: string) => Promise<boolean>;
   save: (path: string, opts?: { auto?: boolean }) => Promise<boolean>;
-  onDraft: (path: string, draft: string) => void;
+  /** 에디터가 친 초안. docKey 는 그 에디터의 판 — 저장소의 판과 다르면(다시 읽은 직후의 옛 뷰) 버린다 */
+  onDraft: (path: string, draft: string, docKey: string) => void;
   /** 이 칸에서 생긴 에디터 변경(같은 문서를 연 다른 칸에 전달) */
   onChanges: (pane: number, path: string, changes: ChangeSet, docKey: string) => void;
   uploadFiles: (files: File[], from: string) => Promise<string[]>;
@@ -509,9 +510,9 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 onDone={() => handle.current?.focus()}
               />
               <Editor
-                docKey={`${doc.path}#${doc.seq}`}
+                docKey={docKeyOf(doc)}
                 initial={doc.draft}
-                onChange={(draft) => ctx.onDraft(doc.path, draft)}
+                onChange={(draft, key) => ctx.onDraft(doc.path, draft, key)}
                 onChanges={(changes, key) => ctx.onChanges(pane, doc.path, changes, key)}
                 onSave={() => void ctx.save(doc.path)}
                 linkCandidates={() => ctx.linkCandidates}

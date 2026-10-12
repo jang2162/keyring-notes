@@ -127,7 +127,8 @@ interface Props {
   /** 문서가 바뀔 때마다 달라지는 키. 같은 키 동안에는 에디터 내용을 밖에서 덮어쓰지 않는다. */
   docKey: string;
   initial: string;
-  onChange: (value: string) => void;
+  /** 이 칸에서 친 뒤의 내용과 그 뷰의 docKey. 받는 쪽은 docKey 가 지금 판일 때만 초안으로 받는다 */
+  onChange: (value: string, docKey: string) => void;
   /** 이 칸에서 생긴 변경(다른 칸에서 받은 것은 빼고). 같은 문서를 연 다른 칸에 전달한다 */
   onChanges?: (changes: ChangeSet, docKey: string) => void;
   onSave: () => void;
@@ -404,7 +405,7 @@ export function Editor({
             const own = u.transactions.filter((tr) => tr.docChanged && tr.annotation(mirrored) !== true);
             if (own.length && docKeyRef.current === createdKey) {
               // 초안을 먼저 고친다: 다른 칸이 변경을 못 맞추면 이 최신 초안으로 맞춘다
-              callbacks.current.onChange(u.state.doc.toString());
+              callbacks.current.onChange(u.state.doc.toString(), createdKey);
               for (const tr of own) callbacks.current.onChanges?.(tr.changes, createdKey);
             }
             // 접은 것을 이 기기에 기억한다(내용이 바뀌어 줄이 밀리면 새 줄로)
