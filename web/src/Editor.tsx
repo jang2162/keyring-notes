@@ -22,14 +22,14 @@ import {
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState, Transaction, type ChangeSet, type StateEffect } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 import { t } from "./i18n";
-import { canMirror, mirrored } from "./mirror";
+import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -54,6 +54,7 @@ export interface EditorHandle {
   /** 같은 문서를 연 다른 칸의 변경을 받는다. 이 칸의 실행 취소 기록에는 남기지 않는다. 길이가 어긋나면 fallback 내용으로 맞춘다 */
   applyChanges(changes: ChangeSet, fallback: string): void;
   focus(): void;
+  hasFocus(): boolean;
   /** 접기: 지금 위치 접기·펴기, 모두 접기·펴기, 이 수준 제목만 보기, 그 줄(1부터) 접기 바꾸기 */
   fold(what: "here" | "unfold-here" | "all" | "unfold-all" | "level"): void;
   toggleFoldLine(line: number): void;
@@ -127,7 +128,8 @@ interface Props {
   /** 문서가 바뀔 때마다 달라지는 키. 같은 키 동안에는 에디터 내용을 밖에서 덮어쓰지 않는다. */
   docKey: string;
   initial: string;
-  onChange: (value: string) => void;
+  /** 이 칸에서 친 뒤의 내용과 그 뷰의 docKey. 받는 쪽은 docKey 가 지금 판일 때만 초안으로 받는다 */
+  onChange: (value: string, docKey: string) => void;
   /** 이 칸에서 생긴 변경(다른 칸에서 받은 것은 빼고). 같은 문서를 연 다른 칸에 전달한다 */
   onChanges?: (changes: ChangeSet, docKey: string) => void;
   onSave: () => void;
@@ -154,16 +156,6 @@ interface Props {
   renderContext?: () => LiveRenderContext | null;
   /** 만들어질 때 포커스를 가져갈지(기본 true). 두 칸이면 활성 칸의 것만 — 아니면 나중에 만든 칸이 활성 칸을 빼앗는다 */
   autoFocus?: boolean;
-}
-
-/** 두 글의 앞뒤 같은 부분을 빼고 달라진 한 구간. 같으면 null */
-function diffChange(cur: string, next: string): { from: number; to: number; insert: string } | null {
-  if (cur === next) return null;
-  let a = 0;
-  while (a < cur.length && a < next.length && cur[a] === next[a]) a++;
-  let b = 0;
-  while (b < cur.length - a && b < next.length - a && cur[cur.length - 1 - b] === next[next.length - 1 - b]) b++;
-  return { from: a, to: cur.length - b, insert: next.slice(a, next.length - b) };
 }
 
 /** 블록의 접힌 줄들(접힌 범위가 시작하는 줄) */
@@ -399,13 +391,12 @@ export function Editor({
             },
           }),
           EditorView.updateListener.of((u) => {
-            // 초안은 이 칸에서 친 변경으로만 고친다. 다른 칸에서 받은 변경(mirrored)은 원본(저장소)에 이미 들어 있고,
-            // 낡은 뷰(docKey 가 바뀐 뒤 다시 만들기 전)의 콜백은 새 문서에 묶여 있어 부르면 다른 문서의 초안을 덮는다
-            const own = u.transactions.filter((tr) => tr.docChanged && tr.annotation(mirrored) !== true);
-            if (own.length && docKeyRef.current === createdKey) {
+            // 이 칸에서 친 변경만, 이 뷰가 아직 지금 문서의 것일 때만 내보낸다(판정은 mirror.ts outgoingChanges)
+            const own = outgoingChanges(u.transactions, createdKey, docKeyRef.current);
+            if (own.length) {
               // 초안을 먼저 고친다: 다른 칸이 변경을 못 맞추면 이 최신 초안으로 맞춘다
-              callbacks.current.onChange(u.state.doc.toString());
-              for (const tr of own) callbacks.current.onChanges?.(tr.changes, createdKey);
+              callbacks.current.onChange(u.state.doc.toString(), createdKey);
+              for (const changes of own) callbacks.current.onChanges?.(changes, createdKey);
             }
             // 접은 것을 이 기기에 기억한다(내용이 바뀌어 줄이 밀리면 새 줄로)
             const foldChanged = u.transactions.some((t) => t.effects.some((e) => e.is(foldEffect) || e.is(unfoldEffect)));
@@ -452,16 +443,14 @@ export function Editor({
           if (changes) view.dispatch({ changes });
         },
         applyChanges(changes, fallback) {
-          const annotations = [mirrored.of(true), Transaction.addToHistory.of(false)];
-          if (canMirror(view.state.doc.length, changes)) view.dispatch({ changes, annotations });
-          else {
-            // 두 뷰가 어긋났으면(예: 다시 만드는 중) 내용 전체 기준으로 달라진 곳만 맞춘다
-            const diff = diffChange(view.state.doc.toString(), fallback);
-            if (diff) view.dispatch({ changes: diff, annotations });
-          }
+          const spec = mirrorSpec(view.state, changes, fallback);
+          if (spec) view.dispatch(spec);
         },
         focus() {
           view.focus();
+        },
+        hasFocus() {
+          return view.hasFocus;
         },
         fold(what) {
           if (what === "here") foldCode(view);

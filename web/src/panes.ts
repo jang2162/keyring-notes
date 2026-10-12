@@ -158,6 +158,11 @@ export function focusPane(l: Layout, pane: number): Layout {
   return { ...l, focused: pane };
 }
 
+/** pane 이 아닌 칸 중 그 문서를 보고 있는(활성 탭인) 칸. 없으면 -1 */
+export function otherPaneShowing(l: Layout, pane: number, path: string): number {
+  return l.panes.findIndex((p, j) => j !== pane && p.active === path);
+}
+
 export function panesWith(l: Layout, path: string): number[] {
   const out: number[] = [];
   l.panes.forEach((p, i) => p.tabs.includes(path) && out.push(i));

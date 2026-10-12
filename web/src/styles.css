@@ -671,6 +671,8 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* 가운데 두 칸(좌우). 칸마다 탭 바·문서 머리·에디터. 한 칸이면 지금 화면과 같다 */
 .split-root { flex: 1; display: flex; min-height: 0; min-width: 0; }
 .split-pane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* 칸 요소가 포커스를 받을 때(미리보기 칸으로 포커스 옮기기) 테두리를 그리지 않는다 — 활성 칸은 탭 바의 선이 보여 준다 */
+.split-pane:focus { outline: none; }
 .split-root.two .split-pane + .split-pane { border-left: 1px solid var(--border); }
 .split-root.two .split-pane.focused > .tabbar { box-shadow: inset 0 2px 0 var(--accent); }
 .split-divider { margin: 0 -3px; }
