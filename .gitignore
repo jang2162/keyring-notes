@@ -14,6 +14,9 @@ dist/
 # 저장소 안 워크트리(docs/guideline/base/06-worktree-setup.md)
 /.worktrees/
 
+# Orca 개인용 이슈 명령(docs/guideline/orca/SETUP.md)
+/.orca/issue-command
+
 # Playwright MCP 페이지 스냅샷과 스크린샷
 /.playwright-mcp/
 
