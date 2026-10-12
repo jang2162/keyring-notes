@@ -20,7 +20,10 @@
     "prepare": "lefthook install || true"
   },
   "devDependencies": {
-    "@intellectronica/ruler": "^0.3.44"
+    "@intellectronica/ruler": "^0.3.44",
+    "lefthook": "2.2.1",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0"
   },
   "engines": {
     "node": ">=22.13"
