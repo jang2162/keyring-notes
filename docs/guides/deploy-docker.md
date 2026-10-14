@@ -6,7 +6,7 @@
 
 | 파일 | 쓰임 |
 | --- | --- |
-| `docker-compose.yml` | 기본. 앱, 호스트 포트는 `127.0.0.1:8787`. `s3` 프로필의 MinIO 도 여기 있다(꺼져 있다). 이것만으로 로컬에서 돈다 |
+| `docker-compose.yml` | 기본. 앱, 호스트 포트는 `127.0.0.1:8787`. `s3` 프로필의 SeaweedFS 도 여기 있다(꺼져 있다). 이것만으로 로컬에서 돈다 |
 | `docker/compose.build.yaml` | 레지스트리 이미지 대신 저장소 코드로 서버에서 빌드할 때(포크·수정판) |
 | `compose.override.yaml` | **서버에서 직접 쓰는 파일.** 프록시 네트워크·호스트 포트 닫기 등 그 서버만의 설정. 저장소가 ignore 하므로 커밋되지 않는다 |
 
@@ -67,9 +67,9 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 | `KEYRING_FETCH_ALLOW_PRIVATE` | 선택(`0`) | 사설 주소 URL 수집 허용 | `1` |
 | `TZ` | 선택(`Asia/Seoul`) | 정기 작업·백업 시각의 시간대 | |
 | `KEYRING_S3_*` | 선택 | S3 호환 저장소. 키와 뜻은 `.env.example`. 구성 방법은 아래 「S3」 | |
-| `COMPOSE_PROFILES` | 선택 | `s3` 면 함께 든 MinIO 를 띄운다 | `s3` |
-| `MINIO_DATA_DIR` | 선택(named volume) | MinIO 데이터의 호스트 경로 | `/srv/keyring-notes/minio` |
-| `MINIO_IMAGE`·`MINIO_MC_IMAGE` | 선택 | MinIO·mc 이미지. 판을 고정할 때 | |
+| `COMPOSE_PROFILES` | 선택 | `s3` 면 함께 든 SeaweedFS 를 띄운다 | `s3` |
+| `SEAWEEDFS_DATA_DIR` | 선택(named volume) | SeaweedFS 데이터의 호스트 경로 | `/srv/keyring-notes/seaweedfs` |
+| `SEAWEEDFS_IMAGE` | 선택(`chrislusf/seaweedfs`) | SeaweedFS 이미지. 판을 고정할 때 | |
 | `KEYRING_S3_ACCESS_KEY_ID`·`KEYRING_S3_SECRET_ACCESS_KEY`·`KEYRING_S3_ENCRYPTION_KEY` | 선택(비밀) | 비밀값. 암호화 키는 잃으면 복구할 수 없으니 따로 보관한다 | |
 
 ## S3
@@ -79,9 +79,9 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 | 방법 | 하는 일 |
 | --- | --- |
 | **쓰던 S3 를 입력** | `.env` 에 `KEYRING_S3_BUCKET`·`KEYRING_S3_ACCESS_KEY_ID`·`KEYRING_S3_SECRET_ACCESS_KEY` 를 적는다. AWS 는 `KEYRING_S3_REGION` 만, R2·MinIO 등은 `KEYRING_S3_ENDPOINT` 도 적는다 |
-| **직접 구성(함께 든 MinIO)** | `.env` 에 `COMPOSE_PROFILES=s3` 를 적고 `KEYRING_S3_ENDPOINT=http://minio:9000`, `KEYRING_S3_PATH_STYLE=1` 과 버킷 이름·키·비밀번호(8자 이상)를 적는다. 키와 비밀번호가 MinIO 관리자 계정이 되고, `minio-init` 이 버킷을 만든다. 포트는 호스트에 열지 않는다 |
+| **직접 구성(함께 든 SeaweedFS)** | `.env` 에 `COMPOSE_PROFILES=s3` 를 적고 `KEYRING_S3_ENDPOINT=http://seaweedfs:8333`, `KEYRING_S3_PATH_STYLE=1` 과 버킷 이름·키·비밀번호(8자 이상)를 적는다. 키와 비밀번호가 S3 계정이 되고, 버킷은 SeaweedFS(`weed mini`)가 만든다. 포트는 호스트에 열지 않는다 |
 
-프로필을 켰는데 키·비밀번호(8자 이상)·버킷 이름이 비어 있으면 `minio`·`minio-init` 컨테이너가 이유를 로그에 남기고 종료한다(꺼진 프로필에서는 아무 것도 검사하지 않는다). 쓰던 S3 를 쓸 때는 `COMPOSE_PROFILES` 를 켜지 않는다. 암호화 키(`KEYRING_S3_ENCRYPTION_KEY`)는 어느 방법이든 선택이며, 잃으면 복구할 수 없다.
+프로필을 켰는데 키·비밀번호·버킷 이름이 하나라도 비어 있으면 `seaweedfs` 컨테이너가 이유를 로그에 남기고 종료한다(검사가 없으면 SeaweedFS 는 인증 없이 모두 허용하는 모드로 뜬다)(꺼진 프로필에서는 아무 것도 검사하지 않는다). 쓰던 S3 를 쓸 때는 `COMPOSE_PROFILES` 를 켜지 않는다. 암호화 키(`KEYRING_S3_ENCRYPTION_KEY`)는 어느 방법이든 선택이며, 잃으면 복구할 수 없다.
 
 ## 3. 띄우고 처음 설정하기
 
