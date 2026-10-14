@@ -148,7 +148,7 @@
   "admin.security.mismatch": "새 비밀번호가 서로 다릅니다.",
   "admin.security.newPassword": "새 비밀번호(8자 이상)",
   "admin.security.remote": "원격 접속",
-  "admin.security.tipProxy": "인터넷에 직접 열지 말고 HTTPS 리버스 프록시(docker compose의 https 프로필, Caddy) 또는 VPN(Tailscale 등) 뒤에서 쓰세요.",
+  "admin.security.tipProxy": "인터넷에 직접 열지 말고 HTTPS 리버스 프록시 또는 VPN(Tailscale 등) 뒤에서 쓰세요.",
   "admin.security.tipPublicUrl": "{code}을 https 주소로 정하면 그 호스트 이름만 받고(DNS 리바인딩 방지) 로그인 쿠키에 Secure가 붙습니다.",
   "admin.security.tipToken": "에이전트 토큰이 새었다고 의심되면 에이전트·권한 탭에서 바로 재발급하세요.",
   "admin.status.agentCount": "{count}개",

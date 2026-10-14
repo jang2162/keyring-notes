@@ -22,7 +22,7 @@ dist/
 
 
 # 서버에서 직접 쓰는 개인 덮어쓰기 파일. 서버마다 다르며 커밋하지 않는다(docs/guides/deploy-docker.md)
-/compose.server.yaml
+/compose.override.yaml
 
 # START Ruler Generated Files
 /.agents/skills

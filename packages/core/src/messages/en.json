@@ -150,7 +150,7 @@
   "admin.security.mismatch": "The new passwords don't match.",
   "admin.security.newPassword": "New password (at least 8 characters)",
   "admin.security.remote": "Remote access",
-  "admin.security.tipProxy": "Don't expose it directly to the internet; use it behind an HTTPS reverse proxy (the https profile in docker compose, Caddy) or a VPN (Tailscale, etc.).",
+  "admin.security.tipProxy": "Don't expose it directly to the internet; use it behind an HTTPS reverse proxy or a VPN (Tailscale, etc.).",
   "admin.security.tipPublicUrl": "If you set {code} to an https address, only that host name is accepted (DNS rebinding protection) and login cookies get the Secure flag.",
   "admin.security.tipToken": "If you suspect an agent token has leaked, reissue it right away on the Agents & permissions tab.",
   "admin.status.agentCount": "{count}",

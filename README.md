@@ -25,19 +25,14 @@ Admin CLI inside the container: `docker compose exec keyring keyring agent list`
 
 By default the app port is bound to `127.0.0.1` only. To use it from elsewhere, pick one:
 
-- **HTTPS reverse proxy (Caddy, automatic certificates)**: point your domain's DNS at the server, open ports 80 and 443, then
-  ```bash
-  cp .env.example .env    # KEYRING_PUBLIC_URL=https://notes.example.com, KEYRING_DOMAIN=notes.example.com
-  docker compose --profile https up -d
-  ```
-  For a private network or testing, set `CADDY_TLS=internal` in `.env` (Caddy's own CA).
+- **HTTPS reverse proxy**: bring your own web server (nginx, Traefik, Caddy, …); this repository does not ship one. In a server-only `compose.override.yaml`, close the host port and join the proxy's network, then forward to `keyring:8787` passing `Host` and `X-Forwarded-Proto: https` through (see the deploy guide).
 - **VPN (Tailscale etc.)**: set `KEYRING_BIND=<VPN address>` and `KEYRING_ALLOWED_HOSTS=<that address/host name>` in `.env`. With Tailscale you can also add HTTPS inside the tailnet with `tailscale serve --bg 8787`.
 
 When `KEYRING_PUBLIC_URL` is set, only requests for that host name are accepted (DNS rebinding protection; other Hosts get 421) and the login cookie gets `Secure`. Every page is sent with security headers such as CSP and `X-Frame-Options: DENY`.
 
 ### Deploying to a server
 
-Running behind a reverse proxy, building on the server, the data path, every environment variable, and deploying as a Komodo Stack are covered in [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md) (Korean).
+Running behind a reverse proxy, building on the server, the data path, and every environment variable are covered in [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md); deploying as a Komodo Stack in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (both Korean).
 
 ### Updating
 

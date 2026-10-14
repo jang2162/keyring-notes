@@ -25,19 +25,14 @@ docker compose logs keyring               # "처음 설치: … 설정 코드 �
 
 앱 포트는 기본으로 `127.0.0.1`에만 열린다. 밖에서 쓰려면 둘 중 하나:
 
-- **HTTPS 리버스 프록시(Caddy, 자동 인증서)**: 도메인의 DNS를 서버로 향하게 하고 80·443을 연 뒤
-  ```bash
-  cp .env.example .env    # KEYRING_PUBLIC_URL=https://notes.example.com, KEYRING_DOMAIN=notes.example.com
-  docker compose --profile https up -d
-  ```
-  사설망·시험용이면 `.env`에 `CADDY_TLS=internal`(Caddy 자체 CA).
+- **HTTPS 리버스 프록시**: 웹 서버(nginx·Traefik·Caddy 등)는 직접 구성한다. 이 저장소는 제공하지 않는다. 서버 전용 `compose.override.yaml`에서 호스트 포트를 닫고 프록시 네트워크에 붙인 뒤, `Host`와 `X-Forwarded-Proto: https`를 그대로 전하며 `keyring:8787`로 넘긴다(배포 가이드 참고).
 - **VPN(Tailscale 등)**: `.env`에 `KEYRING_BIND=<VPN 주소>`와 `KEYRING_ALLOWED_HOSTS=<그 주소·호스트 이름>`. Tailscale이면 `tailscale serve --bg 8787`로 tailnet 안 HTTPS를 붙이는 방법도 있다.
 
 `KEYRING_PUBLIC_URL`을 정하면 그 호스트 이름으로 온 요청만 받고(DNS 리바인딩 방지, 다른 Host는 421) 로그인 쿠키에 `Secure`가 붙는다. 모든 페이지에 CSP·`X-Frame-Options: DENY` 등 보안 헤더가 붙는다.
 
 ### 서버 배포
 
-리버스 프록시 뒤에 두기, 서버에서 빌드하기, 데이터 경로, 환경 변수 전체와 Komodo Stack 으로 올리는 법은 [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md)에 있다.
+리버스 프록시 뒤에 두기, 서버에서 빌드하기, 데이터 경로, 환경 변수 전체는 [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md)에, Komodo Stack 으로 올리는 법은 [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md)에 있다.
 
 ### 업데이트
 
