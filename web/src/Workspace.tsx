@@ -733,7 +733,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         setDocSave(d.path, { kind: "saved", at: Date.now() });
         ok = true;
         // 노트 없는 노드에 처음 쓰면 노트가 생겼다(트리 아이콘·노드 모양)
-        if (d.virtual) void refreshTree();
+        // 아이콘이 바뀌었으면 트리를 다시 받는다. 탭·트리·위젯·검색 결과의 아이콘은 트리에서 오기 때문
+        if (d.virtual || docMeta(content).icon !== docMeta(d.saved).icon) void refreshTree();
         if (opts.auto) vaultChangedSoon();
         else vaultChanged();
       } catch (e) {
