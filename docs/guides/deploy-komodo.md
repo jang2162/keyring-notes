@@ -26,7 +26,7 @@ Komodo 는 Environment 를 `.env` 로 써서 compose 의 `${VAR}` 를 채운다.
 | `KEYRING_DATA_DIR` | 권장 | 볼트·설정·백업의 호스트 경로. 미리 만든다(`sudo install -d -o 1000 -g 1000 <경로>`). 비우면 named volume |
 | `KEYRING_TAG`·`KEYRING_IMAGE` | 선택 | 판 고정·포크 이미지 |
 | `KEYRING_ALLOWED_HOSTS`·`KEYRING_FETCH_ALLOW_PRIVATE`·`TZ` | 선택 | |
-| `KEYRING_S3_*` | 선택 | S3 사용 시. 쓰던 S3 를 입력하거나 `docker/compose.s3.yaml` 로 함께 든 MinIO 를 쓴다([deploy-docker.md](deploy-docker.md) 「S3」). `File Paths` 에 `docker/compose.s3.yaml` 을 `docker-compose.yml` 다음 줄로 더하면 `minio`·`minio-init` 이 Stack 에 더해진다 |
+| `KEYRING_S3_*` | 선택 | S3 사용 시. 쓰던 S3 를 입력하거나 `COMPOSE_PROFILES=s3` 로 함께 든 MinIO 를 쓴다([deploy-docker.md](deploy-docker.md) 「S3」). Environment 에 `COMPOSE_PROFILES=s3` 를 넣고 Deploy 하면 `minio`·`minio-init` 이 더해진다(Komodo 가 쓰는 `.env` 에서 compose 가 읽는다. 안 뜨면 Stack 설정에서 프로필·서비스 지정을 확인한다) |
 | `MINIO_DATA_DIR` | 선택 | MinIO 데이터의 호스트 경로(미리 만든다). 비우면 named volume `<Stack 이름>_minio-data` |
 | `KEYRING_S3_ACCESS_KEY_ID`·`KEYRING_S3_SECRET_ACCESS_KEY`·`KEYRING_S3_ENCRYPTION_KEY` | 선택(비밀) | Komodo **Variables** 에 Secret 으로 등록하고 `KEYRING_S3_SECRET_ACCESS_KEY=[[KEYRING_S3_SECRET_ACCESS_KEY]]` 처럼 참조만 쓴다 |
 
