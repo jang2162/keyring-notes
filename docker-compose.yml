@@ -5,7 +5,7 @@
 # 처음 실행하면 로그에 설정 코드가 나온다: docker compose logs keyring
 # 설정은 .env 파일에 둔다(.env.example 참고).
 # 웹 서버(리버스 프록시)는 이 저장소가 제공하지 않는다. 서버용 설정은 compose.override.yaml 에 쓴다(docs/guides/deploy-docker.md).
-# 서버에서 빌드할 때는 docker/compose.build.yaml 을 이 파일 뒤에 건다.
+# 서버에서 빌드할 때는 docker/compose.build.yaml, 함께 든 MinIO 를 S3 로 쓸 때는 docker/compose.s3.yaml 을 이 파일 뒤에 건다.
 services:
   keyring:
     image: ${KEYRING_IMAGE:-ghcr.io/jang2162/keyring-notes}:${KEYRING_TAG:-latest}
