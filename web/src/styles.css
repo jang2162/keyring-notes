@@ -1031,6 +1031,8 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .tree-row.attachments-row { color: var(--muted); font-size: var(--fs-sm); }
 .tree-row.empty-node > .tree-name { color: var(--muted); }
 .tree-emoji { width: 15px; text-align: center; font-size: 13px; line-height: 1; flex-shrink: 0; }
+/* .tree-row .doc-icon(15px)이 이 규칙을 이겨 이모지가 커 보였다 */
+.tree-row .tree-emoji { font-size: 13px; margin-right: 6px; }
 
 .badge-device { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: var(--fs-xs); font-weight: normal; color: var(--warn-fg); background: var(--warn-bg); vertical-align: 1px; }
 .setting-text { min-width: 0; }
