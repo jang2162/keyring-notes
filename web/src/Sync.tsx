@@ -7,7 +7,6 @@ import { defaultDeviceName, type SyncStatus } from "./local/syncController";
 import { fmtDateTime, t } from "./i18n";
 import { errorText } from "./toast";
 import { isSynced, setLocalOverride, type SyncedKey } from "./prefs";
-import { tipProps } from "./Tooltip";
 
 const msg = errorText;
 
@@ -165,11 +164,7 @@ export function SyncSettings({ ctx, onOpen }: { ctx: LocalContext; onOpen: (p: s
         {ctx.vaultDir && (
           <p>
             <code className="vault-dir">{ctx.vaultDir}</code>{" "}
-            {ctx.chooseFolder && (
-              <button onClick={() => ctx.chooseFolder!().catch((e) => setError(msg(e)))} {...tipProps({ label: t("sync.otherFolderTip") })}>
-                {t("sync.otherFolder")}
-              </button>
-            )}
+            {ctx.chooseFolder && <button onClick={() => ctx.chooseFolder!().catch((e) => setError(msg(e)))}>{t("sync.otherFolder")}</button>}
           </p>
         )}
       </section>

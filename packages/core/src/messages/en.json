@@ -1143,7 +1143,6 @@
   "sync.now": "Sync now",
   "sync.offline": "Cannot reach the server. What you saved on this device stays, and sync resumes when connected.",
   "sync.otherFolder": "Open another folder",
-  "sync.otherFolderTip": "You can also open an Obsidian vault folder",
   "sync.report.conflicts": "Some notes had the same part changed differently on both sides, so nothing was overwritten. The original note has the server version; your changes on this device were kept as a copy.",
   "sync.report.counts": "received {pulled} · sent {pushed} · deleted {deleted} · merged {merged} · conflicts {conflicts}",
   "sync.report.keepDevice": "Keep this device's value here only",
