@@ -1239,6 +1239,7 @@
   "widget.showing": "Showing {shown} of {total}",
   "ws.addIcon": "Add icon to {name}",
   "ws.all": "All workspaces",
+  "ws.allShort": "All",
   "ws.changeIcon": "Change icon of {name}",
   "ws.create": "New workspace",
   "ws.createPrompt": "New workspace name",

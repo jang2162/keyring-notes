@@ -2232,7 +2232,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           {[...(ws || "?")][0]}
         </span>
       )}
-      {rl && <span className="icon-btn-label">{allWs ? t("ws.all") : ws}</span>}
+      {rl && <span className="icon-btn-label">{allWs ? t("ws.allShort") : ws}</span>}
     </button>
   );
   // 워크스페이스마다 같은 폭의 앞자리(아이콘 또는 첫 글자)를 두어 이름이 왼쪽으로 맞고, 고른 것은 강조 모양으로

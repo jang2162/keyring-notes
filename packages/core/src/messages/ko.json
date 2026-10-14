@@ -1206,6 +1206,7 @@
   "widget.showing": "{total}개 중 {shown}개 표시",
   "ws.addIcon": "{name} 아이콘 추가",
   "ws.all": "모든 워크스페이스",
+  "ws.allShort": "전체",
   "ws.changeIcon": "{name} 아이콘 바꾸기",
   "ws.create": "새 워크스페이스",
   "ws.createPrompt": "새 워크스페이스 이름",
