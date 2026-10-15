@@ -18,7 +18,7 @@ import { DocIcon } from "./IconPicker";
 import { References } from "./Links";
 import { LinkResolver, renderMarkdown } from "./markdown";
 import { docKeyOf, type DocEntry } from "./openDocs";
-import type { ViewMode } from "./panes";
+import { shownModeOf, type ViewMode } from "./panes";
 import type { Prefs } from "./prefs";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
 import { formatCombo } from "./shortcuts";
@@ -60,6 +60,8 @@ export interface PaneContext {
   prefs: Prefs;
   lang: string;
   local: boolean;
+  /** 좁은 화면(800px 이하) */
+  narrow: boolean;
   resolver: LinkResolver;
   resolverRef: { current: LinkResolver };
   daily: DailyLookup;
@@ -268,7 +270,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   const isWsDoc = !doc.path.includes("/");
   const docDaily: DailyNote | null = dailyOfPath(doc.path, ctx.daily);
   const { propCount, icon: docIcon } = useMemo(() => docMeta(doc.draft), [doc.draft]);
-  const shownMode = revision ? "preview" : mode;
+  const shownMode = shownModeOf(mode, { revision: !!revision, narrow: ctx.narrow });
 
   // 문서 끝 백링크(설정을 켰을 때만): 이 칸의 문서 것을 따로 받는다
   useEffect(() => {
@@ -432,7 +434,10 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 label: <Pencil size={15} aria-label={t("cmd.modeEditShort")} />,
                 title: `${t("cmd.modeEditShort")} (${toggleKey})`,
               },
-              { value: "split", label: <Columns2 size={15} aria-label={t("cmd.modeSplitShort")} />, title: t("cmd.modeSplit") },
+              // 좁은 화면에는 나란히 놓을 폭이 없다(shownModeOf)
+              ...(ctx.narrow
+                ? []
+                : [{ value: "split" as const, label: <Columns2 size={15} aria-label={t("cmd.modeSplitShort")} />, title: t("cmd.modeSplit") }]),
               {
                 value: "preview",
                 label: <Eye size={15} aria-label={t("cmd.modePreviewShort")} />,
@@ -498,7 +503,15 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
           className={`panes mode-${shownMode}${prefs.readableWidth ? " readable" : ""} font-${prefs.editorFont}`}
           style={{ ["--editor-size" as string]: `${prefs.editorSize}px` }}
         >
-          <div className="pane edit-pane">
+          <div
+            className="pane edit-pane"
+            onMouseDown={(e) => {
+              // 제목·본문 바깥(본문 아래 여백, 좌우 여백)을 눌러도 본문에 커서를 둔다. 안 그러면 포커스가 칸으로 가서 친 글이 사라진다
+              if (e.button !== 0 || (e.target as HTMLElement).closest(".inline-title-wrap, .cm-editor, .properties, button, input, a")) return;
+              if (doc.generated || revision || !handle.current?.focusAt(e.clientX, e.clientY)) return;
+              e.preventDefault();
+            }}
+          >
             <div className="page">
               <InlineTitle
                 path={doc.path}

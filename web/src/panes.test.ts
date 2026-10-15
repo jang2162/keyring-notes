@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canSplit,
+  rightPanelFloats,
+  shownModeOf,
   closeIn,
   emptyLayout,
   fromTabs,
@@ -247,5 +249,22 @@ describe("칸 배치", () => {
     expect(canSplit(560, false)).toBe(true);
     expect(canSplit(559, false)).toBe(false);
     expect(canSplit(1200, true)).toBe(false);
+  });
+  it("rightPanelFloats: 다 붙이면 가운데가 440 보다 좁아질 때만 띄운다", () => {
+    // 기본 폭(레일 44·왼쪽 260·오른쪽 280)이면 1024 는 붙이고, 900 은 가운데가 316 이라 띄운다
+    expect(rightPanelFloats(1024, { rail: 44, left: 260, right: 280 })).toBe(false);
+    expect(rightPanelFloats(900, { rail: 44, left: 260, right: 280 })).toBe(true);
+    // 경계: 가운데가 정확히 440 이면 붙인다
+    expect(rightPanelFloats(44 + 260 + 280 + 440, { rail: 44, left: 260, right: 280 })).toBe(false);
+    expect(rightPanelFloats(44 + 260 + 280 + 439, { rail: 44, left: 260, right: 280 })).toBe(true);
+    // 왼쪽 패널을 닫으면 그만큼 자리가 난다
+    expect(rightPanelFloats(900, { rail: 44, left: 0, right: 280 })).toBe(false);
+  });
+
+  it("shownModeOf: 좁은 화면의 나란히 보기는 편집으로, 과거 판은 늘 미리보기", () => {
+    expect(shownModeOf("split", { revision: false, narrow: true })).toBe("edit");
+    expect(shownModeOf("split", { revision: false, narrow: false })).toBe("split");
+    expect(shownModeOf("preview", { revision: false, narrow: true })).toBe("preview");
+    expect(shownModeOf("edit", { revision: true, narrow: true })).toBe("preview");
   });
 });

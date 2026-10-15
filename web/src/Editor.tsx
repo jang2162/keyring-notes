@@ -54,6 +54,8 @@ export interface EditorHandle {
   /** 같은 문서를 연 다른 칸의 변경을 받는다. 이 칸의 실행 취소 기록에는 남기지 않는다. 길이가 어긋나면 fallback 내용으로 맞춘다 */
   applyChanges(changes: ChangeSet, fallback: string): void;
   focus(): void;
+  /** 본문 바깥을 눌렀을 때: 본문 위쪽이면 아무것도 안 하고 false. 본문 아래면 끝에, 옆이면 그 줄에 커서를 두고 포커스 */
+  focusAt(x: number, y: number): boolean;
   hasFocus(): boolean;
   /** 접기: 지금 위치 접기·펴기, 모두 접기·펴기, 이 수준 제목만 보기, 그 줄(1부터) 접기 바꾸기 */
   fold(what: "here" | "unfold-here" | "all" | "unfold-all" | "level"): void;
@@ -448,6 +450,17 @@ export function Editor({
         },
         focus() {
           view.focus();
+        },
+        focusAt(x, y) {
+          const r = view.contentDOM.getBoundingClientRect();
+          if (y < r.top) return false;
+          const anchor =
+            y >= r.bottom
+              ? view.state.doc.length
+              : (view.posAtCoords({ x: Math.min(Math.max(x, r.left + 1), r.right - 1), y }, false) ?? view.state.doc.length);
+          view.dispatch({ selection: { anchor }, scrollIntoView: true });
+          view.focus();
+          return true;
         },
         hasFocus() {
           return view.hasFocus;

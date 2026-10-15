@@ -1145,6 +1145,8 @@
   "tab.menu": "탭 메뉴",
   "tab.moveOther": "다른 칸으로 옮기기",
   "tab.newWindow": "새 창으로 열기",
+  "tab.none": "열린 노트가 없습니다",
+  "tab.switch": "열린 노트 {count}개",
   "tags.none": "태그가 없습니다. 본문에 #태그나 프런트매터 tags를 쓰면 여기 모입니다.",
   "tags.title": "태그 {count}",
   "theme.dark": "어둡게",

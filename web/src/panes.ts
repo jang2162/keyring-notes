@@ -187,3 +187,23 @@ export function panesWith(l: Layout, path: string): number[] {
 export function canSplit(centerWidth: number, narrow: boolean): boolean {
   return !narrow && centerWidth >= MIN_PANE_WIDTH * 2;
 }
+
+/** 가운데가 이보다 좁아지면 오른쪽 패널을 붙이지 않고 띄운다: 문서 머리의 도구 단추와 탭 하나가 들어가는 폭 */
+export const MIN_CENTER_WIDTH = 440;
+
+/**
+ * 오른쪽 패널을 가운데 위에 띄울까. 레일·왼쪽 패널·오른쪽 패널을 다 붙이면 가운데가 MIN_CENTER_WIDTH 보다 좁아질 때다.
+ * 가운데 폭(측정값)이 아니라 창 폭으로 계산한다 — 띄우면 가운데가 넓어지므로, 측정값으로 고르면 붙였다 띄웠다를 되풀이한다
+ */
+export function rightPanelFloats(viewport: number, docked: { rail: number; left: number; right: number }): boolean {
+  return viewport - docked.rail - docked.left - docked.right < MIN_CENTER_WIDTH;
+}
+
+/**
+ * 칸에 실제로 보일 보기 모드. 과거 판은 늘 미리보기다.
+ * 좁은 화면은 두 쪽을 나란히 놓을 폭이 없어 나란히 보기를 편집으로 보인다(편집 칸을 숨기면 칠 곳이 없어진다)
+ */
+export function shownModeOf(mode: ViewMode, opts: { revision: boolean; narrow: boolean }): ViewMode {
+  if (opts.revision) return "preview";
+  return opts.narrow && mode === "split" ? "edit" : mode;
+}

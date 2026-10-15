@@ -1176,6 +1176,8 @@
   "tab.menu": "Tab menu",
   "tab.moveOther": "Move to the other pane",
   "tab.newWindow": "Open in new window",
+  "tab.none": "No open notes",
+  "tab.switch": "Open notes: {count}",
   "tags.none": "No tags. #tags in the text and frontmatter tags gather here.",
   "tags.title": "Tags {count}",
   "theme.dark": "Dark",

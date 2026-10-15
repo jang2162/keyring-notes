@@ -145,10 +145,12 @@ import {
   otherPaneShowing,
   removePaths,
   renamePath,
+  rightPanelFloats,
   setMode as setPaneMode,
   type Layout,
   type ViewMode,
 } from "./panes";
+import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 
 /** 칸이 없는 배치(매번 새 객체를 만들지 않게 하나만 둔다) */
 const NO_PANES: Layout = emptyLayout();
@@ -265,15 +267,25 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   // 좁은 화면에서는 나란히 보기 대신 미리보기로 시작. Live Preview가 기본이라 넓은 화면은 편집으로
   const narrow = () => window.matchMedia?.("(max-width: 800px)").matches ?? false;
   const [isNarrow, setIsNarrow] = useState(narrow);
+  /** 좁은 화면의 열린 탭 목록을 보고 있는 칸 */
+  const [tabSheet, setTabSheet] = useState<number | null>(null);
   useEffect(() => {
     const mq = window.matchMedia?.("(max-width: 800px)");
     if (!mq) return;
     const on = () => {
       setIsNarrow(mq.matches);
       setDrawer(null);
+      setTabSheet(null);
     };
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
+  }, []);
+  /** 창 폭: 오른쪽 패널을 붙일 자리가 있는지(rightPanelFloats) */
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const on = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
   }, []);
   /** 가운데(main.center) 폭: 둘째 칸을 열 수 있는지, 칸 경계를 어디에 둘지 */
   const centerRef = useRef<HTMLElement>(null);
@@ -2910,6 +2922,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         onClick={() => void createDoc()}
         size={16}
       />
+      {/* 좁은 화면은 탭 줄 대신 탭 개수 단추로 열린 탭 목록을 연다(넓은 화면에서는 CSS 가 숨긴다) */}
+      <TabCountButton count={layout.panes[pane]?.tabs.length ?? 0} onClick={() => setTabSheet(pane)} />
     </nav>
   );
 
@@ -2918,6 +2932,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     prefs,
     lang,
     local,
+    narrow: isNarrow,
     resolver,
     resolverRef,
     daily,
@@ -3077,13 +3092,36 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </>
   );
 
+  // 다 붙이면 가운데가 너무 좁아지면(창이 800~1000px 쯤이고 양쪽 패널이 다 열림) 오른쪽 패널을 가운데 위에 띄운다
+  const rightFloat =
+    !isNarrow &&
+    rightOpen &&
+    !!doc &&
+    rightPanelFloats(viewportWidth, { rail: rl ? 64 : 44, left: prefs.leftOpen ? prefs.leftWidth : 0, right: prefs.rightWidth });
+  const sheetPane = isNarrow && tabSheet !== null ? layout.panes[tabSheet] : undefined;
+
   return (
     <IconLookup.Provider value={iconOf}>
       <div
-        className={`shell${prefs.leftOpen ? " left-open" : ""}${rightOpen && doc && !isNarrow ? " right-open" : ""}${drawer ? ` drawer-${drawer}` : ""}${rl ? " rail-labels" : ""}`}
+        className={`shell${prefs.leftOpen ? " left-open" : ""}${rightOpen && doc && !isNarrow ? " right-open" : ""}${rightFloat ? " right-float" : ""}${drawer ? ` drawer-${drawer}` : ""}${rl ? " rail-labels" : ""}`}
         style={{ ["--left-w" as string]: `${prefs.leftWidth}px`, ["--right-w" as string]: `${prefs.rightWidth}px` }}
       >
         {drawer && <div className="nav-backdrop" onClick={() => setDrawer(null)} />}
+        {rightFloat && <div className="panel-backdrop" onClick={() => setPrefs({ rightOpen: false })} />}
+        {sheetPane && (
+          <TabSwitcher
+            tabs={sheetPane.tabs}
+            active={sheetPane.active}
+            isDirty={(tp) => !!docs[tp] && docs[tp].doc.draft !== docs[tp].doc.saved}
+            label={(tp) => docLabel(tp)}
+            icon={iconOf}
+            onPick={(tp) => (setTabSheet(null), void open(tp, { pane: tabSheet! }))}
+            onCloseTab={(tp) => void closeTab(tabSheet!, tp)}
+            onNew={() => (setTabSheet(null), void createDoc())}
+            canNew={!!ws || wsNames.length > 0}
+            onClose={() => setTabSheet(null)}
+          />
+        )}
         <div className="left-dock">
           {rail}
           {((prefs.leftOpen && !isNarrow) || drawer === "left") && leftPanel}
@@ -3127,7 +3165,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         </main>
         {doc && ((rightOpen && !isNarrow) || drawer === "right") && (
           <>
-            {rightOpen && !isNarrow && (
+            {rightOpen && !isNarrow && !rightFloat && (
               <Resizer
                 side="right"
                 label={t("panel.rightWidth")}
