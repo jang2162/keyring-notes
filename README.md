@@ -32,15 +32,14 @@ When `KEYRING_PUBLIC_URL` is set, only requests for that host name are accepted 
 
 ### Deploying to a server
 
-Running behind a reverse proxy, building on the server, the data path, and every environment variable are covered in [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md); deploying as a Komodo Stack in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (both Korean).
+Running behind a reverse proxy, the data path, and every environment variable are covered in [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md); deploying as a Komodo Stack in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (both Korean).
 
 ### Updating
 
 The admin console's "Updates" tab checks for the latest release. Make a backup before updating, then:
 
 ```bash
-docker compose pull && docker compose up -d          # when using the GHCR image (.github/workflows/docker.yml publishes one for every v* tag)
-git pull && docker compose up -d --build             # when building yourself
+git pull && docker compose up -d --build             # the image is built from this repository (no registry image)
 ```
 
 When building behind something that re-signs TLS, such as a corporate proxy: `docker build --secret id=extra_ca,src=<CA.pem> .` (it is not kept in the image).

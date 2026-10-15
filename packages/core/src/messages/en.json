@@ -991,7 +991,7 @@
   "server.setup_code": "First run: set a password in the web app with this setup code → {code}",
   "server.setup_code_cli": "(or `pnpm keyring passwd`; with Docker, `docker compose exec keyring keyring passwd`)",
   "server.stopping": "{signal}: shutting down…",
-  "server.update.docker": "docker compose pull && docker compose up -d   # if you built it yourself: git pull && docker compose up -d --build",
+  "server.update.docker": "git pull && docker compose up -d --build",
   "server.update.failed": "Update check failed: {message}",
   "server.update.no_version": "No version information",
   "server.update.off": "The update check URL is off (KEYRING_UPDATE_URL)",

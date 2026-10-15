@@ -8,12 +8,12 @@
 | --- | --- |
 | Name | 정하는 대로. compose project 이름이 되어 named volume 이 `<Stack 이름>_keyring-data` 가 된다 |
 | Source | Git Repo — `git_provider` `github.com` / `repo` `jang2162/keyring-notes` / `branch` `main`. 비공개 포크면 Komodo 에 등록한 `git_account` |
-| File Paths | 한 줄씩 이 순서로: `docker-compose.yml`, `compose.override.yaml`. 서버에서 빌드하면 `docker/compose.build.yaml` 을 둘 사이에 넣는다. `COMPOSE_FILE` 은 넣지 않는다 |
+| File Paths | 한 줄씩 이 순서로: `docker-compose.yml`, `compose.override.yaml`. `COMPOSE_FILE` 은 넣지 않는다 |
 | Environment | 아래 표 |
-| Webhook | **끔.** push 마다 재배포하면 편집 중인 웹 세션·앱 동기화·에이전트 일괄 쓰기가 끊기고, 레지스트리 이미지는 `v*` 태그 때만 바뀐다. 사람이 Deploy 한다 |
+| Webhook | **끔.** push 마다 재배포하면 서버에서 다시 빌드하고 컨테이너를 새로 만들어 편집 중인 웹 세션·앱 동기화·에이전트 일괄 쓰기가 끊긴다. 사람이 Deploy 한다 |
 | override 파일 | `compose.override.yaml` — 아래 「서버의 override 파일」 |
 
-`container_name` 은 쓰지 않아 같은 서버의 다른 Stack 과 이름이 겹치지 않는다. 레지스트리 이미지를 쓰므로 `pull_policy` 는 두지 않고, 서버에서 빌드할 때만 `docker/compose.build.yaml` 이 `pull_policy: build` 를 건다.
+`container_name` 은 쓰지 않아 같은 서버의 다른 Stack 과 이름이 겹치지 않는다. 이미지는 레지스트리에서 받지 않으므로 `docker-compose.yml` 이 `pull_policy: build` 를 건다 — Deploy 할 때마다 clone 한 코드로 빌드한다.
 
 ## Environment
 
@@ -24,7 +24,6 @@ Komodo 는 Environment 를 `.env` 로 써서 compose 의 `${VAR}` 를 채운다.
 | `KEYRING_PUBLIC_URL` | 필수 | 프록시 뒤에 두는 이 구성에서는 필수로 본다. 밖에서 접속하는 https 주소 |
 | `PROXY_NETWORK` | 필수 | `compose.override.yaml` 이 읽는다. 프록시와 함께 쓰는 외부 네트워크 이름 |
 | `KEYRING_DATA_DIR` | 권장 | 볼트·설정·백업의 호스트 경로. 미리 만든다(`sudo install -d -o 1000 -g 1000 <경로>`). 비우면 named volume |
-| `KEYRING_TAG`·`KEYRING_IMAGE` | 선택 | 판 고정·포크 이미지 |
 | `KEYRING_ALLOWED_HOSTS`·`KEYRING_FETCH_ALLOW_PRIVATE`·`TZ` | 선택 | |
 | `KEYRING_S3_*` | 선택 | S3 사용 시. 쓰던 S3 를 입력하거나 `COMPOSE_PROFILES=s3` 로 함께 든 SeaweedFS 를 쓴다([deploy-docker.md](deploy-docker.md) 「S3」). Environment 에 `COMPOSE_PROFILES=s3` 를 넣고 Deploy 하면 `seaweedfs` 가 더해진다(Komodo 가 쓰는 `.env` 에서 compose 가 읽는다. 안 뜨면 Stack 설정에서 프로필·서비스 지정을 확인한다) |
 | `SEAWEEDFS_DATA_DIR` | 선택 | SeaweedFS 데이터의 호스트 경로(미리 만든다). 비우면 named volume `<Stack 이름>_seaweedfs-data` |

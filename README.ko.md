@@ -32,15 +32,14 @@ docker compose logs keyring               # "처음 설치: … 설정 코드 �
 
 ### 서버 배포
 
-리버스 프록시 뒤에 두기, 서버에서 빌드하기, 데이터 경로, 환경 변수 전체는 [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md)에, Komodo Stack 으로 올리는 법은 [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md)에 있다.
+리버스 프록시 뒤에 두기, 데이터 경로, 환경 변수 전체는 [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md)에, Komodo Stack 으로 올리는 법은 [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md)에 있다.
 
 ### 업데이트
 
 관리 콘솔의 "업데이트" 탭이 최신 릴리스를 확인한다. 업데이트 전에 백업을 하나 만들고:
 
 ```bash
-docker compose pull && docker compose up -d          # GHCR 이미지를 쓸 때(v* 태그마다 .github/workflows/docker.yml이 올림)
-git pull && docker compose up -d --build             # 직접 빌드할 때
+git pull && docker compose up -d --build             # 이미지는 저장소 코드로 빌드한다(레지스트리 이미지는 없다)
 ```
 
 사내 프록시처럼 TLS를 다시 서명하는 곳에서 빌드할 때는 `docker build --secret id=extra_ca,src=<CA.pem> .`(이미지에는 남지 않는다).

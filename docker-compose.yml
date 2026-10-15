@@ -5,12 +5,14 @@
 # 처음 실행하면 로그에 설정 코드가 나온다: docker compose logs keyring
 # 설정은 .env 파일에 둔다(.env.example 참고).
 # 웹 서버(리버스 프록시)는 이 저장소가 제공하지 않는다. 서버용 설정은 compose.override.yaml 에 쓴다(docs/guides/deploy-docker.md).
-# 서버에서 빌드할 때는 docker/compose.build.yaml 을 이 파일 뒤에 건다.
+# 이미지는 레지스트리에서 받지 않고 이 저장소 코드로 빌드한다(up 할 때마다).
 # 함께 든 SeaweedFS 를 S3 로 쓰려면 .env 에 COMPOSE_PROFILES=s3 (쓰던 S3 를 쓰면 켜지 않는다).
 services:
   keyring:
-    image: ${KEYRING_IMAGE:-ghcr.io/jang2162/keyring-notes}:${KEYRING_TAG:-latest}
+    image: keyring-notes:local
     build: .
+    # 레지스트리에 없는 이미지다: pull 을 건너뛰고 up 할 때마다 저장소 코드로 빌드한다
+    pull_policy: build
     restart: unless-stopped
     init: true
     ports:

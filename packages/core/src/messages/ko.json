@@ -962,7 +962,7 @@
   "server.setup_code": "처음 설치: 웹 화면에서 이 설정 코드로 비밀번호를 정하세요 → {code}",
   "server.setup_code_cli": "(또는 `pnpm keyring passwd`, 도커는 `docker compose exec keyring keyring passwd`)",
   "server.stopping": "{signal}: 종료하는 중…",
-  "server.update.docker": "docker compose pull && docker compose up -d   # 직접 빌드했다면: git pull && docker compose up -d --build",
+  "server.update.docker": "git pull && docker compose up -d --build",
   "server.update.failed": "업데이트 확인 실패: {message}",
   "server.update.no_version": "버전 정보가 없습니다",
   "server.update.off": "업데이트 확인 주소가 꺼져 있습니다(KEYRING_UPDATE_URL)",

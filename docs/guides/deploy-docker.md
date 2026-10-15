@@ -1,13 +1,12 @@
 # Docker 로 배포하기
 
-서버에 Docker Compose 로 올리는 방법이다. 저장소의 `docker-compose.yml` 은 앱(keyring) 하나만 갖는다. **웹 서버(리버스 프록시)는 저장소가 제공하지 않는다** — 각자 쓰는 것(nginx·Traefik·Caddy 등)을 따로 두고, 그 서버에서만 필요한 설정은 `compose.override.yaml` 에 쓴다. 설정은 `.env` 에 둔다. Komodo 로 올리는 법은 [deploy-komodo.md](deploy-komodo.md).
+서버에 Docker Compose 로 올리는 방법이다. 저장소의 `docker-compose.yml` 은 앱(keyring) 하나만 갖는다. **웹 서버(리버스 프록시)는 저장소가 제공하지 않는다** — 각자 쓰는 것(nginx·Traefik·Caddy 등)을 따로 두고, 그 서버에서만 필요한 설정은 `compose.override.yaml` 에 쓴다. 설정은 `.env` 에 둔다. 이미지는 레지스트리에서 받지 않고 **서버에서 저장소 코드로 빌드한다**(`pull_policy: build`). Komodo 로 올리는 법은 [deploy-komodo.md](deploy-komodo.md).
 
 ## compose 파일
 
 | 파일 | 쓰임 |
 | --- | --- |
 | `docker-compose.yml` | 기본. 앱, 호스트 포트는 `127.0.0.1:8787`. `s3` 프로필의 SeaweedFS 도 여기 있다(꺼져 있다). 이것만으로 로컬에서 돈다 |
-| `docker/compose.build.yaml` | 레지스트리 이미지 대신 저장소 코드로 서버에서 빌드할 때(포크·수정판) |
 | `compose.override.yaml` | **서버에서 직접 쓰는 파일.** 프록시 네트워크·호스트 포트 닫기 등 그 서버만의 설정. 저장소가 ignore 하므로 커밋되지 않는다 |
 
 뒤 파일은 앞 파일에서 **달라지는 키만** 갖고 덮어쓴다. 순서가 바뀌면 기본 파일이 덮어쓰기를 지운다.
@@ -18,8 +17,6 @@
 | --- | --- | --- |
 | **A. 리버스 프록시 뒤** | `docker-compose.yml`, `compose.override.yaml` | `KEYRING_PUBLIC_URL` |
 | **B. 이 서버·VPN 에서만** | `docker-compose.yml` | 없음(VPN 이면 `KEYRING_BIND`, `KEYRING_ALLOWED_HOSTS`) |
-
-서버에서 빌드하려면 어느 구성이든 `docker/compose.build.yaml` 을 `compose.override.yaml` 앞에(없으면 맨 뒤에) 더한다.
 
 - **A**: 프록시는 `keyring:8787` 로 넘기고 `Host` 를 그대로 전한다(받는 호스트 목록에 없으면 서버가 421 로 거절한다). `X-Forwarded-Proto: https` 도 넘긴다 — 로그인 쿠키의 Secure 와 패스키 확인이 이것을 본다. 프록시와 같은 외부 네트워크가 서버에 미리 있어야 한다(`docker network ls`). `!reset` 을 쓰므로 Docker Compose 2.24.4 이상이어야 한다(`docker compose version`).
 - **B**: 포트는 `127.0.0.1` 에만 열린다. Tailscale 이면 `tailscale serve --bg 8787` 로 tailnet 안 HTTPS 를 붙일 수도 있다.
@@ -60,8 +57,6 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 | `KEYRING_PUBLIC_URL` | A 필수 | 밖에서 접속하는 https 주소. 이 호스트 이름만 받고 로그인 쿠키에 Secure 가 붙는다 | `https://notes.example.com` |
 | `PROXY_NETWORK` | 선택 | 위 `compose.override.yaml` 예시가 읽는 값. 프록시와 함께 쓰는 외부 네트워크 이름 | |
 | `KEYRING_DATA_DIR` | 선택(named volume) | 볼트·설정·백업을 둘 호스트 경로. 없으면 Docker 가 root 소유로 만들어 앱이 못 쓰므로 미리 만든다: `sudo install -d -o 1000 -g 1000 <경로>` | `/srv/keyring-notes` |
-| `KEYRING_IMAGE` | 선택(`ghcr.io/jang2162/keyring-notes`) | 받을 이미지. 포크 이미지면 바꾼다 | `ghcr.io/<계정>/keyring-notes` |
-| `KEYRING_TAG` | 선택(`latest`) | 이미지 태그. 판을 고정할 때 | `0.5.0` |
 | `KEYRING_BIND`·`KEYRING_PORT` | 선택(`127.0.0.1`·`8787`) | 호스트에 여는 주소·포트(구성 B) | `100.64.0.10` |
 | `KEYRING_ALLOWED_HOSTS` | 선택 | 받을 호스트 목록(쉼표). **정하면 이 목록만 받는다** — `KEYRING_PUBLIC_URL` 의 호스트도 함께 적는다 | `notes.example.com,keyring.tailnet.ts.net` |
 | `KEYRING_FETCH_ALLOW_PRIVATE` | 선택(`0`) | 사설 주소 URL 수집 허용 | `1` |
@@ -87,7 +82,7 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 
 ```bash
 docker compose config            # 고른 파일이 겹쳐진 결과
-docker compose up -d             # 구성에 compose.build.yaml 이 있으면 --build
+docker compose up -d             # 저장소 코드로 이미지를 빌드하고 띄운다
 docker compose logs keyring      # "처음 설치: … 설정 코드 → XXXX-XXXX-XXXX"
 ```
 
@@ -98,8 +93,7 @@ docker compose logs keyring      # "처음 설치: … 설정 코드 → XXXX-XX
 관리 콘솔의 "업데이트" 탭이 새 릴리스를 알려 준다. 업데이트 전에 관리 콘솔에서 백업을 하나 만든다.
 
 ```bash
-docker compose pull && docker compose up -d     # 레지스트리 이미지(v* 태그마다 GHCR 에 올라간다)
-git pull && docker compose up -d --build        # 서버에서 빌드하는 구성
+git pull && docker compose up -d --build        # 받은 코드로 다시 빌드해 띄운다
 ```
 
 다시 띄우는 동안 편집 중인 웹 세션의 저장·앱 동기화·에이전트의 일괄 쓰기가 끊긴다. 쓰지 않는 때에 한다.
