@@ -121,6 +121,12 @@ export interface DocPaneProps {
   extra?: ReactNode;
 }
 
+/** 제목 칸에서 고친 글: 고친 때의 노트 경로와 그 글이 뜻하는 노드 이름 */
+export interface TitleEdit {
+  path: string;
+  name: string;
+}
+
 /**
  * 문서 위 큰 제목 칸: 고치고 Enter나 포커스 이탈 때 노드 이름을 바꾼다(노트와 하위를 같이). 앞에 아이콘(누르면 고르기).
  * 데일리 노트는 날짜 부분을 고정된 앞머리(흐린 글자)로 보이고 그 뒤 제목만 고친다. 날짜를 누르면 전체 이름을 고친다.
@@ -143,7 +149,7 @@ function InlineTitle({
   icon: string | null;
   onIcon?: (at: { x: number; y: number }) => void;
   onFocused: () => void;
-  onRename: (stem: string) => Promise<boolean>;
+  onRename: (path: string, stem: string) => Promise<boolean>;
   onDone: () => void;
 }) {
   const stem = stemOf(path);
@@ -153,6 +159,8 @@ function InlineTitle({
   const [v, setV] = useState(initial);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
+  /** 아직 반영 안 한 고침: 어느 노트의 제목을 무슨 이름으로 */
+  const edit = useRef<TitleEdit | null>(null);
   useEffect(() => setV(initial), [initial]);
   useEffect(() => setFull(false), [path]);
   useEffect(() => {
@@ -172,14 +180,22 @@ function InlineTitle({
   // 전체 이름을 고치다 날짜를 지우면 데일리 노트가 아니게 된다
   const warn = daily && full && !next.startsWith(daily.datePart) ? t("title.dailyWarn") : null;
   const commit = async () => {
-    if (busy || next === stem) {
+    // 노트가 바뀌며 포커스를 잃으면 이미 새 노트의 path 로 그려진 뒤라, 고친 글이 속한 노트는 입력 때 적어 둔 것을 따른다
+    const target = edit.current;
+    if (busy || !target || target.name === stemOf(target.path)) {
+      edit.current = null;
       setV(initial);
       setFull(false);
       return;
     }
-    if (err) return;
+    if (target.path === path && err) return;
+    edit.current = null;
+    if (target.path !== path && invalidNameReason(target.name)) {
+      setV(initial);
+      return;
+    }
     setBusy(true);
-    const ok = await onRename(next);
+    const ok = await onRename(target.path, target.name);
     setBusy(false);
     if (!ok) setV(initial);
     setFull(false);
@@ -226,7 +242,10 @@ function InlineTitle({
           aria-label={split ? t("title.dailyLabel") : t("title.label")}
           aria-invalid={!!err}
           spellCheck={false}
-          onChange={(e) => setV(e.target.value)}
+          onChange={(e) => {
+            setV(e.target.value);
+            edit.current = { path, name: nameOf(e.target.value) };
+          }}
           onBlur={() => void commit()}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing) return;
@@ -236,6 +255,7 @@ function InlineTitle({
             } else if (e.key === "Escape") {
               e.preventDefault();
               e.stopPropagation();
+              edit.current = null;
               setV(initial);
               setFull(false);
               onDone();
@@ -521,7 +541,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 icon={docIcon}
                 onIcon={doc.generated || revision ? undefined : (at) => ctx.setIconPick({ ...at, node: docNode })}
                 onFocused={ctx.clearTitleFocus}
-                onRename={(stem) => ctx.renameNode(docNode, stem)}
+                onRename={(p, stem) => ctx.renameNode(stripMd(p), stem)}
                 onDone={() => handle.current?.focus()}
               />
               <Editor
