@@ -448,6 +448,8 @@ Both REST and MCP reach the vault and the index only through `ScopedVault` in `s
 
 Authentication: the web uses the cookie from `POST /api/auth/login` (HttpOnly, SameSite=Strict); agents and app devices use `Authorization: Bearer <token>`. Every mutating request must be `Content-Type: application/json`. For cross-origin apps, CORS responses are enabled only for requests that come with an `Authorization` header (and device registration).
 
+`GET /llms.txt` (no authentication) returns a short static guide for LLM agents in Markdown: how to connect (MCP, REST, tokens), the permission levels, the main tasks and the `baseHash` conflict rule. It contains nothing from your vault or config. Links are absolute when `KEYRING_PUBLIC_URL` is set, relative otherwise.
+
 | Method | Path | Body / query | Description |
 | --- | --- | --- | --- |
 | GET | `/api/auth/status` | | Login status |

@@ -20,6 +20,7 @@ import { ScopedVault } from "./scoped.js";
 import { SyncManifest } from "./sync.js";
 import { ConflictError, ForbiddenError, KeyedError, NotFoundError, type Op, type Vault } from "./vault.js";
 import { serverText } from "./lang.js";
+import { llmsTxt } from "./llmsTxt.js";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -212,6 +213,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       return c.text(serverText("error.plugin_missing"), 404);
     }
   });
+
+  // ── /llms.txt: 인증 없이 여는 정적 안내. 앱 페이지의 SPA 대체 경로(index.ts)보다 먼저 등록되므로 가로채이지 않는다. ──
+  app.get("/llms.txt", (c) => c.body(llmsTxt(admin.publicUrl), 200, { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" }));
 
   // ── MCP: 에이전트 토큰만 받는다 ──
   app.all("/mcp", async (c) => {

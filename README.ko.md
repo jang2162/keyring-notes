@@ -448,6 +448,8 @@ REST와 MCP는 모두 `server/src/scoped.ts`의 `ScopedVault`를 거쳐서만 �
 
 인증: 웹은 `POST /api/auth/login`이 주는 쿠키(HttpOnly, SameSite=Strict), 에이전트·앱 기기는 `Authorization: Bearer <토큰>`. 모든 변경 요청은 `Content-Type: application/json`이어야 한다. 출처가 다른 앱을 위해 `Authorization` 헤더로 온 요청(과 기기 등록)에만 CORS 응답을 연다.
 
+`GET /llms.txt`(인증 없음)는 LLM 에이전트용 짧은 정적 안내를 마크다운으로 준다: 연결 방법(MCP·REST·토큰), 권한 단계, 주요 작업, `baseHash` 충돌 규칙. 볼트나 설정 내용은 담지 않는다. `KEYRING_PUBLIC_URL`을 설정했으면 링크가 절대 주소, 아니면 상대 경로다.
+
 | 메서드 | 경로 | 본문 / 쿼리 | 설명 |
 | --- | --- | --- | --- |
 | GET | `/api/auth/status` | | 로그인 상태 |
