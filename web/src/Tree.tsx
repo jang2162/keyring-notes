@@ -557,7 +557,16 @@ export const Tree = forwardRef<
           </div>
         );
       })}
-      {rows.length === 0 && <p className="meta tree-empty">{root ? t("tree.empty") : t("tree.emptyAll")}</p>}
+      {rows.length === 0 &&
+        (root ? (
+          <div className="tree-empty">
+            <button type="button" onClick={() => actions.newChild("")}>
+              <Plus size={14} strokeWidth={1.75} aria-hidden /> {t("tree.newNote")}
+            </button>
+          </div>
+        ) : (
+          <p className="meta tree-empty">{t("tree.emptyAll")}</p>
+        ))}
       {menu && menuFor(menu.row).length > 0 && <Menu at={menu} items={menuFor(menu.row)} onClose={() => setMenu(null)} />}
     </div>
   );

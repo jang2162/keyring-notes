@@ -1326,7 +1326,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const body = tpl ? applyTemplate(tpl, { title: stemOf(path), date: day, weekStart: cfg.weekStart, lang: cfg.lang }) : "";
     let content = body;
     try {
-      content = withDailyTags(body, day, { weekStart: cfg.weekStart, icon: wsSet.daily.icon || undefined, lang: cfg.lang });
+      // 데일리 아이콘은 노트가 아니라 데일리 폴더에 보인다(트리 장식). 새 노트에는 넣지 않는다
+      content = withDailyTags(body, day, { weekStart: cfg.weekStart, lang: cfg.lang });
     } catch (e) {
       // 템플릿의 프런트매터가 깨져 있으면 속성 없이 만든다
       toast(t("daily.propsFailed", { message: errorText(e) }), { kind: "warn" });
@@ -2190,14 +2191,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   const treeDecor = useMemo<TreeDecor>(() => {
-    const dirs = new Set(daily.all().map((d) => d.config.folder));
+    // 데일리 폴더 → 그 워크스페이스의 데일리 아이콘(노트 자신의 아이콘이 있으면 그것)
+    const dailyIcons = new Map(daily.all().map((d) => [d.config.folder, workspaceSettings(shared, d.workspace, uiLang).daily.icon]));
+    const dirs = new Set(dailyIcons.keys());
     return {
       label: (n) => (n.note ? docLabel(n.note) : n.name),
-      icon: (n) => (n.note ? iconOf(n.note) : null),
+      icon: (n) => (n.note ? iconOf(n.note) : null) ?? (prefs.showIcons ? dailyIcons.get(n.path) || null : null),
       descending: (d) => prefs.dailySortDesc && [...dirs].some((dir) => d === dir || d.startsWith(dir + "/")),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [daily, prefs.showIcons, prefs.dailySortDesc, prefs.dailyFriendly, iconMap, docIcon, doc?.path, lang]);
+  }, [daily, shared, uiLang, prefs.showIcons, prefs.dailySortDesc, prefs.dailyFriendly, iconMap, docIcon, doc?.path, lang]);
 
   const words = useMemo(() => {
     const text = doc?.draft ?? "";
