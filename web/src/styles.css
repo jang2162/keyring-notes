@@ -705,8 +705,9 @@ h1.inline-title.static { margin-bottom: var(--sp-3); }
 .editor .cm-content { padding: 0; caret-color: var(--fg); }
 .editor .cm-line { padding: 0; }
 .editor:not(.lines) .cm-activeLine { background: transparent !important; }
-/* 어두운 테마의 .cm-gutters 배경(!important)이 본문 왼쪽에 겹친 접기 칸을 칠해 맨 왼쪽 캐럿을 가렸다 */
-.editor .cm-gutters { background: transparent !important; border-right: none; color: var(--muted); }
+/* 에디터 거터는 투명해야 한다: 접기 칸(z-index 200)의 오른쪽 끝이 본문 왼쪽 끝과 같아, 칠해지면 맨 왼쪽 캐럿을 가린다.
+   위 어두운 테마 규칙(:root… .cm-gutters, 구체성 0,3,0)을 !important 끼리 이기려면 구체성이 그 이상이어야 한다 */
+.editor .cm-editor .cm-gutters { background: transparent !important; border-right: none; color: var(--muted); }
 .editor.lines .cm-content { padding-left: 4px; }
 .page > .properties { margin: 0 0 var(--sp-4); padding: var(--sp-2) 0; border: none; border-bottom: 1px solid var(--border); background: transparent; max-height: none; }
 .markdown-body pre, .markdown-body code { font-family: var(--font-mono); }
