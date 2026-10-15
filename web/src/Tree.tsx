@@ -198,9 +198,10 @@ export const Tree = forwardRef<
 
   const expandable = (n: VaultNode) => n.children.length > 0 || (prefs.treeAttachments !== "hide" && n.attachments.length > 0);
 
-  const activate = (r: Row, newTab = false) => {
+  /** 노트는 새 탭에 연다(이미 열린 노트면 Workspace 가 그 탭으로 간다) */
+  const activate = (r: Row) => {
     setFocused(rowKey(r));
-    if (r.kind === "node") actions.open(r.node, { newTab });
+    if (r.kind === "node") actions.open(r.node, { newTab: true });
     else if (r.kind === "attachments") toggle(rowKey(r));
     else actions.openAttachment(r.path);
   };
@@ -227,7 +228,7 @@ export const Tree = forwardRef<
     const ro = n.note !== null && readOnly(n.note);
     const isWs = !n.path.includes("/");
     return [
-      { label: t("common.open"), run: () => actions.open(n) },
+      { label: t("tree.openHere"), run: () => actions.open(n) },
       { label: t("tree.openNewTab"), keys: "Mod+Enter", run: () => actions.open(n, { newTab: true }) },
       ...(n.note ? [{ label: t("doc.openOther"), run: () => actions.openOther(n.note!) }] : []),
       "-",
@@ -300,7 +301,7 @@ export const Tree = forwardRef<
       case "Enter":
         if (!row) return;
         e.preventDefault();
-        activate(row, e.ctrlKey || e.metaKey);
+        activate(row);
         break;
       case "F2":
         if (!row || row.kind === "attachments") return;
@@ -498,7 +499,7 @@ export const Tree = forwardRef<
                 if (canExpand) toggle(n.path);
                 return;
               }
-              activate(r, e.ctrlKey || e.metaKey);
+              activate(r);
             }}
             onAuxClick={(e) => {
               if (e.button !== 1) return;
