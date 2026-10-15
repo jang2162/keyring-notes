@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Check,
   Columns2,
+  ExternalLink,
   Copy,
   Ellipsis,
   FilePlus,
@@ -85,6 +86,7 @@ import {
 } from "@keyring-notes/core";
 import { Properties } from "./Properties";
 import { PdfViewer } from "./PdfViewer";
+import { isTauri } from "@tauri-apps/api/core";
 import { localContext } from "./local/boot";
 import { useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
@@ -131,6 +133,7 @@ import {
 import {
   canSplit,
   closeIn,
+  dropTabAtEdge,
   emptyLayout,
   focusPane,
   isLayout,
@@ -153,6 +156,17 @@ const IDLE: SaveState = { kind: "idle" };
 
 /** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
 const SETTINGS_HASH = "#/:settings";
+
+/** 탭을 "새 창으로 열기"로 연 창(`?solo`): 그 노트 하나만 보이고, 칸 배치를 기억하지도 읽지도 않아 원래 창의 배치를 건드리지 않는다 */
+const SOLO = new URLSearchParams(location.search).has("solo");
+
+/** 그 노트 하나를 보여 줄 새 창 주소(같은 앱·같은 볼트) */
+function soloUrl(path: string): string {
+  const u = new URL(location.href);
+  u.searchParams.set("solo", "1");
+  u.hash = `#/${encodeURIComponent(path)}`;
+  return u.toString();
+}
 
 function pathFromLocation(): string | null {
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
@@ -198,9 +212,10 @@ function uniquePath(dir: string, stem: string, taken: string[], ext = ".md"): st
 }
 
 /** 이 기기에 기억하는 값(localStorage JSON). 모양이 맞지 않는 저장값(예전 형식 등)은 버리고 initial로 시작한다. */
-function useStored<T>(key: string, initial: T | (() => T), valid: (v: unknown) => v is T): [T, (v: T | ((p: T) => T)) => void] {
+function useStored<T>(key: string, initial: T | (() => T), valid: (v: unknown) => v is T, memoryOnly = false): [T, (v: T | ((p: T) => T)) => void] {
   const [v, setV] = useState<T>(() => {
     const init = () => (typeof initial === "function" ? (initial as () => T)() : initial);
+    if (memoryOnly) return init();
     try {
       const raw = localStorage.getItem(key);
       return raw === null ? init() : readStored(raw, init(), valid);
@@ -209,6 +224,7 @@ function useStored<T>(key: string, initial: T | (() => T), valid: (v: unknown) =
     }
   });
   useEffect(() => {
+    if (memoryOnly) return;
     try {
       localStorage.setItem(key, JSON.stringify(v));
     } catch {
@@ -319,6 +335,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; pane: number; path: string } | null>(null);
   /** 끌고 있는 탭을 놓을 수 있는 칸(탭 바 강조) */
   const [tabDrop, setTabDrop] = useState<number | null>(null);
+  /** 탭을 끄는 동안: 끌기 시작한 칸. 편집 영역 가장자리의 놓을 자리를 보인다 */
+  const [tabDragFrom, setTabDragFrom] = useState<number | null>(null);
+  /** 끌고 있는 탭이 올라간 가장자리 놓을 자리 */
+  const [edgeDrop, setEdgeDrop] = useState<"left" | "right" | null>(null);
   const [wsMenu, setWsMenu] = useState<{ x: number; y: number } | null>(null);
   const [cursors, setCursors] = useState([
     { line: 1, col: 1 },
@@ -366,6 +386,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       }
     },
     isRecordOf(isLayout),
+    SOLO,
   );
   useEffect(() => {
     try {
@@ -876,7 +897,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       const switching = !sc.allWs && !!target && target !== sc.ws;
       const key = switching ? scopeKeyOf(false, target) : sc.scopeKey;
       const before = layoutsRef.current[key] ?? NO_PANES;
-      const pane = switching ? Math.min(before.focused, Math.max(before.panes.length - 1, 0)) : (opts.pane ?? before.focused);
+      // 새 탭으로 열 때 이 칸에 없고 다른 칸에 이미 열려 있으면 새 탭을 만들지 않고 그 칸의 탭으로 간다
+      const elsewhere =
+        opts.newTab && opts.pane === undefined && !before.panes[before.focused]?.tabs.includes(path)
+          ? before.panes.findIndex((p) => p.tabs.includes(path))
+          : -1;
+      const pane = switching ? Math.min(before.focused, Math.max(before.panes.length - 1, 0)) : (opts.pane ?? (elsewhere >= 0 ? elsewhere : before.focused));
       if (!switching && pane === before.focused && before.panes[pane]?.active === path) return;
       // 읽은 문서를 저장소와 배치에 같은 틈에 넣는다(안 쓰는 문서 정리가 그 사이에 치우지 않게)
       const fresh = docsRef.current[path] ? null : await fetchDoc(path);
@@ -971,7 +997,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     void refreshTree();
-    const initial = pathFromLocation();
+    // 새 창(solo)은 설정 범위가 정해진 뒤 아래 효과가 연다(처음에는 범위가 아직 "*"일 수 있어 배치가 엉뚱한 범위에 들어간다)
+    const initial = SOLO ? null : pathFromLocation();
     if (initial) {
       setLayout((l) => openIn(l, l.panes.length ? l.focused : 0, initial, { newTab: true, mode: l.panes.length ? undefined : lastMode.current }));
       pushNav(initial);
@@ -979,6 +1006,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTree, load]);
+
+  // 새 창(`?solo`): 트리를 받은 뒤 그 노트 하나를 연다
+  const soloPath = useRef(SOLO ? pathFromLocation() : null);
+  useEffect(() => {
+    if (!treeLoaded || !soloPath.current) return;
+    const path = soloPath.current;
+    soloPath.current = null;
+    void open(path);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeLoaded]);
 
   // 칸이 보고 있는데 아직 읽지 않은 문서(새로고침 뒤 복원한 탭, 닫은 탭의 이웃, 워크스페이스를 바꾼 뒤)를 읽는다.
   // 트리를 받은 뒤에, 볼트에 있는 것만(사라진 탭은 트리 정리가 치운다)
@@ -2250,20 +2287,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         {[...w][0]}
       </span>
     );
-  const wsMenuAt = wsMenu ?? { x: 64, y: 64 };
   const wsMenuItems: MenuEntry[] = [
     ...wsNames.map((w) => ({ label: w, lead: wsLead(w), checked: !allWs && w === ws, run: () => void switchScope({ workspace: w, all: false }) })),
     "-",
     { label: t("ws.all"), icon: Layers, checked: allWs, run: () => void switchScope({ all: !allWs }) },
-    ...(ws && !allWs
-      ? [
-          {
-            label: wsIcon(ws) ? t("ws.changeIcon", { name: ws }) : t("ws.addIcon", { name: ws }),
-            icon: SmilePlus,
-            run: () => setIconPick({ ...wsMenuAt, node: ws }),
-          },
-        ]
-      : []),
     { label: t("ws.manage"), icon: SettingsIcon, run: () => openSettings("workspaces") },
   ];
 
@@ -2821,6 +2848,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setTabDrop(null)}
         onDrop={(e) => {
           setTabDrop(null);
+          setTabDragFrom(null);
           const raw = e.dataTransfer.getData(TAB_DRAG);
           if (!raw) return;
           e.preventDefault();
@@ -2843,8 +2871,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = "move";
                 e.dataTransfer.setData(TAB_DRAG, JSON.stringify({ pane, path: tp }));
+                setTabDragFrom(pane);
               }}
-              onDragEnd={() => setTabDrop(null)}
+              onDragEnd={() => {
+                setTabDrop(null);
+                setTabDragFrom(null);
+                setEdgeDrop(null);
+              }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setTabMenu({ x: e.clientX, y: e.clientY, pane, path: tp });
@@ -3009,6 +3042,17 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       </section>
     );
   };
+  /** 탭을 끄는 동안 놓을 수 있는 가장자리: 한 칸이면 양쪽(탭이 둘 이상일 때), 두 칸이면 반대쪽 칸으로 가는 쪽 */
+  const edgeSides: ("left" | "right")[] =
+    tabDragFrom === null || !canSplit(centerWidth, isNarrow)
+      ? []
+      : layout.panes.length === 1
+        ? layout.panes[0].tabs.length >= 2
+          ? ["left", "right"]
+          : []
+        : layout.panes.length === 2
+          ? [tabDragFrom === 1 ? "left" : "right"]
+          : [];
   const center = layout.panes.length ? (
     <div className={`split-root${two ? " two" : ""}`}>
       {renderPane(0)}
@@ -3057,6 +3101,29 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         )}
         <main className="center" ref={centerRef}>
           {center}
+          {edgeSides.map((side) => (
+            <div
+              key={side}
+              className={`edge-drop ${side}${edgeDrop === side ? " over" : ""}`}
+              aria-hidden
+              onDragOver={(e) => {
+                if (!e.dataTransfer.types.includes(TAB_DRAG)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (edgeDrop !== side) setEdgeDrop(side);
+              }}
+              onDragLeave={() => setEdgeDrop((s) => (s === side ? null : s))}
+              onDrop={(e) => {
+                const raw = e.dataTransfer.getData(TAB_DRAG);
+                setEdgeDrop(null);
+                setTabDragFrom(null);
+                if (!raw) return;
+                e.preventDefault();
+                const { pane: from, path } = JSON.parse(raw) as { pane: number; path: string };
+                setLayout((l) => dropTabAtEdge(l, from, path, side));
+              }}
+            />
+          ))}
         </main>
         {doc && ((rightOpen && !isNarrow) || drawer === "right") && (
           <>
@@ -3094,6 +3161,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                     },
                   ]
                 : []),
+              // 앱(Tauri) 웹뷰는 새 브라우저 창을 못 연다(창 만들기 권한·설정이 따로 필요) — 숨긴다
+              ...(isTauri()
+                ? []
+                : [
+                    {
+                      label: t("tab.newWindow"),
+                      icon: ExternalLink,
+                      run: () => void window.open(soloUrl(tabMenu.path), "_blank", "popup,width=960,height=720"),
+                    },
+                  ]),
             ]}
             onClose={() => setTabMenu(null)}
           />

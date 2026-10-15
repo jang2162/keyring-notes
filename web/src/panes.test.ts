@@ -8,6 +8,7 @@ import {
   type Layout,
   mergePanes,
   migrateLayouts,
+  dropTabAtEdge,
   moveTab,
   openIn,
   removePaths,
@@ -91,6 +92,35 @@ describe("칸 배치", () => {
       focused: 1,
     });
     expect(moveTab(two, 0, 0, "a")).toBe(two);
+  });
+
+  it("dropTabAtEdge: 한 칸이면 끌어 놓은 쪽에 새 칸을 만들고 탭이 하나뿐이면 그대로", () => {
+    const l = one(["a", "b", "c"], "b");
+    expect(dropTabAtEdge(l, 0, "b", "right")).toEqual({
+      panes: [
+        { tabs: ["a", "c"], active: "c", mode: "edit" },
+        { tabs: ["b"], active: "b", mode: "edit" },
+      ],
+      focused: 1,
+    });
+    expect(dropTabAtEdge(l, 0, "b", "left")).toEqual({
+      panes: [
+        { tabs: ["b"], active: "b", mode: "edit" },
+        { tabs: ["a", "c"], active: "c", mode: "edit" },
+      ],
+      focused: 0,
+    });
+    const solo = one(["a"], "a");
+    expect(dropTabAtEdge(solo, 0, "a", "left")).toBe(solo);
+    expect(dropTabAtEdge(emptyLayout(), 0, "a", "left")).toEqual(emptyLayout());
+  });
+
+  it("dropTabAtEdge: 두 칸이면 가장자리 쪽 칸으로 옮긴다(이미 거기 있으면 그대로)", () => {
+    const two = openIn(one(["a", "x"], "a"), 1, "b"); // [a x] | [b]
+    expect(dropTabAtEdge(two, 1, "b", "left")).toEqual(moveTab(two, 1, 0, "b"));
+    expect(dropTabAtEdge(two, 0, "a", "right")).toEqual(moveTab(two, 0, 1, "a"));
+    expect(dropTabAtEdge(two, 0, "a", "left")).toBe(two);
+    expect(dropTabAtEdge(two, 1, "b", "right")).toBe(two);
   });
 
   it("moveTab: 같은 칸으로 옮기거나 그 칸에 없는 탭이면 그대로", () => {

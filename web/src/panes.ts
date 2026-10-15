@@ -109,6 +109,20 @@ export function moveTab(l: Layout, from: number, to: number, path: string): Layo
   return openIn(closed, Math.min(target, closed.panes.length), path, { newTab: true, mode: l.panes[from].mode });
 }
 
+/**
+ * 탭을 편집 영역의 가장자리로 끌어 놓았을 때: 그쪽 칸으로 옮긴다. 칸이 하나면 그쪽에 새 칸을 만든다(탭이 하나뿐이면 그대로).
+ * 칸이 둘이면 왼쪽 가장자리는 0번 칸, 오른쪽은 1번 칸으로 옮기는 것과 같다.
+ */
+export function dropTabAtEdge(l: Layout, from: number, path: string, side: "left" | "right"): Layout {
+  const src = l.panes[from];
+  if (!src?.tabs.includes(path)) return l;
+  if (l.panes.length === 2) return moveTab(l, from, side === "left" ? 0 : 1, path);
+  if (l.panes.length !== 1 || src.tabs.length < 2) return l;
+  const rest = closeIn(l, 0, path).panes[0];
+  const moved: Pane = { tabs: [path], active: path, mode: src.mode };
+  return side === "left" ? { panes: [moved, rest], focused: 0 } : { panes: [rest, moved], focused: 1 };
+}
+
 export function mergePanes(l: Layout): Layout {
   if (l.panes.length < 2) return l;
   const [first, ...others] = l.panes;
