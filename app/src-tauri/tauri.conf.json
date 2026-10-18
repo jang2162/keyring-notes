@@ -36,7 +36,7 @@
       "requireLiteralLeadingDot": false
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxRTkzNThFNkUyRDVFRjYKUldUMlhpMXVqalhwc1YwVi9sc1hLdHZ3T3lWTWJ3OHRRSCtVUlZQdCt0NWJkT3ZaUHhpbkJ6NFcK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzMEExM0FCMzNERjA3RjAKUldUd0I5OHpxeE1LODloL1l1cFA4NmtuZTFyeWpMMmhkSEJKK0NqOU1OOThSNVpMQVVpVCsvUUEK",
       "endpoints": ["https://github.com/jang2162/keyring-notes/releases/latest/download/latest.json"],
       "requireSignedVersion": true
     }
