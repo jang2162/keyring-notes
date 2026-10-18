@@ -1004,6 +1004,7 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .migration-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow: auto; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 2px; }
 .migration-list code { font-size: var(--fs-sm); }
 .sync-settings section + section { margin-top: 18px; }
+.sync-settings + .update-settings { margin-top: 18px; }
 
 /* 접기: 에디터 ▸/▾(마우스를 올리면 보임), 접힌 자리 …, 미리보기 단추, 개요 */
 .editor .cm-gutters { margin-left: -22px; }
