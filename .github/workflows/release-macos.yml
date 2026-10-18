@@ -86,6 +86,17 @@ jobs:
           printf '%s' "$APPLE_API_PRIVATE_KEY_BASE64" | base64 --decode > "$key"
           echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
 
+      # Developer ID 인증서의 발급자(중간 인증서 G2)가 키체인에 없으면 서명 인증서가 무효로 잡혀 codesign 이 실패한다.
+      # 러너 이미지에 있는지 보장되지 않으므로 Apple 에서 받아 SHA-256 을 맞춘 뒤 시스템 키체인에 넣는다.
+      - name: Apple 중간 인증서(Developer ID G2)
+        if: env.RELEASE == 'true'
+        run: |
+          cer="$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          curl -fsSL --retry 3 -o "$cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          echo "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a  $cer" | shasum -a 256 -c -
+          sudo security add-certificates -k /Library/Keychains/System.keychain "$cer" || true
+          security find-certificate -c "Developer ID Certification Authority" /Library/Keychains/System.keychain > /dev/null
+
       # 인증서는 번들러가 무작위 임시 키체인에 넣고 끝나면 지운다(APPLE_CERTIFICATE·APPLE_CERTIFICATE_PASSWORD).
       # 공증 자격이 빠지면 번들러는 경고만 남기고 공증을 건너뛴다 — 그래서 아래 「서명·공증 검사」 가 따로 있다.
       # CI=true 이므로 DMG 의 Finder 꾸미기(AppleScript)는 건너뛴다(러너에서 Finder 를 부를 수 없다).
