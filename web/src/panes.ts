@@ -142,15 +142,17 @@ const isLegacyLayout = (v: unknown): v is LegacyLayout => {
 
 /**
  * 옛 keyring:panes(좌우 0~2칸) 원문 → 범위별 Layout. 두 칸이면 row 가지 하나, 비율은 옛 분할 비율(prefs.splitRatio).
- * 저장값이 없으면 null(더 옛 저장값을 옮길 차례), 모양이 틀리면 {}
+ * 저장값이 없으면 null(더 옛 저장값을 옮길 차례), JSON 범위 묶음이 아니면 {}. 모양이 틀린 범위는 그 범위만 버린다 —
+ * 옮긴 뒤 옛 키를 지우므로, 한 범위 때문에 통째로 버리면 다른 워크스페이스의 배치까지 사라진다
  */
 export function migrateLegacyPanes(raw: string | null, ratio: number): Record<string, Layout> | null {
   if (raw === null) return null;
   const v = parse(raw);
-  if (!isRecordOf(isLegacyLayout)(v)) return {};
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
   const r = ratio > 0 && ratio < 1 ? ratio : 0.5;
   const out: Record<string, Layout> = {};
   for (const [scope, l] of Object.entries(v)) {
+    if (!isLegacyLayout(l)) continue;
     const panes = l.panes.map((p, i): Pane => ({ id: `p${i + 1}`, tabs: [...p.tabs], active: p.active, mode: p.mode }));
     if (!panes.length) continue;
     const focused = panes[l.focused].id;
@@ -205,16 +207,33 @@ function without(n: LayoutNode, id: string): LayoutNode | null {
   return { dir: n.dir, children, sizes };
 }
 
-/** 칸을 뺀다. 포커스가 그 칸이었으면 읽는 순서로 바로 앞 칸(맨 앞이었으면 다음 칸) */
+const firstPane = (n: LayoutNode): Pane => (isSplit(n) ? firstPane(n.children[0]) : n);
+const lastPane = (n: LayoutNode): Pane => (isSplit(n) ? lastPane(n.children[n.children.length - 1]) : n);
+
+/**
+ * 칸 id 가 빠지면 그 자리를 차지하는 칸: 같은 가지의 뒤 형제(맨 뒤였으면 앞 형제), 형제가 가지면 빠진 칸에 맞닿은 쪽 끝 칸.
+ * 읽는 순서로 앞 칸을 고르면 [a | (b / c)] 에서 b 를 닫을 때 포커스가 a 로 건너뛴다 — 화면에서 b 자리를 채우는 것은 c 다
+ */
+function successorOf(n: LayoutNode, id: string): string | null {
+  if (!isSplit(n)) return null;
+  const i = n.children.findIndex((c) => !isSplit(c) && c.id === id);
+  if (i >= 0) {
+    const next = n.children[i + 1];
+    return next ? firstPane(next).id : lastPane(n.children[i - 1]).id;
+  }
+  for (const c of n.children) {
+    const s = successorOf(c, id);
+    if (s) return s;
+  }
+  return null;
+}
+
+/** 칸을 뺀다. 포커스가 그 칸이었으면 그 자리를 차지한 칸으로(successorOf) */
 export function removePane(l: Layout, id: string): Layout {
-  if (!l.root) return l;
-  const before = panesOf(l).map((p) => p.id);
-  const i = before.indexOf(id);
-  if (i < 0) return l;
+  if (!l.root || !paneOf(l, id)) return l;
   const root = without(l.root, id);
   if (!root) return emptyLayout();
-  const rest = before.filter((x) => x !== id);
-  return { root, focused: l.focused === id ? rest[Math.max(i - 1, 0)] : l.focused };
+  return { root, focused: l.focused === id ? (successorOf(l.root, id) ?? firstPane(root).id) : l.focused };
 }
 
 /**

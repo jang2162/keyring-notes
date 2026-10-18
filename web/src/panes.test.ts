@@ -85,10 +85,15 @@ describe("칸 배치: 처음 만들기와 저장값", () => {
     for (const l of Object.values(migrateLegacyPanes(raw, 0.3)!)) expect(isLayout(l)).toBe(true);
   });
 
-  it("migrateLegacyPanes: 저장값이 없으면 null, 모양이 틀리면 빈 객체, 비율이 범위 밖이면 반반", () => {
+  it("migrateLegacyPanes: 저장값이 없으면 null, JSON·범위 묶음이 아니면 빈 객체, 모양이 틀린 범위만 버린다, 비율이 범위 밖이면 반반", () => {
     expect(migrateLegacyPanes(null, 0.5)).toBeNull();
     expect(migrateLegacyPanes("{깨짐", 0.5)).toEqual({});
+    expect(migrateLegacyPanes("[]", 0.5)).toEqual({});
+    expect(migrateLegacyPanes("null", 0.5)).toEqual({});
     expect(migrateLegacyPanes('{"*":{"panes":"x","focused":0}}', 0.5)).toEqual({});
+    // 한 워크스페이스의 값이 틀려도 다른 워크스페이스의 배치는 옮긴다
+    const ok = { panes: [{ tabs: ["a"], active: "a", mode: "edit" }], focused: 0 };
+    expect(migrateLegacyPanes(JSON.stringify({ 업무: ok, 개인: { panes: [], focused: 3 } }), 0.5)).toEqual({ 업무: L(P("p1", ["a"], "a"), "p1") });
     // 세 칸은 옛 모양이 아니다
     const three = { panes: [P("", ["a"]), P("", ["b"]), P("", ["c"])].map(({ tabs, active, mode }) => ({ tabs, active, mode })), focused: 0 };
     expect(migrateLegacyPanes(JSON.stringify({ "*": three }), 0.5)).toEqual({});
@@ -171,12 +176,21 @@ describe("칸 배치: 탭 열기·닫기", () => {
     expect(r.sizes[1]).toBeCloseTo(2 / 3);
   });
 
-  it("removePane: 포커스가 빠진 칸이었으면 읽는 순서로 바로 앞 칸(맨 앞이면 다음 칸)", () => {
+  it("removePane: 포커스가 빠진 칸이었으면 그 자리를 차지한 형제 쪽 칸(뒤 형제, 맨 뒤였으면 앞 형제)으로", () => {
     const l = L(row([P("p1", ["a"]), P("p2", ["b"]), P("p3", ["c"])]), "p2");
-    expect(removePane(l, "p2").focused).toBe("p1");
+    expect(removePane(l, "p2").focused).toBe("p3");
     expect(removePane({ ...l, focused: "p1" }, "p1").focused).toBe("p2");
+    expect(removePane({ ...l, focused: "p3" }, "p3").focused).toBe("p2");
     expect(removePane({ ...l, focused: "p3" }, "p1").focused).toBe("p3");
     expect(removePane(l, "p9")).toBe(l);
+    // [a | (b / c)] 에서 b 를 닫으면 b 자리를 차지하는 것은 c(a 가 아니다)
+    const t = L(row([P("p1", ["a"]), col([P("p2", ["b"]), P("p3", ["c"])])]), "p2");
+    expect(removePane(t, "p2").focused).toBe("p3");
+    // 형제가 가지면 빠진 칸에 맞닿은 쪽 끝 칸: [(a / b) | c] 에서 c 를 닫으면 앞 형제의 마지막 칸 b
+    const u = L(row([col([P("p1", ["a"]), P("p2", ["b"])]), P("p3", ["c"])]), "p3");
+    expect(removePane(u, "p3").focused).toBe("p2");
+    // [a | (b / c)] 에서 a 를 닫으면 뒤 형제의 첫 칸 b
+    expect(removePane({ ...t, focused: "p1" }, "p1").focused).toBe("p2");
   });
 
   it("removePaths: 사라진 문서를 모든 칸에서 빼고 빈 칸을 없앤다", () => {
