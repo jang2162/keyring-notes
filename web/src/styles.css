@@ -106,11 +106,17 @@
 :root[data-theme="dark"] .cm-activeLine { background: #ffffff08 !important; }
 :root[data-theme="dark"] .cm-gutters { background: var(--bg-soft) !important; border-color: var(--border) !important; color: var(--muted) !important; }
 :root[data-theme="dark"] .cm-cursor { border-left-color: var(--fg) !important; }
+:root[data-theme="dark"] .cm-selectionBackground { background: rgb(122 162 247 / 0.22) !important; }
+:root[data-theme="dark"] .cm-editor.cm-focused .cm-selectionBackground { background: rgb(122 162 247 / 0.38) !important; }
+:root[data-theme="dark"] .cm-selectionMatch { background: rgb(122 162 247 / 0.16) !important; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .cm-editor { color-scheme: dark; }
   :root:not([data-theme="light"]) .cm-activeLine { background: #ffffff08 !important; }
   :root:not([data-theme="light"]) .cm-gutters { background: var(--bg-soft) !important; border-color: var(--border) !important; color: var(--muted) !important; }
   :root:not([data-theme="light"]) .cm-cursor { border-left-color: var(--fg) !important; }
+  :root:not([data-theme="light"]) .cm-selectionBackground { background: rgb(122 162 247 / 0.22) !important; }
+  :root:not([data-theme="light"]) .cm-editor.cm-focused .cm-selectionBackground { background: rgb(122 162 247 / 0.38) !important; }
+  :root:not([data-theme="light"]) .cm-selectionMatch { background: rgb(122 162 247 / 0.16) !important; }
 }
 
 * { box-sizing: border-box; }
