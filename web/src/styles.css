@@ -586,8 +586,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .shell.right-float .right-panel { position: fixed; top: 0; bottom: 0; right: 0; z-index: 30; width: min(var(--right-w), 90vw); box-shadow: 0 0 24px rgb(0 0 0 / 0.25); }
 .panel-backdrop { position: fixed; inset: 0; z-index: 29; background: rgb(0 0 0 / 0.3); }
 
-.rail { width: var(--rail-w); flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: var(--sp-2) 0; border-right: 1px solid var(--border); }
-.rail-top, .rail-bottom { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+/* 창 높이가 단추보다 낮으면 상태 바 위로 넘치지 않고 좌측 바 안에서 세로로 스크롤한다(폭이 좁아 스크롤 막대는 숨김) */
+.rail { width: var(--rail-w); flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: var(--sp-2) 0; border-right: 1px solid var(--border); overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
+.rail-top, .rail-bottom { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; }
 .rail-sep { width: 20px; height: 1px; background: var(--border); margin: var(--sp-1) 0; }
 .left-panel { width: var(--left-w); min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 
