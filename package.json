@@ -1,6 +1,6 @@
 {
   "name": "keyring-notes",
-  "version": "0.5.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,6 +14,8 @@
     "app:dev": "pnpm --filter @keyring-notes/app dev",
     "app:build": "pnpm --filter @keyring-notes/app build",
     "ruler:apply": "ruler apply",
+    "version:set": "node scripts/version.mjs set",
+    "version:check": "node scripts/version.mjs check",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
     "lint": "oxlint .",

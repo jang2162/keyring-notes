@@ -7,6 +7,7 @@ import { errorMessage, translate } from "@keyring-notes/core";
 import { ConflictError, ForbiddenError, KeyedError, NotFoundError, type Op } from "./vault.js";
 import { PathError } from "./paths.js";
 import { agentText, type AgentLang } from "./agentText.js";
+import { APP_VERSION } from "./version.js";
 
 const hash = z.string().regex(/^[0-9a-f]{64}$/, "sha256 hex");
 
@@ -57,7 +58,7 @@ async function runIn(fn: () => Promise<unknown>, lang: AgentLang): Promise<ToolR
 export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: AgentLang = "en"): McpServer {
   const T = agentText(lang);
   const run = (fn: () => Promise<unknown>) => runIn(fn, lang);
-  const server = new McpServer({ name: "keyring-notes", version: "0.7.0" }, { instructions: T.instructions });
+  const server = new McpServer({ name: "keyring-notes", version: APP_VERSION }, { instructions: T.instructions });
   const ro = { readOnlyHint: true, openWorldHint: false };
 
   server.registerTool("whoami", { description: T.tools.whoami, annotations: ro }, () => run(async () => scoped.whoami()));
