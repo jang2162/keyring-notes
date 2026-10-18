@@ -1053,11 +1053,11 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .icon-btn[aria-disabled="true"]:hover { background: transparent; color: var(--muted); }
 
 .rail.with-labels { --rail-w: 64px; }
-.icon-btn.with-label { flex-direction: column; width: 58px; height: auto; min-height: 40px; padding: 4px 2px; gap: 2px; }
+.icon-btn.with-label { flex-direction: column; width: 58px; height: auto; min-height: 46px; padding: 7px 2px; gap: 5px; }
 .icon-btn-label { font-size: 10px; line-height: 1.15; max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-switch { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 32px; min-height: 32px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft); color: var(--fg); font-weight: 600; }
 .ws-switch:hover { background: var(--hover); }
-.ws-switch.with-label { width: 58px; padding: 4px 2px; }
+.ws-switch.with-label { width: 58px; padding: 7px 2px; gap: 5px; }
 .ws-letter { font-size: var(--fs-md); text-transform: uppercase; }
 .ws-emoji { font-size: 16px; line-height: 1; }
 .panel-title-btn { border: none; background: transparent; padding: 2px 4px; margin-left: -4px; border-radius: var(--radius-sm); font-size: var(--fs-md); font-weight: 600; color: var(--fg); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
