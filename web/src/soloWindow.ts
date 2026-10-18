@@ -36,6 +36,8 @@ export async function openSolo(path: string, title: string): Promise<void> {
     height: 720,
     minWidth: 360,
     minHeight: 480,
+    // 켜 두면 Tauri 가 끌기를 가로채 탭 끌기 같은 HTML 끌어 놓기가 동작하지 않는다(메인 창은 tauri.conf.json)
+    dragDropEnabled: false,
   });
   await new Promise<void>((resolve, reject) => {
     void w.once("tauri://created", () => resolve());
