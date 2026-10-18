@@ -1,8 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
+  type MutableRefObject,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   BrushCleaning,
   CalendarDays,
   Check,
+  ArrowRightLeft,
   Columns2,
   ExternalLink,
   Copy,
@@ -24,6 +36,7 @@ import {
   Menu as MenuIcon,
   Pencil,
   RefreshCw,
+  Rows2,
   Search,
   Settings as SettingsIcon,
   SmilePlus,
@@ -86,7 +99,6 @@ import {
 } from "@keyring-notes/core";
 import { Properties } from "./Properties";
 import { PdfViewer } from "./PdfViewer";
-import { isTauri } from "@tauri-apps/api/core";
 import { localContext } from "./local/boot";
 import { useSyncStatus } from "./Sync";
 import { confirmDialog, promptDialog } from "./dialog";
@@ -131,26 +143,51 @@ import {
   type SaveState,
 } from "./openDocs";
 import {
-  canSplit,
+  canSplitRect,
+  clearActive,
   closeIn,
-  dropTabAtEdge,
+  dragSizes,
+  dropTab,
+  dropZone,
   emptyLayout,
   focusPane,
   isLayout,
-  MIN_PANE_WIDTH,
+  isSplit,
   mergePanes,
   migrateLayouts,
+  migrateLegacyPanes,
+  minExtent,
   moveTab,
+  neighborOf,
   openIn,
-  otherPaneShowing,
+  nodeAt,
+  otherPaneOf,
+  paneOf,
+  panesOf,
   removePaths,
   renamePath,
   rightPanelFloats,
   setMode as setPaneMode,
+  setSizes,
+  splitPane,
+  rectsOf,
+  handlesOf,
+  type SplitHandle,
+  type DropZone,
   type Layout,
+  type LayoutNode,
+  type Pane,
+  type Side,
   type ViewMode,
 } from "./panes";
 import { TabCountButton, TabSwitcher } from "./TabSwitcher";
+import { canOpenSolo, openSolo, SOLO } from "./soloWindow";
+
+/** 비율(0~1) → CSS 퍼센트 */
+const pct = (v: number) => `${(v * 100).toFixed(4)}%`;
+
+/** 칸 방향 → 단축키의 방향키 이름 */
+const ARROW: Record<Side, string> = { left: "ArrowLeft", right: "ArrowRight", top: "ArrowUp", bottom: "ArrowDown" };
 
 /** 칸이 없는 배치(매번 새 객체를 만들지 않게 하나만 둔다) */
 const NO_PANES: Layout = emptyLayout();
@@ -158,17 +195,6 @@ const IDLE: SaveState = { kind: "idle" };
 
 /** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
 const SETTINGS_HASH = "#/:settings";
-
-/** 탭을 "새 창으로 열기"로 연 창(`?solo`): 그 노트 하나만 보이고, 칸 배치를 기억하지도 읽지도 않아 원래 창의 배치를 건드리지 않는다 */
-const SOLO = new URLSearchParams(location.search).has("solo");
-
-/** 그 노트 하나를 보여 줄 새 창 주소(같은 앱·같은 볼트) */
-function soloUrl(path: string): string {
-  const u = new URL(location.href);
-  u.searchParams.set("solo", "1");
-  u.hash = `#/${encodeURIComponent(path)}`;
-  return u.toString();
-}
 
 function pathFromLocation(): string | null {
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
@@ -268,7 +294,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const narrow = () => window.matchMedia?.("(max-width: 800px)").matches ?? false;
   const [isNarrow, setIsNarrow] = useState(narrow);
   /** 좁은 화면의 열린 탭 목록을 보고 있는 칸 */
-  const [tabSheet, setTabSheet] = useState<number | null>(null);
+  const [tabSheet, setTabSheet] = useState<string | null>(null);
   useEffect(() => {
     const mq = window.matchMedia?.("(max-width: 800px)");
     if (!mq) return;
@@ -287,26 +313,25 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, []);
-  /** 가운데(main.center) 폭: 둘째 칸을 열 수 있는지, 칸 경계를 어디에 둘지 */
+  /** 가운데(main.center) 크기: 칸 경계를 끌 때 비율을 px 로 바꿔 칸마다 최소 크기를 지킨다 */
   const centerRef = useRef<HTMLElement>(null);
-  const [centerWidth, setCenterWidth] = useState(0);
-  const centerWidthRef = useRef(centerWidth);
-  centerWidthRef.current = centerWidth;
+  const [centerSize, setCenterSize] = useState({ w: 0, h: 0 });
   const isNarrowRef = useRef(isNarrow);
   isNarrowRef.current = isNarrow;
   useEffect(() => {
     const el = centerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => setCenterWidth(el.clientWidth));
+    const measure = () => setCenterSize((c) => (c.w === el.clientWidth && c.h === el.clientHeight ? c : { w: el.clientWidth, h: el.clientHeight }));
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    setCenterWidth(el.clientWidth);
+    measure();
     return () => ro.disconnect();
   }, []);
   /** 접힌 상태가 바뀔 때 올린다(미리보기·개요를 다시 맞춘다) */
   const [foldVersion, setFoldVersion] = useState(0);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
-  /** 칸마다 보고 있는 과거 판 */
-  const [revisions, setRevisions] = useState<(RevisionView | null)[]>([null, null]);
+  /** 칸(id)마다 보고 있는 과거 판 */
+  const [revisions, setRevisions] = useState<Record<string, RevisionView | null>>({});
   const revisionsRef = useRef(revisions);
   revisionsRef.current = revisions;
   const [query, setQuery] = useState("");
@@ -325,15 +350,23 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [searchMode, setSearchMode] = useState<"text" | "semantic">("text");
   /** 볼트 내용이 바뀔 때마다 올려 태그·백링크·위젯을 다시 불러온다. */
   const [vaultVersion, setVaultVersion] = useState(0);
-  /** 칸마다 에디터·칸 동작. 명령·패널은 활성 칸의 것을 쓴다 */
-  const paneHandles = [useRef<EditorHandle | null>(null), useRef<EditorHandle | null>(null)];
-  const paneApis = [useRef<PaneHandle | null>(null), useRef<PaneHandle | null>(null)];
-  /** 칸 요소. 보이는 에디터가 없는 칸(미리보기·과거 판 보기)으로 포커스를 옮길 때 이것에 준다 */
-  const paneEls = [useRef<HTMLElement>(null), useRef<HTMLElement>(null)];
+  /** 칸(id)마다 에디터·칸 동작. 명령·패널은 활성 칸의 것을 쓴다. 칸이 닫혀도 지우지 않는다 — 다시 생긴 같은 id 의 칸이 그린 뒤 다시 채운다 */
+  const paneRefs = useRef(
+    new Map<string, { handle: MutableRefObject<EditorHandle | null>; api: MutableRefObject<PaneHandle | null>; el: MutableRefObject<HTMLElement | null> }>(),
+  );
+  /** 칸 요소(el)는 보이는 에디터가 없는 칸(미리보기·과거 판 보기)으로 포커스를 옮길 때 쓴다 */
+  const refsOf = (id: string) => {
+    let r = paneRefs.current.get(id);
+    if (!r) {
+      r = { handle: { current: null }, api: { current: null }, el: { current: null } };
+      paneRefs.current.set(id, r);
+    }
+    return r;
+  };
   /** 활성 칸의 에디터 */
   const editorHandle = {
     get current() {
-      return paneHandles[curLayout().focused]?.current ?? null;
+      return paneRefs.current.get(curLayout().focused)?.handle.current ?? null;
     },
   };
   const treeRef = useRef<TreeHandle>(null);
@@ -344,18 +377,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [fileView, setFileView] = useState<string | null>(null);
   const [docMenu, setDocMenu] = useState<{ x: number; y: number } | null>(null);
   /** 탭 오른쪽 클릭 메뉴 */
-  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; pane: number; path: string } | null>(null);
-  /** 끌고 있는 탭을 놓을 수 있는 칸(탭 바 강조) */
-  const [tabDrop, setTabDrop] = useState<number | null>(null);
-  /** 탭을 끄는 동안: 끌기 시작한 칸. 편집 영역 가장자리의 놓을 자리를 보인다 */
-  const [tabDragFrom, setTabDragFrom] = useState<number | null>(null);
-  /** 끌고 있는 탭이 올라간 가장자리 놓을 자리 */
-  const [edgeDrop, setEdgeDrop] = useState<"left" | "right" | null>(null);
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; pane: string; path: string } | null>(null);
+  /** 탭을 끄는 동안: 끌기 시작한 칸과 탭. 칸마다 놓을 자리를 덮는다 */
+  const [tabDrag, setTabDrag] = useState<{ pane: string; path: string } | null>(null);
+  /** 끌고 있는 탭이 올라간 칸과 놓을 자리 */
+  const [dropAt, setDropAt] = useState<{ pane: string; zone: DropZone } | null>(null);
   const [wsMenu, setWsMenu] = useState<{ x: number; y: number } | null>(null);
-  const [cursors, setCursors] = useState([
-    { line: 1, col: 1 },
-    { line: 1, col: 1 },
-  ]);
+  /** 칸(id)마다 커서 줄·칸 */
+  const [cursors, setCursors] = useState<Record<string, { line: number; col: number }>>({});
   /** 제목 칸에 커서를 둘 문서(새 문서·F2). 문서가 열린 뒤 에디터보다 늦게 잡는다 */
   const [titleFocus, setTitleFocus] = useState<{ path: string; n: number } | null>(null);
   const focusTitle = (path: string) => setTitleFocus({ path, n: Date.now() });
@@ -385,14 +414,18 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   scopeRef.current = { allWs, ws, scopeKey };
   const inScope = (p: string) => !scope || inWorkspace(p, scope);
   /**
-   * 워크스페이스마다 칸 배치(칸·탭·보고 있는 문서·보기 모드, 이 기기). 처음에는 예전 탭 목록(keyring:tabs)과
-   * 마지막 문서(keyring:last-doc)를 옮겨 온다 — 모양이 달라 같은 키를 덮어쓰면 예전 판으로 돌아갈 때 깨진다.
+   * 워크스페이스마다 칸 배치(나눈 트리·칸마다 탭·보고 있는 문서·보기 모드·비율, 이 기기). 처음에는 옛 좌우 두 칸
+   * 배치(keyring:panes, 두 칸 비율은 prefs.splitRatio)를, 그것도 없으면 더 옛 탭 목록(keyring:tabs)과 마지막 문서
+   * (keyring:last-doc)를 옮겨 온다 — 모양이 달라 같은 키를 덮어쓰면 예전 판으로 돌아갈 때 깨진다.
    */
   const [layoutByScope, setLayoutByScope] = useStored<Record<string, Layout>>(
-    "keyring:panes",
+    "keyring:pane-tree",
     () => {
       try {
-        return migrateLayouts(localStorage.getItem("keyring:tabs"), localStorage.getItem("keyring:last-doc"), narrow() ? "preview" : "edit");
+        return (
+          migrateLegacyPanes(localStorage.getItem("keyring:panes"), prefs.splitRatio) ??
+          migrateLayouts(localStorage.getItem("keyring:tabs"), localStorage.getItem("keyring:last-doc"), narrow() ? "preview" : "edit")
+        );
       } catch {
         return {};
       }
@@ -401,7 +434,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     SOLO,
   );
   useEffect(() => {
+    // 새 창(solo)은 배치를 기억하지 않으므로 옮긴 결과도 남기지 않는다 — 여기서 지우면 원래 창의 옛 배치를 잃는다
+    if (SOLO) return;
     try {
+      localStorage.removeItem("keyring:panes");
       localStorage.removeItem("keyring:tabs");
       localStorage.removeItem("keyring:last-doc");
     } catch {
@@ -422,7 +458,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       const next = fn(cur);
       if (next === cur) return m;
       const out = { ...m, [key]: next };
-      if (!next.panes.length) delete out[key];
+      if (!next.root) delete out[key];
       return out;
     });
   /** 모든 워크스페이스의 배치를 같은 규칙으로 고친다(이동·삭제는 범위를 가리지 않는다) */
@@ -433,16 +469,18 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       for (const [k, l] of Object.entries(m)) {
         const next = fn(l);
         if (next !== l) changed = true;
-        if (next.panes.length) out[k] = next;
+        if (next.root) out[k] = next;
       }
       return changed ? out : m;
     });
   const setLayout = (fn: (l: Layout) => Layout) => setLayoutFor(scopeRef.current.scopeKey, fn);
   const curLayout = () => layoutsRef.current[scopeRef.current.scopeKey] ?? NO_PANES;
   const layout = layoutByScope[scopeKey] ?? NO_PANES;
-  const focusedPane = layout.panes[layout.focused] as Layout["panes"][number] | undefined;
+  /** 지금 배치의 칸들(읽는 순서) */
+  const panes = useMemo(() => panesOf(layout), [layout]);
+  const focusedPane = panes.find((p) => p.id === layout.focused);
   /** 지금 배치의 모든 칸의 탭 */
-  const allTabs = layout.panes.flatMap((p) => p.tabs);
+  const allTabs = panes.flatMap((p) => p.tabs);
   /** 활성 칸의 문서(오른쪽 패널·상태 표시줄·명령의 대상) */
   const entry = focusedPane?.active ? docs[focusedPane.active] : undefined;
   const doc: OpenDoc | null = entry?.doc ?? null;
@@ -453,25 +491,21 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     () => ({
       get current(): OpenDoc | null {
         const l = layoutsRef.current[scopeRef.current.scopeKey] ?? NO_PANES;
-        const p = l.panes[l.focused]?.active;
+        const p = paneOf(l, l.focused)?.active;
         return p ? (docsRef.current[p]?.doc ?? null) : null;
       },
     }),
     [],
   );
-  const revisionOf = (pane: number): RevisionView | null => {
+  const revisionOf = (pane: string): RevisionView | null => {
     const r = revisions[pane];
-    return r && r.path === layout.panes[pane]?.active ? r : null;
+    return r && r.path === paneOf(layout, pane)?.active ? r : null;
   };
   const revision = revisionOf(layout.focused);
   const revisionRef = useRef(revision);
   revisionRef.current = revision;
-  const setRevision = (r: RevisionView | null) =>
-    setRevisions((rs) => {
-      const next = [...rs];
-      next[curLayout().focused] = r;
-      return next;
-    });
+  const setPaneRevision = (pane: string, r: RevisionView | null) => setRevisions((rs) => (rs[pane] === r ? rs : { ...rs, [pane]: r }));
+  const setRevision = (r: RevisionView | null) => setPaneRevision(curLayout().focused, r);
   /** 칸에 새로 만들 때의 보기 모드: 마지막으로 쓴 것(처음에는 좁은 화면이면 미리보기) */
   const lastMode = useRef<ViewMode>(narrow() ? "preview" : "edit");
   if (focusedPane) lastMode.current = focusedPane.mode;
@@ -480,7 +514,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   modeRef.current = mode;
   const setFocusedMode = (m: ViewMode | ((m: ViewMode) => ViewMode)) =>
     setLayout((l) => {
-      const cur = l.panes[l.focused]?.mode ?? lastMode.current;
+      const cur = paneOf(l, l.focused)?.mode ?? lastMode.current;
       return setPaneMode(l, l.focused, typeof m === "function" ? m(cur) : m);
     });
 
@@ -519,7 +553,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       ),
     );
     // 지금 보고 있는 노트·저장 안 한 탭(오프라인에서 만든 것 포함)은 남긴다
-    const shown = new Set(curLayout().panes.map((p) => p.active));
+    const shown = new Set(panesOf(curLayout()).map((p) => p.active));
     const keep = (p: string) => shown.has(p) || (!!docsRef.current[p] && isDirty(docsRef.current[p]));
     const alive = (p: string) => files.has(p) || dirs.has(stripMd(p)) || keep(p);
     setAllLayouts((l) => removePaths(l, (p) => !alive(p)));
@@ -724,7 +758,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const d = await fetchDoc(path).finally(() => loadingRef.current.delete(path));
     if (!d) return false;
     updateDocs((s) => upsertDoc(s, d));
-    setRevisions((rs) => (rs.some((r) => r?.path === path) ? rs.map((r) => (r?.path === path ? null : r)) : rs));
+    setRevisions((rs) => (Object.values(rs).some((r) => r?.path === path) ? Object.fromEntries(Object.entries(rs).filter(([, r]) => r?.path !== path)) : rs));
     remember(path);
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -735,7 +769,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const setDocSave = (path: string, save: SaveState) => updateDocs((s) => setStoreSave(s, path, save));
 
   /** 어느 칸이든 그 문서를 과거 판으로 보는 중인가(그동안은 저장하지 않는다) */
-  const viewingRevision = (path: string) => curLayout().panes.some((p, i) => p.active === path && revisionsRef.current[i]?.path === path);
+  const viewingRevision = (path: string) => panesOf(curLayout()).some((p) => p.active === path && revisionsRef.current[p.id]?.path === path);
 
   // ── 저장(자동 저장 포함). 문서마다 따로 돈다. 늘 지금 저장소(docsRef)를 읽어 오래된 값으로 덮어쓰지 않는다
   const savingRef = useRef(new Set<string>());
@@ -895,11 +929,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /**
    * 문서 열기. 탭: 그 칸에 이미 열린 탭이면 그 탭으로, newTab이면 새 탭에, 아니면 그 칸의 지금 탭을 바꾼다.
-   * 바꿔친 문서의 저장 안 한 초안은 저장소에 남고 자동 저장이 이어진다. pane 은 열 칸(기본은 활성 칸, 칸 수와 같으면 새 칸).
+   * 바꿔친 문서의 저장 안 한 초안은 저장소에 남고 자동 저장이 이어진다. pane 은 열 칸의 id(기본은 활성 칸).
    * 다른 워크스페이스의 문서면(모든 워크스페이스 보기가 아닐 때) 그 워크스페이스로 바꾼다.
    */
   const open = useCallback(
-    async (path: string, opts: { newTab?: boolean; noHistory?: boolean; pane?: number } = {}) => {
+    async (path: string, opts: { newTab?: boolean; noHistory?: boolean; pane?: string } = {}) => {
       if (/\.pdf$/i.test(path)) return setPdfView({ path });
       if (!/\.md$/i.test(path)) return setFileView(path);
       if (settingsFromLocation()) closeSettings(false);
@@ -909,13 +943,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       const switching = !sc.allWs && !!target && target !== sc.ws;
       const key = switching ? scopeKeyOf(false, target) : sc.scopeKey;
       const before = layoutsRef.current[key] ?? NO_PANES;
+      const beforePanes = panesOf(before);
       // 새 탭으로 열 때 이 칸에 없고 다른 칸에 이미 열려 있으면 새 탭을 만들지 않고 그 칸의 탭으로 간다
       const elsewhere =
-        opts.newTab && opts.pane === undefined && !before.panes[before.focused]?.tabs.includes(path)
-          ? before.panes.findIndex((p) => p.tabs.includes(path))
-          : -1;
-      const pane = switching ? Math.min(before.focused, Math.max(before.panes.length - 1, 0)) : (opts.pane ?? (elsewhere >= 0 ? elsewhere : before.focused));
-      if (!switching && pane === before.focused && before.panes[pane]?.active === path) return;
+        opts.newTab && opts.pane === undefined && !paneOf(before, before.focused)?.tabs.includes(path)
+          ? beforePanes.find((p) => p.tabs.includes(path))?.id
+          : undefined;
+      const pane = switching ? before.focused : (opts.pane ?? elsewhere ?? before.focused);
+      if (!switching && pane === before.focused && paneOf(before, pane)?.active === path) return;
       // 읽은 문서를 저장소와 배치에 같은 틈에 넣는다(안 쓰는 문서 정리가 그 사이에 치우지 않게)
       const fresh = docsRef.current[path] ? null : await fetchDoc(path);
       if (!docsRef.current[path] && !fresh) return;
@@ -924,7 +959,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         setPrefs({ workspace: target! });
         scopeRef.current = { allWs: false, ws: target!, scopeKey: key };
       }
-      setLayoutFor(key, (l) => openIn(l, pane, path, { newTab: switching || opts.newTab, mode: l.panes.length ? undefined : lastMode.current }));
+      setLayoutFor(key, (l) => openIn(l, pane, path, { newTab: switching || opts.newTab, mode: l.root ? undefined : lastMode.current }));
       remember(path);
       if (!opts.noHistory) pushNav(path);
     },
@@ -934,21 +969,66 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const openRef = useRef(open);
   openRef.current = open;
 
-  /** 활성 칸이 아닌 칸(칸이 하나면 새로 만들 둘째 칸) */
-  const otherPane = () => {
-    const l = curLayout();
-    return l.panes.length === 2 ? 1 - l.focused : l.panes.length;
+  /** 그 칸을 side 쪽으로 나눌 수 있는가: 칸의 지금 크기(그려진 요소)로 잰다 */
+  const canSplitPane = (pane: string, side: Side) => {
+    const el = paneRefs.current.get(pane)?.el.current;
+    return !!el && canSplitRect(el.clientWidth, el.clientHeight, side, isNarrowRef.current);
   };
-  /** 다른 칸에 새 탭으로 연다. 가운데가 좁아 나눌 수 없으면 같은 칸의 새 탭으로 */
-  const openOther = (path: string) =>
-    canSplit(centerWidthRef.current, isNarrowRef.current) ? open(path, { pane: otherPane(), newTab: true }) : open(path, { newTab: true });
-  /** 활성 탭을 다른 칸으로(칸이 하나면 둘째 칸을 만든다) */
+  /** 칸을 side 쪽으로 나눠 path 를 연다(나눌 자리가 없으면 false) */
+  const splitWith = (pane: string, side: Side, path: string) => {
+    if (!canSplitPane(pane, side)) return false;
+    setLayout((l) => splitPane(l, pane, side, path));
+    return true;
+  };
+  /** 다른 칸에 새 탭으로 연다. 칸이 하나면 오른쪽으로 나누고, 나눌 수 없으면 같은 칸의 새 탭으로 */
+  const openOther = async (path: string) => {
+    const l = curLayout();
+    const other = otherPaneOf(l, l.focused);
+    if (other) return open(path, { pane: other, newTab: true });
+    if (!l.root || !canSplitPane(l.focused, "right")) return open(path, { newTab: true });
+    // 읽은 뒤에 나눈다(못 읽으면 칸을 만들지 않는다)
+    if (!docsRef.current[path]) {
+      const fresh = await fetchDoc(path);
+      if (!fresh) return;
+      if (!docsRef.current[path]) updateDocs((s) => upsertDoc(s, fresh));
+    }
+    splitWith(l.focused, "right", path);
+    remember(path);
+    pushNav(path);
+  };
+  /** 활성 탭을 다른 칸으로(칸이 하나면 오른쪽으로 나눠 옮긴다) */
   const moveActiveTabOther = () => {
     const l = curLayout();
-    const active = l.panes[l.focused]?.active;
-    if (!active || (l.panes.length < 2 && !canSplit(centerWidthRef.current, isNarrowRef.current))) return;
-    const to = otherPane();
-    setLayout((x) => moveTab(x, x.focused, to, active));
+    const active = paneOf(l, l.focused)?.active;
+    if (!active) return;
+    const other = otherPaneOf(l, l.focused);
+    if (other) setLayout((x) => moveTab(x, x.focused, other, active));
+    else if (canSplitPane(l.focused, "right")) setLayout((x) => dropTab(x, x.focused, active, x.focused, "right"));
+  };
+  /** 활성 탭을 side 쪽 이웃 칸으로. 그쪽에 칸이 없으면 그쪽으로 나눠 옮긴다(탭이 둘 이상일 때) */
+  const moveActiveTabTo = (side: Side) => {
+    const l = curLayout();
+    const active = paneOf(l, l.focused)?.active;
+    if (!active) return;
+    const n = neighborOf(l, l.focused, side);
+    if (n) setLayout((x) => moveTab(x, x.focused, n, active));
+    else if (canSplitPane(l.focused, side)) setLayout((x) => dropTab(x, x.focused, active, x.focused, side));
+  };
+  /**
+   * 칸으로 포커스를 옮긴다. 보이는 에디터가 없는 칸(미리보기·과거 판 보기)은 칸 요소에 포커스를 준다 — 숨은(display:none)
+   * 에디터는 focus() 가 무시돼 포커스가 이전 칸의 에디터에 남고, 활성 칸은 바뀌었는데 키 입력은 이전 칸으로 들어간다
+   */
+  const focusPaneEl = (pane: string) => {
+    const l = curLayout();
+    const p = paneOf(l, pane);
+    if (!p) return;
+    setLayout((x) => focusPane(x, pane));
+    const editorHidden = p.mode === "preview" || revisionsRef.current[pane]?.path === p.active;
+    setTimeout(() => {
+      const r = paneRefs.current.get(pane);
+      if (editorHidden) r?.el.current?.focus();
+      else r?.handle.current?.focus();
+    }, 0);
   };
 
   /** 노드 열기: 노트가 있으면 그 노트, 없으면 빈 노드(쓰면 노트가 생긴다) */
@@ -966,8 +1046,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   /** 그 칸의 탭 닫기. 닫는 탭에 저장 안 한 변경이 있으면 저장(자동 저장)하거나 묻는다(다른 칸에도 열려 있으면 그냥 닫는다) */
-  const closeTab = async (pane: number, path: string) => {
-    const elsewhere = curLayout().panes.some((p, i) => i !== pane && p.tabs.includes(path));
+  const closeTab = async (pane: string, path: string) => {
+    const elsewhere = panesOf(curLayout()).some((p) => p.id !== pane && p.tabs.includes(path));
     let discard = false;
     if (!elsewhere && docsRef.current[path] && isDirty(docsRef.current[path])) {
       await flush([path]);
@@ -1003,7 +1083,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     setDrawer(null);
     if (cur && (all || inWorkspace(cur.path, wsName)))
       setLayoutFor(key, (l) =>
-        l.panes[l.focused]?.active === cur.path ? l : openIn(l, l.focused, cur.path, { newTab: true, mode: l.panes.length ? undefined : lastMode.current }),
+        paneOf(l, l.focused)?.active === cur.path ? l : openIn(l, l.focused, cur.path, { newTab: true, mode: l.root ? undefined : lastMode.current }),
       );
   };
 
@@ -1012,7 +1092,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // 새 창(solo)은 설정 범위가 정해진 뒤 아래 효과가 연다(처음에는 범위가 아직 "*"일 수 있어 배치가 엉뚱한 범위에 들어간다)
     const initial = SOLO ? null : pathFromLocation();
     if (initial) {
-      setLayout((l) => openIn(l, l.panes.length ? l.focused : 0, initial, { newTab: true, mode: l.panes.length ? undefined : lastMode.current }));
+      setLayout((l) => openIn(l, l.focused, initial, { newTab: true, mode: l.root ? undefined : lastMode.current }));
       pushNav(initial);
       void load(initial);
     }
@@ -1033,7 +1113,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   // 트리를 받은 뒤에, 볼트에 있는 것만(사라진 탭은 트리 정리가 치운다)
   useEffect(() => {
     if (!treeLoaded) return;
-    for (const p of layout.panes) {
+    for (const p of panes) {
       const path = p.active;
       if (!path || docs[path] || loadingRef.current.has(path)) continue;
       if (!resolver.paths.includes(path) && !nodeExists(stripMd(path), resolver.paths)) continue;
@@ -1044,28 +1124,20 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   // 어느 칸에도(어느 워크스페이스에도) 없는 문서는 저장소에서 치운다. 저장 안 한 것은 저장될 때까지 남긴다
   useEffect(() => {
-    const inUse = (p: string) => Object.values(layoutsRef.current).some((l) => l.panes.some((pn) => pn.tabs.includes(p)));
+    const inUse = (p: string) => Object.values(layoutsRef.current).some((l) => panesOf(l).some((pn) => pn.tabs.includes(p)));
     updateDocs((s) => dropUnused(s, inUse));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs, layoutByScope]);
 
-  // 좁은 화면(800px 이하)이 되거나 가운데가 두 칸을 담지 못하면(560px 미만) 한 칸으로 합친다.
-  // 둘째 칸의 탭은 첫째 칸 뒤에 붙고 초안은 저장소에 그대로 있다. 다시 넓어져도 저절로 나누지 않는다
-  useEffect(() => {
-    // 폭을 아직 재지 않았으면(처음 그릴 때 0) 기다린다
-    if (layout.panes.length < 2 || centerWidth === 0 || canSplit(centerWidth, isNarrow)) return;
-    const f = layout.focused;
-    setRevisions((rs) => [rs[f] ?? null, null]);
-    setCursors((cs) => [cs[f] ?? cs[0], { line: 1, col: 1 }]);
-    setLayout(mergePanes);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNarrow, centerWidth, layout.panes.length]);
+  // 좁은 화면(800px 이하)이나 칸이 최소보다 작아질 만큼 좁은 창에서도 배치는 고치지 않는다 — 좁은 화면은 포커스된 칸만
+  // 그리고(renderNode), 다시 넓히면 나눈 배치가 그대로 돌아온다
 
-  // 칸이 다른 문서로 바뀌면 그 칸의 과거 판 보기를 닫는다
+  // 칸이 다른 문서로 바뀌거나 사라지면 그 칸의 과거 판 보기를 닫는다
   useEffect(() => {
-    setRevisions((rs) =>
-      rs.some((r, i) => r && r.path !== layout.panes[i]?.active) ? rs.map((r, i) => (r && r.path === layout.panes[i]?.active ? r : null)) : rs,
-    );
+    setRevisions((rs) => {
+      const keep = Object.entries(rs).filter(([id, r]) => r && r.path === paneOf(layout, id)?.active);
+      return keep.length === Object.keys(rs).length ? rs : Object.fromEntries(keep);
+    });
   }, [layout]);
 
   // 주소는 활성 칸의 문서를 따른다(설정 화면이 열려 있을 때는 그대로)
@@ -1775,7 +1847,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
 
   /** 그 칸이 보고 있는 과거 판으로 되돌린다 */
-  const rollback = async (pane: number) => {
+  const rollback = async (pane: string) => {
     const rev = revisionOf(pane);
     const d = rev ? docsRef.current[rev.path]?.doc : undefined;
     if (!rev || !d) return;
@@ -1809,7 +1881,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         if (anchor) setPendingAnchor({ path: target, ...anchor });
         return void openOther(target);
       }
-      if (anchor && target === doc?.path) paneApis[curLayout().focused].current?.scrollToAnchor(anchor);
+      if (anchor && target === doc?.path) paneRefs.current.get(curLayout().focused)?.api.current?.scrollToAnchor(anchor);
       else {
         if (anchor) setPendingAnchor({ path: target, ...anchor });
         void open(target);
@@ -1976,7 +2048,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         void (async () => {
           await flush();
           // 탭은 그대로 두고 활성 칸에서 보던 문서만 내린다
-          setLayout((l) => ({ ...l, panes: l.panes.map((p, i) => (i === l.focused ? { ...p, active: null } : p)) }));
+          setLayout((l) => clearActive(l, l.focused));
           closeSettings(false);
         })(),
     },
@@ -2054,7 +2126,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       webKeys: `Alt+${i + 1}`,
       hidden: true,
       run: () => {
-        const list = curLayout().panes[curLayout().focused]?.tabs ?? [];
+        const list = paneOf(curLayout(), curLayout().focused)?.tabs ?? [];
         const p = i === 8 ? list[list.length - 1] : list[i];
         if (p) void open(p);
       },
@@ -2069,34 +2141,41 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { id: "mode-edit", group: g.view, label: t("cmd.modeEdit"), run: () => setFocusedMode("edit") },
     { id: "mode-split", group: g.view, label: t("cmd.modeSplit"), run: () => setFocusedMode("split") },
     { id: "mode-preview", group: g.view, label: t("cmd.modePreview"), run: () => setFocusedMode("preview") },
-    {
-      id: "split",
+    // 칸 나누기·옮기기. 키는 docs/superpowers/plans/2026-10-19-pane-splits.md 「단축키(빌더 결정)」 — Mod+K 묶음은 에디터의
+    // 링크 넣기(Mod-k)와 겹치고, Mod+Alt+방향키는 뒤로·앞으로와 CodeMirror 커서 추가가 쓴다
+    // 나누면 활성 탭을 새 칸에도 연다(Zed 처럼 같은 노트가 두 칸에 보인다)
+    { id: "split", group: g.view, label: t("cmd.splitRight"), keys: "Mod+\\", run: () => splitFocused("right") },
+    { id: "split-down", group: g.view, label: t("cmd.splitDown"), keys: "Mod+Shift+\\", run: () => splitFocused("bottom") },
+    ...(["left", "right", "top", "bottom"] as const).map((side) => ({
+      id: `focus-pane-${side}`,
       group: g.view,
-      label: layout.panes.length === 2 ? t("cmd.splitClose") : t("cmd.splitOpen"),
-      keys: "Mod+\\",
+      label: t(`cmd.focusPane.${side}`),
+      keys: `Mod+Alt+Shift+${ARROW[side]}`,
       run: () => {
-        if (curLayout().panes.length === 2) return setLayout(mergePanes);
-        const cur = docRef.current;
-        if (cur && canSplit(centerWidthRef.current, isNarrowRef.current)) void open(cur.path, { pane: 1, newTab: true });
+        const n = neighborOf(curLayout(), curLayout().focused, side);
+        if (n) focusPaneEl(n);
       },
-    },
-    { id: "move-tab-other", group: g.tab, label: t("cmd.moveTabOther"), keys: "Mod+Shift+.", run: () => moveActiveTabOther() },
+    })),
     {
       id: "focus-other-pane",
       group: g.view,
       label: t("cmd.focusOtherPane"),
       keys: "Mod+Shift+,",
       run: () => {
-        const l = curLayout();
-        if (l.panes.length < 2) return;
-        const other = 1 - l.focused;
-        setLayout((x) => focusPane(x, other));
-        // 보이는 에디터가 없는 칸(미리보기·과거 판 보기)은 칸 요소에 포커스를 준다 — 숨은(display:none) 에디터는 focus() 가
-        // 무시돼 포커스가 이전 칸의 에디터에 남고, 활성 칸은 바뀌었는데 키 입력은 이전 칸으로 들어간다
-        const editorHidden = l.panes[other].mode === "preview" || !!revisionOf(other);
-        setTimeout(() => (editorHidden ? paneEls[other].current?.focus() : paneHandles[other].current?.focus()), 0);
+        const other = otherPaneOf(curLayout(), curLayout().focused);
+        if (other) focusPaneEl(other);
       },
     },
+    { id: "merge-panes", group: g.view, label: t("cmd.mergePanes"), run: () => setLayout(mergePanes) },
+    { id: "move-tab-other", group: g.tab, label: t("cmd.moveTabOther"), keys: "Mod+Shift+.", run: () => moveActiveTabOther() },
+    // Windows·Linux 는 Ctrl 이 Mod 와 같아 남는 방향키 조합이 없어 기본 키를 두지 않는다(설정에서 지정)
+    ...(["left", "right", "top", "bottom"] as const).map((side) => ({
+      id: `move-tab-${side}`,
+      group: g.tab,
+      label: t(`cmd.moveTab.${side}`),
+      macKeys: `Mod+Ctrl+${ARROW[side]}`,
+      run: () => moveActiveTabTo(side),
+    })),
     // 패널 키는 접기 기본 키(Ctrl+Alt+[ 등, CodeMirror foldKeymap)와 겹치지 않게
     { id: "left", group: g.view, label: t("cmd.left"), keys: "Mod+Shift+E", run: toggleLeft },
     { id: "right", group: g.view, label: t("cmd.right"), keys: "Mod+Alt+B", run: () => toggleRight() },
@@ -2142,8 +2221,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return k ? `${label} (${formatCombo(k)})` : label;
   };
 
+  /** 활성 칸을 side 쪽으로 나눠 활성 탭을 새 칸에도 연다 */
+  function splitFocused(side: Side) {
+    const l = curLayout();
+    const cur = paneOf(l, l.focused)?.active;
+    if (cur) splitWith(l.focused, side, cur);
+  }
+
   function cycleTab(dir: number) {
-    const list = curLayout().panes[curLayout().focused]?.tabs ?? [];
+    const list = paneOf(curLayout(), curLayout().focused)?.tabs ?? [];
     if (list.length < 2 || !docRef.current) return;
     const i = list.indexOf(docRef.current.path);
     void open(list[(i + dir + list.length) % list.length]);
@@ -2657,7 +2743,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 <button
                   onClick={() => {
                     editorHandle.current?.gotoLine(h.line);
-                    paneApis[layout.focused].current?.scrollToAnchor({ heading: h.text.toLowerCase() });
+                    paneRefs.current.get(layout.focused)?.api.current?.scrollToAnchor({ heading: h.text.toLowerCase() });
                   }}
                 >
                   {h.text}
@@ -2737,7 +2823,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           },
         },
         "-",
-        { label: t("doc.openOther"), icon: Columns2, keys: keyOf("split"), run: () => void openOther(doc.path) },
+        { label: t("doc.openOther"), icon: Columns2, run: () => void openOther(doc.path) },
         { label: t("cmd.modeSplit"), run: () => setFocusedMode("split") },
         {
           label: t("cmd.reveal"),
@@ -2818,7 +2904,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           </span>
           {mode !== "preview" && !revision && (
             <span className="status-item muted">
-              {cursors[layout.focused].line}:{cursors[layout.focused].col}
+              {cursors[layout.focused]?.line ?? 1}:{cursors[layout.focused]?.col ?? 1}
             </span>
           )}
           <button
@@ -2835,10 +2921,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /** 탭을 끌어 옮길 때 dataTransfer 에 싣는 형식(트리의 끌기와 섞이지 않게 따로) */
   const TAB_DRAG = "application/x-keyring-tab";
-  /** 칸 하나의 탭 바(칸이 없으면 빈 탭 바). 칸이 둘이면 탭을 끌어 다른 칸의 탭 바에 놓아 옮긴다 */
-  const renderTabBar = (pane: number) => (
+  /** 칸 하나의 탭 바(칸이 없으면 빈 탭 바). 탭을 끌어 다른 칸(가운데·가장자리)에 놓아 옮기거나 나눈다 — 놓을 자리는 renderDropZone */
+  const renderTabBar = (pane: Pane | null, withNav: boolean) => (
     <nav className="tabbar" aria-label={t("tab.label")}>
-      {pane === 0 && (
+      {withNav && (
         <IconButton
           className="nav-toggle"
           icon={MenuIcon}
@@ -2847,31 +2933,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           size={18}
         />
       )}
-      <div
-        className={`tab-list${tabDrop === pane ? " drop-target" : ""}`}
-        role="tablist"
-        onDragOver={(e) => {
-          // 끌기로는 칸을 새로 만들지 않는다(칸이 둘일 때만)
-          if (layout.panes.length < 2 || !e.dataTransfer.types.includes(TAB_DRAG)) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          if (tabDrop !== pane) setTabDrop(pane);
-        }}
-        onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setTabDrop(null)}
-        onDrop={(e) => {
-          setTabDrop(null);
-          setTabDragFrom(null);
-          const raw = e.dataTransfer.getData(TAB_DRAG);
-          if (!raw) return;
-          e.preventDefault();
-          const { pane: from, path } = JSON.parse(raw) as { pane: number; path: string };
-          if (from !== pane) setLayout((l) => moveTab(l, from, pane, path));
-        }}
-      >
-        {(layout.panes[pane]?.tabs ?? []).map((tp) => {
+      <div className="tab-list" role="tablist">
+        {(pane?.tabs ?? []).map((tp) => {
           const cached = docs[tp]?.doc;
           const tabDirty = !!cached && cached.draft !== cached.saved;
-          const on = tp === layout.panes[pane]?.active;
+          const on = tp === pane?.active;
           return (
             <span
               key={tp}
@@ -2881,21 +2947,28 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               aria-selected={on}
               draggable
               onDragStart={(e) => {
+                if (!pane) return;
                 e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData(TAB_DRAG, JSON.stringify({ pane, path: tp }));
-                setTabDragFrom(pane);
+                e.dataTransfer.setData(TAB_DRAG, JSON.stringify({ pane: pane.id, path: tp }));
+                // 놓을 자리는 다음 틱에 덮는다 — dragstart 안에서 포인터 밑에 요소를 그리면 브라우저가 끌기를 바로 끝낸다
+                const from = { pane: pane.id, path: tp };
+                setTimeout(() => setTabDrag(from), 0);
               }}
               onDragEnd={() => {
-                setTabDrop(null);
-                setTabDragFrom(null);
-                setEdgeDrop(null);
+                setTabDrag(null);
+                setDropAt(null);
               }}
               onContextMenu={(e) => {
+                if (!pane) return;
                 e.preventDefault();
-                setTabMenu({ x: e.clientX, y: e.clientY, pane, path: tp });
+                setTabMenu({ x: e.clientX, y: e.clientY, pane: pane.id, path: tp });
               }}
             >
-              <button className="tab-name" onClick={() => void open(tp, { pane })} onAuxClick={(e) => e.button === 1 && void closeTab(pane, tp)}>
+              <button
+                className="tab-name"
+                onClick={() => void open(tp, { pane: pane?.id })}
+                onAuxClick={(e) => e.button === 1 && pane && void closeTab(pane.id, tp)}
+              >
                 <DocIcon icon={iconOf(tp)} />
                 {docLabel(tp)}
               </button>
@@ -2904,7 +2977,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 className="tab-close"
                 aria-label={t("tab.closeName", { name: stemOf(tp) })}
                 {...tipProps({ label: t("cmd.closeTab"), keys: keyOf("close-tab") })}
-                onClick={() => void closeTab(pane, tp)}
+                onClick={() => pane && void closeTab(pane.id, tp)}
               >
                 <X size={13} aria-hidden />
               </button>
@@ -2923,7 +2996,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         size={16}
       />
       {/* 좁은 화면은 탭 줄 대신 탭 개수 단추로 열린 탭 목록을 연다(넓은 화면에서는 CSS 가 숨긴다) */}
-      <TabCountButton count={layout.panes[pane]?.tabs.length ?? 0} onClick={() => setTabSheet(pane)} />
+      <TabCountButton count={pane?.tabs.length ?? 0} onClick={() => pane && setTabSheet(pane.id)} />
     </nav>
   );
 
@@ -2951,8 +3024,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       // 포커스가 어디로 갔는지는 다음 틱에 안다. 같은 문서를 연 다른 칸의 에디터면 아직 그 문서를 치는 중이라
       // 이탈 저장을 건너뛴다(자동 저장 타이머가 맡는다) — 안 그러면 칸을 옮길 때마다 쓰기가 한 건씩 더 나간다
       setTimeout(() => {
-        const other = otherPaneShowing(curLayout(), pane, path);
-        if (other >= 0 && paneHandles[other].current?.hasFocus()) return;
+        const elsewhere = panesOf(curLayout()).some((p) => p.id !== pane && p.active === path && paneRefs.current.get(p.id)?.handle.current?.hasFocus());
+        if (elsewhere) return;
         void saveRef.current(path, { auto: true });
       }, 0);
     },
@@ -2960,9 +3033,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     onChanges: (pane, path, changes, key) => {
       // 같은 문서를 같은 판으로 보고 있는 다른 칸의 에디터에 같은 변경을 넣는다(원본은 저장소 하나, 에디터는 칸마다).
       // 배치(layoutsRef)는 즉시 바뀌고 에디터는 다시 그린 뒤에 바뀌므로, 칸이 아니라 그 칸의 에디터가 어느 문서의 것인지로 고른다
-      const editorKeys = paneHandles.map((h) => h.current?.docKey ?? null);
-      for (const j of mirrorTargets(pane, path, key, curLayout().panes, editorKeys))
-        paneHandles[j].current?.applyChanges(changes, docsRef.current[path]?.doc.draft ?? "");
+      const ps = panesOf(curLayout());
+      const editorKeys = Object.fromEntries(ps.map((p) => [p.id, paneRefs.current.get(p.id)?.handle.current?.docKey ?? null]));
+      for (const j of mirrorTargets(pane, path, key, ps, editorKeys))
+        paneRefs.current.get(j)?.handle.current?.applyChanges(changes, docsRef.current[path]?.doc.draft ?? "");
     },
     uploadFiles,
     renameNode,
@@ -2974,22 +3048,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     propsShown,
     rightOpen,
     linkCount,
-    setRevision: (pane, rev) =>
-      setRevisions((rs) => {
-        const next = [...rs];
-        next[pane] = rev;
-        return next;
-      }),
+    setRevision: setPaneRevision,
     saveConflictCopy,
     rollback,
     setMode: (pane, m) => setLayout((l) => setPaneMode(l, pane, m)),
-    setCursor: (pane, c) =>
-      setCursors((cs) => {
-        if (cs[pane]?.line === c.line && cs[pane]?.col === c.col) return cs;
-        const next = [...cs];
-        next[pane] = c;
-        return next;
-      }),
+    setCursor: (pane, c) => setCursors((cs) => (cs[pane]?.line === c.line && cs[pane]?.col === c.col ? cs : { ...cs, [pane]: c })),
     setDocMenu,
     dailyStep,
     openDaily: (offset) => void openDaily(offset),
@@ -3019,34 +3082,74 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     />
   );
 
-  const two = layout.panes.length === 2;
-  /** 왼쪽 칸 폭(두 칸일 때). 칸마다 최소 폭을 지킨다 */
-  const leftPaneWidth = Math.round(Math.min(Math.max(prefs.splitRatio * centerWidth, MIN_PANE_WIDTH), Math.max(centerWidth - MIN_PANE_WIDTH, MIN_PANE_WIDTH)));
-  const renderPane = (pane: number) => {
-    const p = layout.panes[pane];
+  const multi = panes.length > 1 && !isNarrow;
+  /**
+   * 탭을 끄는 동안 칸 위에 덮는 놓을 자리. 가장자리 네 곳(그쪽에 새 칸)과 가운데(탭 바 포함, 그 칸의 탭으로).
+   * 나누면 절반이 최소보다 작아지는 가장자리와, 끌고 있는 탭이 그 칸의 유일한 탭일 때 그 칸의 가장자리는 가운데로 친다
+   */
+  const renderDropZone = (p: Pane) => {
+    if (!tabDrag) return null;
+    const zoneAt = (e: ReactDragEvent<HTMLDivElement>): DropZone => {
+      const box = e.currentTarget.getBoundingClientRect();
+      const bar = (e.currentTarget.parentElement?.querySelector(".tabbar") as HTMLElement | null)?.offsetHeight ?? 0;
+      const y = e.clientY - box.top;
+      if (y < bar) return "center";
+      const lone = tabDrag.pane === p.id && p.tabs.length < 2;
+      return dropZone(e.clientX - box.left, y - bar, box.width, box.height - bar, (side) => !lone && canSplitRect(box.width, box.height, side, isNarrow));
+    };
+    const zone = dropAt?.pane === p.id ? dropAt.zone : null;
+    return (
+      <div
+        className="split-drop"
+        aria-hidden
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(TAB_DRAG)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          const z = zoneAt(e);
+          if (zone !== z) setDropAt({ pane: p.id, zone: z });
+        }}
+        onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setDropAt((d) => (d?.pane === p.id ? null : d))}
+        onDrop={(e) => {
+          const raw = e.dataTransfer.getData(TAB_DRAG);
+          const z = zoneAt(e);
+          setDropAt(null);
+          setTabDrag(null);
+          if (!raw) return;
+          e.preventDefault();
+          const { pane: from, path } = JSON.parse(raw) as { pane: string; path: string };
+          setLayout((l) => dropTab(l, from, path, p.id, z));
+        }}
+      >
+        {zone && <div className={`split-drop-hint ${zone}`} />}
+      </div>
+    );
+  };
+  const renderPane = (p: Pane, place: CSSProperties | undefined, edges: string, n: number) => {
     const e = p.active ? docs[p.active] : undefined;
-    const focused = pane === layout.focused;
+    const focused = p.id === layout.focused;
+    const r = refsOf(p.id);
     return (
       <section
-        key={pane}
-        ref={paneEls[pane]}
+        key={p.id}
+        ref={r.el as RefObject<HTMLElement>}
         tabIndex={-1}
-        className={`split-pane${focused ? " focused" : ""}`}
-        aria-label={two ? t("pane.label", { n: pane + 1 }) : undefined}
-        style={two && pane === 0 ? { flex: `0 0 ${leftPaneWidth}px` } : undefined}
-        onFocusCapture={() => !focused && setLayout((l) => focusPane(l, pane))}
-        onMouseDownCapture={() => !focused && setLayout((l) => focusPane(l, pane))}
+        className={`split-pane${focused ? " focused" : ""}${edges}`}
+        aria-label={multi ? t("pane.label", { n }) : undefined}
+        style={place}
+        onFocusCapture={() => !focused && setLayout((l) => focusPane(l, p.id))}
+        onMouseDownCapture={() => !focused && setLayout((l) => focusPane(l, p.id))}
       >
-        {renderTabBar(pane)}
+        {renderTabBar(p, isNarrow || n === 1)}
         {e ? (
           <DocPane
-            pane={pane}
+            pane={p.id}
             entry={e}
             mode={p.mode}
             focused={focused}
-            revision={revisionOf(pane)}
-            handle={paneHandles[pane]}
-            paneApi={paneApis[pane]}
+            revision={revisionOf(p.id)}
+            handle={r.handle}
+            paneApi={r.api}
             titleFocus={focused && titleFocus?.path === e.doc.path ? titleFocus.n : 0}
             pendingAnchor={focused ? pendingAnchor : null}
             ctx={paneCtx}
@@ -3054,40 +3157,39 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         ) : (
           home
         )}
+        {!isNarrow && renderDropZone(p)}
       </section>
     );
   };
-  /** 탭을 끄는 동안 놓을 수 있는 가장자리: 한 칸이면 양쪽(탭이 둘 이상일 때), 두 칸이면 반대쪽 칸으로 가는 쪽 */
-  const edgeSides: ("left" | "right")[] =
-    tabDragFrom === null || !canSplit(centerWidth, isNarrow)
-      ? []
-      : layout.panes.length === 1
-        ? layout.panes[0].tabs.length >= 2
-          ? ["left", "right"]
-          : []
-        : layout.panes.length === 2
-          ? [tabDragFrom === 1 ? "left" : "right"]
-          : [];
-  const center = layout.panes.length ? (
-    <div className={`split-root${two ? " two" : ""}`}>
-      {renderPane(0)}
-      {two && !isNarrow && (
-        <Resizer
-          side="left"
-          className="split-divider"
-          label={t("pane.width")}
-          width={leftPaneWidth}
-          min={MIN_PANE_WIDTH}
-          max={Math.max(centerWidth - MIN_PANE_WIDTH, MIN_PANE_WIDTH)}
-          onChange={(w) => centerWidth > 0 && setPrefs({ splitRatio: w / centerWidth })}
-          onReset={() => setPrefs({ splitRatio: DEFAULT_PREFS.splitRatio })}
-        />
-      )}
-      {two && renderPane(1)}
+  /**
+   * 칸들은 트리 모양대로 감싸지 않고 한 층에 나란히 두고 비율로 자리만 잡는다(left·top·width·height %).
+   * 감싸면 나누거나 닫을 때 칸의 부모 요소가 바뀌어 에디터가 새로 만들어지고 실행 취소 기록·스크롤·커서를 잃는다
+   */
+  const rects = rectsOf(layout);
+  const center = layout.root ? (
+    <div className={`split-root${multi ? " multi" : ""}`}>
+      {isNarrow
+        ? focusedPane && renderPane(focusedPane, undefined, "", 1)
+        : panes.map((p, i) => {
+            const q = rects[p.id];
+            const place = multi ? { left: pct(q.x), top: pct(q.y), width: pct(q.w), height: pct(q.h) } : undefined;
+            return renderPane(p, place, `${q.x > 1e-6 ? " edge-l" : ""}${q.y > 1e-6 ? " edge-t" : ""}`, i + 1);
+          })}
+      {multi &&
+        handlesOf(layout).map((h) => (
+          <SplitHandleBar
+            key={`${h.at.join(".")}:${h.i}`}
+            handle={h}
+            node={nodeAt(layout.root!, h.at)}
+            size={centerSize}
+            label={t("pane.resize")}
+            onSizes={(sizes) => setLayout((l) => setSizes(l, h.at, sizes))}
+          />
+        ))}
     </div>
   ) : (
     <>
-      {renderTabBar(0)}
+      {renderTabBar(null, true)}
       {home}
     </>
   );
@@ -3098,7 +3200,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     rightOpen &&
     !!doc &&
     rightPanelFloats(viewportWidth, { rail: rl ? 64 : 44, left: prefs.leftOpen ? prefs.leftWidth : 0, right: prefs.rightWidth });
-  const sheetPane = isNarrow && tabSheet !== null ? layout.panes[tabSheet] : undefined;
+  const sheetPane = isNarrow && tabSheet !== null ? paneOf(layout, tabSheet) : undefined;
 
   return (
     <IconLookup.Provider value={iconOf}>
@@ -3139,29 +3241,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         )}
         <main className="center" ref={centerRef}>
           {center}
-          {edgeSides.map((side) => (
-            <div
-              key={side}
-              className={`edge-drop ${side}${edgeDrop === side ? " over" : ""}`}
-              aria-hidden
-              onDragOver={(e) => {
-                if (!e.dataTransfer.types.includes(TAB_DRAG)) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                if (edgeDrop !== side) setEdgeDrop(side);
-              }}
-              onDragLeave={() => setEdgeDrop((s) => (s === side ? null : s))}
-              onDrop={(e) => {
-                const raw = e.dataTransfer.getData(TAB_DRAG);
-                setEdgeDrop(null);
-                setTabDragFrom(null);
-                if (!raw) return;
-                e.preventDefault();
-                const { pane: from, path } = JSON.parse(raw) as { pane: number; path: string };
-                setLayout((l) => dropTabAtEdge(l, from, path, side));
-              }}
-            />
-          ))}
         </main>
         {doc && ((rightOpen && !isNarrow) || drawer === "right") && (
           <>
@@ -3188,27 +3267,38 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             label={t("tab.menu")}
             items={[
               { label: t("cmd.closeTab"), icon: X, keys: keyOf("close-tab"), run: () => void closeTab(tabMenu.pane, tabMenu.path) },
-              // 다른 칸으로: 칸이 하나면 둘째 칸을 만들며 옮긴다. 가운데가 좁아 나눌 수 없으면 숨긴다
-              ...(canSplit(centerWidth, isNarrow)
+              // 나누기: 그 탭을 새 칸에도 연다(원래 칸에도 남는다). 나눈 절반이 최소보다 작아지면 숨긴다
+              ...(["right", "bottom"] as const)
+                .filter((side) => canSplitPane(tabMenu.pane, side))
+                .map((side) => ({
+                  label: t(side === "right" ? "cmd.splitRight" : "cmd.splitDown"),
+                  icon: side === "right" ? Columns2 : Rows2,
+                  run: () => setLayout((l) => splitPane(l, tabMenu.pane, side, tabMenu.path)),
+                })),
+              // 다른 칸으로: 칸이 하나면 오른쪽으로 나눠 옮긴다(탭이 둘 이상이고 나눌 자리가 있을 때)
+              ...(otherPaneOf(layout, tabMenu.pane) || ((paneOf(layout, tabMenu.pane)?.tabs.length ?? 0) > 1 && canSplitPane(tabMenu.pane, "right"))
                 ? [
                     {
                       label: t("tab.moveOther"),
-                      icon: Columns2,
+                      icon: ArrowRightLeft,
                       keys: tabMenu.pane === layout.focused ? keyOf("move-tab-other") : undefined,
-                      run: () => setLayout((l) => moveTab(l, tabMenu.pane, l.panes.length === 2 ? 1 - tabMenu.pane : 1, tabMenu.path)),
+                      run: () =>
+                        setLayout((l) => {
+                          const other = otherPaneOf(l, tabMenu.pane);
+                          return other ? moveTab(l, tabMenu.pane, other, tabMenu.path) : dropTab(l, tabMenu.pane, tabMenu.path, tabMenu.pane, "right");
+                        }),
                     },
                   ]
                 : []),
-              // 앱(Tauri) 웹뷰는 새 브라우저 창을 못 연다(창 만들기 권한·설정이 따로 필요) — 숨긴다
-              ...(isTauri()
-                ? []
-                : [
+              ...(canOpenSolo()
+                ? [
                     {
                       label: t("tab.newWindow"),
                       icon: ExternalLink,
-                      run: () => void window.open(soloUrl(tabMenu.path), "_blank", "popup,width=960,height=720"),
+                      run: () => void openSolo(tabMenu.path, stemOf(tabMenu.path)).catch(toastError),
                     },
-                  ]),
+                  ]
+                : []),
             ]}
             onClose={() => setTabMenu(null)}
           />
@@ -3457,6 +3547,76 @@ function TreeOptions({ prefs }: { prefs: Prefs }) {
       />
       {at && <Menu at={at} items={items} onClose={() => setAt(null)} />}
     </>
+  );
+}
+
+/**
+ * 이웃한 두 칸(또는 가지) 사이의 경계 손잡이. 끌거나(포인터), 방향키(Shift 면 크게)로 옮기고, 두 번 누르면 두 쪽을 반반으로.
+ * 두 쪽이 각자 가진 최소 크기(minExtent — 안에 나뉜 칸이 있으면 그 합)를 지킨다
+ */
+function SplitHandleBar({
+  handle,
+  node,
+  size,
+  label,
+  onSizes,
+}: {
+  handle: SplitHandle;
+  node: LayoutNode;
+  size: { w: number; h: number };
+  label: string;
+  onSizes: (sizes: number[]) => void;
+}) {
+  const start = useRef<{ at: number; sizes: number[] } | null>(null);
+  if (!isSplit(node)) return null;
+  const { i, dir } = handle;
+  const row = dir === "row";
+  /** 그 가지의 px 크기(손잡이가 옮기는 축) */
+  const extent = row ? handle.rect.w * size.w : handle.rect.h * size.h;
+  const move = (from: number[], px: number) => {
+    if (extent <= 0) return;
+    const next = dragSizes(from, i, px / extent, minExtent(node.children[i], dir) / extent, minExtent(node.children[i + 1], dir) / extent);
+    if (next !== from) onSizes(next);
+  };
+  const style: CSSProperties = row
+    ? { left: `calc(${pct(handle.pos)} - 3px)`, top: pct(handle.rect.y), height: pct(handle.rect.h) }
+    : { top: `calc(${pct(handle.pos)} - 3px)`, left: pct(handle.rect.x), width: pct(handle.rect.w) };
+  const end = () => {
+    start.current = null;
+    document.body.classList.remove("resizing", "resizing-row");
+  };
+  return (
+    <div
+      className={`split-handle ${dir}`}
+      role="separator"
+      aria-orientation={row ? "vertical" : "horizontal"}
+      aria-label={label}
+      aria-valuenow={Math.round(node.sizes[i] * 100)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      tabIndex={0}
+      style={style}
+      onDoubleClick={() => move(node.sizes, ((node.sizes[i + 1] - node.sizes[i]) / 2) * extent)}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 40 : 10;
+        if (e.key === (row ? "ArrowRight" : "ArrowDown")) move(node.sizes, step);
+        else if (e.key === (row ? "ArrowLeft" : "ArrowUp")) move(node.sizes, -step);
+        else return;
+        e.preventDefault();
+      }}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        start.current = { at: row ? e.clientX : e.clientY, sizes: node.sizes };
+        document.body.classList.add(row ? "resizing" : "resizing-row");
+      }}
+      onPointerMove={(e) => {
+        const st = start.current;
+        if (st) move(st.sizes, (row ? e.clientX : e.clientY) - st.at);
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+    />
   );
 }
 

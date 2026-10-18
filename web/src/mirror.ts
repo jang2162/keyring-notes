@@ -1,5 +1,5 @@
 /**
- * 같은 문서를 두 칸에 열었을 때 한쪽 에디터의 변경(ChangeSet)을 다른 쪽에 그대로 옮기는 데 쓰는 것.
+ * 같은 문서를 여러 칸에 열었을 때 한쪽 에디터의 변경(ChangeSet)을 다른 쪽에 그대로 옮기는 데 쓰는 것.
  * Editor.tsx 는 화면·core 를 끌어오므로, 단위 테스트(node)에서 쓸 수 있게 따로 둔다.
  */
 import { Annotation, Transaction, type ChangeSet, type EditorState, type TransactionSpec } from "@codemirror/state";
@@ -47,15 +47,11 @@ export function outgoingChanges(transactions: readonly Transaction[], createdKey
  * 아직 다시 그리기 전이면 그 칸의 에디터는 다른 문서의 것이라, 넣으면 그 문서가 덮어써진다.
  */
 export function mirrorTargets(
-  source: number,
+  source: string,
   path: string,
   sourceKey: string,
-  panes: readonly { active: string | null }[],
-  editorKeys: readonly (string | null)[],
-): number[] {
-  const out: number[] = [];
-  panes.forEach((p, j) => {
-    if (j !== source && p.active === path && editorKeys[j] === sourceKey) out.push(j);
-  });
-  return out;
+  panes: readonly { id: string; active: string | null }[],
+  editorKeys: Readonly<Record<string, string | null>>,
+): string[] {
+  return panes.filter((p) => p.id !== source && p.active === path && editorKeys[p.id] === sourceKey).map((p) => p.id);
 }
