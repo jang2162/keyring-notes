@@ -18,7 +18,7 @@ export interface Prefs {
   language: string;
   leftWidth: number;
   rightWidth: number;
-  /** 가운데를 두 칸으로 나눴을 때 왼쪽 칸의 비율(0~1, 이 기기) */
+  /** 옛 좌우 두 칸 배치(keyring:panes)의 왼쪽 칸 비율(0~1, 이 기기). 그 배치를 나눈 트리로 옮길 때만 읽는다 — 지금 비율은 배치(keyring:pane-tree)가 갖는다 */
   splitRatio: number;
   leftOpen: boolean;
   rightOpen: boolean;
