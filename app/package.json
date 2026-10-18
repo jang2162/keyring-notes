@@ -6,6 +6,7 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
+    "build:mac": "CI=true tauri build --target universal-apple-darwin",
     "icons": "tauri icon ../web/public/icon-512.png",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
