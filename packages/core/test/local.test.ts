@@ -51,6 +51,23 @@ describe("로컬 볼트", () => {
     expect((await v.read("a.md")).content).toBe("둘");
   });
 
+  it("같은 폴더를 연 다른 창이 먼저 저장했으면 낡은 해시로 덮어쓰지 않는다", async () => {
+    // 창마다 볼트가 따로 있고 파일 해시를 메모리에 들고 있다. 다른 창의 저장은 이 창이 rescan 하기 전에는 메모리에 없다
+    const { store, v: a } = await vault({ "a.md": "하나" });
+    const b = new LocalVault(store, { author: "노트북" });
+    await b.open();
+    const base = (await b.read("a.md")).hash;
+    await a.write("a.md", "A 창", (await a.read("a.md")).hash);
+    await expect(b.write("a.md", "B 창", base)).rejects.toBeInstanceOf(ConflictError);
+    expect(new TextDecoder().decode((await store.read("a.md"))!)).toBe("A 창");
+    // 충돌을 받은 뒤 다시 읽으면 다른 창의 내용이 보이고, 그 해시로는 쓸 수 있다
+    const fresh = await b.read("a.md");
+    expect(fresh.content).toBe("A 창");
+    await b.write("a.md", "B 창", fresh.hash);
+    // 지우기도 같다
+    await expect(a.remove("a.md", (await a.read("a.md")).hash)).rejects.toBeInstanceOf(ConflictError);
+  });
+
   it("이력: 처음 고칠 때 기존 내용을 남기고, 되돌릴 수 있다", async () => {
     const { v } = await vault({ "a.md": "원래" });
     const a = await v.read("a.md");

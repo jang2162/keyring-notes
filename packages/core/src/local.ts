@@ -604,6 +604,18 @@ export class LocalVault {
     return rel;
   }
 
+  /**
+   * 그 파일이 메모리의 것과 같은지 저장소에서 다시 대 보고, 다르면 전체를 다시 읽는다(check 직전에 부른다).
+   * 같은 폴더를 여러 창(데스크톱 새 창·브라우저 탭)이 열면 창마다 볼트가 따로 있다 — 다른 창의 저장은 이 창이
+   * rescan 하기 전에는 메모리에 없어서, 메모리 해시로만 비교하면 낡은 해시로 쓴 저장이 통과해 그 창의 내용을 조용히 덮는다.
+   */
+  private async refreshIfChanged(rel: string) {
+    const data = await this.store.read(rel);
+    const cur = this.files.get(rel);
+    const onDisk = data === null ? null : cur && !cur.md ? cur.hash : await sha256Hex(data);
+    if (onDisk !== (cur ? cur.hash : null)) await this.scan();
+  }
+
   private check(rel: string, baseHash: string | null) {
     const cur = this.files.get(rel);
     const curHash = cur ? cur.hash : null;
@@ -665,6 +677,7 @@ export class LocalVault {
   write(input: string, content: string, baseHash: string | null, message?: string): Promise<LocalDoc> {
     return this.exclusive(async () => {
       const rel = this.requireWritable(input);
+      await this.refreshIfChanged(rel);
       this.check(rel, baseHash);
       const cur = this.files.get(rel);
       if (cur && cur.content === content) return { path: rel, content, hash: cur.hash! };
@@ -676,6 +689,7 @@ export class LocalVault {
   remove(input: string, baseHash: string): Promise<void> {
     return this.exclusive(async () => {
       const rel = this.requireWritable(input);
+      await this.refreshIfChanged(rel);
       this.check(rel, baseHash);
       await this.apply([{ path: rel, content: null }], this.author, this.text().commit.delete(rel), "local");
     });
