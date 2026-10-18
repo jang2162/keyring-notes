@@ -1176,6 +1176,7 @@
   "sync.skip.attachment-taken": "an attachment with this name already exists on the other side",
   "sync.skip.local-changed": "changed on this device during sync; will sync next time",
   "sync.skip.settings-changed": "the settings file changed during sync; will sync next time",
+  "sync.soloWindow": "This window shows one note. Syncing runs in the main window.",
   "sync.unauthorized": "The server no longer accepts this device (disconnected in the admin console, or a different server). Connect again.",
   "sync.vaultHintApp": "Notes are stored as Markdown in a folder on this device. Editing, search, widgets and history all work without a server.",
   "sync.vaultHintWeb": "Notes are stored as Markdown in this browser (IndexedDB). Editing, search, widgets and history all work without a server.",

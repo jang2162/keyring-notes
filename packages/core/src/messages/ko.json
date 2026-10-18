@@ -1145,6 +1145,7 @@
   "sync.skip.attachment-taken": "다른 쪽에 같은 이름의 첨부가 이미 있음",
   "sync.skip.local-changed": "동기화하는 동안 이 기기에서 바뀌어 다음에 맞춤",
   "sync.skip.settings-changed": "동기화하는 동안 설정 파일이 바뀌어 다음에 맞춤",
+  "sync.soloWindow": "노트 하나만 띄운 창입니다. 동기화는 원래 창에서 합니다.",
   "sync.unauthorized": "서버가 이 기기 연결을 받지 않습니다(관리 콘솔에서 끊었거나 서버가 바뀜). 다시 연결하세요.",
   "sync.vaultHintApp": "노트는 이 기기의 폴더에 마크다운으로 저장되며, 서버에 연결하지 않아도 모든 편집·검색·위젯·이력을 쓸 수 있습니다.",
   "sync.vaultHintWeb": "노트는 이 브라우저(IndexedDB)에 마크다운으로 저장되며, 서버에 연결하지 않아도 모든 편집·검색·위젯·이력을 쓸 수 있습니다.",

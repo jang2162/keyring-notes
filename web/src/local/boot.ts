@@ -4,6 +4,7 @@ import { setLocalBackend } from "../api";
 import { IdbStore } from "./idbStore";
 import { createLocalApi } from "./localApi";
 import { defaultDeviceName, SyncController } from "./syncController";
+import { SOLO } from "../soloWindow";
 import { t } from "../i18n";
 
 export interface LocalContext {
@@ -90,7 +91,8 @@ export async function startLocal(): Promise<LocalContext> {
   const vault = new LocalVault(store, { author: device });
   await vault.open();
   setLocalBackend(createLocalApi(vault));
-  const sync = new SyncController(vault, fetchFn);
+  // 노트 하나만 띄운 새 창은 동기화를 돌리지 않는다(SyncController 의 passive)
+  const sync = new SyncController(vault, fetchFn, { passive: SOLO });
   // 다른 편집기에서 고친 파일은 창으로 돌아올 때 다시 읽는다
   window.addEventListener("focus", () => void vault.rescan().catch(() => undefined));
   sync.startAuto();
