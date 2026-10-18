@@ -14,7 +14,7 @@ const PLATFORMS = ["darwin-aarch64", "darwin-x86_64"];
 
 export function updaterJson({ version, url, signature, notes = "", pubDate = new Date().toISOString() }) {
   if (!SEMVER.test(version)) throw new Error(`버전이 SemVer 가 아니다: ${version}`);
-  if (!/^https:\/\//.test(url)) throw new Error(`주소는 https 여야 한다(배포 빌드는 TLS 를 강제한다): ${url}`);
+  if (!url.startsWith("https://")) throw new Error(`주소는 https 여야 한다(배포 빌드는 TLS 를 강제한다): ${url}`);
   if (!signature.trim()) throw new Error("서명이 비었다");
   if (Number.isNaN(Date.parse(pubDate))) throw new Error(`pub_date 가 날짜가 아니다: ${pubDate}`);
   const entry = { signature: signature.trim(), url };
