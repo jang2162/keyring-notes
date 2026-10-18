@@ -605,15 +605,56 @@ export class LocalVault {
   }
 
   /**
-   * 그 파일이 메모리의 것과 같은지 저장소에서 다시 대 보고, 다르면 전체를 다시 읽는다(check 직전에 부른다).
+   * 그 파일들이 메모리의 것과 같은지 저장소에서 내용 해시로 다시 대 보고, 다르면 그 파일만 다시 색인한다.
+   * 메모리를 믿고 파일을 쓰거나 지우거나 옮기는 연산은 모두 검사 직전에 부른다(write·remove·move·moveNode·deleteNode·
+   * restoreFiles·putFile·applySync).
    * 같은 폴더를 여러 창(데스크톱 새 창·브라우저 탭)이 열면 창마다 볼트가 따로 있다 — 다른 창의 저장은 이 창이
-   * rescan 하기 전에는 메모리에 없어서, 메모리 해시로만 비교하면 낡은 해시로 쓴 저장이 통과해 그 창의 내용을 조용히 덮는다.
+   * rescan 하기 전에는 메모리에 없어서, 메모리만 보고 쓰면 그 창의 내용을 조용히 덮는다.
+   * 수정 시각·크기로 판정하지 않는다: 시각이 거친 파일 시스템(exFAT 2초 등)에서 같은 길이로 바뀐 파일을 scan 은 건너뛴다.
    */
-  private async refreshIfChanged(rel: string) {
-    const data = await this.store.read(rel);
-    const cur = this.files.get(rel);
-    const onDisk = data === null ? null : cur && !cur.md ? cur.hash : await sha256Hex(data);
-    if (onDisk !== (cur ? cur.hash : null)) await this.scan();
+  private async refreshFiles(paths: Iterable<string>) {
+    const external: JournalFile[] = [];
+    const contents = new Map<string, string>();
+    const changed: string[] = [];
+    let listChanged = false;
+    for (const rel of new Set(paths)) {
+      if (this.isGenerated(rel)) continue;
+      const data = await this.store.read(rel);
+      const cur = this.files.get(rel);
+      if (data === null) {
+        if (!cur) continue;
+        this.files.delete(rel);
+        changed.push(rel);
+        listChanged = true;
+        if (cur.md && this.lastHash.get(rel)) external.push({ status: "D", path: rel, hash: null });
+        continue;
+      }
+      const hash = await sha256Hex(data);
+      // 첨부는 해시를 처음 필요할 때 계산한다 — 아직 없으면 크기로만 대 본다
+      if (cur && !cur.md && cur.hash === null && cur.size === data.length) {
+        cur.hash = hash;
+        continue;
+      }
+      if (cur?.hash === hash) continue;
+      // 저장소의 수정 시각은 모른다: -1 로 두면 다음 scan 이 이 파일을 다시 읽고 내용이 같으면 그대로 넘어간다
+      const entry: Entry = { path: rel, size: data.length, mtime: -1, md: isMarkdown(rel), hash };
+      if (entry.md) {
+        const content = fromUtf8(data);
+        this.index(entry, content);
+        const last = this.lastHash.get(rel);
+        if (last !== undefined && last !== hash) {
+          external.push({ status: last === null ? "A" : "M", path: rel, hash });
+          contents.set(hash, content);
+        }
+      }
+      if (!cur) listChanged = true;
+      this.files.set(rel, entry);
+      changed.push(rel);
+    }
+    if (!changed.length) return;
+    if (listChanged) this.computeTopics(this.files.keys());
+    await this.record(EXTERNAL_AUTHOR, this.text().commit.appOutside, external, contents);
+    if (this.opened) this.emit(changed, "external");
   }
 
   private check(rel: string, baseHash: string | null) {
@@ -677,7 +718,7 @@ export class LocalVault {
   write(input: string, content: string, baseHash: string | null, message?: string): Promise<LocalDoc> {
     return this.exclusive(async () => {
       const rel = this.requireWritable(input);
-      await this.refreshIfChanged(rel);
+      await this.refreshFiles([rel]);
       this.check(rel, baseHash);
       const cur = this.files.get(rel);
       if (cur && cur.content === content) return { path: rel, content, hash: cur.hash! };
@@ -689,7 +730,7 @@ export class LocalVault {
   remove(input: string, baseHash: string): Promise<void> {
     return this.exclusive(async () => {
       const rel = this.requireWritable(input);
-      await this.refreshIfChanged(rel);
+      await this.refreshFiles([rel]);
       this.check(rel, baseHash);
       await this.apply([{ path: rel, content: null }], this.author, this.text().commit.delete(rel), "local");
     });
@@ -726,6 +767,8 @@ export class LocalVault {
     const to = normalizeVaultPath(toInput).replace(/\.md$/i, "");
     if (from === to) throw new PathError("same_path");
     if (to.startsWith(from + "/")) throw new PathError("node_into_self");
+    // 다른 창이 그 노드 아래에 새로 만든 파일도 함께 옮긴다
+    await this.rescan();
     const files = nodeFiles(from, this.files.keys());
     if (files.length === 0) throw new NotFoundError("node_missing", { path: from });
     const pairs: [string, string, null][] = files.map((p) => [p, moveNodePath(p, from, to), null]);
@@ -739,6 +782,9 @@ export class LocalVault {
   deleteNode(input: string): Promise<{ deleted: { path: string; content?: string; data?: Uint8Array }[] }> {
     return this.exclusive(async () => {
       const node = normalizeVaultPath(input).replace(/\.md$/i, "");
+      // 다른 창이 만든 하위 파일까지 보고, 돌려줄(되살리기용) 내용은 디스크의 것으로
+      await this.scan();
+      await this.refreshFiles(nodeFiles(node, this.files.keys()));
       const files = nodeFiles(node, this.files.keys());
       if (files.length === 0) throw new NotFoundError("node_missing", { path: node });
       for (const p of files) if (this.isGenerated(p)) throw new ForbiddenError("generated_delete");
@@ -769,6 +815,7 @@ export class LocalVault {
     return this.exclusive(async () => {
       const md: { path: string; content: string }[] = [];
       const attachments: string[] = [];
+      await this.refreshFiles(files.map((f) => normalizeVaultPath(f.path)));
       for (const f of files) {
         const rel = normalizeVaultPath(f.path);
         if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, "file_exists", { path: rel });
@@ -805,6 +852,9 @@ export class LocalVault {
     message: string | null,
   ): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
     return this.exclusive(async () => {
+      // 링크를 고칠 다른 문서는 아래에서 다시 댄다. 여기서는 새로 생긴 파일·링크를 보고(scan) 옮길 파일을 내용으로 대 본다
+      await this.scan();
+      await this.refreshFiles(pairs.flatMap(([f, t]) => [f, t]));
       const targets = new Set<string>();
       for (const [from, to, baseHash] of pairs) {
         if (from === to) throw new PathError("same_path");
@@ -828,6 +878,12 @@ export class LocalVault {
         const generated = [...this.topicSet].flatMap(generatedPaths);
         const before = [...this.files.keys(), ...generated];
         const ctx: LinkRewriteContext = { moves, before, after: [...before.filter((p) => !moves.has(p)), ...targets], daily: this.daily() };
+        // 링크를 고쳐 쓸 문서는 메모리 본문으로 고치므로 그 문서들을 내용으로 다시 대 본 뒤 고친다
+        await this.refreshFiles(
+          this.mdEntries()
+            .filter((e) => !moves.has(e.path) && rewriteLinks(e.content!, e.path, e.path, ctx))
+            .map((e) => e.path),
+        );
         for (const e of this.mdEntries()) {
           const to = moves.get(e.path) ?? e.path;
           const r = rewriteLinks(e.content!, e.path, to, ctx);
@@ -868,6 +924,7 @@ export class LocalVault {
       const rel = normalizeVaultPath(input);
       if (isMarkdown(rel)) throw new PathError("markdown_use_write");
       if (this.isGenerated(rel)) throw new ForbiddenError("generated_path");
+      await this.refreshFiles([rel]);
       if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, "file_exists", { path: rel });
       const st = await this.store.write(rel, data);
       const hash = await sha256Hex(data);
@@ -924,10 +981,12 @@ export class LocalVault {
   /**
    * 동기화로 받은 내용을 반영한다. expect(스냅샷 때 해시, 없던 파일이면 null)가 지금과 다르면
    * 그 사이 이 기기에서 바뀐 것이므로 건너뛴다(다음 동기화에서 다시 비교). 반영한 경로를 돌려준다.
+   * 「지금」은 디스크로 다시 대 본다 — 같은 폴더를 연 다른 창이 그 사이 저장했으면 메모리는 모른다(refreshFiles).
    */
   applySync(changes: { path: string; data: Uint8Array | null; expect: string | null }[], message: string): Promise<string[]> {
     return this.exclusive(async () => {
       const applied: string[] = [];
+      await this.refreshFiles(changes.map((c) => normalizeVaultPath(c.path)));
       const md: { path: string; content: string | null }[] = [];
       for (const c of changes) {
         const rel = normalizeVaultPath(c.path);
