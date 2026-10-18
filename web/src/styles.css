@@ -659,6 +659,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .tab.on { background: var(--bg); border-color: var(--border); color: var(--fg); margin-bottom: -1px; height: 33px; }
 .tab button { border: none; background: transparent; font-size: var(--fs-md); padding: 4px 6px; color: inherit; }
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
+.tab-name .doc-icon { margin-right: 6px; }
 .tab-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .tab-close { display: inline-flex; padding: 3px !important; border-radius: var(--radius-sm) !important; opacity: 0.55; }
 .tab:hover .tab-close, .tab.on .tab-close { opacity: 1; }
