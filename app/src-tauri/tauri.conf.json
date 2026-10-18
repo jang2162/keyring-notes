@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Keyring Notes",
-  "version": "0.7.0",
-  "identifier": "dev.keyringnotes.app",
+  "version": "0.8.0",
+  "identifier": "com.develma.keyringnotes",
   "build": {
     "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:5173",
@@ -34,6 +34,10 @@
   "plugins": {
     "fs": {
       "requireLiteralLeadingDot": false
+    },
+    "updater": {
+      "pubkey": "REPLACE_WITH_UPDATER_PUBLIC_KEY see docs/guides/release-macos.md",
+      "endpoints": ["https://github.com/jang2162/keyring-notes/releases/latest/download/latest.json"]
     }
   },
   "bundle": {
@@ -42,6 +46,9 @@
     "category": "Productivity",
     "shortDescription": "로컬 우선 마크다운 노트",
     "longDescription": "기기 안의 마크다운 파일로 서버 없이 쓰고, 원하면 자체 호스팅한 Keyring Notes 서버와 동기화하는 노트 앱",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "macOS": {
+      "hardenedRuntime": true
+    }
   }
 }
