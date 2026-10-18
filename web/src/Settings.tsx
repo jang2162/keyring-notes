@@ -17,6 +17,7 @@ import {
   VAULT_SETTINGS_PATH,
   workspaceSettings,
   ymd,
+  APP_VERSION,
   type FormatProblem,
   type LanguagePack,
   type OfficialLang,
@@ -43,11 +44,12 @@ import { SyncSettings } from "./Sync";
 import { localContext } from "./local/boot";
 import { updateVaultSetting, useVaultSettings, vaultLang } from "./vaultSettings";
 import { IconPicker } from "./IconPicker";
-import { toast, toastError } from "./toast";
+import { errorText, toast, toastError } from "./toast";
 import { getPack, languages, PSEUDO, putPack, removePack, systemLanguage, t, useLang } from "./i18n";
 import { confirmDialog, promptDialog } from "./dialog";
 import { tipProps } from "./Tooltip";
 import { admin } from "./api";
+import { checkForUpdate, showUpdate, updatesSupported } from "./update";
 
 export type SettingsSection = "general" | "language" | "editor" | "files" | "workspaces" | "keys" | "device" | ServerSection;
 
@@ -550,10 +552,46 @@ function SectionBody({
     case "keys":
       return <KeySettings commands={commands} query={query} />;
     case "device":
-      return localContext ? <SyncSettings ctx={localContext} onOpen={onOpen} /> : null;
+      return localContext ? (
+        <>
+          <SyncSettings ctx={localContext} onOpen={onOpen} />
+          {updatesSupported() && <UpdateSettings query={query} />}
+        </>
+      ) : null;
     default:
       return <ServerSettings section={id} folders={folders} />;
   }
+}
+
+/** 데스크톱 앱 업데이트: 실행 때 자동 확인 켜기·끄기(이 기기), 지금 확인 */
+function UpdateSettings({ query }: { query: string }) {
+  const prefs = usePrefs();
+  const [busy, setBusy] = useState(false);
+  const checkNow = async () => {
+    setBusy(true);
+    try {
+      const u = await checkForUpdate();
+      if (u) showUpdate(u);
+      else toast(t("update.latest", { version: APP_VERSION }), { kind: "success" });
+    } catch (e) {
+      toast(t("update.checkFailed", { message: errorText(e) }), { kind: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="update-settings">
+      <h3>{t("settings.updates")}</h3>
+      <Row label="settings.updateCheck" hint="settings.updateCheckHint" query={query} scope="device">
+        <Toggle label={t("settings.updateCheck")} value={prefs.updateCheck} onChange={(v) => setPrefs({ updateCheck: v })} />
+      </Row>
+      <Row label="settings.updateNow" hintNode={t("settings.updateNowHint", { version: APP_VERSION })} query={query} scope="device">
+        <button type="button" onClick={() => void checkNow()} disabled={busy}>
+          {busy ? t("update.checking") : t("settings.updateNow")}
+        </button>
+      </Row>
+    </section>
+  );
 }
 
 /** 글자 크기: 끌어 바꾸는 슬라이더(멈춘 뒤 한 번만 공통 설정에 쓴다 — prefs.ts) */

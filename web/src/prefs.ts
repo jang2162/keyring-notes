@@ -7,7 +7,7 @@ import { setLanguage, systemLanguage, urlLanguage } from "./i18n";
  * - 따라가는 것(SYNCED_KEYS): 공통 설정 파일(keyring-settings.md)의 "ui" 묶음에 두어 앱 동기화로 모든 기기가 같이 쓴다.
  *   설정마다 "이 기기에서만 다르게"를 켜면 이 기기 localStorage의 덮어쓰기(keyring:prefs-local)에 두고 공통 값을 따라가지 않는다.
  *   값을 고르는 순서: 이 기기 덮어쓰기 → 공통 설정 "ui" → 기본값(화면 언어의 기본은 브라우저·OS 언어).
- * - 기기마다(그 밖): 패널 폭·열림, 왼쪽 보기·오른쪽 탭, 지금 워크스페이스 → localStorage의 keyring:prefs.
+ * - 기기마다(그 밖): 패널 폭·열림, 왼쪽 보기·오른쪽 탭, 지금 워크스페이스, 업데이트 자동 확인 → localStorage의 keyring:prefs.
  * 공통 값은 마지막으로 받은 것을 이 기기에 캐시해(keyring:ui-cache) 시작 때 먼저 쓴다(로그인 화면 포함, 깜빡임 방지).
  * 연달아 바뀌는 값(글자 크기·자동 저장 간격 등)은 멈춘 뒤 한 번만 파일에 쓴다.
  * 덮어쓰기 값은 서버로 보내지 않는다.
@@ -54,6 +54,8 @@ export interface Prefs {
   workspace: string;
   /** 모든 워크스페이스를 같이 보기(트리·빠른 열기·검색·태그·그래프·홈) */
   allWorkspaces: boolean;
+  /** 데스크톱 앱: 실행 때 새 버전 확인(기기마다 — 끄면 실행 때 밖으로 요청을 보내지 않는다. web/src/update.tsx) */
+  updateCheck: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -83,6 +85,7 @@ export const DEFAULT_PREFS: Prefs = {
   keys: {},
   workspace: "",
   allWorkspaces: false,
+  updateCheck: true,
 };
 
 /** 따라가는 설정(공통 설정 파일 "ui" 묶음) */

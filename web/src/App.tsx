@@ -6,6 +6,7 @@ import { authMemo, isNetworkError, offline } from "./offline";
 import { Workspace } from "./Workspace";
 import { useLang } from "./i18n";
 import { TooltipLayer } from "./Tooltip";
+import { UpdateChecker } from "./update";
 
 export function App() {
   // 화면 언어가 바뀌면 다시 그린다(편집 상태는 그대로)
@@ -14,6 +15,7 @@ export function App() {
   return (
     <>
       {appMode.local ? <Workspace onLogout={() => undefined} /> : <ServerApp />}
+      {appMode.local && <UpdateChecker />}
       <TooltipLayer />
     </>
   );
