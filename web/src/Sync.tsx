@@ -7,6 +7,7 @@ import { defaultDeviceName, type SyncStatus } from "./local/syncController";
 import { fmtDateTime, t } from "./i18n";
 import { errorText } from "./toast";
 import { isSynced, setLocalOverride, type SyncedKey } from "./prefs";
+import { SOLO } from "./soloWindow";
 
 const msg = errorText;
 
@@ -205,17 +206,21 @@ export function SyncSettings({ ctx, onOpen }: { ctx: LocalContext; onOpen: (p: s
               </span>
             </p>
             {status.lastError && <p className="form-error">{status.lastError}</p>}
-            <p className="sync-actions">
-              <button disabled={status.running} onClick={() => void ctx.sync.run()}>
-                {t("sync.now")}
-              </button>
-              <label>
-                <input type="checkbox" checked={s.auto} onChange={(e) => ctx.sync.setAuto(e.target.checked)} /> {t("sync.auto")}
-              </label>
-              <button onClick={async () => (await confirmDialog(t("sync.disconnectAsk"), t("sync.disconnect"))) && ctx.sync.disconnect()}>
-                {t("sync.disconnect")}
-              </button>
-            </p>
+            {SOLO ? (
+              <p className="meta">{t("sync.soloWindow")}</p>
+            ) : (
+              <p className="sync-actions">
+                <button disabled={status.running} onClick={() => void ctx.sync.run()}>
+                  {t("sync.now")}
+                </button>
+                <label>
+                  <input type="checkbox" checked={s.auto} onChange={(e) => ctx.sync.setAuto(e.target.checked)} /> {t("sync.auto")}
+                </label>
+                <button onClick={async () => (await confirmDialog(t("sync.disconnectAsk"), t("sync.disconnect"))) && ctx.sync.disconnect()}>
+                  {t("sync.disconnect")}
+                </button>
+              </p>
+            )}
             {status.lastReport && <Report r={status.lastReport} onOpen={onOpen} />}
           </>
         )}

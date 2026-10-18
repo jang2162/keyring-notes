@@ -6,13 +6,15 @@ import { t, useLang } from "./i18n";
 import { getPrefs } from "./prefs";
 import { errorText } from "./toast";
 import { startupCheck } from "./updateCheck";
+import { SOLO } from "./soloWindow";
 
 /**
  * 데스크톱 앱 업데이트. 새 버전 정보는 GitHub 릴리스의 latest.json(app/src-tauri/tauri.conf.json 의 plugins.updater)에서 읽고,
  * 받기·설치는 사람이 대화상자에서 고른 뒤에만 한다. 모바일은 업데이터가 없고(스토어), 웹·서버는 서버 관리 화면이 따로 본다.
  * 릴리스 쪽 절차: docs/guides/release-macos.md
+ * 노트 하나만 띄운 새 창(SOLO)은 확인하지 않는다 — 원래 창이 확인하고, 새 창에는 업데이터 권한도 없다(capabilities 의 desktop)
  */
-export const updatesSupported = () => isTauri() && !/Android|iPhone|iPad/.test(navigator.userAgent);
+export const updatesSupported = () => isTauri() && !/Android|iPhone|iPad/.test(navigator.userAgent) && !SOLO;
 
 /** 업데이터는 기본으로 시간 제한이 없다(tauri-plugin-updater) — 응답이 없는 망에서 확인이 끝나지 않게 둔다 */
 const CHECK_TIMEOUT_MS = 15_000;

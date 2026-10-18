@@ -51,6 +51,23 @@ describe("로컬 볼트", () => {
     expect((await v.read("a.md")).content).toBe("둘");
   });
 
+  it("같은 폴더를 연 다른 창이 먼저 저장했으면 낡은 해시로 덮어쓰지 않는다", async () => {
+    // 창마다 볼트가 따로 있고 파일 해시를 메모리에 들고 있다. 다른 창의 저장은 이 창이 rescan 하기 전에는 메모리에 없다
+    const { store, v: a } = await vault({ "a.md": "하나" });
+    const b = new LocalVault(store, { author: "노트북" });
+    await b.open();
+    const base = (await b.read("a.md")).hash;
+    await a.write("a.md", "A 창", (await a.read("a.md")).hash);
+    await expect(b.write("a.md", "B 창", base)).rejects.toBeInstanceOf(ConflictError);
+    expect(new TextDecoder().decode((await store.read("a.md"))!)).toBe("A 창");
+    // 충돌을 받은 뒤 다시 읽으면 다른 창의 내용이 보이고, 그 해시로는 쓸 수 있다
+    const fresh = await b.read("a.md");
+    expect(fresh.content).toBe("A 창");
+    await b.write("a.md", "B 창", fresh.hash);
+    // 지우기도 같다
+    await expect(a.remove("a.md", (await a.read("a.md")).hash)).rejects.toBeInstanceOf(ConflictError);
+  });
+
   it("이력: 처음 고칠 때 기존 내용을 남기고, 되돌릴 수 있다", async () => {
     const { v } = await vault({ "a.md": "원래" });
     const a = await v.read("a.md");
@@ -210,5 +227,108 @@ describe("공통 설정·노드 이동", () => {
     await v.restoreFiles(deleted);
     expect((await v.read("개인/여행/제주/일정.md")).content).toBe("일정");
     expect(new TextDecoder().decode(await v.readBytes("개인/여행/사진.png"))).toBe("IMG");
+  });
+});
+
+/**
+ * 같은 폴더를 여러 창(데스크톱 새 창·브라우저 탭)이 열면 창마다 볼트가 따로 있고 파일 해시를 메모리에 든다.
+ * 한 창(A)이 저장한 뒤 메모리가 낡은 다른 창(B)이 그 파일을 건드리는 모든 경로에서 A 의 저장이 조용히 사라지면 안 된다.
+ */
+describe("다른 창이 먼저 바꾼 파일", () => {
+  const dec = (u: Uint8Array | null) => (u ? new TextDecoder().decode(u) : null);
+  async function two(files: Record<string, string>, store = new MemoryStore()) {
+    store.touch("keyring-settings.md", KO_SETTINGS);
+    for (const [p, c] of Object.entries(files)) store.touch(p, c);
+    const a = new LocalVault(store, { author: "A" });
+    const b = new LocalVault(store, { author: "B" });
+    await a.open();
+    await b.open();
+    return { store, a, b };
+  }
+
+  it("move: 낡은 해시로 옮기면 충돌, 다시 읽은 해시로는 A 의 내용을 옮긴다", async () => {
+    const { store, a, b } = await two({ "a.md": "원래" });
+    const base = (await b.read("a.md")).hash;
+    await a.write("a.md", "A 가 고친 글", (await a.read("a.md")).hash);
+    await expect(b.move("a.md", "b.md", base)).rejects.toBeInstanceOf(ConflictError);
+    expect(dec(await store.read("a.md"))).toBe("A 가 고친 글");
+    await b.move("a.md", "b.md", (await b.read("a.md")).hash);
+    expect(dec(await store.read("b.md"))).toBe("A 가 고친 글");
+  });
+
+  it("move 의 링크 고치기: 링크를 가진 다른 문서는 디스크의 내용으로 고친다", async () => {
+    const { store, a, b } = await two({ "a.md": "대상", "c.md": "[[a]] 원래" });
+    const base = (await b.read("a.md")).hash;
+    await a.write("c.md", "[[a]] A 가 고친 글", (await a.read("c.md")).hash);
+    await b.move("a.md", "b.md", base);
+    expect(dec(await store.read("c.md"))).toBe("[[b]] A 가 고친 글");
+  });
+
+  it("moveNode: 하위 문서는 디스크의 내용으로 옮긴다", async () => {
+    const { store, a, b } = await two({ "N.md": "노드", "N/x.md": "원래" });
+    await a.write("N/x.md", "A 가 고친 글", (await a.read("N/x.md")).hash);
+    await b.moveNode("N", "M");
+    expect(dec(await store.read("M/x.md"))).toBe("A 가 고친 글");
+    expect(await store.read("N/x.md")).toBeNull();
+  });
+
+  it("deleteNode: 되살리기용으로 돌려주는 내용은 디스크의 것이다", async () => {
+    const { store, a, b } = await two({ "N.md": "노드", "N/x.md": "원래" });
+    await a.write("N/x.md", "A 가 고친 글", (await a.read("N/x.md")).hash);
+    const r = await b.deleteNode("N");
+    expect(r.deleted.find((d) => d.path === "N/x.md")?.content).toBe("A 가 고친 글");
+    expect(await store.read("N/x.md")).toBeNull();
+  });
+
+  it("restoreFiles: 다른 창이 그 자리에 만든 문서는 덮지 않고 충돌", async () => {
+    const { store, a, b } = await two({});
+    await a.write("r.md", "A 가 만든 글", null);
+    await expect(b.restoreFiles([{ path: "r.md", content: "B 되살림" }])).rejects.toBeInstanceOf(ConflictError);
+    expect(dec(await store.read("r.md"))).toBe("A 가 만든 글");
+  });
+
+  it("putFile: 다른 창이 먼저 올린 같은 이름 첨부는 덮지 않고 충돌", async () => {
+    const { store, a, b } = await two({});
+    await a.putFile("img.png", new Uint8Array([1, 2, 3]));
+    await expect(b.putFile("img.png", new Uint8Array([9]))).rejects.toBeInstanceOf(ConflictError);
+    expect([...(await store.read("img.png"))!]).toEqual([1, 2, 3]);
+  });
+
+  it("수정 시각·크기가 같아도(거친 mtime) 내용 해시로 판정해 덮지 않는다", async () => {
+    class Coarse extends MemoryStore {
+      override async write(path: string, data: Uint8Array) {
+        this.files.set(path, { data: new Uint8Array(data), mtime: 5000 });
+        return { path, size: data.length, mtime: 5000 };
+      }
+      override touch(path: string, text: string) {
+        this.files.set(path, { data: new TextEncoder().encode(text), mtime: 5000 });
+      }
+    }
+    const { store, a, b } = await two({ "a.md": "aaaa" }, new Coarse());
+    const base = (await b.read("a.md")).hash;
+    await a.write("a.md", "AAAA", (await a.read("a.md")).hash);
+    await expect(b.write("a.md", "BBBB", base)).rejects.toBeInstanceOf(ConflictError);
+    expect(dec(await store.read("a.md"))).toBe("AAAA");
+    expect((await b.read("a.md")).content).toBe("AAAA");
+  });
+
+  it("applySync: 동기화 스냅샷 뒤 다른 창이 저장했으면 서버 내용으로 덮지 않고 건너뛴다", async () => {
+    const { store, a: main, b: solo } = await two({ "a.md": "원래" });
+    const snap = await main.snapshot();
+    const expectHash = snap.get("a.md")!.hash;
+    await solo.write("a.md", "새 창에서 고친 글", (await solo.read("a.md")).hash);
+    const applied = await main.applySync([{ path: "a.md", data: new TextEncoder().encode("서버 글"), expect: expectHash }], "pull");
+    expect(applied).toEqual([]);
+    expect(dec(await store.read("a.md"))).toBe("새 창에서 고친 글");
+    // 다음 동기화의 스냅샷은 새 창의 저장을 본다(그때 기존 규칙으로 합치거나 충돌 사본을 만든다)
+    expect((await main.snapshot()).get("a.md")!.hash).not.toBe(expectHash);
+  });
+
+  it("applySync: 다른 창이 그 자리에 새로 만든 파일도 덮지 않는다", async () => {
+    const { store, a: main, b: solo } = await two({});
+    await main.snapshot();
+    await solo.write("n.md", "새 창 새 글", null);
+    expect(await main.applySync([{ path: "n.md", data: new TextEncoder().encode("서버 새 글"), expect: null }], "pull")).toEqual([]);
+    expect(dec(await store.read("n.md"))).toBe("새 창 새 글");
   });
 });

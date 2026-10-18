@@ -1,62 +1,103 @@
 /**
- * 가운데 칸 배치(좌우 최대 두 칸, 칸마다 탭). 범위(워크스페이스)마다 이 기기에 `keyring:panes` 로 기억한다.
+ * 가운데 칸 배치. 칸(잎)을 좌우(`row`)·위아래(`column`) 가지로 나눈 트리이고, 범위(워크스페이스)마다 이 기기에
+ * `keyring:pane-tree` 로 기억한다. 칸은 위치가 아니라 안정된 id 로 가리킨다 — 나누고 닫을 때마다 위치가 바뀐다.
  * 모든 연산은 입력을 바꾸지 않는 순수 함수다 — 화면 상태 갱신과 저장값 옮김을 같은 규칙으로 쓰고 vitest 로 고정한다.
  */
 import { isRecordOf, isString, isStringArray } from "./stored";
 
 export type ViewMode = "split" | "edit" | "preview";
+/** row: 자식을 왼쪽에서 오른쪽으로, column: 위에서 아래로 */
+export type Dir = "row" | "column";
+export type Side = "left" | "right" | "top" | "bottom";
+export type DropZone = Side | "center";
 
 export interface Pane {
+  id: string;
   tabs: string[];
   active: string | null;
   mode: ViewMode;
 }
 
-/** panes 는 0~2개, 왼쪽이 [0]. focused 는 panes 범위 안(비면 0) */
-export interface Layout {
-  panes: Pane[];
-  focused: number;
+/** 자식은 늘 둘 이상이다(하나 남으면 가지를 걷는다). sizes 는 자식마다의 비율, 합이 1 */
+export interface Split {
+  dir: Dir;
+  children: LayoutNode[];
+  sizes: number[];
 }
 
-const MAX_PANES = 2;
-/** 칸 하나의 최소 폭(px). 가운데가 두 칸을 담지 못하면 나누지 않는다 */
-export const MIN_PANE_WIDTH = 280;
+export type LayoutNode = Pane | Split;
 
-export const emptyLayout = (): Layout => ({ panes: [], focused: 0 });
+/** focused 는 트리에 있는 칸의 id(비면 "") */
+export interface Layout {
+  root: LayoutNode | null;
+  focused: string;
+}
+
+/** 칸 하나의 최소 폭(px). 나눈 절반이 이보다 좁아지면 나누지 않는다 */
+export const MIN_PANE_WIDTH = 280;
+/**
+ * 칸 하나의 최소 높이(px): 본문 첫 줄이 칸 위에서 156(탭 바 38 + 문서 머리 40 + 아이콘·제목 칸 78) + 본문 세 줄(28×3) = 240.
+ * 다시 재는 법: 넓은 화면(1400×900, 기본 글꼴)에서 한 칸에 노트를 열고 `.split-pane > .tabbar`·`.doc-head` 의 높이와
+ * 첫 `.cm-line` 의 칸 기준 top, `.cm-line`(본문 줄) 높이를 getBoundingClientRect 로 본다
+ */
+export const MIN_PANE_HEIGHT = 240;
+
+export const emptyLayout = (): Layout => ({ root: null, focused: "" });
+
+export const isSplit = (n: LayoutNode): n is Split => "children" in n;
 
 const isViewMode = (v: unknown): v is ViewMode => v === "split" || v === "edit" || v === "preview";
 
-const isPane = (v: unknown): v is Pane => {
-  if (typeof v !== "object" || v === null) return false;
-  const p = v as Record<string, unknown>;
-  return isStringArray(p.tabs) && (p.active === null || isString(p.active)) && isViewMode(p.mode);
-};
+const isPaneFields = (p: Record<string, unknown>) => isStringArray(p.tabs) && (p.active === null || isString(p.active)) && isViewMode(p.mode);
 
-export const isLayout = (v: unknown): v is Layout => {
+function isNode(v: unknown, ids: Set<string>): v is LayoutNode {
+  if (typeof v !== "object" || v === null) return false;
+  const n = v as Record<string, unknown>;
+  if ("children" in n) {
+    if (n.dir !== "row" && n.dir !== "column") return false;
+    if (!Array.isArray(n.children) || n.children.length < 2 || !Array.isArray(n.sizes) || n.sizes.length !== n.children.length) return false;
+    if (!n.sizes.every((s) => typeof s === "number" && Number.isFinite(s) && s > 0)) return false;
+    if (Math.abs((n.sizes as number[]).reduce((a, b) => a + b, 0) - 1) > 1e-3) return false;
+    return n.children.every((c) => isNode(c, ids));
+  }
+  if (typeof n.id !== "string" || !n.id || ids.has(n.id) || !isPaneFields(n)) return false;
+  ids.add(n.id);
+  return true;
+}
+
+export function isLayout(v: unknown): v is Layout {
   if (typeof v !== "object" || v === null) return false;
   const l = v as Record<string, unknown>;
-  if (!Array.isArray(l.panes) || l.panes.length > MAX_PANES || !l.panes.every(isPane)) return false;
-  if (typeof l.focused !== "number" || !Number.isInteger(l.focused)) return false;
-  return l.panes.length === 0 ? l.focused === 0 : l.focused >= 0 && l.focused < l.panes.length;
-};
+  if (typeof l.focused !== "string") return false;
+  if (l.root === null) return l.focused === "";
+  const ids = new Set<string>();
+  return isNode(l.root, ids) && ids.has(l.focused);
+}
+
+/** 칸들(읽는 순서: 트리의 깊이 우선 — 위에서 아래, 왼쪽에서 오른쪽) */
+export function panesOf(l: Layout): Pane[] {
+  const out: Pane[] = [];
+  const walk = (n: LayoutNode) => (isSplit(n) ? n.children.forEach(walk) : out.push(n));
+  if (l.root) walk(l.root);
+  return out;
+}
+
+export const paneOf = (l: Layout, id: string): Pane | undefined => panesOf(l).find((p) => p.id === id);
+
+/** 새 칸 id: 배치 안의 가장 큰 번호 다음(배치 안에서만 유일하면 된다) */
+export function nextPaneId(l: Layout): string {
+  let max = 0;
+  for (const p of panesOf(l)) {
+    const m = /^p(\d+)$/.exec(p.id);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `p${max + 1}`;
+}
 
 export function fromTabs(tabs: string[], last: string | null, mode: ViewMode): Layout {
   if (tabs.length === 0) return emptyLayout();
   const active = last !== null && tabs.includes(last) ? last : tabs[tabs.length - 1];
-  return { panes: [{ tabs: [...tabs], active, mode }], focused: 0 };
-}
-
-/** 옛 keyring:tabs / keyring:last-doc 원문 → 범위별 Layout. 둘 중 하나라도 모양이 틀리면 {} */
-export function migrateLayouts(tabsRaw: string | null, lastRaw: string | null, mode: ViewMode): Record<string, Layout> {
-  const tabs = parse(tabsRaw);
-  const last = lastRaw === null ? {} : parse(lastRaw);
-  if (!isRecordOf(isStringArray)(tabs) || !isRecordOf(isString)(last)) return {};
-  const out: Record<string, Layout> = {};
-  for (const [scope, paths] of Object.entries(tabs)) {
-    const l = fromTabs(paths, last[scope] ?? null, mode);
-    if (l.panes.length) out[scope] = l;
-  }
-  return out;
+  return { root: { id: "p1", tabs: [...tabs], active, mode }, focused: "p1" };
 }
 
 function parse(raw: string | null): unknown {
@@ -68,124 +109,433 @@ function parse(raw: string | null): unknown {
   }
 }
 
-const clampFocus = (panes: Pane[], focused: number): number => (panes.length === 0 ? 0 : Math.min(Math.max(focused, 0), panes.length - 1));
-
-export function openIn(l: Layout, pane: number, path: string, opts: { newTab?: boolean; mode?: ViewMode } = {}): Layout {
-  if (pane < 0 || pane >= MAX_PANES || pane > l.panes.length) return l;
-  if (pane === l.panes.length) {
-    const mode = opts.mode ?? l.panes[0]?.mode ?? "edit";
-    return { panes: [...l.panes, { tabs: [path], active: path, mode }], focused: pane };
+/** 옛 keyring:tabs / keyring:last-doc 원문 → 범위별 Layout. 둘 중 하나라도 모양이 틀리면 {} */
+export function migrateLayouts(tabsRaw: string | null, lastRaw: string | null, mode: ViewMode): Record<string, Layout> {
+  const tabs = parse(tabsRaw);
+  const last = lastRaw === null ? {} : parse(lastRaw);
+  if (!isRecordOf(isStringArray)(tabs) || !isRecordOf(isString)(last)) return {};
+  const out: Record<string, Layout> = {};
+  for (const [scope, paths] of Object.entries(tabs)) {
+    const l = fromTabs(paths, last[scope] ?? null, mode);
+    if (l.root) out[scope] = l;
   }
-  const p = l.panes[pane];
-  let tabs: string[];
-  if (p.tabs.includes(path)) tabs = p.tabs;
-  else if (opts.newTab || p.active === null || !p.tabs.includes(p.active)) tabs = [...p.tabs, path];
-  else tabs = p.tabs.map((t) => (t === p.active ? path : t));
-  const panes = l.panes.map((q, i) => (i === pane ? { ...q, tabs, active: path } : q));
-  return { panes, focused: pane };
+  return out;
 }
 
-export function closeIn(l: Layout, pane: number, path: string): Layout {
-  const p = l.panes[pane];
+interface LegacyPane {
+  tabs: string[];
+  active: string | null;
+  mode: ViewMode;
+}
+interface LegacyLayout {
+  panes: LegacyPane[];
+  focused: number;
+}
+
+const isLegacyLayout = (v: unknown): v is LegacyLayout => {
+  if (typeof v !== "object" || v === null) return false;
+  const l = v as Record<string, unknown>;
+  if (!Array.isArray(l.panes) || l.panes.length > 2 || !l.panes.every((p) => typeof p === "object" && p !== null && isPaneFields(p))) return false;
+  if (typeof l.focused !== "number" || !Number.isInteger(l.focused)) return false;
+  return l.panes.length === 0 ? l.focused === 0 : l.focused >= 0 && l.focused < l.panes.length;
+};
+
+/**
+ * 옛 keyring:panes(좌우 0~2칸) 원문 → 범위별 Layout. 두 칸이면 row 가지 하나, 비율은 옛 분할 비율(prefs.splitRatio).
+ * 저장값이 없으면 null(더 옛 저장값을 옮길 차례), JSON 범위 묶음이 아니면 {}. 모양이 틀린 범위는 그 범위만 버린다 —
+ * 옮긴 뒤 옛 키를 지우므로, 한 범위 때문에 통째로 버리면 다른 워크스페이스의 배치까지 사라진다
+ */
+export function migrateLegacyPanes(raw: string | null, ratio: number): Record<string, Layout> | null {
+  if (raw === null) return null;
+  const v = parse(raw);
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
+  const r = ratio > 0 && ratio < 1 ? ratio : 0.5;
+  const out: Record<string, Layout> = {};
+  for (const [scope, l] of Object.entries(v)) {
+    if (!isLegacyLayout(l)) continue;
+    const panes = l.panes.map((p, i): Pane => ({ id: `p${i + 1}`, tabs: [...p.tabs], active: p.active, mode: p.mode }));
+    if (!panes.length) continue;
+    const focused = panes[l.focused].id;
+    out[scope] = panes.length === 1 ? { root: panes[0], focused } : { root: { dir: "row", children: panes, sizes: [r, 1 - r] }, focused };
+  }
+  return out;
+}
+
+/** 칸 하나를 바꾼다(fn 이 같은 것을 돌려주면 배치도 그대로) */
+function updatePane(l: Layout, id: string, fn: (p: Pane) => Pane): Layout {
+  const walk = (n: LayoutNode): LayoutNode => {
+    if (!isSplit(n)) return n.id === id ? fn(n) : n;
+    const children = n.children.map(walk);
+    return children.every((c, i) => c === n.children[i]) ? n : { ...n, children };
+  };
+  if (!l.root) return l;
+  const root = walk(l.root);
+  return root === l.root ? l : { ...l, root };
+}
+
+const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
+
+/**
+ * 칸 하나를 뺀다. 가지가 자식 하나만 남으면 걷어 남은 자식을 부모에 붙이고, 그 자식이 부모와 같은 방향 가지면 부모에 펼쳐 넣는다.
+ * 빠진 칸의 비율은 남은 형제들이 비율대로 나눠 갖는다
+ */
+function without(n: LayoutNode, id: string): LayoutNode | null {
+  if (!isSplit(n)) return n.id === id ? null : n;
+  const kept: { node: LayoutNode; size: number }[] = [];
+  n.children.forEach((c, i) => {
+    const next = without(c, id);
+    if (next) kept.push({ node: next, size: n.sizes[i] });
+  });
+  if (kept.length === n.children.length && kept.every((k, i) => k.node === n.children[i])) return n;
+  if (kept.length === 0) return null;
+  if (kept.length === 1) return kept[0].node;
+  const total = sum(kept.map((k) => k.size));
+  const children: LayoutNode[] = [];
+  const sizes: number[] = [];
+  for (const k of kept) {
+    const s = k.size / total;
+    if (isSplit(k.node) && k.node.dir === n.dir) {
+      k.node.children.forEach((c, i) => {
+        children.push(c);
+        sizes.push(s * (k.node as Split).sizes[i]);
+      });
+    } else {
+      children.push(k.node);
+      sizes.push(s);
+    }
+  }
+  return { dir: n.dir, children, sizes };
+}
+
+const firstPane = (n: LayoutNode): Pane => (isSplit(n) ? firstPane(n.children[0]) : n);
+const lastPane = (n: LayoutNode): Pane => (isSplit(n) ? lastPane(n.children[n.children.length - 1]) : n);
+
+/**
+ * 칸 id 가 빠지면 그 자리를 차지하는 칸: 같은 가지의 뒤 형제(맨 뒤였으면 앞 형제), 형제가 가지면 빠진 칸에 맞닿은 쪽 끝 칸.
+ * 읽는 순서로 앞 칸을 고르면 [a | (b / c)] 에서 b 를 닫을 때 포커스가 a 로 건너뛴다 — 화면에서 b 자리를 채우는 것은 c 다
+ */
+function successorOf(n: LayoutNode, id: string): string | null {
+  if (!isSplit(n)) return null;
+  const i = n.children.findIndex((c) => !isSplit(c) && c.id === id);
+  if (i >= 0) {
+    const next = n.children[i + 1];
+    return next ? firstPane(next).id : lastPane(n.children[i - 1]).id;
+  }
+  for (const c of n.children) {
+    const s = successorOf(c, id);
+    if (s) return s;
+  }
+  return null;
+}
+
+/** 칸을 뺀다. 포커스가 그 칸이었으면 그 자리를 차지한 칸으로(successorOf) */
+export function removePane(l: Layout, id: string): Layout {
+  if (!l.root || !paneOf(l, id)) return l;
+  const root = without(l.root, id);
+  if (!root) return emptyLayout();
+  return { root, focused: l.focused === id ? (successorOf(l.root, id) ?? firstPane(root).id) : l.focused };
+}
+
+/**
+ * 탭 열기. 빈 배치면 첫 칸을 만든다(보기 모드는 opts.mode). 그 칸에 이미 있으면 활성만 바꾸고,
+ * newTab 이거나 활성 탭이 없으면 뒤에 붙이고, 아니면 활성 탭 자리를 바꿔친다. 결과의 포커스는 그 칸
+ */
+export function openIn(l: Layout, id: string, path: string, opts: { newTab?: boolean; mode?: ViewMode } = {}): Layout {
+  if (!l.root) {
+    const pid = nextPaneId(l);
+    return { root: { id: pid, tabs: [path], active: path, mode: opts.mode ?? "edit" }, focused: pid };
+  }
+  if (!paneOf(l, id)) return l;
+  const next = updatePane(l, id, (p) => {
+    let tabs: string[];
+    if (p.tabs.includes(path)) tabs = p.tabs;
+    else if (opts.newTab || p.active === null || !p.tabs.includes(p.active)) tabs = [...p.tabs, path];
+    else tabs = p.tabs.map((t) => (t === p.active ? path : t));
+    return tabs === p.tabs && p.active === path ? p : { ...p, tabs, active: path };
+  });
+  return next.focused === id ? next : { ...next, focused: id };
+}
+
+export function closeIn(l: Layout, id: string, path: string): Layout {
+  const p = paneOf(l, id);
   if (!p) return l;
   const i = p.tabs.indexOf(path);
   if (i < 0) return l;
   const rest = p.tabs.filter((t) => t !== path);
-  if (rest.length === 0) {
-    const panes = l.panes.filter((_, j) => j !== pane);
-    const focused = l.focused > pane ? l.focused - 1 : l.focused;
-    return { panes, focused: clampFocus(panes, focused) };
-  }
+  if (rest.length === 0) return removePane(l, id);
   const active = p.active === path ? rest[Math.min(i, rest.length - 1)] : p.active;
-  const panes = l.panes.map((q, j) => (j === pane ? { ...q, tabs: rest, active } : q));
-  return { panes, focused: clampFocus(panes, l.focused) };
+  return updatePane(l, id, (q) => ({ ...q, tabs: rest, active }));
 }
 
-export function moveTab(l: Layout, from: number, to: number, path: string): Layout {
-  if (from === to || !l.panes[from]?.tabs.includes(path)) return l;
-  const closed = closeIn(l, from, path);
-  const target = closed.panes.length < l.panes.length && to > from ? to - 1 : to;
-  // 옮길 칸이 없으면(한 칸에서 둘째로) 새 칸을 만든다. 원래 칸의 보기 모드를 따른다
-  return openIn(closed, Math.min(target, closed.panes.length), path, { newTab: true, mode: l.panes[from].mode });
+const axisOf = (side: Side): Dir => (side === "left" || side === "right" ? "row" : "column");
+
+/**
+ * 칸 target 의 side 쪽에 path 하나를 연 새 칸을 만든다(포커스는 새 칸, 보기 모드는 mode 또는 target 의 것).
+ * target 이 같은 방향 가지 안에 있으면 그 가지에 자식을 더하고 target 의 비율을 반으로 나눠 준다(Zed 와 같다).
+ * 아니면 target 자리를 [target, 새 칸] 가지로 바꾼다
+ */
+export function splitPane(l: Layout, target: string, side: Side, path: string, mode?: ViewMode): Layout {
+  const t = paneOf(l, target);
+  if (!t || !l.root) return l;
+  const id = nextPaneId(l);
+  const fresh: Pane = { id, tabs: [path], active: path, mode: mode ?? t.mode };
+  const dir = axisOf(side);
+  const before = side === "left" || side === "top";
+  const walk = (n: LayoutNode): LayoutNode => {
+    if (!isSplit(n)) return n.id === target ? { dir, children: before ? [fresh, n] : [n, fresh], sizes: [0.5, 0.5] } : n;
+    const i = n.children.findIndex((c) => !isSplit(c) && c.id === target);
+    if (i >= 0 && n.dir === dir) {
+      const half = n.sizes[i] / 2;
+      const at = before ? i : i + 1;
+      const children = [...n.children];
+      children.splice(at, 0, fresh);
+      const sizes = [...n.sizes];
+      sizes.splice(i, 1, half, half);
+      return { ...n, children, sizes };
+    }
+    const children = n.children.map(walk);
+    return children.every((c, j) => c === n.children[j]) ? n : { ...n, children };
+  };
+  return { root: walk(l.root), focused: id };
+}
+
+/** 탭을 다른 칸으로 옮긴다(그 칸의 새 탭). 원래 칸이 비면 빠진다 */
+export function moveTab(l: Layout, from: string, to: string, path: string): Layout {
+  if (from === to || !paneOf(l, from)?.tabs.includes(path) || !paneOf(l, to)) return l;
+  return openIn(closeIn(l, from, path), to, path, { newTab: true });
 }
 
 /**
- * 탭을 편집 영역의 가장자리로 끌어 놓았을 때: 그쪽 칸으로 옮긴다. 칸이 하나면 그쪽에 새 칸을 만든다(탭이 하나뿐이면 그대로).
- * 칸이 둘이면 왼쪽 가장자리는 0번 칸, 오른쪽은 1번 칸으로 옮기는 것과 같다.
+ * 끌던 탭을 칸 target 에 놓았을 때. 가운데면 그 칸의 탭으로 옮기고, 가장자리면 그쪽에 새 칸을 만든다.
+ * 같은 칸의 가장자리에 놓으면 그 탭을 떼어 나누되, 탭이 하나뿐이면 그대로(뗄 것이 없다)
  */
-export function dropTabAtEdge(l: Layout, from: number, path: string, side: "left" | "right"): Layout {
-  const src = l.panes[from];
-  if (!src?.tabs.includes(path)) return l;
-  if (l.panes.length === 2) return moveTab(l, from, side === "left" ? 0 : 1, path);
-  if (l.panes.length !== 1 || src.tabs.length < 2) return l;
-  const rest = closeIn(l, 0, path).panes[0];
-  const moved: Pane = { tabs: [path], active: path, mode: src.mode };
-  return side === "left" ? { panes: [moved, rest], focused: 0 } : { panes: [rest, moved], focused: 1 };
+export function dropTab(l: Layout, from: string, path: string, target: string, zone: DropZone): Layout {
+  const src = paneOf(l, from);
+  if (!src?.tabs.includes(path) || !paneOf(l, target)) return l;
+  if (zone === "center") return moveTab(l, from, target, path);
+  if (from === target && src.tabs.length < 2) return l;
+  return splitPane(closeIn(l, from, path), target, zone, path, src.mode);
 }
 
+/** 모든 칸을 하나로: 읽는 순서로 탭을 중복 없이 이어 붙이고 포커스 칸의 활성을 지킨다 */
 export function mergePanes(l: Layout): Layout {
-  if (l.panes.length < 2) return l;
-  const [first, ...others] = l.panes;
-  const tabs = [...first.tabs];
-  for (const p of others) for (const t of p.tabs) if (!tabs.includes(t)) tabs.push(t);
-  const active = l.panes[l.focused]?.active ?? first.active;
-  return { panes: [{ ...first, tabs, active }], focused: 0 };
+  const panes = panesOf(l);
+  if (panes.length < 2) return l;
+  const tabs: string[] = [];
+  for (const p of panes) for (const t of p.tabs) if (!tabs.includes(t)) tabs.push(t);
+  const first = panes[0];
+  const active = paneOf(l, l.focused)?.active ?? first.active;
+  return { root: { ...first, tabs, active }, focused: first.id };
 }
 
 export function renamePath(l: Layout, from: string, to: string): Layout {
-  if (!l.panes.some((p) => p.tabs.includes(from))) return l;
-  const panes = l.panes.map((p) => {
-    if (!p.tabs.includes(from)) return p;
+  let out = l;
+  for (const p of panesOf(l)) {
+    if (!p.tabs.includes(from)) continue;
     const tabs: string[] = [];
     for (const t of p.tabs) {
       const n = t === from ? to : t;
       if (!tabs.includes(n)) tabs.push(n);
     }
-    return { ...p, tabs, active: p.active === from ? to : p.active };
-  });
-  return { ...l, panes };
-}
-
-export function removePaths(l: Layout, gone: (p: string) => boolean): Layout {
-  let out = l;
-  // 칸이 사라지면 인덱스가 당겨지므로 오른쪽 칸부터 닫는다
-  for (let pane = l.panes.length - 1; pane >= 0; pane--) {
-    for (const t of l.panes[pane].tabs) if (gone(t)) out = closeIn(out, pane, t);
+    out = updatePane(out, p.id, (q) => ({ ...q, tabs, active: q.active === from ? to : q.active }));
   }
   return out;
 }
 
-export function setActive(l: Layout, pane: number, path: string): Layout {
-  const p = l.panes[pane];
-  if (!p || !p.tabs.includes(path) || p.active === path) return l;
-  return { ...l, panes: l.panes.map((q, i) => (i === pane ? { ...q, active: path } : q)) };
-}
-
-export function setMode(l: Layout, pane: number, mode: ViewMode): Layout {
-  const p = l.panes[pane];
-  if (!p || p.mode === mode) return l;
-  return { ...l, panes: l.panes.map((q, i) => (i === pane ? { ...q, mode } : q)) };
-}
-
-export function focusPane(l: Layout, pane: number): Layout {
-  if (pane < 0 || pane >= l.panes.length || pane === l.focused) return l;
-  return { ...l, focused: pane };
-}
-
-/** pane 이 아닌 칸 중 그 문서를 보고 있는(활성 탭인) 칸. 없으면 -1 */
-export function otherPaneShowing(l: Layout, pane: number, path: string): number {
-  return l.panes.findIndex((p, j) => j !== pane && p.active === path);
-}
-
-export function panesWith(l: Layout, path: string): number[] {
-  const out: number[] = [];
-  l.panes.forEach((p, i) => p.tabs.includes(path) && out.push(i));
+export function removePaths(l: Layout, gone: (p: string) => boolean): Layout {
+  let out = l;
+  for (const p of panesOf(l)) for (const t of p.tabs) if (gone(t)) out = closeIn(out, p.id, t);
   return out;
 }
 
-/** 둘째 칸을 열 수 있는가: 좁은 화면이 아니고 가운데 폭이 560 이상 */
-export function canSplit(centerWidth: number, narrow: boolean): boolean {
-  return !narrow && centerWidth >= MIN_PANE_WIDTH * 2;
+export function setActive(l: Layout, id: string, path: string): Layout {
+  return updatePane(l, id, (p) => (!p.tabs.includes(path) || p.active === path ? p : { ...p, active: path }));
+}
+
+/** 탭은 그대로 두고 그 칸에서 보던 문서만 내린다(홈을 보인다) */
+export function clearActive(l: Layout, id: string): Layout {
+  return updatePane(l, id, (p) => (p.active === null ? p : { ...p, active: null }));
+}
+
+export function setMode(l: Layout, id: string, mode: ViewMode): Layout {
+  return updatePane(l, id, (p) => (p.mode === mode ? p : { ...p, mode }));
+}
+
+export function focusPane(l: Layout, id: string): Layout {
+  return id === l.focused || !paneOf(l, id) ? l : { ...l, focused: id };
+}
+
+/** id 가 아닌 칸 중 그 문서를 보고 있는(활성 탭인) 칸. 없으면 null */
+export function otherPaneShowing(l: Layout, id: string, path: string): string | null {
+  return panesOf(l).find((p) => p.id !== id && p.active === path)?.id ?? null;
+}
+
+export function panesWith(l: Layout, path: string): string[] {
+  return panesOf(l)
+    .filter((p) => p.tabs.includes(path))
+    .map((p) => p.id);
+}
+
+/** 「다른 칸」: 읽는 순서로 다음 칸(끝이면 처음). 칸이 하나면 null */
+export function otherPaneOf(l: Layout, id: string): string | null {
+  const panes = panesOf(l);
+  const i = panes.findIndex((p) => p.id === id);
+  return panes.length < 2 || i < 0 ? null : panes[(i + 1) % panes.length].id;
+}
+
+/** 루트에서 at(자식 번호들)을 따라 내려간 노드. 길이 틀리면 거기서 멈춘 노드 */
+export function nodeAt(root: LayoutNode, at: number[]): LayoutNode {
+  let n = root;
+  for (const i of at) {
+    if (!isSplit(n) || !n.children[i]) break;
+    n = n.children[i];
+  }
+  return n;
+}
+
+/** 가지 하나의 비율을 바꾼다. at 은 루트에서 그 가지까지 자식 번호(루트 가지면 []) */
+export function setSizes(l: Layout, at: number[], sizes: number[]): Layout {
+  const walk = (n: LayoutNode, depth: number): LayoutNode => {
+    if (!isSplit(n)) return n;
+    if (depth === at.length) return sizes.length === n.children.length ? { ...n, sizes } : n;
+    const i = at[depth];
+    const c = n.children[i];
+    if (!c) return n;
+    const next = walk(c, depth + 1);
+    return next === c ? n : { ...n, children: n.children.map((x, j) => (j === i ? next : x)) };
+  };
+  if (!l.root) return l;
+  const root = walk(l.root, 0);
+  return root === l.root ? l : { ...l, root };
+}
+
+/**
+ * 경계 끌기: i 번째와 i+1 번째 자식의 비율을 delta 만큼 옮긴다. 둘의 합은 지키고 각자 최소(minA·minB, 비율)를 넘지 않는다.
+ * 둘 다 최소를 지킬 자리가 없으면 그대로
+ */
+export function dragSizes(sizes: number[], i: number, delta: number, minA: number, minB: number): number[] {
+  const total = sizes[i] + sizes[i + 1];
+  if (minA + minB > total) return sizes;
+  const a = Math.min(Math.max(sizes[i] + delta, minA), total - minB);
+  if (a === sizes[i]) return sizes;
+  const out = [...sizes];
+  out[i] = a;
+  out[i + 1] = total - a;
+  return out;
+}
+
+/** 칸 하나가 이 방향(row 면 폭, column 이면 높이)으로 가져야 하는 최소 px */
+export function minExtent(n: LayoutNode, dir: Dir): number {
+  if (!isSplit(n)) return dir === "row" ? MIN_PANE_WIDTH : MIN_PANE_HEIGHT;
+  const each = n.children.map((c) => minExtent(c, dir));
+  return n.dir === dir ? sum(each) : Math.max(...each);
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** 칸마다 단위 사각형(가운데 전체가 0~1) 안의 자리. 비율로만 계산한다 */
+export function rectsOf(l: Layout): Record<string, Rect> {
+  const out: Record<string, Rect> = {};
+  const walk = (n: LayoutNode, r: Rect) => {
+    if (!isSplit(n)) {
+      out[n.id] = r;
+      return;
+    }
+    let at = 0;
+    n.children.forEach((c, i) => {
+      const s = n.sizes[i];
+      walk(c, n.dir === "row" ? { x: r.x + r.w * at, y: r.y, w: r.w * s, h: r.h } : { x: r.x, y: r.y + r.h * at, w: r.w, h: r.h * s });
+      at += s;
+    });
+  };
+  if (l.root) walk(l.root, { x: 0, y: 0, w: 1, h: 1 });
+  return out;
+}
+
+export interface SplitHandle {
+  /** 루트에서 그 가지까지 자식 번호(setSizes 의 at) */
+  at: number[];
+  /** 이 손잡이의 왼쪽(위쪽) 자식 번호. 손잡이는 i 와 i+1 사이 */
+  i: number;
+  dir: Dir;
+  /** 그 가지 전체의 단위 사각형 */
+  rect: Rect;
+  /** 경계의 자리: row 면 x, column 이면 y(단위 사각형 안) */
+  pos: number;
+}
+
+/** 이웃한 자식 사이의 경계 손잡이들(가지마다 자식 수 - 1개) */
+export function handlesOf(l: Layout): SplitHandle[] {
+  const out: SplitHandle[] = [];
+  const walk = (n: LayoutNode, r: Rect, at: number[]) => {
+    if (!isSplit(n)) return;
+    let acc = 0;
+    n.children.forEach((c, i) => {
+      const s = n.sizes[i];
+      const cr = n.dir === "row" ? { x: r.x + r.w * acc, y: r.y, w: r.w * s, h: r.h } : { x: r.x, y: r.y + r.h * acc, w: r.w, h: r.h * s };
+      acc += s;
+      if (i < n.children.length - 1) out.push({ at, i, dir: n.dir, rect: r, pos: n.dir === "row" ? r.x + r.w * acc : r.y + r.h * acc });
+      walk(c, cr, [...at, i]);
+    });
+  };
+  if (l.root) walk(l.root, { x: 0, y: 0, w: 1, h: 1 }, []);
+  return out;
+}
+
+const EPS = 1e-6;
+
+/** side 쪽으로 맞닿은 이웃 칸. 여럿이면 지금 칸의 가운데 줄을 품는 칸, 그런 칸이 없으면 가장 많이 겹치는 칸 */
+export function neighborOf(l: Layout, id: string, side: Side): string | null {
+  const rects = rectsOf(l);
+  const r = rects[id];
+  if (!r) return null;
+  const horizontal = side === "left" || side === "right";
+  const mid = horizontal ? r.y + r.h / 2 : r.x + r.w / 2;
+  let best: { id: string; contains: boolean; overlap: number } | null = null;
+  for (const [oid, o] of Object.entries(rects)) {
+    if (oid === id) continue;
+    const touches =
+      side === "left"
+        ? Math.abs(o.x + o.w - r.x) < EPS
+        : side === "right"
+          ? Math.abs(r.x + r.w - o.x) < EPS
+          : side === "top"
+            ? Math.abs(o.y + o.h - r.y) < EPS
+            : Math.abs(r.y + r.h - o.y) < EPS;
+    if (!touches) continue;
+    const [a0, a1, b0, b1] = horizontal ? [r.y, r.y + r.h, o.y, o.y + o.h] : [r.x, r.x + r.w, o.x, o.x + o.w];
+    const overlap = Math.min(a1, b1) - Math.max(a0, b0);
+    if (overlap <= EPS) continue;
+    // 가운데 줄이 두 칸의 경계에 정확히 걸치면 둘 다 품는다 — 그때는 읽는 순서로 먼저 오는(위·왼쪽) 칸
+    const contains = mid >= b0 - EPS && mid <= b1 + EPS;
+    if (!best || (contains && !best.contains) || (contains === best.contains && overlap > best.overlap + EPS)) best = { id: oid, contains, overlap };
+  }
+  return best?.id ?? null;
+}
+
+/** 크기가 w×h 인 칸을 side 쪽으로 나눌 수 있는가: 나눈 절반이 최소보다 작지 않고 좁은 화면이 아니다 */
+export function canSplitRect(w: number, h: number, side: Side, narrow: boolean): boolean {
+  if (narrow) return false;
+  return axisOf(side) === "row" ? w >= MIN_PANE_WIDTH * 2 : h >= MIN_PANE_HEIGHT * 2;
+}
+
+/** 끌던 탭을 놓을 자리: 칸 안의 포인터 위치(x, y)에서 가장 가까운 가장자리가 1/4 안이면 그 가장자리, 아니면 가운데 */
+export function dropZone(x: number, y: number, w: number, h: number, allowed: (s: Side) => boolean): DropZone {
+  if (w <= 0 || h <= 0) return "center";
+  const d: [Side, number][] = [
+    ["left", x / w],
+    ["right", 1 - x / w],
+    ["top", y / h],
+    ["bottom", 1 - y / h],
+  ];
+  let best: [Side, number] | null = null;
+  for (const e of d) if (allowed(e[0]) && e[1] < 0.25 && (!best || e[1] < best[1])) best = e;
+  return best?.[0] ?? "center";
 }
 
 /** 가운데가 이보다 좁아지면 오른쪽 패널을 붙이지 않고 띄운다: 문서 머리의 도구 단추와 탭 하나가 들어가는 폭 */

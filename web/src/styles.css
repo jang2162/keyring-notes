@@ -574,11 +574,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .left-dock { grid-area: dock; display: flex; min-height: 0; background: var(--bg-soft); border-right: 1px solid var(--border); }
 .shell > .resizer-left { grid-area: lres; }
 .center { grid-area: center; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
-/* 탭을 끄는 동안 편집 영역 좌우 가장자리에 나타나는 분할 놓을 자리(탭 바 아래부터) */
-.edge-drop { position: absolute; top: 40px; bottom: 0; width: 30%; z-index: 5; border: 2px dashed color-mix(in srgb, var(--accent) 35%, transparent); border-radius: var(--radius, 6px); }
-.edge-drop.left { left: 0; }
-.edge-drop.right { right: 0; }
-.edge-drop.over { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); }
 .shell > .resizer-right { grid-area: rres; }
 .right-panel { grid-area: right; width: var(--right-w); min-height: 0; display: flex; flex-direction: column; background: var(--bg-soft); border-left: 1px solid var(--border); }
 .statusbar { grid-area: status; }
@@ -705,15 +700,35 @@ body.resizing { cursor: col-resize; user-select: none; }
 .banner.conflict, .banner.revision { background: var(--warn-bg); color: var(--warn-fg); }
 
 /* 본문 */
-/* 가운데 두 칸(좌우). 칸마다 탭 바·문서 머리·에디터. 한 칸이면 지금 화면과 같다 */
+/* 가운데 칸들(나눈 트리). 칸마다 탭 바·문서 머리·에디터. 한 칸이면 지금 화면과 같다 */
 .split-root { flex: 1; display: flex; min-height: 0; min-width: 0; }
-.split-pane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.split-pane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+/* 여러 칸: 칸들은 한 층에 나란히 두고 비율로 자리를 잡는다(Workspace.tsx 의 center 주석) */
+.split-root.multi { display: block; position: relative; }
+.split-root.multi > .split-pane { position: absolute; overflow: hidden; }
+.split-pane.edge-l { border-left: 1px solid var(--border); }
+.split-pane.edge-t { border-top: 1px solid var(--border); }
 /* 칸 요소가 포커스를 받을 때(미리보기 칸으로 포커스 옮기기) 테두리를 그리지 않는다 — 활성 칸은 탭 바의 선이 보여 준다 */
 .split-pane:focus { outline: none; }
-.split-root.two .split-pane + .split-pane { border-left: 1px solid var(--border); }
-.split-root.two .split-pane.focused > .tabbar { box-shadow: inset 0 2px 0 var(--accent); }
-.split-divider { margin: 0 -3px; }
-.tab-list.drop-target { background: var(--active); box-shadow: inset 0 0 0 1px var(--accent); }
+.split-root.multi .split-pane.focused > .tabbar { box-shadow: inset 0 2px 0 var(--accent); }
+/* 이웃한 칸 사이의 경계 손잡이(끌기 6px, 보이는 선은 가운데 2px) */
+.split-handle { position: absolute; z-index: 6; touch-action: none; }
+.split-handle.row { width: 6px; cursor: col-resize; }
+.split-handle.column { height: 6px; cursor: row-resize; }
+.split-handle::after { content: ""; position: absolute; background: transparent; transition: background 0.15s; }
+.split-handle.row::after { inset: 0 2px; }
+.split-handle.column::after { inset: 2px 0; }
+.split-handle:hover::after, .split-handle:focus-visible::after { background: var(--accent); }
+.split-handle:focus-visible { outline: none; }
+body.resizing-row { cursor: row-resize; user-select: none; }
+/* 탭을 끄는 동안 칸 위에 덮는 놓을 자리. 강조는 놓으면 탭이 들어갈 곳(가장자리면 새 칸이 될 절반) */
+.split-drop { position: absolute; inset: 0; z-index: 7; }
+.split-drop-hint { position: absolute; pointer-events: none; background: color-mix(in srgb, var(--accent) 16%, transparent); border: 2px dashed var(--accent); border-radius: var(--radius, 6px); }
+.split-drop-hint.center { inset: 4px; }
+.split-drop-hint.left { inset: 4px 50% 4px 4px; }
+.split-drop-hint.right { inset: 4px 4px 4px 50%; }
+.split-drop-hint.top { inset: 4px 4px 50% 4px; }
+.split-drop-hint.bottom { inset: 50% 4px 4px 4px; }
 .doc-area { flex: 1; display: flex; min-height: 0; }
 .panes { flex: 1; display: flex; min-height: 0; min-width: 0; }
 .pane { flex: 1; min-width: 0; overflow: auto; }

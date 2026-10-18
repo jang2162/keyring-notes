@@ -62,16 +62,23 @@ export class SyncController {
   private timer: ReturnType<typeof setInterval> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * passive: 노트 하나만 띄운 새 창. 동기화를 돌리지 않는다(저장 뒤·자동·수동 모두) — 원래 창 하나가 맡는다.
+   * 창마다 엔진이 돌면 같은 동기화 상태 파일을 번갈아 덮고, 한 창의 반영이 다른 창의 저장과 겹친다.
+   * 새 창의 저장은 원래 창의 다음 동기화(창에 돌아올 때·5분마다)가 올린다
+   */
   constructor(
     private vault: LocalVault,
     private fetchFn: typeof fetch,
+    private opts: { passive?: boolean } = {},
   ) {
     this.status = { settings: load(), running: false, lastReport: null, lastError: null, lastSync: null };
-    vault.onChange((_paths, source) => {
-      if (source !== "local" || !this.status.settings?.auto) return;
-      if (this.saveTimer) clearTimeout(this.saveTimer);
-      this.saveTimer = setTimeout(() => void this.run(), AFTER_SAVE_DELAY);
-    });
+    if (!opts.passive)
+      vault.onChange((_paths, source) => {
+        if (source !== "local" || !this.status.settings?.auto) return;
+        if (this.saveTimer) clearTimeout(this.saveTimer);
+        this.saveTimer = setTimeout(() => void this.run(), AFTER_SAVE_DELAY);
+      });
     void this.engine()
       ?.state()
       .then((s) => this.set({ lastSync: s.lastSync }));
@@ -122,6 +129,7 @@ export class SyncController {
   }
 
   async run(): Promise<SyncReport | null> {
+    if (this.opts.passive) return null;
     const engine = this.engine();
     if (!engine) return null;
     this.set({ running: true });
@@ -139,7 +147,7 @@ export class SyncController {
 
   startAuto() {
     this.stopAuto();
-    if (!this.status.settings?.auto) return;
+    if (this.opts.passive || !this.status.settings?.auto) return;
     this.timer = setInterval(() => void this.run(), AUTO_INTERVAL);
     window.addEventListener("focus", this.onFocus);
     window.addEventListener("online", this.onFocus);
