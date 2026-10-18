@@ -1031,7 +1031,7 @@
   "settings.dailyTemplateHint": "Path of the template note in the workspace. Date tags (daily/2026/10/07, 10-07, 2026-W41, Wednesday) are added to tags when the note is created.",
   "settings.dailyTokens": "Tokens: YYYY MM DD M D · week WW W · week-based year GGGG · month name MMMM · weekday ddd dddd · [text] · / for subfolders",
   "settings.device": "This device & sync",
-  "settings.deviceKeywords": "sync server connection vault folder device update version",
+  "settings.deviceKeywords": "sync server connection vault folder device update",
   "settings.editor": "Editor",
   "settings.files": "Files & links",
   "settings.font": "Body font",

@@ -1002,7 +1002,7 @@
   "settings.dailyTemplateHint": "워크스페이스 안 템플릿 노트 경로. 날짜 태그(데일리/2026/10/07, 10-07, 2026-W41, 수요일)는 만들 때 tags에 자동으로 들어갑니다.",
   "settings.dailyTokens": "토큰: YYYY MM DD M D · 주차 WW W · 주 기준 연도 GGGG · 월 이름 MMMM · 요일 ddd dddd · [글자] · /는 하위 폴더",
   "settings.device": "이 기기·동기화",
-  "settings.deviceKeywords": "동기화 서버 연결 볼트 폴더 기기 업데이트 버전 sync update",
+  "settings.deviceKeywords": "동기화 서버 연결 볼트 폴더 기기 업데이트 sync update",
   "settings.editor": "편집기",
   "settings.files": "파일·링크",
   "settings.font": "본문 글꼴",

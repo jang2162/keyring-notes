@@ -158,6 +158,8 @@ KEYRING_VAULT=/tmp/vault-copy pnpm start
 
 앱 메타데이터는 볼트 안 `.keyring-app/`(점 폴더라 서버·Obsidian은 무시)에 둔다: 변경 기록(`journal.jsonl`), 내용 스냅샷(`objects/`, 해시로 저장해 중복 없음), 동기화 기준점(`sync.json`).
 
+**업데이트(데스크톱 앱)**: 실행하고 몇 초 뒤 GitHub 릴리스에 새 버전이 있는지 묻고, 있으면 먼저 물어본다. 「업데이트하고 다시 시작」 을 고른 뒤에만 받아서 업데이트 서명을 확인하고 설치·재시작한다. 설정 → 이 기기·동기화 → 앱 업데이트에서 실행 때 확인을 끌 수 있고(끄면 실행 때 아무 요청도 보내지 않는다), 「업데이트 확인」 으로 그때그때 확인한다.
+
 ### 서버와 동기화(선택)
 
 앱 레일 아래의 동기화 단추(또는 설정 → 이 기기·동기화) → 서버 주소·기기 이름·서버 비밀번호 → "연결하고 동기화". 서버는 이 기기용 토큰(`kd_…`)을 발급하고, 관리 콘솔 → 앱·기기에서 기기별로 끊을 수 있다.
@@ -177,11 +179,14 @@ KEYRING_VAULT=/tmp/vault-copy pnpm start
 pnpm install --frozen-lockfile
 pnpm app:dev                          # 데스크톱 개발 실행(웹 개발 서버 + 앱 창)
 pnpm app:build                        # 설치 파일(Windows .msi/.exe, macOS .dmg, Linux .deb/.rpm/.AppImage)
+pnpm -F @keyring-notes/app build:mac  # macOS universal(Apple Silicon + Intel) .app/.dmg, 서명 없음
 pnpm -F @keyring-notes/app android:init && pnpm -F @keyring-notes/app android:build   # Android SDK·NDK 필요
 pnpm -F @keyring-notes/app ios:init && pnpm -F @keyring-notes/app ios:build           # macOS + Xcode 필요
 ```
 
 필요한 것: Rust(stable), Node 22, 플랫폼별 [Tauri 사전 요구 사항](https://v2.tauri.app/start/prerequisites/)(Linux는 `libwebkit2gtk-4.1-dev` 등). 아이콘은 `pnpm -F @keyring-notes/app icons`으로 다시 만든다.
+
+**macOS 앱 릴리스**: `v*` 태그를 올리면 GitHub Actions 가 앱을 빌드·서명(Developer ID)·공증해 앱 업데이터가 읽는 파일과 함께 GitHub 릴리스로 공개한다. 서버와 앱은 버전과 릴리스를 함께 쓴다. 처음 한 번 할 준비(인증서, App Store Connect API 키, 업데이트 서명 키, GitHub 비밀)와 릴리스 절차: [docs/guides/release-macos.md](docs/guides/release-macos.md).
 
 ## 노트 쓰기
 

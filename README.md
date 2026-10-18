@@ -158,6 +158,8 @@ Connecting to a server is optional; when connected, notes are synced with that s
 
 App metadata lives in `.keyring-app/` inside the vault (a dot folder, so the server and Obsidian ignore it): the change journal (`journal.jsonl`), content snapshots (`objects/`, stored by hash, no duplicates) and the sync baseline (`sync.json`).
 
+**Updates (desktop app)**: a few seconds after start, the app asks GitHub Releases whether a new version is out and, if so, asks you first; it downloads, verifies the update signature, installs and restarts only after you choose "Update and restart". Turn the startup check off in Settings → This device & sync → App updates (then no request is sent at startup); "Check for updates" there checks on demand.
+
 ### Syncing with a server (optional)
 
 The sync button at the bottom of the app rail (or Settings → This device & sync) → server address, device name, server password → "Connect and sync". The server issues a token for this device (`kd_…`), and you can disconnect each device in the admin console → Devices.
@@ -177,11 +179,14 @@ Automatic sync runs when the app opens, 10 seconds after saving, when you return
 pnpm install --frozen-lockfile
 pnpm app:dev                          # run the desktop app in dev mode (web dev server + app window)
 pnpm app:build                        # installers (Windows .msi/.exe, macOS .dmg, Linux .deb/.rpm/.AppImage)
+pnpm -F @keyring-notes/app build:mac  # macOS universal (Apple Silicon + Intel) .app/.dmg, unsigned
 pnpm -F @keyring-notes/app android:init && pnpm -F @keyring-notes/app android:build   # requires the Android SDK and NDK
 pnpm -F @keyring-notes/app ios:init && pnpm -F @keyring-notes/app ios:build           # requires macOS + Xcode
 ```
 
 Requirements: Rust (stable), Node 22, and the platform-specific [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (`libwebkit2gtk-4.1-dev` etc. on Linux). Regenerate icons with `pnpm -F @keyring-notes/app icons`.
+
+**Releasing the macOS app**: pushing a `v*` tag makes GitHub Actions build, sign (Developer ID), notarize and publish the app to GitHub Releases, together with the file the in-app updater reads. The server and the app share one version and one release. One-time setup (certificate, App Store Connect API key, update signing key, GitHub secrets) and the release steps: [docs/guides/release-macos.md](docs/guides/release-macos.md) (Korean).
 
 ## Writing notes
 

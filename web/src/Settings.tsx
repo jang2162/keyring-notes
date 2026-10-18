@@ -567,6 +567,11 @@ function SectionBody({
 function UpdateSettings({ query }: { query: string }) {
   const prefs = usePrefs();
   const [busy, setBusy] = useState(false);
+  // 검색: 맞는 줄이 없으면 제목도 숨기고, 제목(「앱 업데이트」)이 맞으면 두 줄을 다 보인다
+  const q = query.trim().toLowerCase();
+  const titleHit = !!q && both("settings.updates").includes(q);
+  const hit = !q || titleHit || ["settings.updateCheck", "settings.updateCheckHint", "settings.updateNow"].some((k) => both(k).includes(q));
+  const rowQuery = titleHit ? "" : query;
   const checkNow = async () => {
     setBusy(true);
     try {
@@ -579,13 +584,14 @@ function UpdateSettings({ query }: { query: string }) {
       setBusy(false);
     }
   };
+  if (!hit) return null;
   return (
     <section className="update-settings">
       <h3>{t("settings.updates")}</h3>
-      <Row label="settings.updateCheck" hint="settings.updateCheckHint" query={query} scope="device">
+      <Row label="settings.updateCheck" hint="settings.updateCheckHint" query={rowQuery} scope="device">
         <Toggle label={t("settings.updateCheck")} value={prefs.updateCheck} onChange={(v) => setPrefs({ updateCheck: v })} />
       </Row>
-      <Row label="settings.updateNow" hintNode={t("settings.updateNowHint", { version: APP_VERSION })} query={query} scope="device">
+      <Row label="settings.updateNow" hintNode={t("settings.updateNowHint", { version: APP_VERSION })} query={rowQuery} scope="device">
         <button type="button" onClick={() => void checkNow()} disabled={busy}>
           {busy ? t("update.checking") : t("settings.updateNow")}
         </button>
