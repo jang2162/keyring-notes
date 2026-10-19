@@ -32,6 +32,17 @@ services:
       KEYRING_S3_BLOBS: ${KEYRING_S3_BLOBS:-0}
       KEYRING_S3_BLOB_MIN_KB: ${KEYRING_S3_BLOB_MIN_KB:-}
       KEYRING_S3_ENCRYPTION_KEY: ${KEYRING_S3_ENCRYPTION_KEY:-}
+      # 컨테이너 안 경로다. 키 파일은 /data 아래에 둔다(예: /data/s3.key)
+      KEYRING_S3_ENCRYPTION_KEY_FILE: ${KEYRING_S3_ENCRYPTION_KEY_FILE:-}
+      KEYRING_EMBED_URL: ${KEYRING_EMBED_URL:-}
+      KEYRING_EMBED_MODEL: ${KEYRING_EMBED_MODEL:-}
+      KEYRING_EMBED_KEY: ${KEYRING_EMBED_KEY:-}
+      KEYRING_SCHEDULER: ${KEYRING_SCHEDULER:-}
+      KEYRING_BACKUP_SCHEDULER: ${KEYRING_BACKUP_SCHEDULER:-}
+      # 값 없이 적은 둘은 .env 에 없으면 컨테이너에 넘기지 않는다. 서버가 빈 값을 「없음」과 다르게 읽기 때문이다:
+      # KEYRING_UPDATE_URL 은 빈 값이면 업데이트 확인을 끄고, KEYRING_LANG 은 빈 값이면 LANG 으로 넘어가지 않는다
+      KEYRING_UPDATE_URL:
+      KEYRING_LANG:
       TZ: ${TZ:-Asia/Seoul}
     volumes:
       # 기본은 named volume. 서버에서는 KEYRING_DATA_DIR 에 호스트 경로를 주면 그 디렉터리에 둔다

@@ -32,7 +32,7 @@ When `KEYRING_PUBLIC_URL` is set, only requests for that host name are accepted 
 
 ### Deploying to a server
 
-Running behind a reverse proxy, the data path, and the `.env` keys Docker Compose passes to the container are covered in [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md) (only keys listed under `environment:` in `docker-compose.yml` reach the container; add others such as `KEYRING_EMBED_*` there); deploying as a Komodo Stack in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (both Korean).
+Running behind a reverse proxy, the data path, and the `.env` keys Docker Compose passes to the container are covered in [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md) (only keys listed under `environment:` in `docker-compose.yml` reach the container; the server settings an operator would set, `KEYRING_EMBED_*` included, are already there, while paths fixed by the image such as `KEYRING_DATA` and `KEYRING_HOST` are not); deploying as a Komodo Stack in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (both Korean).
 
 ### Updating
 
