@@ -1189,6 +1189,7 @@
   "tab.newWindow": "Open in new window",
   "tab.none": "No open notes",
   "tab.switch": "Open notes: {count}",
+  "tab.tearOutUnsaved": "Save \"{name}\" first to move it to a new window.",
   "tags.none": "#tags in your notes show up here",
   "tags.title": "Tags {count}",
   "theme.dark": "Dark",

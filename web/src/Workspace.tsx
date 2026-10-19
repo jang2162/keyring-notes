@@ -181,7 +181,8 @@ import {
   type ViewMode,
 } from "./panes";
 import { TabCountButton, TabSwitcher } from "./TabSwitcher";
-import { canOpenSolo, openSolo, SOLO } from "./soloWindow";
+import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
+import { tearOutAt } from "./tearOut";
 
 /** 비율(0~1) → CSS 퍼센트 */
 const pct = (v: number) => `${(v * 100).toFixed(4)}%`;
@@ -1066,6 +1067,30 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         delete out[path];
         return out;
       });
+  };
+
+  /**
+   * 탭을 창 밖에 놓았으면 그 노트를 놓은 자리에 새 창으로 열고 이 창의 탭은 닫는다(옮기기). 저장하지 않은 초안은 새 창으로
+   * 넘어가지 않으므로 먼저 저장하고, 저장하지 못했으면(자동 저장을 끈 경우 등) 옮기지 않는다.
+   * 새 창(solo)의 하나뿐인 탭은 떼어 내도 빈 창만 남으므로 그대로 둔다
+   */
+  const tearOut = async (e: DragEvent, pane: string, path: string) => {
+    if (SOLO && panesOf(curLayout()).reduce((n, p) => n + p.tabs.length, 0) < 2) return;
+    const at = await tearOutAt(e);
+    if (!at) return;
+    await flush([path]);
+    const d = docsRef.current[path];
+    if (d && isDirty(d)) {
+      toast(t("tab.tearOutUnsaved", { name: stemOf(path) }), { kind: "warn" });
+      return;
+    }
+    try {
+      await openSolo(path, stemOf(path), at);
+    } catch (err) {
+      toastError(err);
+      return;
+    }
+    await closeTab(pane, path);
   };
 
   /**
@@ -2954,9 +2979,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 const from = { pane: pane.id, path: tp };
                 setTimeout(() => setTabDrag(from), 0);
               }}
-              onDragEnd={() => {
+              onDragEnd={(e) => {
                 setTabDrag(null);
                 setDropAt(null);
+                // 데스크톱 앱에서 창 밖에 놓았으면 새 창으로 떼어 낸다(웹은 지금처럼 아무 일도 없다)
+                if (pane && canTearOut()) void tearOut(e.nativeEvent, pane.id, tp);
               }}
               onContextMenu={(e) => {
                 if (!pane) return;
