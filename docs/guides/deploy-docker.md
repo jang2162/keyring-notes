@@ -51,6 +51,10 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 
 `cp .env.example .env` 뒤 고친다. `.env` 는 커밋하지 않는다. compose 의 `environment:` 에 적힌 키만 컨테이너에 들어가므로, 키를 더하거나 빼면 compose 파일·`.env.example`·이 표를 같은 커밋에서 고친다.
 
+`${X:-}` 는 `.env` 에 없는 키도 빈 문자열로 넘긴다. 서버가 빈 값을 「없음」과 다르게 읽는 키(`KEYRING_UPDATE_URL`·`KEYRING_LANG`)는 compose 에 값 없이(`KEYRING_LANG:`) 적어 `.env` 에 없으면 넘기지 않는다. 키를 더할 때는 서버 코드가 빈 값을 어떻게 읽는지 보고 둘 중 하나를 고른다.
+
+컨테이너에 넘기지 않는 서버 변수: `KEYRING_DATA`·`KEYRING_HOST`·`KEYRING_PORT`·`KEYRING_WEB_DIST` 는 Dockerfile 이 정하고, `KEYRING_VAULT`·`KEYRING_CONFIG`·`KEYRING_BACKUP_DIR`·`KEYRING_PLUGINS_DIR`·`KEYRING_INDEX` 는 `/data` 아래로 정해진다. `KEYRING_PASSWORD` 는 CLI 전용이다. `.env` 의 `KEYRING_PORT` 는 호스트 쪽 포트일 뿐이다.
+
 | 키 | 필수 | 설명 | 예시 |
 | --- | --- | --- | --- |
 | `COMPOSE_FILE` | 선택(`docker-compose.yml`) | 겹쳐 쓸 compose 파일(`:` 로 이음). Komodo 에서는 쓰지 않는다 | `docker-compose.yml:compose.override.yaml` |
@@ -61,11 +65,17 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 | `KEYRING_ALLOWED_HOSTS` | 선택 | 받을 호스트 목록(쉼표). **정하면 이 목록만 받는다** — `KEYRING_PUBLIC_URL` 의 호스트도 함께 적는다 | `notes.example.com,keyring.tailnet.ts.net` |
 | `KEYRING_FETCH_ALLOW_PRIVATE` | 선택(`0`) | 사설 주소 URL 수집 허용 | `1` |
 | `TZ` | 선택(`Asia/Seoul`) | 정기 작업·백업 시각의 시간대 | |
+| `KEYRING_LANG` | 선택(`LANG`, 없으면 영어) | 서버 언어(서버 오류 글·로그·CLI). 관리 화면에서 정하면 그것이 먼저다 | `ko` |
+| `KEYRING_UPDATE_URL` | 선택(GitHub releases/latest) | 업데이트 확인 주소. **빈 값으로 적으면 확인하지 않는다**(적지 않으면 기본 주소로 확인한다) | |
+| `KEYRING_SCHEDULER`·`KEYRING_BACKUP_SCHEDULER` | 선택(켜짐) | `0` 이면 정기 작업(웹훅)·자동 백업 스케줄러를 끈다 | `0` |
+| `KEYRING_EMBED_URL`·`KEYRING_EMBED_MODEL` | 선택 | 의미 검색용 OpenAI 호환 `/embeddings` 주소와 모델. 둘 다 있어야 켜진다. 컨테이너 안의 `localhost` 는 호스트가 아니다 | `https://api.openai.com/v1/embeddings`·`text-embedding-3-small` |
+| `KEYRING_EMBED_KEY` | 선택(비밀) | 임베딩 API 키(`Authorization: Bearer`) | |
 | `KEYRING_S3_*` | 선택 | S3 호환 저장소. 키와 뜻은 `.env.example`. 구성 방법은 아래 「S3」 | |
 | `COMPOSE_PROFILES` | 선택 | `s3` 면 함께 든 SeaweedFS 를 띄운다 | `s3` |
 | `SEAWEEDFS_DATA_DIR` | 선택(named volume) | SeaweedFS 데이터의 호스트 경로 | `/srv/keyring-notes/seaweedfs` |
 | `SEAWEEDFS_IMAGE` | 선택(`chrislusf/seaweedfs`) | SeaweedFS 이미지. 판을 고정할 때 | |
 | `KEYRING_S3_ACCESS_KEY_ID`·`KEYRING_S3_SECRET_ACCESS_KEY`·`KEYRING_S3_ENCRYPTION_KEY` | 선택(비밀) | 비밀값. 암호화 키는 잃으면 복구할 수 없으니 따로 보관한다 | |
+| `KEYRING_S3_ENCRYPTION_KEY_FILE` | 선택 | 암호화 키를 파일에서 읽는다(`KEYRING_S3_ENCRYPTION_KEY` 대신). **컨테이너 안 경로**라 `/data` 아래에 둔다 — 호스트에서는 `KEYRING_DATA_DIR` 의 그 자리(named volume 이면 볼륨 안)이고, 컨테이너 사용자(uid 1000)가 읽을 수 있어야 한다 | `/data/s3.key` |
 
 ## S3
 

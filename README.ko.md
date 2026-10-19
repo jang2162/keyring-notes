@@ -32,7 +32,7 @@ docker compose logs keyring               # "First run: … setup code → XXXX-
 
 ### 서버 배포
 
-리버스 프록시 뒤에 두기, 데이터 경로, compose 가 컨테이너에 넘기는 `.env` 키는 [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md)에(`docker-compose.yml` 의 `environment:` 에 적힌 키만 컨테이너에 들어간다. `KEYRING_EMBED_*` 등은 거기에 더한다), Komodo Stack 으로 올리는 법은 [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md)에 있다.
+리버스 프록시 뒤에 두기, 데이터 경로, compose 가 컨테이너에 넘기는 `.env` 키는 [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md)에(`docker-compose.yml` 의 `environment:` 에 적힌 키만 컨테이너에 들어간다. 운영자가 정할 서버 설정은 `KEYRING_EMBED_*` 까지 이미 거기에 있고, `KEYRING_DATA`·`KEYRING_HOST` 처럼 이미지가 정하는 경로류는 없다), Komodo Stack 으로 올리는 법은 [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md)에 있다.
 
 ### 업데이트
 
