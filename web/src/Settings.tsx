@@ -237,6 +237,8 @@ export interface WorkspaceOps {
   create: (name: string) => Promise<void>;
   rename: (from: string, to: string) => Promise<void>;
   reorder: (names: string[]) => Promise<void>;
+  /** 확인을 받고 지운다(취소하면 아무것도 하지 않는다) */
+  remove: (name: string) => Promise<void>;
   pickIcon: (name: string, at: { x: number; y: number }) => void;
   open: (name: string) => void;
 }
@@ -714,6 +716,9 @@ function WorkspaceSettings({
                   }
                 >
                   {t("common.rename")}
+                </button>
+                <button type="button" className="danger" aria-label={t("ws.delete", { name })} onClick={() => run(() => ops.remove(name))}>
+                  {t("common.delete")}
                 </button>
               </span>
             </div>

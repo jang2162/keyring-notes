@@ -1107,6 +1107,7 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .ws-name { flex: 1; min-width: 0; text-align: left; border: none; background: transparent; padding: 4px 6px; font: inherit; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-tools { display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
 .ws-tools button:not(.icon-btn) { font-size: var(--fs-sm); padding: 3px 8px; }
+.ws-tools button.danger { color: var(--danger); }
 .ws-create { align-self: flex-start; margin-top: 4px; }
 .ws-settings-head { margin: var(--sp-8) 0 0; font-size: var(--fs-base); }
 
