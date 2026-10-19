@@ -1236,6 +1236,8 @@
   "ws.create": "새 워크스페이스",
   "ws.createPrompt": "새 워크스페이스 이름",
   "ws.currentShort": "지금",
+  "ws.delete": "워크스페이스 {name} 삭제",
+  "ws.deleteAsk": "워크스페이스 \"{name}\"을(를) 안의 노트 {nodes}개, 첨부 {attachments}개와 함께 삭제할까요? 삭제 직후 알림에서 되돌릴 수 있습니다.",
   "ws.down": "{name} 아래로",
   "ws.downShort": "아래로",
   "ws.exists": "\"{name}\" 워크스페이스가 이미 있습니다.",

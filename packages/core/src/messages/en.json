@@ -1269,6 +1269,8 @@
   "ws.create": "New workspace",
   "ws.createPrompt": "New workspace name",
   "ws.currentShort": "current",
+  "ws.delete": "Delete workspace {name}",
+  "ws.deleteAsk": "Delete the workspace \"{name}\" with its {nodes} notes and {attachments} attachments? You can undo this from the notice right after.",
   "ws.down": "Move {name} down",
   "ws.downShort": "Move down",
   "ws.exists": "A workspace named \"{name}\" already exists.",

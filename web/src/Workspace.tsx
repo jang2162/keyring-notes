@@ -181,6 +181,7 @@ import {
   type ViewMode,
 } from "./panes";
 import { TabCountButton, TabSwitcher } from "./TabSwitcher";
+import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import { tearOutAt } from "./tearOut";
 
@@ -1737,6 +1738,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 지우기 전에 내용을 읽어 두어 알림의 "되돌리기"가 하위까지 되살린다.
    */
   const deleteNode = async (node: string) => {
+    // 워크스페이스 노트를 열어 두고 팔레트로 지울 때도 워크스페이스 삭제로(지금 워크스페이스·공통 설정·배치를 같이 걷는다)
+    if (!node.includes("/")) return removeWorkspace(node);
     const n = findNode(nodeTree, node);
     const counts = n ? countNode(n) : { nodes: 0, attachments: 0 };
     const name = stemOf(node);
@@ -1745,6 +1748,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         ? t("node.deleteAskChildren", { name, nodes: counts.nodes, attachments: counts.attachments })
         : t("node.deleteAsk", { name });
     if (!(await confirmDialog(`${message}\n${node}`, t("common.delete")))) return;
+    await removeNode(node);
+  };
+
+  /**
+   * 확인받은 노드 삭제(워크스페이스 삭제도 이 길로). after: 지운 직후, undone: 되돌리기로 파일을 되살린 직후(노드 노트를 열기 전).
+   * 둘 다 실패해도 삭제·되살리기 자체는 끝난 것이라 알림만 띄운다. reopen: false 면 되살린 노드 노트를 열지 않는다
+   */
+  const removeNode = async (node: string, hooks: { after?: () => Promise<void>; undone?: () => Promise<void>; reopen?: boolean } = {}) => {
+    const name = stemOf(node);
     await flush();
     const files = nodeFiles(node, resolver.paths).filter((p) => !isVaultSettingsPath(p));
     try {
@@ -1762,6 +1774,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       vaultChanged();
       await refreshTree();
       forget((p) => p === `${node}.md` || p.startsWith(node + "/"));
+      await hooks.after?.().catch(toastError);
       toast(t("node.deleted", { name }), {
         kind: "info",
         action: {
@@ -1772,7 +1785,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               .then(async () => {
                 vaultChanged();
                 await refreshTree();
-                if (saved.some((s) => s.path === `${node}.md`)) void open(`${node}.md`);
+                await hooks.undone?.().catch(toastError);
+                if (hooks.reopen !== false && saved.some((s) => s.path === `${node}.md`)) void open(`${node}.md`);
               })
               .catch(toastError),
         },
@@ -1781,6 +1795,33 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       if (e instanceof ApiError && e.status === 409) toast(t("node.changedRetry"), { kind: "error" });
       else toastError(e);
     }
+  };
+
+  /**
+   * 워크스페이스 삭제(설정 → 워크스페이스): 노드 삭제와 같은 길(되돌리기 알림)로 지우고, 그 워크스페이스를 가리키던
+   * 지금 워크스페이스(이 기기)·칸 배치(이 기기)·워크스페이스별 설정과 순서(공통 설정)를 걷는다. 되돌리면 공통 설정도 되살린다.
+   * 첨부 수는 트리에서 숨긴 워크스페이스 첨부 폴더까지 센다.
+   */
+  const removeWorkspace = async (name: string) => {
+    const n = wsNode(name);
+    const attachments = nodeFiles(name, resolver.paths).filter((p) => !/\.md$/i.test(p) && !isVaultSettingsPath(p)).length;
+    const ask = t("ws.deleteAsk", { name, nodes: n ? countNode(n).nodes : 0, attachments });
+    if (!(await confirmDialog(ask, t("common.delete")))) return;
+    const wasCurrent = name === ws;
+    const next = workspaceAfterDelete(wsNames, ws, name);
+    const saved = workspaceRefs(getVaultSettings(), name);
+    await removeNode(name, {
+      reopen: wasCurrent,
+      after: async () => {
+        setLayouts((m) => dropWorkspaceLayout(m, name));
+        if (wasCurrent) setPrefs({ workspace: next });
+        for (const [p, v] of dropWorkspaceRefs(getVaultSettings(), name)) await updateVaultSetting(p, v);
+      },
+      undone: async () => {
+        for (const [p, v] of restoreWorkspaceRefs(getVaultSettings(), name, saved)) await updateVaultSetting(p, v);
+        if (wasCurrent) setPrefs({ workspace: name });
+      },
+    });
   };
 
   /** 첨부 하나 지우기 */
@@ -2035,6 +2076,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     async reorder(names) {
       await updateVaultSetting(["vault", "workspaceOrder"], names);
     },
+    remove: removeWorkspace,
     pickIcon(name, at) {
       setIconPick({ ...at, node: name });
     },
