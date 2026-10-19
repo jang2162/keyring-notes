@@ -1162,6 +1162,7 @@
   "tab.newWindow": "새 창으로 열기",
   "tab.none": "열린 노트가 없습니다",
   "tab.switch": "열린 노트 {count}개",
+  "tab.tearOutUnsaved": "\"{name}\"을(를) 저장해야 새 창으로 옮길 수 있습니다.",
   "tags.none": "태그가 없습니다. 본문에 #태그나 프런트매터 tags를 쓰면 여기 모입니다.",
   "tags.title": "태그 {count}",
   "theme.dark": "어둡게",

@@ -1193,6 +1193,7 @@
   "tab.newWindow": "Open in new window",
   "tab.none": "No open notes",
   "tab.switch": "Open notes: {count}",
+  "tab.tearOutUnsaved": "Save \"{name}\" first to move it to a new window.",
   "tags.none": "No tags. #tags in the text and frontmatter tags gather here.",
   "tags.title": "Tags {count}",
   "theme.dark": "Dark",
