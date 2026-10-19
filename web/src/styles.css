@@ -1100,7 +1100,7 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .font-size { display: inline-flex; align-items: center; gap: 8px; }
 .font-size input[type="range"] { width: 140px; padding: 0; border: none; }
 
-.ws-list { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-2) 0 var(--sp-3); border-bottom: 1px solid var(--border); }
+.ws-list { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-2) 0 var(--sp-6); border-bottom: 1px solid var(--border); }
 .ws-item { display: flex; align-items: center; gap: 6px; padding: 4px; border-radius: var(--radius); }
 .ws-item.on { background: var(--active); }
 .ws-icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); font-size: 16px; }
@@ -1108,7 +1108,7 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .ws-tools { display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
 .ws-tools button:not(.icon-btn) { font-size: var(--fs-sm); padding: 3px 8px; }
 .ws-create { align-self: flex-start; margin-top: 4px; }
-.ws-settings-head { margin: var(--sp-6) 0 0; font-size: var(--fs-base); }
+.ws-settings-head { margin: var(--sp-8) 0 0; font-size: var(--fs-base); }
 
 .pack-report { margin: var(--sp-2) 0; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-soft); font-size: var(--fs-md); }
 .pack-report.error { border-color: var(--danger); }
