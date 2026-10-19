@@ -202,9 +202,7 @@ export function References({ refs, onOpen }: { refs: SourcesInfo; onOpen: (p: st
         </>
       )}
       <h4>{t("links.backlinks", { count: refs.linkedBy.length })}</h4>
-      {refs.linkedBy.length === 0 ? (
-        <p className="meta">{t("links.noBacklinks")}</p>
-      ) : (
+      {refs.linkedBy.length > 0 && (
         <ul>
           {refs.linkedBy.map((b) => (
             <li key={b.path}>

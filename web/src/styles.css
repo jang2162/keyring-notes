@@ -1141,4 +1141,9 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .attachment-item:hover .attachment-insert, .attachment-item:focus-within .attachment-insert { opacity: 1; }
 .attachment-insert:hover { background: var(--active); color: var(--fg); border: none; }
 @media (hover: none) { .attachment-insert { opacity: 0.7; } }
-.attachments-hint { margin-top: var(--sp-2); }
+.attachments-drop { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: var(--sp-2); padding: 8px; border: 1px dashed var(--border); border-radius: var(--radius); background: transparent; color: var(--muted); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.attachments-drop:hover { color: var(--fg); border-color: var(--muted); }
+/* 첨부가 없으면 목록 자리를 비우고 영역을 위로 올린다 */
+.attachments-list:empty { display: none; }
+.attachments-drop.empty { padding: 28px 8px; }
+.attachments-drop.over { border-color: var(--accent); background: var(--info-bg); color: var(--fg); }

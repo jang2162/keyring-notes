@@ -1307,10 +1307,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /**
    * 붙여넣거나 끌어 놓은 파일을 워크스페이스 첨부 폴더(공통 설정, 트리에서 숨김)에 올린다(이름이 겹치면 " 2"…).
    * 넣을 링크: 이미지는 ![[이름]], 나머지는 [[이름]]. 같은 이름이 볼트에 또 있으면 전체 경로로.
+   * workspace: 올릴 워크스페이스(기본은 from 이 든 곳)
    */
-  const uploadFiles = async (files: File[], from = doc?.path): Promise<string[]> => {
-    if (!from) return [];
-    const dir = attachmentDirFor(getVaultSettings(), wsOfPath(from), uiLang);
+  const uploadFiles = async (files: File[], from = doc?.path, workspace = wsOfPath(from)): Promise<string[]> => {
+    if (!workspace) return [];
+    const dir = attachmentDirFor(getVaultSettings(), workspace, uiLang);
     const taken = new Set(resolver.paths.map((p) => p.toLowerCase()));
     const vt = vaultText(vaultLang());
     const out: string[] = [];
@@ -2598,9 +2599,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               </button>
             )}
           </div>
-          {hits === null ? (
-            <p className="meta panel-note">{t("search.hint")}</p>
-          ) : (
+          {hits !== null && (
             <ul className="search-results">
               {hits.map((h) => (
                 <li key={`${h.path}:${h.line}`}>
@@ -2644,6 +2643,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             embedText={embedText}
             onOpen={(p) => treeActions.openAttachment(p)}
             onInsert={canInsert ? (p) => editorHandle.current?.insertText(embedText(p), { keepSelection: true, ownLine: true }) : undefined}
+            onUpload={ws ? (files) => void uploadFiles(files, undefined, allWs ? wsOfPath(doc?.path) : ws) : undefined}
           />
         </>
       )}
@@ -2764,7 +2764,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 }}
               />
             ) : (
-              <p className="meta">{doc.virtual ? t("node.emptyHint") : t("common.loading")}</p>
+              !doc.virtual && <p className="meta">{t("common.loading")}</p>
             )}
             {!doc.generated && !doc.virtual && (
               <section className="backlinks mentions-wrap">
