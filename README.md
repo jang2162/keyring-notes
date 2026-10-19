@@ -15,7 +15,7 @@ A personal notes app that keeps plain Markdown files as the source of truth on a
 ```bash
 git clone https://github.com/jang2162/keyring-notes && cd keyring-notes
 docker compose up -d --build              # http://127.0.0.1:8787 (this computer only)
-docker compose logs keyring               # "First-time setup: … setup code → XXXX-XXXX-XXXX"
+docker compose logs keyring               # "First run: set a password in the web app with this setup code → XXXX-XXXX-XXXX"
 ```
 
 Open it in a browser, enter the setup code and a new password, and you're done. All data (vault, config, backups) lives in `/data` on the `keyring-data` volume.
@@ -32,7 +32,7 @@ When `KEYRING_PUBLIC_URL` is set, only requests for that host name are accepted 
 
 ### Deploying to a server
 
-Running behind a reverse proxy, the data path, and every environment variable are covered in [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md); deploying as a Komodo Stack in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (both Korean).
+Running behind a reverse proxy, the data path, and the `.env` keys Docker Compose passes to the container are covered in [docs/guides/deploy-docker.md](docs/guides/deploy-docker.md) (only keys listed under `environment:` in `docker-compose.yml` reach the container; add others such as `KEYRING_EMBED_*` there); deploying as a Komodo Stack in [docs/guides/deploy-komodo.md](docs/guides/deploy-komodo.md) (both Korean).
 
 ### Updating
 
@@ -50,7 +50,7 @@ The package manager is pnpm (`packageManager` in `package.json`). With [mise](ht
 
 ```bash
 pnpm install
-pnpm build                         # builds web/dist and server/dist
+pnpm build                         # builds packages/core/dist, web/dist and server/dist
 pnpm start                         # http://127.0.0.1:8787 — set a password on the web with the setup code from the log
                                    # (or pnpm keyring passwd)
 ```
@@ -82,7 +82,7 @@ pnpm dev:web         # web: http://localhost:5173 (proxies the API)
 | `KEYRING_SCHEDULER` | `1` | `0` turns off the scheduled job (webhook) scheduler |
 | `KEYRING_S3_BUCKET` | (none) | S3-compatible storage bucket. Setting it turns on remote backups (see "S3 storage" below) |
 | `KEYRING_S3_ACCESS_KEY_ID` · `KEYRING_S3_SECRET_ACCESS_KEY` | (none) | Access keys (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are read too) |
-| `KEYRING_S3_REGION` | `us-east-1` | Region (`auto` for R2) |
+| `KEYRING_S3_REGION` | `us-east-1` | Region (`auto` for R2; `AWS_REGION` is read too) |
 | `KEYRING_S3_ENDPOINT` | AWS S3 | Endpoint of another store such as R2 or MinIO. When set, path-style addressing is used (change with `KEYRING_S3_PATH_STYLE`) |
 | `KEYRING_S3_PREFIX` | `keyring/` | Key prefix inside the bucket |
 | `KEYRING_S3_BLOBS` · `KEYRING_S3_BLOB_MIN_KB` | `0` · `256` | `1` stores attachments at or above this size in S3 instead of Git |
@@ -104,12 +104,13 @@ On startup, the server absorbs the existing files in the vault into a single com
 
 ## Admin console
 
-The "Server" group in the Settings modal (Server status, Agents, Permissions, Apps, Devices, Backup, Restore, Automation, Updates, Security; or the "Server administration" command). Only the owner can use it (agent tokens get 403). There is no such group in local mode (app or `?local`).
+The "Server" group in the Settings modal (Server status, Agents & permissions, Devices, Backup & restore, Automation, Updates, Security; or the "Server administration" command). Only the owner can use it (agent tokens get 403). There is no such group in local mode (app or `?local`).
 On screens that show an agent token or webhook secret only once, or with an unsaved permission table or webhook form, you are asked before closing Settings or switching groups, and Settings cannot be closed during a restore or upload.
 
 - **Server status**: version and uptime, note/file counts and size, commit count and last change, free disk space, backup status, last access per agent. Warns about no HTTPS, no allowed hosts, no backups, or low disk.
 - **Agents & permissions**: create an agent (shows the token and an MCP config example once), edit per-folder permission tables, reissue tokens, delete.
-- **Backup & restore**: back up now, download, upload a backup file from another server, restore, automatic backup settings (interval, how many to keep, whether to include config).
+- **Devices**: devices connected from the app (last sync), disconnect a device.
+- **Backup & restore**: back up now, download, upload a backup file from another server, restore, automatic backup settings (interval, how many to keep, whether to include config). With S3 set up: whether to also upload to S3, how many automatic backups to keep on S3, and the S3 remote backup list.
 - **Updates**: current and latest version, and how to update.
 - **Security**: change password (logs out every other device), register/delete passkeys, remote access guide.
   - **Passkeys**: log in without a password using a fingerprint, face recognition, device lock or security key (WebAuthn). Click "Register a passkey for this address" on the Security tab, and the login screen then shows "Log in with a passkey". Password login stays available (your fallback if you lose the passkey).
@@ -120,8 +121,8 @@ On screens that show an agent token or webhook secret only once, or with an unsa
 
 The source of truth stays on the server's disk (vault folder + Git). S3-compatible storage (AWS S3, Cloudflare R2, MinIO, Backblaze B2 …) is used for two things. It talks SigV4 directly, without an SDK.
 
-- **Remote backups**: on as soon as `KEYRING_S3_BUCKET` and keys are set. Every backup (automatic or manual) is uploaded to `<prefix>backups/`, and automatic backups are trimmed to the configured count. If an upload fails, the local backup is still made and the admin console shows a warning. If you lose the server: start a new one with the same S3 settings, then in the admin console go to Backup & restore → S3 remote backups, "Fetch" → "Restore".
-- **Large attachment storage** (`KEYRING_S3_BLOBS=1`): attachments (non-Markdown files) at or above the size threshold are uploaded to `<prefix>blobs/<sha256>` by content hash and left out of Git. Git keeps only a path → hash list (`.keyring-blobs.json`), the same approach as Git LFS. The files stay in the vault folder, so the UI, API, app sync and other editors see no difference, while Git history and backup files get smaller.
+- **Remote backups**: on as soon as `KEYRING_S3_BUCKET` and keys are set. Every backup is also uploaded to `<prefix>backups/` (Backup & restore → "Also upload to S3", on by default), and automatic backups on S3 are trimmed to their own count ("Automatic backups to keep on S3", default 30). If an upload fails, the local backup is still made and the admin console shows a warning. If you lose the server: start a new one with the same S3 settings, then in the admin console go to Backup & restore → S3 remote backups, "Fetch" → "Restore".
+- **Large attachment storage** (`KEYRING_S3_BLOBS=1`): attachments (non-Markdown files) at or above the size threshold are uploaded to `<prefix>blobs/<first 2 hex>/<sha256>` by content hash and left out of Git. Git keeps only a path → hash list (`.keyring-blobs.json`), the same approach as Git LFS. The files stay in the vault folder, so the UI, API, app sync and other editors see no difference, while Git history and backup files get smaller.
   - When you turn it on, large attachments already in Git are dropped from history too (copies inside past commits remain).
   - If an S3 upload fails, the write still succeeds and the file stays "waiting to upload", retried every 5 minutes. Attachments that are waiting are not included in backups (the admin console warns).
   - A restore downloads attachments from S3 according to that backup's list and removes attachments created after it.
@@ -169,7 +170,7 @@ Automatic sync runs when the app opens, 10 seconds after saving, when you return
 - If both sides changed, a **three-way merge** is done against the baseline. If different parts (separate lines) were edited, the merged result is saved on both sides (it shows up in history as an automatic merge and can be undone).
 - If the same line (or adjacent lines) was edited differently, **nothing is overwritten**: the original path keeps the server version, and this device's content is kept on both sides as `<name> (sync conflict copy date-time).md`. No conflict markers (`<<<<<<<`) are inserted into notes. If one side deleted a note and the other edited it, the edit wins.
 - Markdown syncs both ways. Attachments (images, PDFs) go server → device; in addition, attachments newly created on the device are uploaded, and attachments deleted on the device are deleted on the server only if the server still has the baseline version (if the server changed it in the meantime, the server's copy is downloaded again). So if you move a folder with attachments in the app, the next sync uploads the attachments at the new location and deletes them from the old location on the server too (two commits on the server: upload and delete). Edits to existing attachments on the device are not sent. Each side builds its own wiki index/log.
-- The settings file shared by all devices (`keyring-settings.md`) is Markdown too, so it syncs along.
+- The settings file shared by all devices (`keyring-settings.md`) syncs too, but key by key: if both sides changed the same key the server's value wins and the app offers to keep this device's value as a device-only override (no conflict copy).
 - Commits the app writes to the server are authored as `owner (device name)`, and device tokens cannot use the admin console. Agents (MCP) still connect only to the server.
 - Of the features available without a server, source collection (web page and PDF conversion), semantic search, change review and widget plugin rendering are used from the web UI connected to a server.
 
@@ -184,13 +185,13 @@ pnpm -F @keyring-notes/app android:init && pnpm -F @keyring-notes/app android:bu
 pnpm -F @keyring-notes/app ios:init && pnpm -F @keyring-notes/app ios:build           # requires macOS + Xcode
 ```
 
-Requirements: Rust (stable), Node 22, and the platform-specific [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (`libwebkit2gtk-4.1-dev` etc. on Linux). Regenerate icons with `pnpm -F @keyring-notes/app icons`.
+Requirements: Rust (stable), Node 22.13+ (`mise.toml` pins 24), and the platform-specific [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (`libwebkit2gtk-4.1-dev` etc. on Linux). Regenerate icons with `pnpm -F @keyring-notes/app icons`.
 
 **Releasing the macOS app**: pushing a `v*` tag makes GitHub Actions build, sign (Developer ID), notarize and publish the app to GitHub Releases, together with the file the in-app updater reads. The server and the app share one version and one release. One-time setup (certificate, App Store Connect API key, update signing key, GitHub secrets) and the release steps: [docs/guides/release-macos.md](docs/guides/release-macos.md) (Korean).
 
 ## Writing notes
 
-**Layout**: the icon rail on the left (workspace switcher at the top; Files, Search, Tags, Today's note, Graph, Collect, Review, Structure check; Shortcuts, Settings and Log out at the bottom — Settings → General "Icons and labels on the side bar" also shows names) + the left panel, tabs and the note in the middle, the right panel (Outline, Links, Properties, History), and the status bar at the bottom (save state, offline, changes to send, waiting reviews, character count). Icon-only buttons show a tooltip with their name and shortcut on hover (after about 0.3 s), or the reason when they are unavailable (immediately on keyboard focus, long-press on touch). The left and right panels can be resized by dragging their edge (double-click for the default width) and collapsed; width and collapsed state are remembered on this device. On narrow screens both panels become drawers. On wider screens, if docking both panels would leave the middle narrower than 440px, the right panel floats over the middle instead and closes when you click outside it.
+**Layout**: the icon rail on the left (workspace switcher at the top; Files, Search, Tags, Attachments, Today's note, Graph, Import, Review, Structure check; Sync (app), Shortcuts, Settings and Log out (server) at the bottom — Settings → General "Icons and labels on the side bar" also shows names) + the left panel, tabs and the note in the middle, the right panel (Outline, Links, Properties, History), and the status bar at the bottom (save state, offline, changes to send, waiting reviews, character count). Icon-only buttons show a tooltip with their name and shortcut on hover (after about 0.3 s), or the reason when they are unavailable (immediately on keyboard focus, long-press on touch). The left and right panels can be resized by dragging their edge (double-click for the default width) and collapsed; width and collapsed state are remembered on this device. On narrow screens both panels become drawers. On wider screens, if docking both panels would leave the middle narrower than 440px, the right panel floats over the middle instead and closes when you click outside it.
 
 - **Autosave**: saves 1.5 seconds after you stop typing, and when you switch tabs or the window loses focus (turn it off or change the delay in Settings → Editor). The server groups consecutive autosaves of the same note by the same person into one commit for 10 minutes (amending the previous commit). Another commit or a backup in between starts a new commit, and agent writes are never grouped. `Ctrl/Cmd+S` saves right now (as a separate commit). On a same-line conflict, autosave pauses and a banner asks what to do.
 - **Title = file name**: edit the big title field at the top of the note and press Enter (or click elsewhere) to rename the file and update links. Characters not allowed in file names (`/ \ : * ? " < > |`, a leading `.`, and `# ^ [ ]`, which clash with links) are flagged while you type. Edit the frontmatter `title` in the Properties tab.
@@ -228,13 +229,13 @@ Requirements: Rust (stable), Node 22, and the platform-specific [Tauri prerequis
     ```
 - **Language**: the official languages are English (the base) and Korean. Display language is a following setting (initially the system/browser language) and switches without a reload. Text saved into the vault ("Untitled", conflict copies, default folder names, wiki index/log/SCHEMA, month and weekday names in daily formats, commit messages) follows the **Vault language** in the shared settings, separately from the display language. Server errors arrive as a `code` plus values to interpolate, and the UI renders them in its own language. Agents (MCP) follow the server's **Agent language** setting (English by default), and the CLI follows the **Server language** (or `KEYRING_LANG`/`LANG`).
   - **Unofficial language packs**: in Settings → Language, download an official language as a language pack JSON (`meta` + `messages`), translate the values, and add it with "Import language pack". On import you see a check report (unknown keys, number of missing keys, messages whose `{name}` placeholders differ, non-string values, values that look like HTML); problem messages are dropped and missing keys fall back to the base language (values are always rendered as plain text; up to 1 MB). Language packs stay on this device only, and support "Download missing keys only", "Import update…" (merge), export and delete. If another device chose a language whose pack isn't on this device, the base language is shown with a notice.
-- **Modals**: Settings, Graph (go full screen with "Maximize" in the header), Review changes, Structure check, Collect sources, the command palette and Shortcuts all share the same frame. On narrow screens they become full-screen sheets.
+- **Modals**: Settings, Graph (go full screen with "Maximize" in the header), Review changes, Structure check, Import sources, the command palette and Shortcuts all share the same frame. On narrow screens they become full-screen sheets.
 **Concurrent edits**: if the note was changed elsewhere (another tab, an agent, app sync) before you save, a three-way merge against the version you started editing from combines different parts automatically and saves. Only when the same line was changed differently are you asked: "Save my changes as a copy / Load server version". The same applies when changes saved offline are sent after reconnecting. Agents (MCP, REST) still get 409 and re-read before writing.
 
 - **Wikilinks**: `[[Note]]`, `[[Folder/Note]]`, `[[Note#Heading|alias]]`, `![[image.png|300]]`. Typing `[[` autocompletes note and attachment names (paths disambiguate duplicates).
 - **Quick switching, commands, tabs, outline**: `Ctrl/Cmd+O` opens a note by name (partial match, open tabs and recent notes first, `Ctrl+Enter` for a new tab, shows icons and daily dates); `Ctrl/Cmd+P` is the command palette (every command with its shortcut). Opening a note that's already in a tab jumps to that tab; `Ctrl/Cmd+click` or middle-click opens a new tab; a plain open replaces the current tab. The tab bar is always visible, and the list of open tabs is remembered on this device. On narrow screens (800px or less) a tab count button replaces the row of tabs; it opens the list of open tabs, where you switch, close tabs or create a new note. The "Outline" in the right panel lists headings — click to jump there in the editor and preview, and use ▸/▾ on the left to fold and unfold that heading in the text. With no note open, Home (New note, Today's note, Quick open, Search, recent notes) is shown.
 - **Daily notes**: separate per workspace. The calendar on the rail (`Ctrl/Cmd+Shift+D`) opens Today's note for the current workspace (workspaces with daily notes off have no calendar button). If a note starting with today's date exists, it opens that one (even with a title after the date); if there are several, you pick; if none, a new note named with just the date is created and the cursor is put in the title field. ◀ date ▶ in the note header and the "Previous/Next daily note" commands skip missing days and go to existing notes; "yesterday's/tomorrow's note" opens or creates the note for that day.
-  - **Format** (Settings → Workspaces, shared by all devices): the folder inside the workspace (default `Daily`, or `일기` when the vault language is Korean) and the grouping — none `YYYY-MM-DD`, by year `YYYY/YYYY-MM-DD`, by year/month `YYYY/MM/YYYY-MM-DD`, by year/week `GGGG/[W]WW/YYYY-MM-DD`, or custom. Tokens: `YYYY YY M MM MMMM(October) D DD W WW(week) GGGG(week-based year) ddd(Wed) dddd(Wednesday) H HH m mm s ss [text]` — month and weekday names follow the vault language, `/` makes a subfolder. Weeks start on Monday by default (ISO 8601); Sunday is also available (not ISO). Below the setting, the paths for today, yesterday, tomorrow and the year-end boundary are previewed — with ISO weeks, 2026-12-31 and 2027-01-01 are both `2026/W53`, and `2027/W01` starts on 2027-01-04, so week grouping uses `GGGG` for the year. Formats that produce characters not allowed in file names, empty segments, `..` or dot folders are not saved.
+  - **Format** (Settings → Workspaces, shared by all devices): the folder inside the workspace (default `Daily`, or `데일리 노트` when the vault language is Korean) and the grouping — none `YYYY-MM-DD`, by year `YYYY/YYYY-MM-DD`, by year/month `YYYY/MM/YYYY-MM-DD`, by year/week `GGGG/[W]WW/YYYY-MM-DD`, or custom. Tokens: `YYYY YY M MM MMMM(October) D DD W WW(week) GGGG(week-based year) ddd(Wed) dddd(Wednesday) H HH m mm s ss [text]` — month and weekday names follow the vault language, `/` makes a subfolder. Weeks start on Monday by default (ISO 8601); Sunday is also available (not ISO). Below the setting, the paths for today, yesterday, tomorrow and the year-end boundary are previewed — with ISO weeks, 2026-12-31 and 2027-01-01 are both `2026/W53`, and `2027/W01` starts on 2027-01-04, so week grouping uses `GGGG` for the year. Formats that produce characters not allowed in file names, empty segments, `..` or dot folders are not saved.
   - **Detection** (by name only; shared by server, app and web in `packages/core/src/daily.ts`): a note is a daily note if it's under the daily folder, matches the folder part of the format, and its name **starts** with a date in the format. After the date there must be the end of the name or a separator (space, ` - `, `_`, `·`) (`2026-10-071.md` doesn't count), and the path rebuilt from the parsed date must match the actual folder (`2026-10-20` in `2026/W41/` doesn't count). So `Daily/2026-10-07 Quarterly planning meeting.md` is that day's note too.
   - **Display**: the title field pins the date as a dimmed prefix and you edit only the title after it (click the date for the full name; deleting the date warns that it will no longer be a daily note). The tree, tabs and quick open show the date dimmed and the title in bold, or `Wed, Oct 7` when there's no title (configurable).
   - **`[[2026-10-07]]` links** point to that day's daily note (a note with exactly that name takes precedence). Backlinks, graph, structure check and automatic link updates on the server and in the app follow the same rule, and for agents it resolves only among notes they can see. Moving a daily note out of the daily folder rewrites those links to the full name.
@@ -310,9 +311,9 @@ Work/Economy/
     └── log.md           [auto] Activity log built from Git history: ## [date time] author | message
 ```
 
-1. **Create a topic**: Collect on the web rail (inbox icon) → "New wiki topic" (created in the current workspace). A `SCHEMA.md` template is created; fill in the purpose and rules.
+1. **Create a topic**: Import on the web rail (inbox icon) → "New wiki topic" (created in the current workspace). A `SCHEMA.md` template is created; fill in the purpose and rules.
 2. **Agent permissions**: `agent grant <name> Work/Economy/raw append`, `Work/Economy/wiki delete`, `Work/Economy/SCHEMA.md read`.
-3. **Collect sources** (Collect on the rail, or MCP):
+3. **Import sources** (Import on the rail, or MCP):
    - Files: PDF (text extraction, per page), images, HTML, Markdown and text. 50 MB per file.
    - URL: the server fetches it and keeps only the main content as Markdown (Readability + Turndown). PDF links are handled as PDFs.
    - Web clipper: drag "📎 Keyring clip" from the URL tab to your bookmarks bar and click it on the page you want to save. Pages that need a login are saved too, since the browser sends the HTML it already has, and you can save just a selection.
@@ -340,6 +341,7 @@ Admin console → Automation. Webhooks POST events as JSON.
 | `doc.changed` | Once after a note changes and things go quiet: for the same note, once 90 seconds pass after the last save with no further saves, the commits up to then are sent as one batch (even if autosave amends commits every few seconds, the webhook doesn't fire every few seconds). Created then edited is `A`; created then deleted is not sent. Pending events are sent right away when the server shuts down | `rev, author, message` (last commit), `commits` (number of batched commits), `files[{status, path}]` |
 | `proposal.created` | New proposal in the review queue | `id, agent, message, topic, files` |
 | `schedule` | Scheduled job run | `job, topic, instructions, lint?{counts, issues, total}` |
+| `ping` | The test button in Admin console → Automation | `message` |
 
 The body is `{event, id, time, data}`, with the header `X-Keyring-Signature: sha256=<HMAC-SHA256(secret, body)>`. Verification example on the receiving side (Node):
 
@@ -347,7 +349,7 @@ The body is `{event, id, time, data}`, with the header `X-Keyring-Signature: sha
 const ok = req.headers["x-keyring-signature"] === "sha256=" + crypto.createHmac("sha256", SECRET).update(rawBody).digest("hex");
 ```
 
-5xx responses and connection failures are retried after 1, 5 and 25 seconds. Scheduled jobs send `schedule` to the webhook on each cron tick (`minute hour day month weekday`, server time zone); with "Include lint check", the check results and instructions are sent together so an agent can do the cleanup. Example: `0 9 * * 1` (every Monday at 9:00).
+5xx and 429 responses and connection failures are retried after 1, 5 and 25 seconds. Scheduled jobs send `schedule` to the webhook on each cron tick (`minute hour day month weekday`, server time zone); with "Include lint check", the check results and instructions are sent together so an agent can do the cleanup. Example: `0 9 * * 1` (every Monday at 9:00).
 
 ### Enabling semantic search
 
@@ -415,7 +417,7 @@ Streamable HTTP (stateless, JSON responses). Tool descriptions and error text fo
 | `backlinks` | Notes that link to this note |
 | `unlinked_mentions` | Notes where this note's name appears without a link, and where (line, position, context) |
 | `list_tags` | Tags and note counts |
-| `query` | The same YAML query as widgets (query, table, tasks, chart, plugin) |
+| `query` | The same YAML query as widgets (query, table, cards, kanban, tasks, chart, plugin) |
 | `sources` | Sources (frontmatter sources), pages citing this note, body backlinks |
 | `lint` | Structure check |
 | `semantic_search` | Semantic search (when configured) |
@@ -424,7 +426,7 @@ Streamable HTTP (stateless, JSON responses). Tool descriptions and error text fo
 | `move_document` / `delete_document` | Move / delete. Moving updates links pointing to the note in the same commit by default (turn off with `update_links: false`; results include `linksUpdated` and `linkCount`) |
 | `batch_write` | Several write, append, delete and move operations in one commit. If any fails, all are rolled back. Moves update links too (`update_links`) |
 
-For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If it differs from the server version, `conflict` and `current_hash` are returned and nothing is written. Writes into a review-target folder return `pending` (the vault is unchanged), and the returned `content` and `hash` reflect the state after approval.
+For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If it differs from the server version, `conflict` and `current_hash` are returned and nothing is written. Writes into a review-target folder return `pending` (the vault is unchanged), and the returned `hash` reflects the state after approval.
 
 ## Storage layout
 
@@ -451,7 +453,7 @@ Both REST and MCP reach the vault and the index only through `ScopedVault` in `s
 
 ## REST API
 
-Authentication: the web uses the cookie from `POST /api/auth/login` (HttpOnly, SameSite=Strict); agents and app devices use `Authorization: Bearer <token>`. Every mutating request must be `Content-Type: application/json`. For cross-origin apps, CORS responses are enabled only for requests that come with an `Authorization` header (and device registration).
+Authentication: the web uses the cookie from `POST /api/auth/login` (HttpOnly, SameSite=Strict); agents and app devices use `Authorization: Bearer <token>`. Every mutating request must be `Content-Type: application/json`. For cross-origin apps, CORS responses are enabled only for requests that come with an `Authorization` header (and device registration and `/api/health`).
 
 `GET /llms.txt` (no authentication) returns a short static guide for LLM agents in Markdown: how to connect (MCP, REST, tokens), the permission levels, the main tasks and the `baseHash` conflict rule. It contains nothing from your vault or config. Links are absolute when `KEYRING_PUBLIC_URL` is set, relative otherwise.
 
@@ -472,7 +474,7 @@ Authentication: the web uses the cookie from `POST /api/auth/login` (HttpOnly, S
 | GET·POST·DELETE | `/api/admin/passkeys` · `/api/admin/passkeys/options` · `/api/admin/passkeys/:id` | | List, register (`{id, response, name}`) and delete passkeys (owner web login only) |
 | GET | `/api/sync/manifest` | | File list for sync `{files: [{path, hash, size}]}` (owner and devices; excludes the server-generated wiki index/log) |
 | POST | `/api/auth/setup` | `{code, password}` | First-time setup (only when no password is set; setup code from the log) |
-| * | `/api/admin/…` | | Admin console API (owner only): `status`, `update`, `devices` (and `DELETE devices/:id`), `agents`, `agents/:name/rules`, `rotate`, `password`, `backups`, `backups/settings`, `backups/upload`, `backups/:name/restore`, `automation`, `automation/webhooks`, `jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
+| * | `/api/admin/…` | | Admin console API (owner only): `status`, `update`, `language`, `devices` (and `DELETE devices/:id`), `agents` (and `DELETE agents/:name`), `agents/:name/rules`, `agents/:name/rotate`, `password`, `backups` (and `GET`/`DELETE backups/:name`), `backups/settings`, `backups/upload`, `backups/:name/restore`, `backups/:name/push`, `backups/remote`, `backups/remote/:name/fetch`, `automation`, `automation/webhooks`, `automation/jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
 | GET · POST | `/api/topics` | `{name}` | List topics / create a wiki topic (owner) |
 | POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | Collect a source |
 | POST | `/api/attachment?path=` | file bytes, header `x-keyring-upload: 1` | Create a new attachment (409 if it exists, up to 50 MB) |

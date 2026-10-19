@@ -69,7 +69,7 @@ Apple ID 비밀번호 대신 API 키로 공증한다(2단계 인증·앱 암호�
    - 비밀번호 관리자(1Password·Bitwarden 등)에 「keyring-notes 업데이트 서명 키」 항목을 만들고 `keyring-notes-updater.key` 파일 내용과 비밀번호를 함께 넣는다.
    - 오프라인 사본: 암호화한 USB·외장 디스크(디스크 유틸리티에서 「APFS(암호화)」)에 `.key`·`.key.pub` 파일을 둔다. 비밀번호는 같은 곳에 적지 않는다.
    - 저장소·클라우드 드라이브 일반 폴더·메신저·메일에 두지 않는다.
-3. **공개 키를 앱에 넣고 커밋** — `app/src-tauri/tauri.conf.json` 의 `plugins.updater.pubkey` 자리 표시 값(`REPLACE_WITH_UPDATER_PUBLIC_KEY …`)을 `.pub` 파일 내용(한 줄)으로 바꾼다. 공개 키는 비밀이 아니다.
+3. **공개 키를 앱에 넣고 커밋** — `app/src-tauri/tauri.conf.json` 의 `plugins.updater.pubkey` 가 `.pub` 파일 내용(한 줄)이다. 지금 쓰는 키의 공개 키는 이미 커밋돼 있으므로, 이 단계는 키를 처음 만들 때만 한다. 공개 키는 비밀이 아니다.
    ```bash
    cat ~/keyring-release/keyring-notes-updater.key.pub   # 이 한 줄을 pubkey 값으로
    git add app/src-tauri/tauri.conf.json && git commit -m "앱: 업데이트 서명 공개 키" && git push
@@ -97,13 +97,13 @@ Apple ID 비밀번호 대신 API 키로 공증한다(2단계 인증·앱 암호�
 버전의 원천은 **루트 `package.json`** 이고, 아래 명령이 나머지 네 곳(`tauri.conf.json`, `Cargo.toml`, `Cargo.lock`, `packages/core/src/i18n.ts`)을 맞춘다. 손으로 고치지 않는다.
 
 ```bash
-pnpm version:set 0.8.1        # 앞에 v 없이. 첫 릴리스 0.8.0 은 이미 맞춰져 있다
+pnpm version:set <버전>       # 앞에 v 없이. 예: 0.8.6
 pnpm version:check            # 다섯 곳이 같은지
 git add package.json app/src-tauri/tauri.conf.json app/src-tauri/Cargo.toml app/src-tauri/Cargo.lock packages/core/src/i18n.ts
-git commit -m "릴리스 0.8.1"
+git commit -m "릴리스 <버전>"
 git push
-git tag v0.8.1                # 태그는 v + 버전과 정확히 같아야 한다
-git push origin v0.8.1
+git tag v<버전>               # 태그는 v + 버전과 정확히 같아야 한다
+git push origin v<버전>
 ```
 
 태그가 올라가면 Actions 의 **release-macos** 가 돈다(20~40분, 공증 대기 포함). 순서와 각 단계에서 멈추는 조건은 워크플로 파일 맨 위 주석에 있다. 성공하면 릴리스가 **바로 공개**되고 파일 넷이 붙는다: `Keyring-Notes_<버전>_universal.dmg`, `….app.tar.gz`, `….app.tar.gz.sig`, `latest.json`.
@@ -113,7 +113,7 @@ git push origin v0.8.1
 - 릴리스 페이지에 위 파일 넷이 있고 「Latest」 표시가 붙었는지.
 - 다른 맥(또는 다른 사용자 계정)에서 DMG 를 브라우저로 받아 열고 앱을 「응용 프로그램」 으로 끌어 실행 — **경고 없이** 열려야 한다. 터미널로도 본다:
   ```bash
-  spctl --assess --type open --context context:primary-signature -v ~/Downloads/Keyring-Notes_0.8.1_universal.dmg
+  spctl --assess --type open --context context:primary-signature -v ~/Downloads/Keyring-Notes_<버전>_universal.dmg
   # … accepted  source=Notarized Developer ID
   ```
 - 옛 버전이 설치된 맥에서 앱을 실행하면 몇 초 뒤 「업데이트가 있습니다」 를 묻는다. 「업데이트하고 다시 시작」 → 새 버전으로 다시 뜬다. (앱 설정 → 이 기기·동기화 → 앱 업데이트 → 「업데이트 확인」 으로 바로 볼 수도 있다.)
@@ -137,9 +137,10 @@ pnpm --filter @keyring-notes/app build:mac
 
 | 단계 / 메시지 | 원인과 할 일 |
 | --- | --- |
-| 버전 확인 / `버전이 맞지 않는다` | 태그와 `package.json` 이 다르거나 다섯 곳이 어긋났다. `pnpm version:set <버전>` → 커밋·푸시 → 태그를 지우고 다시 붙인다: `git tag -d v0.8.1 && git push origin :refs/tags/v0.8.1 && git tag v0.8.1 && git push origin v0.8.1` |
+| 버전 확인 / `버전이 맞지 않는다` | 태그와 `package.json` 이 다르거나 다섯 곳이 어긋났다. `pnpm version:set <버전>` → 커밋·푸시 → 태그를 지우고 다시 붙인다: `git tag -d v<버전> && git push origin :refs/tags/v<버전> && git tag v<버전> && git push origin v<버전>` |
 | 비밀·공개 키 확인 / `GitHub 비밀이 없다: …` | 적힌 이름의 비밀을 4대로 등록하고 실행 화면에서 「Re-run all jobs」. |
 | 비밀·공개 키 확인 / `pubkey 가 자리 표시 값이다` | 3의 3을 한다(공개 키 커밋). 코드가 바뀌었으므로 태그를 다시 붙인다. |
+| Apple 중간 인증서(Developer ID G2) / 내려받기·`shasum` 실패 | Apple 서버에서 받지 못했거나 Apple 이 인증서를 바꿨다. 「Re-run all jobs」 로 다시 해 보고, 해시가 계속 다르면 <https://www.apple.com/certificateauthority/> 의 G2 인증서 SHA-256 을 확인해 워크플로의 값을 고친다. |
 | 빌드·서명·앱 공증 / `failed to import keychain certificate` 류 | `.p12` base64 나 비밀번호가 틀렸다. 1의 4~5를 다시 하고 두 비밀을 다시 넣는다. |
 | 서명·공증 검사(앱) / `Developer ID 로 서명되지 않았다` | 인증서가 Developer ID Application 이 아니다(Apple Development 등). 1을 다시 한다. |
 | 서명·공증 검사(앱) / `공증되지 않았다` | 빌드 로그에서 `skipping app notarization` 을 찾는다 — 공증 자격(`APPLE_API_*`)이 빠졌거나 틀렸다. 2의 6으로 맥에서 자격을 확인한다. |

@@ -1,6 +1,6 @@
 # Docker 로 배포하기
 
-서버에 Docker Compose 로 올리는 방법이다. 저장소의 `docker-compose.yml` 은 앱(keyring) 하나만 갖는다. **웹 서버(리버스 프록시)는 저장소가 제공하지 않는다** — 각자 쓰는 것(nginx·Traefik·Caddy 등)을 따로 두고, 그 서버에서만 필요한 설정은 `compose.override.yaml` 에 쓴다. 설정은 `.env` 에 둔다. 이미지는 레지스트리에서 받지 않고 **서버에서 저장소 코드로 빌드한다**(`pull_policy: build`). Komodo 로 올리는 법은 [deploy-komodo.md](deploy-komodo.md).
+서버에 Docker Compose 로 올리는 방법이다. 저장소의 `docker-compose.yml` 은 앱(keyring)과, 꺼져 있는 `s3` 프로필의 SeaweedFS 만 갖는다. **웹 서버(리버스 프록시)는 저장소가 제공하지 않는다** — 각자 쓰는 것(nginx·Traefik·Caddy 등)을 따로 두고, 그 서버에서만 필요한 설정은 `compose.override.yaml` 에 쓴다. 설정은 `.env` 에 둔다. 이미지는 레지스트리에서 받지 않고 **서버에서 저장소 코드로 빌드한다**(`pull_policy: build`). Komodo 로 올리는 법은 [deploy-komodo.md](deploy-komodo.md).
 
 ## compose 파일
 
@@ -56,7 +56,7 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 | `COMPOSE_FILE` | 선택(`docker-compose.yml`) | 겹쳐 쓸 compose 파일(`:` 로 이음). Komodo 에서는 쓰지 않는다 | `docker-compose.yml:compose.override.yaml` |
 | `KEYRING_PUBLIC_URL` | A 필수 | 밖에서 접속하는 https 주소. 이 호스트 이름만 받고 로그인 쿠키에 Secure 가 붙는다 | `https://notes.example.com` |
 | `PROXY_NETWORK` | 선택 | 위 `compose.override.yaml` 예시가 읽는 값. 프록시와 함께 쓰는 외부 네트워크 이름 | |
-| `KEYRING_DATA_DIR` | 선택(named volume) | 볼트·설정·백업을 둘 호스트 경로. 없으면 Docker 가 root 소유로 만들어 앱이 못 쓰므로 미리 만든다: `sudo install -d -o 1000 -g 1000 <경로>` | `/srv/keyring-notes` |
+| `KEYRING_DATA_DIR` | 선택(named volume) | 볼트·설정·백업을 둘 호스트 경로. 없으면 Docker 가 root 소유로 만들어 앱이 못 쓰므로 미리 만든다: `sudo install -d -o 1000 -g 1000 <경로>` | `/srv/keyring-notes/data` |
 | `KEYRING_BIND`·`KEYRING_PORT` | 선택(`127.0.0.1`·`8787`) | 호스트에 여는 주소·포트(구성 B) | `100.64.0.10` |
 | `KEYRING_ALLOWED_HOSTS` | 선택 | 받을 호스트 목록(쉼표). **정하면 이 목록만 받는다** — `KEYRING_PUBLIC_URL` 의 호스트도 함께 적는다 | `notes.example.com,keyring.tailnet.ts.net` |
 | `KEYRING_FETCH_ALLOW_PRIVATE` | 선택(`0`) | 사설 주소 URL 수집 허용 | `1` |
@@ -74,7 +74,7 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 | 방법 | 하는 일 |
 | --- | --- |
 | **쓰던 S3 를 입력** | `.env` 에 `KEYRING_S3_BUCKET`·`KEYRING_S3_ACCESS_KEY_ID`·`KEYRING_S3_SECRET_ACCESS_KEY` 를 적는다. AWS 는 `KEYRING_S3_REGION` 만, R2·MinIO 등은 `KEYRING_S3_ENDPOINT` 도 적는다 |
-| **직접 구성(함께 든 SeaweedFS)** | `.env` 에 `COMPOSE_PROFILES=s3` 를 적고 `KEYRING_S3_ENDPOINT=http://seaweedfs:8333`, `KEYRING_S3_PATH_STYLE=1` 과 버킷 이름·키·비밀번호(8자 이상)를 적는다. 키와 비밀번호가 S3 계정이 되고, 버킷은 SeaweedFS(`weed mini`)가 만든다. 포트는 호스트에 열지 않는다 |
+| **직접 구성(함께 든 SeaweedFS)** | `.env` 에 `COMPOSE_PROFILES=s3` 를 적고 `KEYRING_S3_ENDPOINT=http://seaweedfs:8333`, `KEYRING_S3_PATH_STYLE=1` 과 버킷 이름·키·비밀번호(긴 무작위 값)를 적는다. 키와 비밀번호가 S3 계정이 되고, 버킷은 SeaweedFS(`weed mini`)가 만든다. 포트는 호스트에 열지 않는다 |
 
 프로필을 켰는데 키·비밀번호·버킷 이름이 하나라도 비어 있으면 `seaweedfs` 컨테이너가 이유를 로그에 남기고 종료한다(검사가 없으면 SeaweedFS 는 인증 없이 모두 허용하는 모드로 뜬다)(꺼진 프로필에서는 아무 것도 검사하지 않는다). 쓰던 S3 를 쓸 때는 `COMPOSE_PROFILES` 를 켜지 않는다. 암호화 키(`KEYRING_S3_ENCRYPTION_KEY`)는 어느 방법이든 선택이며, 잃으면 복구할 수 없다.
 
@@ -83,7 +83,7 @@ COMPOSE_FILE=docker-compose.yml:compose.override.yaml
 ```bash
 docker compose config            # 고른 파일이 겹쳐진 결과
 docker compose up -d             # 저장소 코드로 이미지를 빌드하고 띄운다
-docker compose logs keyring      # "처음 설치: … 설정 코드 → XXXX-XXXX-XXXX"
+docker compose logs keyring      # "First run: … setup code → XXXX-XXXX-XXXX" (서버 언어를 정하기 전에는 영어로 나온다)
 ```
 
 브라우저로 열어 설정 코드와 새 비밀번호를 넣는다. 관리 CLI 는 `docker compose exec keyring keyring agent list`.
