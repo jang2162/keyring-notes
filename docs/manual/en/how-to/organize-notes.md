@@ -66,7 +66,12 @@ Each line is one delete, newest first. It shows the note or node name, where it 
 **Restore** recreates the note at its original path, with its child notes, in one commit. **Open** on the notice opens it.
 
 - If a file appeared at that path in the meantime, it is not overwritten. The restored note gets ` 2` appended, and a node is renamed as a whole.
-- Moved and renamed notes are not in the trash, because they still exist at their new path. A deleted note is not listed while another note uses its path.
+- A note you move or rename is not in the trash where you made the change, because it still exists at its new path. That is the server for the web screen and agents, and the app for the desktop and mobile app. A deleted note is not listed while another note uses its path.
+- A move made somewhere else can arrive as a delete and a new file. Then the old path shows up in the trash. Restoring it only makes a copy, and nothing is lost. This happens in these cases:
+  - On a server: moves and renames made in the app and synced.
+  - In the app: renames received by sync or made in another program (Finder, another editor), when the content changed at the same time or the note is empty.
+  - On a server: renames made in another program, when more than half of the content changed at the same time.
+- On a server, a node deleted in the app shows up after sync as one line per file. Restore each line on its own.
 - The trash shows the current workspace, or every workspace when **All workspaces** is on. Load older deletes with **Load more**.
 - On a server, attachments deleted with a node come back too, including attachments kept in S3. The desktop and mobile app does not keep attachment content in its history. There, the line says how many attachments can't be restored, and only the notes come back.
 - There is no permanent delete. Agents can't use the trash.
