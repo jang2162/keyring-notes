@@ -49,6 +49,14 @@
     "default:rules/orca/SETUP.md": "cb49f07b7fb192f376ff40672866ee878cec64e5d73d1829b91cc8ac32944cd3",
     "default:rules/oxc/00-version.md": "b6358ea4358d8b9df6e2ca52d2b0a8dfa3047d4a0e9c8b6d0a8c3a532b8b5f57",
     "default:rules/oxc/01-formatting.md": "6b1b6ed02c4c5ee9406c3a4d4c0254cfd26e4c5851dbcb4d68d980ba92caf2a2",
+    "default:rules/public-docs/00-readme.md": "010a23668222d8944e6cb5bfd06e34209fbb688ac4196239d647fd66813b7703",
+    "default:rules/public-docs/01-images.md": "aff2406ed0070c5b90d98f4c664246582fad6e73e197b302b5cbd4a27392328a",
+    "default:rules/public-docs/02-manual.md": "5522399adf3416795693f54aa1ac91abd7ec89d167de35cbc81eaa80d619131a",
+    "default:rules/public-docs/03-i18n.md": "143641bb9c9e22e0efc1b38aa2943d180b034d4250d4aea90e54e5f603fa540b",
+    "default:rules/public-docs/04-style.md": "c5e9a38a6fbf3b59153f3f359dc17cc99fd6f5e942e02d2cb861d03ca0ec78db",
+    "default:rules/public-docs/05-support.md": "e3d49377aaa7a9c27dead714beb90a96fe56aa7008334087e63b434e16665846",
+    "default:rules/public-docs/06-readme-template.md": "4a5b65383ab8b3b32764a9f7e07489516c0d105c128d31bd68c1515e06b4b435",
+    "default:rules/public-docs/07-release-check.md": "9bcfdda213473e4fa935669aaec47624549f4f640a99fb86b753b9575511b4d7",
     "default:rules/ruler/00-sources.md": "3818b076744f962c1d84a7897abf0b9bf69e02af7288840671170d99d0253379",
     "default:rules/ruler/01-nested.md": "aac752f0592f7c5d863df6da387504a5b62809b5fcdaca201e3774f68bc7367a",
     "default:rules/ruler/02-documents.md": "5ec1a082098d747b22905bea5178f76bd9d46b84db83216506b874da3ab08189",
@@ -163,6 +171,11 @@
       "path": ".ruler/oxc/99-reference.md",
       "items": [],
       "hash": "eb0f95e02a6d6ee4ea1f0028cd145a745213a9b62f4afbc34b7f54a531a0bfa7"
+    },
+    {
+      "path": ".ruler/public-docs/99-reference.md",
+      "items": [],
+      "hash": "35ab3787168c8b98f939d6b7d24d0c6050e36fdbc5b4242dccdde7eb6ed7580d"
     },
     {
       "path": ".ruler/ruler.toml",
@@ -498,6 +511,62 @@
         "default:rules/oxc/00-version.md"
       ],
       "hash": "28744fcab50656e1c085094349dc31f43f92927bb8742d8acd45b5d7c7ff3728"
+    },
+    {
+      "path": "docs/guideline/public-docs/00-readme.md",
+      "items": [
+        "default:rules/public-docs/00-readme.md"
+      ],
+      "hash": "b959b878779c114e4f79d59fc6b59834e1e81c7ad5483586b2baf57c4ee81364"
+    },
+    {
+      "path": "docs/guideline/public-docs/01-images.md",
+      "items": [
+        "default:rules/public-docs/01-images.md"
+      ],
+      "hash": "61d41caf417fbbb62cfa8e7a3c127f11944b677ba088512be5439cabe4ed414d"
+    },
+    {
+      "path": "docs/guideline/public-docs/02-manual.md",
+      "items": [
+        "default:rules/public-docs/02-manual.md"
+      ],
+      "hash": "06a6e917c0e89c69e381bc943cede8fa13de8cc37e1e4e92612fdb25c836bb05"
+    },
+    {
+      "path": "docs/guideline/public-docs/03-i18n.md",
+      "items": [
+        "default:rules/public-docs/03-i18n.md"
+      ],
+      "hash": "e2cb86fb3da4c95766ed616b1b1ea2a2bd9466176e639372e04c797a343d6565"
+    },
+    {
+      "path": "docs/guideline/public-docs/04-style.md",
+      "items": [
+        "default:rules/public-docs/04-style.md"
+      ],
+      "hash": "5ce3c0976c79fdb75a488ab60efc87382acb6801e02da866e3fc11bacb45ae0c"
+    },
+    {
+      "path": "docs/guideline/public-docs/05-support.md",
+      "items": [
+        "default:rules/public-docs/05-support.md"
+      ],
+      "hash": "511b6774711eab4200e812d83130ec3a1359b45468da300e0f2b1d29439ab218"
+    },
+    {
+      "path": "docs/guideline/public-docs/06-readme-template.md",
+      "items": [
+        "default:rules/public-docs/06-readme-template.md"
+      ],
+      "hash": "bc897bdb62b9069d814f961d946bb943e9fcb22c6867c209fce82894d40ba73a"
+    },
+    {
+      "path": "docs/guideline/public-docs/07-release-check.md",
+      "items": [
+        "default:rules/public-docs/07-release-check.md"
+      ],
+      "hash": "11901ab1bc494260ea3580d74df8b215b17c7d108ca042554af454161734f953"
     },
     {
       "path": "docs/guideline/ruler/01-nested.md",
