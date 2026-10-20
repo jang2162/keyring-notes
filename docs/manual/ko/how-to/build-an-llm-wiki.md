@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/how-to/build-an-llm-wiki.md @ v0.8.5 -->
 # LLM Wiki 만들기
 
 모아 둔 원본으로 에이전트가 관리하는 위키 토픽을 만들고, 인용하고 점검하는 방법을 보입니다.
@@ -20,11 +21,11 @@
 
 `SCHEMA.md`, index, log 는 볼트 언어로 만듭니다.
 
-## 1. 토픽 만들기
+## 토픽 만들기
 
 레일의 **가져오기**(받은편지함 아이콘)를 누르고 **새 위키 토픽**을 고르세요. 지금 워크스페이스에 `SCHEMA.md` 템플릿과 함께 토픽이 생깁니다. 목적과 규칙을 채우세요.
 
-## 2. 에이전트에게 권한 주기
+## 에이전트에게 권한 주기
 
 ```bash
 pnpm keyring agent grant <이름> 업무/경제/raw append
@@ -34,7 +35,7 @@ pnpm keyring agent grant <이름> 업무/경제/SCHEMA.md read
 
 에이전트는 규칙과 상관없이 `SCHEMA.md` 를 읽기만 할 수 있습니다. [에이전트 연결하기](connect-agents.md)를 보세요.
 
-## 3. 원본 가져오기
+## 원본 가져오기
 
 레일의 **가져오기**나 MCP 도구 `ingest_url`·`ingest_text` 를 쓰세요.
 
@@ -47,7 +48,7 @@ pnpm keyring agent grant <이름> 업무/경제/SCHEMA.md read
 
 `KEYRING_FETCH_ALLOW_PRIVATE=1` 이 없으면 URL 수집은 사설·루프백 주소에 닿지 않습니다.
 
-## 4. index 와 log 는 저절로 바뀝니다
+## index 와 log 는 저절로 바뀝니다
 
 서버는 토픽 안에서 무엇이든 바뀌면 `wiki/index.md` 와 `wiki/log.md` 를 다시 만듭니다. 직접 고칠 수 없고, Git 과 검색 인덱스에도 넣지 않습니다.
 

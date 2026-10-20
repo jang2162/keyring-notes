@@ -63,5 +63,5 @@ pnpm build
 ## 문서
 
 - 사용자 문서는 `docs/manual/en/`(원본)과 `docs/manual/ko/`(번역)에 둔다. 둘은 파일 이름·구조·섹션 순서가 같다. 화면 동작이나 설정을 바꾸면 두 언어를 함께 고친다.
-- README 는 `README.md`(영어 원본)와 `README.ko.md`(번역)다. 번역본 맨 위의 `<!-- source: README.md @ vX.Y.Z -->` 를 원본에 맞춘 판으로 고친다.
+- README 는 `README.md`(영어 원본)와 `README.ko.md`(번역)다. 번역본마다 맨 위에 기준 원본과 판을 적는다 — `README.ko.md` 는 `<!-- source: README.md @ vX.Y.Z -->`, `docs/manual/ko/<경로>` 는 `<!-- source: docs/manual/en/<같은 경로> @ vX.Y.Z -->`, `examples/plugins/README.ko.md` 는 `<!-- source: examples/plugins/README.md @ vX.Y.Z -->`. 원본에 맞춰 번역을 고치면 그 판으로 바꾼다.
 - 영어↔한국어 용어는 `docs/manual/glossary.md` 에 모은다. 한국어 문서의 화면 이름은 `packages/core/src/messages/ko.json` 의 실제 글을 쓴다.

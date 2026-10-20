@@ -4,7 +4,7 @@ This guide issues a token for an agent, limits what it can see and change, and c
 
 It is for people who let AI agents read or write their notes.
 
-## 1. Issue a token
+## Issue a token
 
 In the browser, go to Settings → **Agents & permissions** and create an agent. The token and an MCP config example are shown once.
 
@@ -16,7 +16,7 @@ pnpm keyring agent add wiki-work
 
 With Docker, run `docker compose exec keyring keyring agent add wiki-work`. The token is shown only now. If you lose it, reissue it with `agent rotate`; the old token stops working immediately.
 
-## 2. Grant permissions
+## Grant permissions
 
 A new agent sees nothing. Grant a level per folder or note:
 
@@ -31,7 +31,7 @@ The levels, from least to most, are `hidden`, `read`, `append`, `write` and `del
 
 Changes to permissions apply from the next request. No restart is needed.
 
-## 3. Connect over MCP
+## Connect over MCP
 
 Configure your MCP client with:
 

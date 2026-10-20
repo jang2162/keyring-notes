@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/how-to/use-widgets.md @ v0.8.5 -->
 # 위젯 쓰기
 
 위젯 블록으로 노트를 살아 있는 목록, 표, 보드, 차트로 바꿉니다.
@@ -46,7 +47,7 @@ show: [담당, 마감]
 
 ## 위젯 종류 직접 더하기
 
-위젯 플러그인은 서버의 플러그인 폴더(`KEYRING_PLUGINS_DIR`)에 둔 ES 모듈 하나입니다. 형식과 칸반 예제는 [examples/plugins](../../../../examples/plugins/README.md)에 있습니다.
+위젯 플러그인은 서버의 플러그인 폴더(`KEYRING_PLUGINS_DIR`)에 둔 ES 모듈 하나입니다. 형식과 칸반 예제는 [examples/plugins](../../../../examples/plugins/README.ko.md)에 있습니다.
 
 > [!WARNING]
 > 플러그인은 브라우저에서 소유자 권한으로 돕니다. 믿을 수 있는 코드만 넣으세요.

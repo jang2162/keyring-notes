@@ -10,16 +10,16 @@ Set these in the environment of `pnpm start`, or in `.env` when you use Docker C
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `KEYRING_DATA` | path | (none; `/data` in Docker) | If set, the vault, config and backups go to `<DATA>/vault`, `<DATA>/config/keyring.json` and `<DATA>/backups` |
+| `KEYRING_DATA` | path | (none; `/data` in Docker) | If set, the vault, config and backups go to `<DATA>/vault`, `<DATA>/config/keyring.json` and `<DATA>/backups`, and plugins to `<DATA>/plugins` |
 | `KEYRING_VAULT` | path | `./vault` | Vault folder |
 | `KEYRING_CONFIG` | path | `./config/keyring.json` | Password hash, agent token hashes, permission tables and backup settings. Keep it outside the vault |
 | `KEYRING_BACKUP_DIR` | path | `./backups` | Backup file folder |
 | `KEYRING_INDEX` | path | `<vault>/.keyring/index.db` | Search index. It is a cache: delete it and it is rebuilt on the next start |
-| `KEYRING_PLUGINS_DIR` | path | `./plugins` (`/data/plugins` in Docker) | Widget plugin folder |
+| `KEYRING_PLUGINS_DIR` | path | `./plugins` (`<DATA>/plugins` when `KEYRING_DATA` is set) | Widget plugin folder |
 | `KEYRING_HOST` | address | `127.0.0.1` | Bind address |
 | `KEYRING_PORT` | number | `8787` | Port |
 | `KEYRING_PUBLIC_URL` | URL | (none) | The https address you reach the server at. Only requests for this host name are accepted, and the login cookie gets `Secure` |
-| `KEYRING_ALLOWED_HOSTS` | list | host of `KEYRING_PUBLIC_URL` | Host names to accept, comma-separated. When set, only this list is accepted, so include the host of `KEYRING_PUBLIC_URL` too. `localhost` is always accepted |
+| `KEYRING_ALLOWED_HOSTS` | list | host of `KEYRING_PUBLIC_URL` | Host names to accept, comma-separated. When set, only this list is accepted, so include the host of `KEYRING_PUBLIC_URL` too. `localhost`, `127.0.0.1` and `::1` are always accepted |
 | `KEYRING_LANG` | `en` or `ko` | follows `LANG` | Server language: server error text, logs, the CLI, and vault text before a vault language is chosen. A value set in Settings → **Language** → **Server language** takes precedence |
 | `KEYRING_UPDATE_URL` | URL | GitHub `releases/latest` | Update check URL. An empty value turns the check off |
 | `KEYRING_BACKUP_SCHEDULER` | `0` or `1` | `1` | `0` turns off automatic backups |
@@ -38,7 +38,7 @@ Set these in the environment of `pnpm start`, or in `.env` when you use Docker C
 | `KEYRING_S3_BLOBS` | `0` or `1` | `0` | `1` stores large attachments in S3 instead of Git |
 | `KEYRING_S3_BLOB_MIN_KB` | number | `256` | Size threshold for `KEYRING_S3_BLOBS`, in KB |
 | `KEYRING_S3_ENCRYPTION_KEY` | secret | (none) | If set, backups and attachments are encrypted before upload. Lose it and the encrypted data cannot be opened |
-| `KEYRING_S3_ENCRYPTION_KEY_FILE` | path | (none) | Read the encryption key from this file instead. With Docker this is a path inside the container, so put the file under `/data` |
+| `KEYRING_S3_ENCRYPTION_KEY_FILE` | path | (none) | Read the encryption key from this file instead. With Docker this is a path inside the container, so put the file under `/data`. It must be readable by the container user (uid 1000) |
 
 `KEYRING_PASSWORD` is read by the CLI only.
 

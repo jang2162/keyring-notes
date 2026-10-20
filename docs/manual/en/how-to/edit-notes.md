@@ -31,6 +31,8 @@ Live Preview is on by default. Turn it off from the status bar or in Settings â†
 
 Type `[[` to autocomplete note and attachment names. When names repeat, paths tell them apart. Write `[[Note#Heading|alias]]` to link to a heading with your own text, and `![[image.png|300]]` to embed an image 300 pixels wide.
 
+A note embed such as `![[Note]]` shows the note's content only when it is alone in its paragraph. An embed of the note itself, or one nested more than 3 levels deep, is shown as a link, and a missing or inaccessible note is shown as a broken link.
+
 ## Find and replace in a note
 
 Press `Ctrl/Cmd+F` to open the find bar above the editor. It searches as you type and shows the match count, such as `3/12`.
@@ -71,6 +73,8 @@ Template variables are listed in [Reference](../reference.md#template-variables)
 ## Edit offline
 
 The web app can be installed to your home screen. Notes you opened once open without a connection, and saves made offline are kept on the device and sent when you reconnect. Notes changed on the server in the meantime are not overwritten; your version is kept as an offline conflict copy.
+
+Math (KaTeX) and Mermaid diagrams load from the server only when a note uses them, never from a CDN. The installed web app downloads them in the background after the first open, so they render offline too.
 
 ## Next steps
 

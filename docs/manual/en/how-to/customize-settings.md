@@ -35,7 +35,7 @@ These stay on this device only: panel widths and open state, the left view and r
 
 Shared settings live in the frontmatter of `keyring-settings.md` at the top of the vault. It is Markdown, so app sync keeps it in step, and the server also uses it to resolve `[[date]]` links and recognize daily notes.
 
-- It does not appear in the tree, quick open, search, graph, widgets or property suggestions, and it is not a workspace. Open it from Settings → **General**.
+- It does not appear in the tree, quick open, search, graph, widgets or property suggestions, and it is not a workspace. Open it with **Open source** in Settings → **General**.
 - Each edit re-reads the file and rewrites only the value that changed, so values changed by other devices are kept.
 - Agents can only read this file, whatever their permissions.
 

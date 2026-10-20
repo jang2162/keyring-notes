@@ -48,7 +48,7 @@ curl http://127.0.0.1:8787/api/health
 {"ok":true}
 ```
 
-서버는 `127.0.0.1` 에서만 받습니다. 다른 기기에서 접속하려면 [Docker 로 배포하기](docs/manual/ko/how-to/deploy-with-docker.md)를 보세요. [소스에서 실행](docs/manual/ko/how-to/run-from-source.md)하거나 서버 없이 [데스크톱 앱을 쓸](docs/manual/ko/how-to/use-the-desktop-app.md) 수도 있습니다.
+포트는 `127.0.0.1` 에만 열려 이 컴퓨터에서만 접속할 수 있습니다. 다른 기기에서 접속하려면 [Docker 로 배포하기](docs/manual/ko/how-to/deploy-with-docker.md)를 보세요. [소스에서 실행](docs/manual/ko/how-to/run-from-source.md)하거나 서버 없이 [데스크톱 앱을 쓸](docs/manual/ko/how-to/use-the-desktop-app.md) 수도 있습니다.
 
 ## 빠른 시작
 

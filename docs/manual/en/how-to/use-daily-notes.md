@@ -48,7 +48,7 @@ The title field shows the date as a dimmed prefix, and you edit only the title a
 
 ## Link to a day
 
-`[[2026-10-07]]` points to that day's daily note. A note with exactly that name takes precedence. Backlinks, graph, structure check and link updates follow the same rule. Moving a daily note out of the daily folder rewrites those links to the full name.
+`[[2026-10-07]]` points to that day's daily note. A note with exactly that name takes precedence. Backlinks, graph, structure check and link updates follow the same rule. For an agent, the link resolves only among the notes that agent can see. Moving a daily note out of the daily folder rewrites those links to the full name.
 
 ## Automatic tags
 

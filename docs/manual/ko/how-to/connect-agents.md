@@ -1,10 +1,11 @@
+<!-- source: docs/manual/en/how-to/connect-agents.md @ v0.8.5 -->
 # 에이전트 연결하기
 
 에이전트용 토큰을 발급하고, 볼 수 있는 것과 바꿀 수 있는 것을 제한하고, MCP 나 REST 로 연결합니다.
 
 AI 에이전트가 노트를 읽거나 쓰게 하려는 분을 위한 문서입니다.
 
-## 1. 토큰 발급하기
+## 토큰 발급하기
 
 브라우저에서 설정 → **에이전트·권한**으로 가서 에이전트를 만드세요. 토큰과 MCP 설정 예시는 한 번만 보입니다.
 
@@ -16,7 +17,7 @@ pnpm keyring agent add wiki-work
 
 Docker 에서는 `docker compose exec keyring keyring agent add wiki-work` 를 실행하세요. 토큰은 이때만 보입니다. 잃어버리면 `agent rotate` 로 다시 발급하세요. 이전 토큰은 바로 쓸 수 없게 됩니다.
 
-## 2. 권한 주기
+## 권한 주기
 
 새 에이전트는 아무것도 보지 못합니다. 폴더나 노트마다 단계를 주세요.
 
@@ -31,7 +32,7 @@ pnpm keyring agent list
 
 권한을 바꾸면 다음 요청부터 적용됩니다. 재시작할 필요가 없습니다.
 
-## 3. MCP 로 연결하기
+## MCP 로 연결하기
 
 MCP 클라이언트를 다음처럼 설정하세요.
 

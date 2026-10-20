@@ -13,7 +13,7 @@ It is for people who host the server. For a first local try, [Getting started](.
 
 Requirements: Docker with Compose v2 and BuildKit. The override example below uses `!reset`, which needs Docker Compose 2.24.4 or later (`docker compose version`).
 
-## 1. Choose how you reach the server
+## Choose how you reach the server
 
 By default the port is published on `127.0.0.1` only. Pick one setup.
 
@@ -63,7 +63,7 @@ KEYRING_ALLOWED_HOSTS=<VPN address or host name>
 
 With Tailscale you can also add HTTPS inside the tailnet with `tailscale serve --bg 8787`.
 
-## 2. Fill in `.env`
+## Fill in `.env`
 
 ```bash
 cp .env.example .env
@@ -82,7 +82,7 @@ Edit `.env`. Do not commit it. Every key is listed in [Configuration](../configu
 
 Every page is served with security headers such as a Content Security Policy and `X-Frame-Options: DENY`.
 
-## 3. Choose S3 storage (optional)
+## Choose S3 storage (optional)
 
 S3-compatible storage keeps backups off the server and can hold large attachments. See [Back up and restore](back-up-and-restore.md) for what it does. Pick one way to provide it.
 
@@ -93,7 +93,7 @@ S3-compatible storage keeps backups off the server and can hold large attachment
 
 With the `s3` profile on, if the key ID, secret or bucket name is empty, the `seaweedfs` container logs the reason and exits. Without that check SeaweedFS would start with no authentication. Do not turn the profile on when you use your own S3.
 
-## 4. Start the server
+## Start the server
 
 ```bash
 docker compose config            # the merged result of the files you chose
@@ -103,7 +103,7 @@ docker compose logs keyring      # shows the setup code on the first run
 
 Open the server in a browser, then enter the setup code and a new password. The admin CLI runs inside the container, for example `docker compose exec keyring keyring agent list`.
 
-## 5. Update
+## Update
 
 Settings → **Updates** tells you when a new release is out. Make a backup in Settings → **Backup & restore** first, then:
 

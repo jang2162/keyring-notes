@@ -1,10 +1,11 @@
+<!-- source: docs/manual/en/how-to/deploy-with-komodo.md @ v0.8.5 -->
 # Komodo 로 배포하기
 
 [Docker 로 배포하기](deploy-with-docker.md)의 구성 A(리버스 프록시 뒤)를 Komodo 의 **Git Repo Stack** 으로 올립니다.
 
 Komodo 와 리버스 프록시를 이미 운영하는 분을 위한 문서입니다. Stack 에는 프록시가 들어 있지 않고, 앱은 프록시의 외부 네트워크에 붙기만 합니다.
 
-## 1. Stack 만들기
+## Stack 만들기
 
 | 항목 | 값 |
 | --- | --- |
@@ -16,7 +17,7 @@ Komodo 와 리버스 프록시를 이미 운영하는 분을 위한 문서입니
 
 Compose 파일은 `container_name` 을 쓰지 않으므로 같은 서버의 다른 Stack 과 이름이 겹치지 않습니다. **Deploy** 할 때마다 clone 한 코드로 이미지를 빌드합니다.
 
-## 2. Environment 채우기
+## Environment 채우기
 
 Komodo 는 Environment 를 `.env` 로 써서 Compose 파일의 `${VAR}` 를 채웁니다. 모든 키는 [설정값](../configuration.md)에, 예시는 `.env.example` 에 있습니다.
 
@@ -26,13 +27,13 @@ Komodo 는 Environment 를 `.env` 로 써서 Compose 파일의 `${VAR}` 를 채�
 | `PROXY_NETWORK` | 필수 | `compose.override.yaml` 이 읽습니다. 프록시와 함께 쓰는 외부 네트워크 |
 | `KEYRING_DATA_DIR` | 권장 | 볼트·설정·백업의 호스트 폴더. 먼저 만드세요: `sudo install -d -o 1000 -g 1000 <경로>`. 비우면 named volume |
 | `KEYRING_ALLOWED_HOSTS`, `KEYRING_FETCH_ALLOW_PRIVATE`, `TZ` | 선택 | |
-| `KEYRING_S3_*` | 선택 | 쓰던 S3 를 쓰거나, `COMPOSE_PROFILES=s3` 를 더해 함께 든 SeaweedFS 를 띄웁니다([Docker 로 배포하기](deploy-with-docker.md#3-s3-저장소-고르기선택) 참고). `seaweedfs` 가 뜨지 않으면 Stack 설정의 프로필·서비스 지정을 확인하세요 |
+| `KEYRING_S3_*` | 선택 | 쓰던 S3 를 쓰거나, `COMPOSE_PROFILES=s3` 를 더해 함께 든 SeaweedFS 를 띄웁니다([Docker 로 배포하기](deploy-with-docker.md#s3-저장소-고르기선택) 참고). `seaweedfs` 가 뜨지 않으면 Stack 설정의 프로필·서비스 지정을 확인하세요 |
 | `SEAWEEDFS_DATA_DIR` | 선택 | SeaweedFS 데이터의 호스트 폴더. 먼저 만드세요. 비우면 named volume `<Stack 이름>_seaweedfs-data` |
 | `KEYRING_S3_ACCESS_KEY_ID`, `KEYRING_S3_SECRET_ACCESS_KEY`, `KEYRING_S3_ENCRYPTION_KEY` | 선택(비밀) | Komodo **Variables** 에 비밀로 등록하고 참조만 쓰세요. 예: `KEYRING_S3_SECRET_ACCESS_KEY=[[KEYRING_S3_SECRET_ACCESS_KEY]]` |
 
 Environment 를 바꾼 뒤에는 다시 Deploy 하세요. 떠 있는 컨테이너는 시작할 때의 환경을 그대로 씁니다.
 
-## 3. 서버에 override 파일 쓰기
+## 서버에 override 파일 쓰기
 
 Komodo 에는 override 파일을 쓰는 화면이 없습니다. Periphery 가 Stack 을 clone 한 폴더(`{stack_dir}/{Stack 이름}/`)에 호스트에서 `compose.override.yaml` 을 쓰세요. 호스트 경로는 Periphery 컨테이너 정의에서 Periphery 의 `root_directory`(기본 `/etc/komodo`)가 호스트의 어디에 바인드돼 있는지 보고 찾습니다. 바인드돼 있지 않으면 서버 관리자에게 물으세요.
 

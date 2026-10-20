@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/getting-started.md @ v0.8.5 -->
 # 시작하기
 
 빈 컴퓨터에서 Keyring Notes 의 첫 노트를 쓰기까지 안내하고, 에이전트를 들이는 방법까지 보입니다.
@@ -52,7 +53,7 @@ keyring-1  | First run: set a password in the web app with this setup code → 4
 keyring-1  | (or `pnpm keyring passwd`; with Docker, `docker compose exec keyring keyring passwd`)
 ```
 
-코드는 실행할 때마다 다릅니다. 서버 언어를 정하기 전에는 로그가 영어로 나옵니다.
+코드는 실행할 때마다 다릅니다. 서버 언어를 정하기 전에는 `KEYRING_LANG` 이나 `LANG` 이 다른 언어를 가리키지 않는 한 로그가 영어로 나옵니다.
 
 ## 3. 비밀번호 정하기
 

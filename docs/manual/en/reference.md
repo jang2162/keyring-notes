@@ -144,7 +144,7 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | `409` | Conflict. The body includes `currentHash` |
 | `421` | The request's host name is not accepted (see `KEYRING_PUBLIC_URL` and `KEYRING_ALLOWED_HOSTS`) |
 
-The error body is `{error, code, params, message}`. `code` is a language-independent message key (`error.<code>`), `params` are the values to interpolate, and `message` is the text in the server language.
+The error body is `{error, code, params, message}`. A `421` response is plain text, not this JSON body. `code` is a language-independent message key (`error.<code>`), `params` are the values to interpolate, and `message` is the text in the server language.
 
 ## Widget syntax
 
@@ -233,9 +233,9 @@ Press `Ctrl/Cmd+/` to see the full list, and change shortcuts in Settings → **
 | --- | --- |
 | New note | `Alt+N` (desktop app: `Ctrl/Cmd+N`) |
 | Close tab | `Alt+W` (desktop app: `Ctrl/Cmd+W`) |
-| Reopen closed tab | `Alt+Shift+T` |
-| Previous / next tab | `Alt+[` / `Alt+]` |
-| Nth tab | `Alt+1` … `Alt+9` |
+| Reopen closed tab | `Alt+Shift+T` (desktop app: `Ctrl/Cmd+Shift+T`) |
+| Previous / next tab | `Alt+[` / `Alt+]` (desktop app: `Ctrl+Shift+Tab` / `Ctrl+Tab`) |
+| Nth tab | `Alt+1` … `Alt+9` (desktop app: `Ctrl/Cmd+1` … `Ctrl/Cmd+9`) |
 | Quick open | `Ctrl/Cmd+O` |
 | Command palette | `Ctrl/Cmd+P` |
 | Search | `Ctrl/Cmd+Shift+F` |

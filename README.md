@@ -47,7 +47,7 @@ curl http://127.0.0.1:8787/api/health
 {"ok":true}
 ```
 
-The server listens on `127.0.0.1` only. To reach it from other devices, see [Deploy with Docker](docs/manual/en/how-to/deploy-with-docker.md). You can also [run from source](docs/manual/en/how-to/run-from-source.md) or [use the desktop app](docs/manual/en/how-to/use-the-desktop-app.md) without a server.
+The port is published on `127.0.0.1` only, so only this computer can reach it. To reach it from other devices, see [Deploy with Docker](docs/manual/en/how-to/deploy-with-docker.md). You can also [run from source](docs/manual/en/how-to/run-from-source.md) or [use the desktop app](docs/manual/en/how-to/use-the-desktop-app.md) without a server.
 
 ## Quick Start
 

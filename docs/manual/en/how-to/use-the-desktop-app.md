@@ -44,7 +44,8 @@ Sync runs when the app opens, 10 seconds after a save, when you return to the wi
 - If both sides changed different parts, a three-way merge saves the combined result on both sides. It shows in history as an automatic merge and can be undone.
 - If both sides changed the same line, or adjacent lines, nothing is overwritten. The original path keeps the server version, and this device's content is kept on both sides as `<name> (sync conflict copy <date-time>).md`. No conflict markers are inserted into notes.
 - If one side deleted a note and the other edited it, the edit wins.
-- Markdown syncs both ways. Attachments are downloaded from the server. New attachments created on the device are uploaded. An attachment deleted on the device is deleted on the server only if the server still has the baseline version. Edits to existing attachments on the device are not sent.
+- Markdown syncs both ways. Attachments are downloaded from the server. New attachments created on the device are uploaded. An attachment deleted on the device is deleted on the server only if the server still has the baseline version; otherwise the server's copy is downloaded again. Edits to existing attachments on the device are not sent.
+- If you move a folder with attachments in the app, the next sync uploads the attachments at the new place and deletes them from the old place on the server.
 - The shared settings file (`keyring-settings.md`) syncs key by key. If both sides changed the same key, the server's value wins, and for display settings the app offers to keep this device's value as a device-only override.
 - Each side builds its own wiki index and log.
 - Commits the app writes to the server are authored as `owner (<device name>)`. Device tokens cannot use the admin console.

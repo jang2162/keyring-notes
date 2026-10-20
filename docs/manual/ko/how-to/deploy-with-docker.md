@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/how-to/deploy-with-docker.md @ v0.8.5 -->
 # Docker 로 배포하기
 
 Docker Compose 로 서버에 Keyring Notes 를 띄우고 다른 기기에서 접속할 수 있게 합니다.
@@ -13,7 +14,7 @@ Docker Compose 로 서버에 Keyring Notes 를 띄우고 다른 기기에서 접
 
 요구 사항: Compose v2 와 BuildKit 이 있는 Docker. 아래 override 예시는 `!reset` 을 쓰므로 Docker Compose 2.24.4 이상이어야 합니다(`docker compose version`).
 
-## 1. 접속 방식 고르기
+## 접속 방식 고르기
 
 포트는 기본으로 `127.0.0.1` 에만 열립니다. 구성 하나를 고르세요.
 
@@ -63,7 +64,7 @@ KEYRING_ALLOWED_HOSTS=<VPN 주소나 호스트 이름>
 
 Tailscale 이면 `tailscale serve --bg 8787` 로 tailnet 안에서 HTTPS 를 붙일 수도 있습니다.
 
-## 2. `.env` 채우기
+## `.env` 채우기
 
 ```bash
 cp .env.example .env
@@ -82,7 +83,7 @@ cp .env.example .env
 
 모든 페이지는 Content Security Policy, `X-Frame-Options: DENY` 같은 보안 헤더와 함께 나갑니다.
 
-## 3. S3 저장소 고르기(선택)
+## S3 저장소 고르기(선택)
 
 S3 호환 저장소는 백업을 서버 밖에 두고 큰 첨부를 보관합니다. 하는 일은 [백업과 복원](back-up-and-restore.md)을 보세요. 마련하는 방법을 하나 고르세요.
 
@@ -93,7 +94,7 @@ S3 호환 저장소는 백업을 서버 밖에 두고 큰 첨부를 보관합니
 
 `s3` 프로필을 켰는데 키 ID, 비밀 값, 버킷 이름 중 하나라도 비어 있으면 `seaweedfs` 컨테이너가 이유를 로그에 남기고 끝납니다. 이 검사가 없으면 SeaweedFS 는 인증 없이 뜹니다. 쓰던 S3 를 쓸 때는 프로필을 켜지 마세요.
 
-## 4. 서버 띄우기
+## 서버 띄우기
 
 ```bash
 docker compose config            # the merged result of the files you chose
@@ -103,7 +104,7 @@ docker compose logs keyring      # shows the setup code on the first run
 
 브라우저로 서버를 열고 설정 코드와 새 비밀번호를 넣으세요. 관리 CLI 는 컨테이너 안에서 돕니다. 예: `docker compose exec keyring keyring agent list`.
 
-## 5. 업데이트
+## 업데이트
 
 설정 → **업데이트**가 새 릴리스를 알려 줍니다. 먼저 설정 → **백업·복원**에서 백업을 만들고 다음을 실행하세요.
 

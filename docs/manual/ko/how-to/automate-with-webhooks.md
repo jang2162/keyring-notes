@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/how-to/automate-with-webhooks.md @ v0.8.5 -->
 # 웹훅으로 자동화하기
 
 볼트 이벤트를 다른 서비스로 보내고, 에이전트의 주간 정리처럼 정해진 때에 작업을 돌립니다.

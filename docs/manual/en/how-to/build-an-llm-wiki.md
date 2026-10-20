@@ -20,11 +20,11 @@ Work/Economy/
 
 `SCHEMA.md`, the index and the log are written in the vault language.
 
-## 1. Create a topic
+## Create a topic
 
 Click **Import** on the rail (the inbox icon), then **New wiki topic**. The topic is created in the current workspace with a `SCHEMA.md` template. Fill in the purpose and rules.
 
-## 2. Give the agent permissions
+## Give the agent permissions
 
 ```bash
 pnpm keyring agent grant <name> Work/Economy/raw append
@@ -34,7 +34,7 @@ pnpm keyring agent grant <name> Work/Economy/SCHEMA.md read
 
 Agents can only read `SCHEMA.md`, whatever the rules. See [Connect agents](connect-agents.md).
 
-## 3. Import sources
+## Import sources
 
 Use **Import** on the rail, or the MCP tools `ingest_url` and `ingest_text`.
 
@@ -47,7 +47,7 @@ Sources are saved as `<topic>/raw/<date> <title>.md`, with `source_type`, `sourc
 
 URL collection cannot reach private or loopback addresses unless `KEYRING_FETCH_ALLOW_PRIVATE=1` is set.
 
-## 4. Let the index and log update themselves
+## Let the index and log update themselves
 
 The server rebuilds `wiki/index.md` and `wiki/log.md` whenever anything in the topic changes. You cannot edit them, and they are kept out of Git and the search index.
 

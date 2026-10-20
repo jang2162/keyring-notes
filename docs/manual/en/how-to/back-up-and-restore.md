@@ -30,7 +30,7 @@ Before it switches the vault, the restore saves the current state as a `pre-rest
 
 ## Keep backups in S3-compatible storage
 
-The source of truth stays on the server's disk (vault folder and Git). S3-compatible storage (AWS S3, Cloudflare R2, MinIO, Backblaze B2 and others) adds two things. To set it up with Docker, see [Deploy with Docker](deploy-with-docker.md#3-choose-s3-storage-optional). All keys are in [Configuration](../configuration.md).
+The source of truth stays on the server's disk (vault folder and Git). S3-compatible storage (AWS S3, Cloudflare R2, MinIO, Backblaze B2 and others) adds two things. To set it up with Docker, see [Deploy with Docker](deploy-with-docker.md#choose-s3-storage-optional). All keys are in [Configuration](../configuration.md).
 
 The bucket is never made public. Attachments are still served by the server after it checks permissions.
 

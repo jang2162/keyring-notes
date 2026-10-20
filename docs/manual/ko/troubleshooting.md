@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/troubleshooting.md @ v0.8.5 -->
 # 문제 해결
 
 실제로 겪은 문제를 원인과 해결 방법과 함께 모았습니다.

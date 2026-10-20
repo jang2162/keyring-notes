@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/how-to/back-up-and-restore.md @ v0.8.5 -->
 # 백업과 복원
 
 백업을 만들고 복원하고, 볼트를 다른 서버로 옮기고, S3 호환 저장소에 사본을 둡니다.
@@ -30,7 +31,7 @@
 
 ## S3 호환 저장소에 백업 두기
 
-원본은 계속 서버 디스크(볼트 폴더와 Git)에 있습니다. S3 호환 저장소(AWS S3, Cloudflare R2, MinIO, Backblaze B2 등)는 두 가지를 더합니다. Docker 로 설정하는 방법은 [Docker 로 배포하기](deploy-with-docker.md#3-s3-저장소-고르기선택)에, 모든 키는 [설정값](../configuration.md)에 있습니다.
+원본은 계속 서버 디스크(볼트 폴더와 Git)에 있습니다. S3 호환 저장소(AWS S3, Cloudflare R2, MinIO, Backblaze B2 등)는 두 가지를 더합니다. Docker 로 설정하는 방법은 [Docker 로 배포하기](deploy-with-docker.md#s3-저장소-고르기선택)에, 모든 키는 [설정값](../configuration.md)에 있습니다.
 
 버킷은 공개하지 않습니다. 첨부는 지금처럼 서버가 권한을 확인한 뒤 내줍니다.
 

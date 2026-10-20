@@ -52,7 +52,7 @@ keyring-1  | First run: set a password in the web app with this setup code → 4
 keyring-1  | (or `pnpm keyring passwd`; with Docker, `docker compose exec keyring keyring passwd`)
 ```
 
-Your code is different. The log is in English until you choose a server language.
+Your code is different. The log is in English unless `KEYRING_LANG` or `LANG` says otherwise, until you choose a server language.
 
 ## 3. Set your password
 

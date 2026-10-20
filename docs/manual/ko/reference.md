@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/reference.md @ v0.8.5 -->
 # 참조
 
 Keyring Notes 의 명령, API, 파일 형식을 정확히 모았습니다.
@@ -144,7 +145,7 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | `409` | 충돌. 본문에 `currentHash` 가 있습니다 |
 | `421` | 받지 않는 호스트 이름으로 온 요청(`KEYRING_PUBLIC_URL`, `KEYRING_ALLOWED_HOSTS` 참고) |
 
-오류 본문은 `{error, code, params, message}` 입니다. `code` 는 언어와 상관없는 메시지 키(`error.<code>`), `params` 는 끼워 넣을 값, `message` 는 서버 언어의 글입니다.
+오류 본문은 `{error, code, params, message}` 입니다. `421` 응답은 이 JSON 이 아니라 평문입니다. `code` 는 언어와 상관없는 메시지 키(`error.<code>`), `params` 는 끼워 넣을 값, `message` 는 서버 언어의 글입니다.
 
 ## 위젯 문법
 
@@ -170,7 +171,7 @@ limit: 50
 | `chart` | `chart: bar`(기본) 또는 `line`, `x: <묶을 필드>`, `y: <숫자 필드>`, `agg: sum`(`y` 가 있으면 기본), `count`, `avg`. 또는 `data: [{label, value}]` 로 직접 줍니다 |
 | `cards` | 노트마다 카드 하나: 제목, 요약, `show` 필드 |
 | `kanban` | `group`(기본 `status`) 값이 칸입니다. `lanes: [할 일, 진행, 완료]` 로 칸 순서를 정합니다 |
-| `plugin` | `plugin: <이름>` 과 같은 `from`, `where`, `show`, `sort`. `options:` 는 플러그인에 그대로 넘어갑니다. [examples/plugins](../../../examples/plugins/README.md) 참고 |
+| `plugin` | `plugin: <이름>` 과 같은 `from`, `where`, `show`, `sort`. `options:` 는 플러그인에 그대로 넘어갑니다. [examples/plugins](../../../examples/plugins/README.ko.md) 참고 |
 
 위젯도 권한 계층을 지나므로 에이전트가 같은 쿼리(MCP `query`)를 돌려도 읽을 수 있는 노트만 나옵니다.
 
@@ -233,9 +234,9 @@ Keyring Notes 는 Obsidian 과 같은 문법을 읽습니다.
 | --- | --- |
 | 새 노트 | `Alt+N`(데스크톱 앱: `Ctrl/Cmd+N`) |
 | 탭 닫기 | `Alt+W`(데스크톱 앱: `Ctrl/Cmd+W`) |
-| 닫은 탭 다시 열기 | `Alt+Shift+T` |
-| 이전 / 다음 탭 | `Alt+[` / `Alt+]` |
-| N번째 탭 | `Alt+1` … `Alt+9` |
+| 닫은 탭 다시 열기 | `Alt+Shift+T`(데스크톱 앱: `Ctrl/Cmd+Shift+T`) |
+| 이전 / 다음 탭 | `Alt+[` / `Alt+]`(데스크톱 앱: `Ctrl+Shift+Tab` / `Ctrl+Tab`) |
+| N번째 탭 | `Alt+1` … `Alt+9`(데스크톱 앱: `Ctrl/Cmd+1` … `Ctrl/Cmd+9`) |
 | 노트 빠르게 열기 | `Ctrl/Cmd+O` |
 | 명령 팔레트 | `Ctrl/Cmd+P` |
 | 검색 | `Ctrl/Cmd+Shift+F` |

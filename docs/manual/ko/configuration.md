@@ -1,3 +1,4 @@
+<!-- source: docs/manual/en/configuration.md @ v0.8.5 -->
 # 설정값
 
 서버가 읽는 환경 변수와 Docker Compose `.env` 파일이 받는 키를 모두 모았습니다.
@@ -10,16 +11,16 @@
 
 | 변수 | 형식 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `KEYRING_DATA` | 경로 | (없음, Docker 는 `/data`) | 정하면 볼트·설정·백업이 `<DATA>/vault`, `<DATA>/config/keyring.json`, `<DATA>/backups` 로 갑니다 |
+| `KEYRING_DATA` | 경로 | (없음, Docker 는 `/data`) | 정하면 볼트·설정·백업이 `<DATA>/vault`, `<DATA>/config/keyring.json`, `<DATA>/backups` 로, 플러그인이 `<DATA>/plugins` 로 갑니다 |
 | `KEYRING_VAULT` | 경로 | `./vault` | 볼트 폴더 |
 | `KEYRING_CONFIG` | 경로 | `./config/keyring.json` | 비밀번호 해시, 에이전트 토큰 해시, 권한 표, 백업 설정. 볼트 밖에 두세요 |
 | `KEYRING_BACKUP_DIR` | 경로 | `./backups` | 백업 파일 폴더 |
 | `KEYRING_INDEX` | 경로 | `<볼트>/.keyring/index.db` | 검색 인덱스. 캐시라서 지우면 다음 시작 때 다시 만듭니다 |
-| `KEYRING_PLUGINS_DIR` | 경로 | `./plugins`(Docker 는 `/data/plugins`) | 위젯 플러그인 폴더 |
+| `KEYRING_PLUGINS_DIR` | 경로 | `./plugins`(`KEYRING_DATA` 가 있으면 `<DATA>/plugins`) | 위젯 플러그인 폴더 |
 | `KEYRING_HOST` | 주소 | `127.0.0.1` | 바인드 주소 |
 | `KEYRING_PORT` | 숫자 | `8787` | 포트 |
 | `KEYRING_PUBLIC_URL` | URL | (없음) | 접속하는 https 주소. 이 호스트 이름으로 온 요청만 받고, 로그인 쿠키에 `Secure` 가 붙습니다 |
-| `KEYRING_ALLOWED_HOSTS` | 목록 | `KEYRING_PUBLIC_URL` 의 호스트 | 받을 호스트 이름(쉼표로 여럿). 정하면 이 목록만 받으므로 `KEYRING_PUBLIC_URL` 의 호스트도 함께 적으세요. `localhost` 는 늘 받습니다 |
+| `KEYRING_ALLOWED_HOSTS` | 목록 | `KEYRING_PUBLIC_URL` 의 호스트 | 받을 호스트 이름(쉼표로 여럿). 정하면 이 목록만 받으므로 `KEYRING_PUBLIC_URL` 의 호스트도 함께 적으세요. `localhost`·`127.0.0.1`·`::1` 은 늘 받습니다 |
 | `KEYRING_LANG` | `en`·`ko` | `LANG` 을 따름 | 서버 언어: 서버 오류 글, 로그, CLI, 볼트 언어를 정하기 전의 볼트 글. 설정 → **언어** → **서버 언어**에서 정한 값이 먼저입니다 |
 | `KEYRING_UPDATE_URL` | URL | GitHub `releases/latest` | 업데이트 확인 주소. 빈 값이면 확인하지 않습니다 |
 | `KEYRING_BACKUP_SCHEDULER` | `0`·`1` | `1` | `0` 이면 자동 백업을 끕니다 |
@@ -38,7 +39,7 @@
 | `KEYRING_S3_BLOBS` | `0`·`1` | `0` | `1` 이면 큰 첨부를 Git 대신 S3 에 둡니다 |
 | `KEYRING_S3_BLOB_MIN_KB` | 숫자 | `256` | `KEYRING_S3_BLOBS` 의 기준 크기(KB) |
 | `KEYRING_S3_ENCRYPTION_KEY` | 비밀 | (없음) | 정하면 올리기 전에 백업과 첨부를 암호화합니다. 잃으면 암호화한 것은 열 수 없습니다 |
-| `KEYRING_S3_ENCRYPTION_KEY_FILE` | 경로 | (없음) | 암호화 키를 이 파일에서 읽습니다. Docker 에서는 컨테이너 안 경로라서 `/data` 아래에 두세요 |
+| `KEYRING_S3_ENCRYPTION_KEY_FILE` | 경로 | (없음) | 암호화 키를 이 파일에서 읽습니다. Docker 에서는 컨테이너 안 경로라서 `/data` 아래에 두세요. 컨테이너 사용자(uid 1000)가 읽을 수 있어야 합니다 |
 
 `KEYRING_PASSWORD` 는 CLI 만 읽습니다.
 

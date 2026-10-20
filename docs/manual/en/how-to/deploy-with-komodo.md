@@ -4,7 +4,7 @@ This guide deploys setup A of [Deploy with Docker](deploy-with-docker.md) (behin
 
 It is for people who already run Komodo and a reverse proxy. The Stack contains no proxy; the app only joins the proxy's external network.
 
-## 1. Create the Stack
+## Create the Stack
 
 | Setting | Value |
 | --- | --- |
@@ -16,7 +16,7 @@ It is for people who already run Komodo and a reverse proxy. The Stack contains 
 
 The Compose file sets no `container_name`, so names do not clash with other Stacks on the same server. Each **Deploy** builds the image from the cloned code.
 
-## 2. Fill in Environment
+## Fill in Environment
 
 Komodo writes Environment to `.env`, which fills the `${VAR}` values in the Compose file. All keys are in [Configuration](../configuration.md), with examples in `.env.example`.
 
@@ -26,13 +26,13 @@ Komodo writes Environment to `.env`, which fills the `${VAR}` values in the Comp
 | `PROXY_NETWORK` | yes | Read by `compose.override.yaml`. The external network shared with your proxy |
 | `KEYRING_DATA_DIR` | recommended | Host folder for the vault, config and backups. Create it first: `sudo install -d -o 1000 -g 1000 <path>`. Empty means a named volume |
 | `KEYRING_ALLOWED_HOSTS`, `KEYRING_FETCH_ALLOW_PRIVATE`, `TZ` | no | |
-| `KEYRING_S3_*` | no | Use your own S3, or add `COMPOSE_PROFILES=s3` to run the bundled SeaweedFS (see [Deploy with Docker](deploy-with-docker.md#3-choose-s3-storage-optional)). If `seaweedfs` does not start, check the profile and service selection in the Stack settings |
+| `KEYRING_S3_*` | no | Use your own S3, or add `COMPOSE_PROFILES=s3` to run the bundled SeaweedFS (see [Deploy with Docker](deploy-with-docker.md#choose-s3-storage-optional)). If `seaweedfs` does not start, check the profile and service selection in the Stack settings |
 | `SEAWEEDFS_DATA_DIR` | no | Host folder for SeaweedFS data. Create it first. Empty means the named volume `<Stack name>_seaweedfs-data` |
 | `KEYRING_S3_ACCESS_KEY_ID`, `KEYRING_S3_SECRET_ACCESS_KEY`, `KEYRING_S3_ENCRYPTION_KEY` | no (secret) | Register them as secret Komodo **Variables** and reference them, for example `KEYRING_S3_SECRET_ACCESS_KEY=[[KEYRING_S3_SECRET_ACCESS_KEY]]` |
 
 After you change Environment, deploy again. A running container keeps the environment it was started with.
 
-## 3. Write the override file on the server
+## Write the override file on the server
 
 Komodo has no UI for override files. Write `compose.override.yaml` on the host, in the folder where Periphery cloned the Stack (`{stack_dir}/{Stack name}/`). Find the host path by checking where Periphery's `root_directory` (default `/etc/komodo`) is bind-mounted in the Periphery container definition. If it is not bind-mounted, ask your server administrator.
 

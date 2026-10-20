@@ -49,7 +49,7 @@ When you move or rename a note, links pointing to it are updated in the same com
 - `[[…]]` and path values in the frontmatter `sources` and `source`.
 - Relative Markdown links and images (`[x](../a.md)`), including the moved note's own relative links.
 
-`#heading`, `#^block` and `|alias` are kept. Links that used the full path keep the full path; links that used only the name get the shortest name that still resolves. Code blocks and inline code are left untouched.
+`#heading`, `#^block` and `|alias` are kept. Links that used the full path keep the full path; links that used only the name get the shortest name that still resolves. Code blocks and inline code are left untouched. If the moved note becomes a shallower note with the same name and would capture other links, those links are rewritten to keep their original targets.
 
 When an agent moves a note, only paths the agent can see are used, only notes it can write are updated, and links are written with full paths.
 
@@ -65,7 +65,7 @@ The icon is stored as the note's frontmatter `icon: 📘`, so other editors and 
 
 ## Add attachments
 
-Paste or drop images and files into the editor. They are uploaded to the current workspace's attachment folder (`_attachments` by default, `_첨부` when the vault language is Korean), and a link is inserted: `![[image]]` for images, `[[file]]` for other files, or a path when the link format is **Full path**. Pasted images are named `Pasted image <date-time>.png`.
+Paste or drop images and files into the editor. They are uploaded to the current workspace's attachment folder (`_attachments` by default, `_첨부` when the vault language is Korean), and a link is inserted: `![[image]]` for images, `[[file]]` for other files, or a path when the link format is **Full path**. Pasted images are named `Pasted image <date-time>.png`. If a name is taken, ` 2`, ` 3` and so on is appended.
 
 The Attachments panel on the rail also has a drop area for adding files.
 
