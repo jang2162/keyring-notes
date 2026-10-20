@@ -25,6 +25,7 @@ import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
+import { findBar, findKeymap } from "./findBar";
 import { codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
@@ -350,6 +351,7 @@ export function Editor({
           drawSelection(),
           highlightActiveLine(),
           highlightSelectionMatches(),
+          findBar(),
           syntaxHighlighting(headingStyle),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           foldSlot.current.of(foldRef.current ? frontmatterFold(showProps) : []),
@@ -372,6 +374,7 @@ export function Editor({
             indentWithTab,
             ...defaultKeymap,
             ...historyKeymap,
+            ...findKeymap,
             ...searchKeymap,
           ]),
           // 파일 붙여넣기·끌어놓기: 첨부로 올린 뒤 그 자리(놓은 곳)에 링크를 넣는다
