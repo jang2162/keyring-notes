@@ -839,6 +839,31 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .home-list { list-style: none; margin: 0; padding: 0; }
 .home-list button { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; border: none; background: none; padding: 6px 8px; border-radius: var(--radius); }
 .home-list button:hover { background: var(--hover); border: none; }
+.home-trash { margin-top: var(--sp-4); display: inline-flex; align-items: center; gap: 6px; border: none; background: none; color: var(--muted); padding: 4px 8px; font-size: var(--fs-md); }
+.home-trash:hover { color: var(--fg); background: var(--hover); border: none; }
+
+/* 휴지통: 묶음 한 줄(머리·되살리기), 그 아래 시각·지운 사람·하위 수, 펼치면 지우기 직전 내용(읽기 전용) */
+.trash-list { list-style: none; margin: 0; padding: 0; }
+.trash-item { border-bottom: 1px solid var(--border); padding: 6px 0; }
+.trash-row { display: flex; align-items: center; gap: 8px; }
+.trash-head { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; text-align: left; border: none; background: none; padding: 4px 6px; border-radius: var(--radius); }
+.trash-head:hover { background: var(--hover); border: none; }
+.trash-caret { flex: none; color: var(--muted); transition: transform 0.12s; }
+.trash-item.open .trash-caret { transform: rotate(90deg); }
+.trash-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trash-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.trash-restore { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.trash-sub { margin: 0 0 0 28px; }
+.trash-lost { color: var(--warn-fg); }
+.trash-body { margin: 6px 0 4px 28px; }
+.trash-notes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.trash-notes button { font-size: var(--fs-sm); padding: 2px 8px; }
+.trash-notes button[aria-pressed="true"] { background: var(--active); color: var(--accent); }
+.trash-preview { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; max-height: 50vh; overflow: auto; background: var(--bg-soft); }
+.trash-more { margin-top: 10px; }
+@media (max-width: 800px) {
+  .trash-sub, .trash-body { margin-left: 6px; }
+}
 .home-doc { font-size: var(--fs-base); }
 .home-nav { margin: var(--sp-3); align-self: flex-start; }
 

@@ -7,7 +7,7 @@ export interface TreeNode {
   icon?: string;
 }
 
-import type { Mention, PropertyStat } from "@keyring-notes/core";
+import type { Mention, PropertyStat, TrashPage } from "@keyring-notes/core";
 import { isNetworkError, offline } from "./offline";
 
 export interface Doc {
@@ -482,6 +482,13 @@ const remoteApi = {
     for (const [from, to] of pairs) operations.push({ op: "move", from, to, baseHash: (await remoteApi.read(from, { fresh: true })).hash });
     return request("POST", "/api/batch", { operations, message });
   },
+  /** 휴지통: 지운 노트 묶음(최근 것부터). folder: 워크스페이스 안만, cursor: 앞 쪽의 next */
+  trash: (folder?: string, cursor?: string) =>
+    request<TrashPage>("GET", `/api/trash?${new URLSearchParams({ ...(folder ? { folder } : {}), ...(cursor ? { cursor } : {}) })}`),
+  /** 지우기 직전 내용(휴지통 미리보기) */
+  trashPreview: (id: string, path: string) => request<{ content: string }>("GET", `/api/trash/preview?id=${enc(id)}&path=${q(path)}`).then((r) => r.content),
+  /** 휴지통에서 되살리기(paths: 화면이 본 노트). restored: [원래 경로, 만든 경로], lost: 되살리지 못한 첨부 수 */
+  restoreTrash: (id: string, paths: string[]) => request<{ restored: [string, string][]; lost: number }>("POST", "/api/trash/restore", { id, paths }),
   history: (path: string) => request<{ commits: CommitInfo[] }>("GET", `/api/history?path=${q(path)}`).then((r) => r.commits),
   revision: (path: string, rev: string) => request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),
   rollback: (path: string, rev: string, baseHash: string | null) => request<Doc>("POST", "/api/rollback", { path, rev, baseHash }),

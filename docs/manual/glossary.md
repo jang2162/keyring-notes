@@ -27,6 +27,7 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | widget | 위젯 | A `widget` code block that shows notes as a list, table, board or chart |
 | wiki topic | 위키 토픽 | A node with `SCHEMA.md`, maintained by agents |
 | structure check | 정리 점검 | The check for broken links, orphan pages and missing sources |
+| trash | 휴지통 | Deleted notes, listed from history so they can be restored |
 | agent | 에이전트 | An AI client that reaches the vault with a token |
 | token | 토큰 | The secret an agent or device sends as `Authorization: Bearer` |
 | permission level | 권한 | `hidden`, `read`, `append`, `write`, `delete` |

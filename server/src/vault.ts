@@ -17,7 +17,7 @@ import {
   type VaultSettings,
   type VaultText,
 } from "@keyring-notes/core";
-import { GitHistory, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
+import { GitHistory, moveTrailer, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
 import { isHiddenSegment, isMarkdown, normalizeVaultPath, PathError, resolveInVault } from "./paths.js";
 
 export interface TreeNode {
@@ -36,6 +36,15 @@ export interface Doc {
 /** 오류는 core와 같은 클래스(코드·끼워 넣을 값을 가진다 — core/errors.ts) */
 import { ConflictError, ForbiddenError, KeyedError, NotFoundError } from "@keyring-notes/core";
 export { ConflictError, ForbiddenError, KeyedError, NotFoundError };
+
+/**
+ * 사람·에이전트가 준 커밋 메시지에서 줄바꿈·탭을 뺀 제어 문자를 지운다(거부하지 않는다 — 메시지 때문에 쓰기가 실패하면
+ * 안 된다). 이력을 읽는 쪽이 제어 문자로 레코드를 가르므로(git.ts 의 %x1e·%x1f) 그 글자가 메시지에 들면 이력이 깨진다
+ */
+export function cleanMessage(message: string): string {
+  // eslint-disable-next-line no-control-regex
+  return message.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+}
 
 export function hashContent(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
@@ -141,6 +150,9 @@ export class Vault {
     if (paths && finalPaths && finalPaths.length === 0) return this.git.commitStaged(message, author);
     return this.git.commit(message, author, finalPaths);
   }
+
+  /** S3에 둔 첨부를 내용 해시로 받는다(BlobStore.attach 가 건다). 휴지통이 S3 보관 첨부를 되살릴 때 쓴다 */
+  blobSource: ((sha256: string) => Promise<Uint8Array | null>) | null = null;
 
   /** 서버가 만드는 파일(위키 index·log)처럼 API로 쓸 수 없는 경로인지. */
   readOnly: (rel: string) => boolean = () => false;
@@ -551,12 +563,13 @@ export class Vault {
         }
         // 제목은 연산만으로 정한다(볼트 언어). 링크 갱신은 본문에. 숨김 경로 가리기는 메시지가 아니라
         // 커밋의 변경 목록으로 한다(ScopedVault.history) — 메시지가 어떤 언어여도 안전하게
-        const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0].text : T.batch(verbs.length));
+        const message = cleanMessage(opts.message ?? "").trim() || (verbs.length === 1 ? verbs[0].text : T.batch(verbs.length));
         const lines = [
           ...(verbs.length > 1 || opts.message ? verbs.map((v) => v.text) : []),
           ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => T.linkUpdate(p)),
         ];
-        const body = lines.length > 0 ? `${message}\n\n${lines.join("\n")}` : message;
+        // 끝 문단은 이동 트레일러(휴지통이 이동과 삭제를 가른다 — git.ts moveTrailer). 제목 줄이 아니라 이력 화면에는 안 보인다
+        const body = [message, ...(lines.length > 0 ? [lines.join("\n")] : []), moveTrailer(moveList)].join("\n\n");
         const rev = await this.commitOrAmend(body, author, changed, verbs, opts.coalesce === true && !opts.message);
         if (changed.some(([rel]) => !rel.includes("/"))) this.refreshRoots();
         for (const fn of this.listeners) {

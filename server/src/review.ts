@@ -5,7 +5,7 @@ import { AccessPolicy, atLeast } from "./access.js";
 import type { ConfigStore } from "./config.js";
 import { serverText } from "./lang.js";
 import { PathError } from "./paths.js";
-import { hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
+import { cleanMessage, hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
 
 /**
  * 변경 검토 대기열(W5). 검토 대상 경로에 에이전트가 쓰면 바로 커밋하지 않고 제안으로 쌓아 두었다가,
@@ -102,7 +102,7 @@ export class ReviewQueue {
       id,
       agent: agent.name,
       agentEmail: agent.email,
-      message: message?.trim() || this.vault.text().commit.proposal(preview.length),
+      message: cleanMessage(message ?? "").trim() || this.vault.text().commit.proposal(preview.length),
       createdAt: new Date().toISOString(),
       status: "pending",
       ops: stored,

@@ -79,6 +79,7 @@ export class BlobStore {
     this.index = await this.readIndex();
     this.vault.git.presetExcludes("blobs", Object.keys(this.index));
     this.vault.beforeCommit = (paths) => this.prepareCommit(paths);
+    this.vault.blobSource = (sha) => this.fetch(sha).catch(() => null);
   }
 
   private qualifies(rel: string, size: number) {
