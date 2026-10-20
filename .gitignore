@@ -23,7 +23,7 @@ dist/
 # 도구가 체크아웃 맨 위에 만드는 빌드 캐시(Swift 등). 워크트리를 지울 때 미커밋 변경으로 걸린다
 /.build/
 
-# 서버에서 직접 쓰는 개인 덮어쓰기 파일. 서버마다 다르며 커밋하지 않는다(docs/guides/deploy-docker.md)
+# 서버에서 직접 쓰는 개인 덮어쓰기 파일. 서버마다 다르며 커밋하지 않는다(쓰는 법: docs/manual/en/how-to/deploy-with-docker.md)
 /compose.override.yaml
 
 # START Ruler Generated Files
