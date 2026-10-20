@@ -46,6 +46,8 @@ export interface VaultText {
     nodeMove: (a: string, b: string) => string;
     nodeDelete: (p: string) => string;
     restore: (p: string, rev: string) => string;
+    /** 휴지통에서 되살리기 */
+    restoreDeleted: (p: string) => string;
     outside: string;
     excludeGenerated: string;
     createTopic: (t: string) => string;
@@ -104,6 +106,7 @@ const EN: VaultText = {
     nodeMove: (a, b) => `Move node: ${a} → ${b}`,
     nodeDelete: (p) => `Delete node: ${p}`,
     restore: (p, rev) => `Restore: ${p} @ ${rev}`,
+    restoreDeleted: (p) => `Restore from trash: ${p}`,
     outside: "Record changes made outside the server",
     excludeGenerated: "Exclude generated documents from history",
     createTopic: (t) => `Create wiki topic: ${t}`,
@@ -162,6 +165,7 @@ const KO: VaultText = {
     nodeMove: (a, b) => `노드 이동: ${a} → ${b}`,
     nodeDelete: (p) => `노드 삭제: ${p}`,
     restore: (p, rev) => `되돌리기: ${p} @ ${rev}`,
+    restoreDeleted: (p) => `휴지통에서 되살리기: ${p}`,
     outside: "서버 밖에서 생긴 변경 반영",
     excludeGenerated: "자동 생성 문서를 이력에서 제외",
     createTopic: (t) => `위키 토픽 만들기: ${t}`,

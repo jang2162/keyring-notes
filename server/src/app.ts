@@ -595,6 +595,23 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     });
   });
 
+  // 휴지통(소유자만): 지운 노트 목록(folder: 워크스페이스, cursor: 앞 쪽의 next)·지우기 직전 내용·되살리기
+  api.get("/trash", async (c) => {
+    const cursor = Number(c.req.query("cursor") ?? 0);
+    return c.json(await c.var.scoped.trash({ folder: c.req.query("folder"), cursor: Number.isFinite(cursor) ? cursor : 0 }));
+  });
+  api.get("/trash/preview", async (c) => {
+    const id = c.req.query("id");
+    if (!id) throw new PathError("field_required", { field: "id" });
+    return c.json(await c.var.scoped.trashPreview(id, requirePath(c.req.query("path"))));
+  });
+  api.post("/trash/restore", async (c) => {
+    const body = await c.req.json();
+    if (typeof body.id !== "string") throw new PathError("field_required", { field: "id" });
+    const paths = Array.isArray(body.paths) ? body.paths.map((p: unknown) => requirePath(p)) : undefined;
+    return c.json(await c.var.scoped.restoreTrash(body.id, paths));
+  });
+
   api.get("/history", async (c) => c.json({ commits: await c.var.scoped.history(requirePath(c.req.query("path"))) }));
 
   api.get("/revision", async (c) => {

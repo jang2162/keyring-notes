@@ -13,6 +13,7 @@ import { dailyLookup, isVaultSettingsPath, parseVaultSettings, vaultLanguage, VA
 import type { DailyLookup } from "./daily.js";
 import { moveNodePath, nodeFiles, workspaceOf } from "./nodes.js";
 import { vaultText, type VaultText } from "./vaultText.js";
+import { inTrashScope, restoreTargets, trashHead, trashOrder, TRASH_PAGE, type TrashItem, type TrashPage } from "./trash.js";
 
 export interface FileEntry {
   /** 볼트 상대 경로("/" 구분) */
@@ -64,6 +65,8 @@ export interface JournalEntry {
   author: string;
   message: string;
   files: JournalFile[];
+  /** 이 기록과 함께 지운 첨부(노드 삭제). 첨부는 내용을 남기지 않으므로 휴지통은 「되살릴 수 없음」으로 센다 */
+  attachments?: string[];
 }
 
 export type ChangeSource = "local" | "sync" | "external";
@@ -190,10 +193,10 @@ export class LocalVault {
     this.knownObjects.add(hash);
   }
 
-  private async record(author: string, message: string, files: JournalFile[], contents: Map<string, string>, date = Date.now()) {
+  private async record(author: string, message: string, files: JournalFile[], contents: Map<string, string>, date = Date.now(), attachments?: string[]) {
     if (files.length === 0) return;
     for (const f of files) if (f.hash) await this.saveObject(f.hash, contents.get(f.hash)!);
-    const e: JournalEntry = { id: newId(date), date: new Date(date).toISOString(), author, message, files };
+    const e: JournalEntry = { id: newId(date), date: new Date(date).toISOString(), author, message, files, ...(attachments?.length ? { attachments } : {}) };
     await this.store.appendMeta(JOURNAL, JSON.stringify(e) + "\n");
     this.remember(e);
   }
@@ -668,7 +671,13 @@ export class LocalVault {
    * 변경을 파일에 쓰고 색인·기록을 갱신한다. 처음 기록되는 기존 문서는 바뀌기 전 내용을
    * "기존 내용" 기록으로 먼저 남겨 이력에서 되돌릴 수 있게 한다.
    */
-  private async apply(changes: { path: string; content: string | null; from?: string }[], author: string, message: string, source: ChangeSource) {
+  private async apply(
+    changes: { path: string; content: string | null; from?: string }[],
+    author: string,
+    message: string,
+    source: ChangeSource,
+    attachments?: string[],
+  ) {
     const files: JournalFile[] = [];
     const baseline: JournalFile[] = [];
     const contents = new Map<string, string>();
@@ -709,7 +718,7 @@ export class LocalVault {
     this.computeTopics(this.files.keys());
     // 새로 위키가 된 토픽에 남아 있던 index·log 파일은 자동 생성 문서로 바뀐다
     for (const p of this.files.keys()) if (this.isGenerated(p)) this.files.delete(p);
-    await this.record(author, message, files, contents);
+    await this.record(author, message, files, contents, Date.now(), attachments);
     const changed = changes.flatMap((c) => (c.from ? [c.from, c.path] : [c.path]));
     if (before !== [...this.topicSet].join("\0")) changed.push(...[...this.topicSet].flatMap(generatedPaths));
     this.emit(changed, source);
@@ -804,7 +813,7 @@ export class LocalVault {
           attachments.push(p);
         }
       }
-      if (md.length) await this.apply(md, this.author, this.text().commit.nodeDelete(node), "local");
+      if (md.length) await this.apply(md, this.author, this.text().commit.nodeDelete(node), "local", attachments);
       this.emit(attachments, "local");
       return { deleted };
     });
@@ -957,6 +966,116 @@ export class LocalVault {
     const schema = `${topic}/SCHEMA.md`;
     await this.write(schema, schemaTemplate(topic, vaultLanguage(this.settings())), null, this.text().commit.createTopic(topic));
     return { topic, schema };
+  }
+
+  // ── 휴지통 ──
+
+  /** 기록마다 지운 마크다운과 지우기 직전 해시(오래된 것부터). 기록이 늘었을 때만 다시 만든다 */
+  private deletionCache: { length: number; list: { entry: JournalEntry; deleted: Map<string, string> }[] } | null = null;
+
+  private deletions() {
+    if (this.deletionCache?.length === this.journal.length) return this.deletionCache.list;
+    const last = new Map<string, string | null>();
+    const list: { entry: JournalEntry; deleted: Map<string, string> }[] = [];
+    for (const e of this.journal) {
+      const deleted = new Map<string, string>();
+      for (const f of e.files) {
+        // 이동(R)은 지운 것이 아니다. 지우기 직전 내용을 모르는 삭제(기록 전에 사라진 파일)는 되살릴 수 없어 뺀다
+        const before = last.get(f.path);
+        if (f.status === "D" && before) deleted.set(f.path, before);
+        if (f.from) last.set(f.from, null);
+        last.set(f.path, f.hash);
+      }
+      if (deleted.size) list.push({ entry: e, deleted });
+    }
+    this.deletionCache = { length: this.journal.length, list };
+    return list;
+  }
+
+  /** 대소문자를 가리지 않고 지금 있는 경로인지(macOS·Windows 에서는 같은 파일이다) */
+  private takenLower(): Set<string> {
+    return new Set([...this.files.keys()].map((p) => p.toLowerCase()));
+  }
+
+  /** only: 되살릴 때 화면이 본 노트(지금 그 자리에 파일이 생겼어도 그대로 두고 자리를 따로 정한다) */
+  private trashItem(d: { entry: JournalEntry; deleted: Map<string, string> }, folder: string, taken: Set<string>, only?: Set<string>): TrashItem | null {
+    const keep = (p: string) => inTrashScope(p, folder) && !isVaultSettingsPath(p) && !this.isGenerated(p);
+    const md = [...d.deleted.keys()].filter(keep);
+    if (!md.length) return null;
+    const attachments = (d.entry.attachments ?? []).filter(keep);
+    const node = trashHead([...md, ...attachments], (dir) => ![...taken].some((p) => p.startsWith(dir.toLowerCase() + "/")));
+    const notes = only ? md.filter((p) => only.has(p)) : md.filter((p) => !taken.has(p.toLowerCase()));
+    if (!notes.length) return null;
+    return {
+      id: d.entry.id,
+      date: d.entry.date,
+      author: d.entry.author,
+      node,
+      notes: trashOrder(notes, node),
+      attachments: [],
+      lost: attachments.filter((p) => !taken.has(p.toLowerCase())).length,
+    };
+  }
+
+  /**
+   * 휴지통: 지운 기록 중 지금 볼트에 없는 마크다운이 남은 것(최근 것부터). folder 를 주면 그 워크스페이스 안만.
+   * cursor 는 앞 쪽에서 돌려준 next(이미 훑은 삭제 기록 수)
+   */
+  trash(opts: { folder?: string; cursor?: number; limit?: number } = {}): TrashPage {
+    const folder = normalizeFolder(opts.folder);
+    const limit = Math.min(Math.max(opts.limit ?? TRASH_PAGE, 1), 200);
+    const list = this.deletions();
+    const taken = this.takenLower();
+    const items: TrashItem[] = [];
+    let used = Math.max(opts.cursor ?? 0, 0);
+    while (used < list.length && items.length < limit) {
+      const item = this.trashItem(list[list.length - 1 - used++], folder, taken);
+      if (item) items.push(item);
+    }
+    return { items, next: used < list.length ? used : null };
+  }
+
+  private deletion(id: string) {
+    const d = this.deletions().find((x) => x.entry.id === id);
+    if (!d) throw new NotFoundError("rev_missing", { rev: id });
+    return d;
+  }
+
+  /** 지우기 직전 내용(휴지통 미리보기) */
+  async trashPreview(id: string, input: string): Promise<string> {
+    const rel = normalizeVaultPath(input);
+    const hash = this.deletion(id).deleted.get(rel);
+    if (!hash) throw new NotFoundError("rev_doc_missing", { path: rel });
+    const content = await this.store.readMeta(objectName(hash));
+    if (content === null) throw new NotFoundError("rev_content_gone");
+    return content;
+  }
+
+  /**
+   * 휴지통에서 되살리기: 그 기록에서 지운 노트(paths: 화면이 본 것, 없으면 지금 없는 것 전부)를 지우기 직전 내용으로
+   * 한 기록에 만든다(노드는 통째로). 그 사이 자리에 다른 파일이 생겼으면 덮어쓰지 않고 " 2"…(restoreTargets).
+   * 그 자리에 이미 같은 내용이 있으면(다른 창에서 먼저 되살림) 건너뛴다. restored: [원래 경로, 만든 경로]
+   */
+  restoreTrash(id: string, paths?: string[]): Promise<{ restored: [string, string][]; lost: number }> {
+    return this.exclusive(async () => {
+      // 다른 창이 그 자리에 만든 파일도 보고 자리를 정한다
+      await this.scan();
+      const d = this.deletion(id);
+      const only = paths ? new Set(paths.map((p) => normalizeVaultPath(p))) : undefined;
+      const found = this.trashItem(d, "", this.takenLower(), only);
+      const contents = new Map<string, string>();
+      for (const p of found?.notes ?? []) {
+        const content = await this.store.readMeta(objectName(d.deleted.get(p)!));
+        if (content === null) throw new NotFoundError("rev_content_gone");
+        if (this.files.get(p)?.content !== content) contents.set(p, content);
+      }
+      if (!found || !contents.size) throw new NotFoundError("trash_empty");
+      const item = { ...found, notes: found.notes.filter((p) => contents.has(p)) };
+      const targets = restoreTargets(item.notes, item.node, this.files.keys());
+      const changes = item.notes.map((p) => ({ path: targets.get(p)!, content: contents.get(p)! }));
+      await this.apply(changes, this.author, this.text().commit.restoreDeleted(item.node ?? item.notes[0].replace(/\.md$/i, "")), "local");
+      return { restored: item.notes.map((p) => [p, targets.get(p)!] as [string, string]), lost: item.lost };
+    });
   }
 
   // ── 동기화용 ──

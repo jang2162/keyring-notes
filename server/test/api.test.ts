@@ -289,3 +289,27 @@ describe("MCP", () => {
     await wiki.close();
   });
 });
+
+describe("휴지통 API", () => {
+  it("소유자: 목록·미리보기·되살리기, 에이전트 토큰은 403", async () => {
+    const doc = await (await app.request(`/api/file?path=${encodeURIComponent("개인/일기.md")}`, { headers: { cookie } })).json();
+    const del = await app.request("/api/file", {
+      method: "DELETE",
+      headers: { ...json, cookie },
+      body: JSON.stringify({ path: "개인/일기.md", baseHash: doc.hash }),
+    });
+    expect(del.status).toBe(200);
+    const list = await (await app.request("/api/trash?folder=%EA%B0%9C%EC%9D%B8", { headers: { cookie } })).json();
+    expect(list.items.map((i: { notes: string[] }) => i.notes)).toEqual([["개인/일기.md"]]);
+    expect(list.next).toBeNull();
+    const id = list.items[0].id;
+    const pv = await (await app.request(`/api/trash/preview?id=${id}&path=${encodeURIComponent("개인/일기.md")}`, { headers: { cookie } })).json();
+    expect(pv.content).toBe("# 일기\n금리 걱정\n");
+    const agent = await app.request("/api/trash", { headers: { authorization: `Bearer ${workToken}` } });
+    expect(agent.status).toBe(403);
+    const r = await app.request("/api/trash/restore", { method: "POST", headers: { ...json, cookie }, body: JSON.stringify({ id, paths: ["개인/일기.md"] }) });
+    expect(r.status).toBe(200);
+    expect((await r.json()).restored).toEqual([["개인/일기.md", "개인/일기.md"]]);
+    expect((await (await app.request("/api/trash", { headers: { cookie } })).json()).items).toEqual([]);
+  });
+});

@@ -142,6 +142,9 @@ export class Vault {
     return this.git.commit(message, author, finalPaths);
   }
 
+  /** S3에 둔 첨부를 내용 해시로 받는다(BlobStore.attach 가 건다). 휴지통이 S3 보관 첨부를 되살릴 때 쓴다 */
+  blobSource: ((sha256: string) => Promise<Uint8Array | null>) | null = null;
+
   /** 서버가 만드는 파일(위키 index·log)처럼 API로 쓸 수 없는 경로인지. */
   readOnly: (rel: string) => boolean = () => false;
 

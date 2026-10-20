@@ -31,7 +31,15 @@ import {
   translate,
   nodeFiles,
   moveNodePath,
+  inTrashScope,
+  restoreTargets,
+  trashHead,
+  trashOrder,
+  TRASH_PAGE,
+  type TrashItem,
+  type TrashPage,
 } from "@keyring-notes/core";
+import { BLOB_INDEX } from "./blobs.js";
 import type { DocMeta, NoteIndex } from "./noteindex.js";
 import type { ReviewQueue } from "./review.js";
 import type { SemanticIndex } from "./embeddings.js";
@@ -758,6 +766,160 @@ export class ScopedVault {
     if (old === null) throw new NotFoundError("rev_doc_missing", { path: rel });
     const res = await this.batch([{ op: "write", path: rel, content: old, baseHash }], this.vault.text().commit.restore(rel, rev.slice(0, 7)));
     return { path: rel, content: old, hash: hashContent(old), rev: res.rev };
+  }
+
+  // ── 휴지통(소유자 화면만. 에이전트 도구는 없다) ──
+
+  private requireOwner() {
+    if (this.principal.kind !== "owner") throw new ForbiddenError("trash_owner_only");
+  }
+
+  /** 지금 있는 파일(대소문자 무시로도 대 본다)과 휴지통에 넣을 경로 판정 */
+  private async trashContext(folder: string) {
+    const files: string[] = [];
+    const walk = (ns: TreeNode[]) => {
+      for (const n of ns) {
+        if (n.type === "dir") walk(n.children ?? []);
+        else files.push(n.path);
+      }
+    };
+    walk(await this.vault.tree());
+    const lower = files.map((p) => p.toLowerCase());
+    return {
+      files,
+      taken: new Set(lower),
+      dirGone: (dir: string) => !lower.some((p) => p.startsWith(dir.toLowerCase() + "/")),
+      keep: (p: string) => inTrashScope(p, folder) && !isVaultSettingsPath(p) && !this.wiki?.isGenerated(p),
+    };
+  }
+
+  /** S3로 간 첨부 중 이 커밋이 지운 것(경로 → 내용 해시). 첨부 목록 파일의 커밋 전후를 대 본다 */
+  private async s3Deleted(rev: string): Promise<Map<string, string>> {
+    const parse = (text: string | null): Record<string, { sha256?: string }> => {
+      try {
+        return (JSON.parse(text ?? "{}") as { files?: Record<string, { sha256?: string }> }).files ?? {};
+      } catch {
+        return {};
+      }
+    };
+    const before = parse(await this.vault.git.show(`${rev}^`, BLOB_INDEX));
+    const after = parse(await this.vault.git.show(rev, BLOB_INDEX));
+    const out = new Map<string, string>();
+    for (const [p, e] of Object.entries(before)) if (!after[p] && typeof e?.sha256 === "string") out.set(p, e.sha256);
+    return out;
+  }
+
+  /** only: 되살릴 때 화면이 본 노트(지금 그 자리에 파일이 생겼어도 그대로 두고 자리를 따로 정한다) */
+  private async trashItem(
+    c: CommitInfo & { deleted: string[]; blobIndex: boolean },
+    ctx: Awaited<ReturnType<ScopedVault["trashContext"]>>,
+    only?: Set<string>,
+  ): Promise<{ item: TrashItem; s3: Map<string, string> } | null> {
+    const md = c.deleted.filter((p) => isMarkdown(p) && ctx.keep(p));
+    if (!md.length) return null;
+    const inGit = c.deleted.filter((p) => !isMarkdown(p) && ctx.keep(p));
+    const s3 = c.blobIndex ? new Map([...(await this.s3Deleted(c.rev))].filter(([p]) => ctx.keep(p))) : new Map<string, string>();
+    const node = trashHead([...md, ...inGit, ...s3.keys()], ctx.dirGone);
+    const notes = only ? md.filter((p) => only.has(p)) : md.filter((p) => !ctx.taken.has(p.toLowerCase()));
+    if (!notes.length) return null;
+    const free = (p: string) => !ctx.taken.has(p.toLowerCase());
+    // S3 보관 첨부는 S3를 쓰고 있을 때만 받을 수 있다(지금 꺼져 있으면 되살릴 수 없음으로 센다)
+    const fromS3 = [...s3.keys()].filter(free);
+    const canFetch = this.vault.blobSource !== null;
+    return {
+      item: {
+        id: c.rev,
+        date: c.date,
+        author: c.author,
+        node,
+        notes: trashOrder(notes, node),
+        attachments: [...inGit.filter(free), ...(canFetch ? fromS3 : [])].sort(),
+        lost: canFetch ? 0 : fromS3.length,
+      },
+      s3,
+    };
+  }
+
+  /**
+   * 휴지통: 파일을 지운 커밋 중 지금 볼트에 없는 마크다운이 남은 것(최근 것부터). folder 를 주면 그 워크스페이스 안만.
+   * cursor 는 앞 쪽에서 돌려준 next(이미 훑은 삭제 커밋 수). 한 번에 훑는 커밋은 limit 의 열 배까지
+   */
+  async trash(opts: { folder?: string; cursor?: number; limit?: number } = {}): Promise<TrashPage> {
+    this.requireOwner();
+    const limit = Math.min(Math.max(opts.limit ?? TRASH_PAGE, 1), 200);
+    const ctx = await this.trashContext(normalizeFolder(opts.folder));
+    const items: TrashItem[] = [];
+    let used = Math.max(opts.cursor ?? 0, 0);
+    for (let round = 0; round < 10; round++) {
+      const { commits, more } = await this.vault.git.deletions(used, limit);
+      for (const [i, c] of commits.entries()) {
+        used++;
+        const found = await this.trashItem(c, ctx);
+        if (found) items.push(found.item);
+        if (items.length >= limit) return { items, next: more || i < commits.length - 1 ? used : null };
+      }
+      if (!more) return { items, next: null };
+    }
+    return { items, next: used };
+  }
+
+  /** 지우기 직전 내용(휴지통 미리보기) */
+  async trashPreview(id: string, input: string): Promise<{ path: string; content: string }> {
+    this.requireOwner();
+    const rel = normalizeVaultPath(input);
+    const c = await this.vault.git.deletion(id);
+    if (!c || !c.deleted.includes(rel) || !isMarkdown(rel)) throw new NotFoundError("rev_doc_missing", { path: rel });
+    const content = await this.vault.git.show(`${c.rev}^`, rel);
+    if (content === null) throw new NotFoundError("rev_doc_missing", { path: rel });
+    return { path: rel, content };
+  }
+
+  /**
+   * 휴지통에서 되살리기: 그 커밋에서 지운 노트(paths: 화면이 본 것, 없으면 지금 없는 것 전부)와 지금 없는 첨부를
+   * 지우기 직전 내용으로 한 커밋에 만든다(노드는 통째로). 그 사이 자리에 다른 파일이 생겼으면 덮어쓰지 않고 " 2"…
+   * (restoreTargets). 그 자리에 이미 같은 내용이 있으면(다른 창에서 먼저 되살림) 건너뛴다. restored: [원래 경로, 만든 경로]
+   */
+  async restoreTrash(id: string, paths?: string[]): Promise<{ restored: [string, string][]; lost: number; rev: string | null }> {
+    this.requireOwner();
+    const c = await this.vault.git.deletion(id);
+    if (!c) throw new NotFoundError("rev_missing", { rev: id });
+    const ctx = await this.trashContext("");
+    const found = await this.trashItem(c, ctx, paths ? new Set(paths.map((p) => normalizeVaultPath(p))) : undefined);
+    const contents = new Map<string, string>();
+    for (const p of found?.item.notes ?? []) {
+      const content = await this.vault.git.show(`${c.rev}^`, p);
+      if (content === null) throw new NotFoundError("rev_doc_missing", { path: p });
+      const now = ctx.files.includes(p)
+        ? await this.vault.read(p).then(
+            (d) => d.content,
+            () => null,
+          )
+        : null;
+      if (now !== content) contents.set(p, content);
+    }
+    if (!found || !contents.size) throw new NotFoundError("trash_empty");
+    const s3 = found.s3;
+    const item = { ...found.item, notes: found.item.notes.filter((p) => contents.has(p)) };
+    const targets = restoreTargets([...item.notes, ...item.attachments], item.node, ctx.files);
+    const ops: Op[] = [];
+    const restored: [string, string][] = [];
+    let lost = item.lost;
+    for (const p of item.notes) {
+      ops.push({ op: "write", path: targets.get(p)!, content: contents.get(p)!, baseHash: null });
+      restored.push([p, targets.get(p)!]);
+    }
+    for (const p of item.attachments) {
+      const sha = s3.get(p);
+      const data = sha ? await this.vault.blobSource!(sha) : await this.vault.git.showBytes(`${c.rev}^`, p);
+      if (!data) {
+        lost++;
+        continue;
+      }
+      ops.push({ op: "put", path: targets.get(p)!, data: new Uint8Array(data) });
+      restored.push([p, targets.get(p)!]);
+    }
+    const res = await this.batch(ops, this.vault.text().commit.restoreDeleted(item.node ?? item.notes[0].replace(/\.md$/i, "")));
+    return { restored, lost, rev: res.rev };
   }
 
   /** 에이전트가 자기 권한 표를 확인할 때. */

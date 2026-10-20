@@ -17,6 +17,7 @@ export * from "./settingsMerge.js";
 export * from "./pdfnotes.js";
 export * from "./sync.js";
 export * from "./templates.js";
+export * from "./trash.js";
 export * from "./vaultText.js";
 export * from "./types.js";
 export * from "./widget.js";
