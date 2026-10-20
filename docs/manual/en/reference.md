@@ -125,6 +125,9 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | GET | `/api/history?path=` | | A note's commits, with authors |
 | GET | `/api/revision?path=&rev=` | | Content at a revision |
 | POST | `/api/rollback` | `{path, rev, baseHash}` | Roll back to a past revision, as a new commit |
+| GET | `/api/trash` | `?folder=&cursor=` | Trash, owner only: deletes newest first → `items[{id, date, author, node, notes, attachments, lost}]`, `next` (pass as `cursor` for more, `null` when done). Moved notes and paths in use are left out |
+| GET | `/api/trash/preview?id=&path=` | | A deleted note's content just before the delete. Owner only |
+| POST | `/api/trash/restore` | `{id, paths?}` | Restore one delete in one commit. A taken path gets ` 2` instead of being overwritten → `restored[[from, to]]`, `lost` (attachments that could not be restored). Owner only |
 | GET · POST | `/api/topics` | `{name}` | List topics / create a wiki topic (owner) |
 | POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | Collect a source |
 | POST | `/api/ingest/file?topic=&name=` | file bytes, header `x-keyring-upload: 1` | Collect an uploaded file |

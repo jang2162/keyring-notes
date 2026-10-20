@@ -57,6 +57,20 @@ When an agent moves a note, only paths the agent can see are used, only notes it
 
 After a delete, **Undo** on the notice brings the content back at the same path, with child notes and attachments, and history continues unbroken. Moves and renames can be undone from the notice too.
 
+## Restore deleted notes
+
+Deleted notes stay in history, so you can restore them after the notice is gone. Choose **Trash** in the command palette, or the **Trash** link on the home screen.
+
+Each line is one delete, newest first. It shows the note or node name, where it was, when it was deleted and, on a server, who deleted it. A deleted node is one line with the number of its child notes. Click a line to read the content as it was just before the delete.
+
+**Restore** recreates the note at its original path, with its child notes, in one commit. **Open** on the notice opens it.
+
+- If a file appeared at that path in the meantime, it is not overwritten. The restored note gets ` 2` appended, and a node is renamed as a whole.
+- Moved and renamed notes are not in the trash, because they still exist at their new path. A deleted note is not listed while another note uses its path.
+- The trash shows the current workspace, or every workspace when **All workspaces** is on. Load older deletes with **Load more**.
+- On a server, attachments deleted with a node come back too, including attachments kept in S3. The desktop and mobile app does not keep attachment content in its history. There, the line says how many attachments can't be restored, and only the notes come back.
+- There is no permanent delete. Agents can't use the trash.
+
 ## Give a note an icon
 
 Click the spot left of the title field (it appears on hover when there is no icon), or choose **Change icon…** in the tree menu. Pick an emoji, search, clear it or paste your own.

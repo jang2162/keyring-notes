@@ -126,6 +126,9 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | GET | `/api/history?path=` | | 노트의 커밋 목록(작성자 포함) |
 | GET | `/api/revision?path=&rev=` | | 특정 리비전의 내용 |
 | POST | `/api/rollback` | `{path, rev, baseHash}` | 과거 리비전으로 되돌리기(새 커밋) |
+| GET | `/api/trash` | `?folder=&cursor=` | 휴지통(소유자만): 삭제를 최근 것부터 → `items[{id, date, author, node, notes, attachments, lost}]`, `next`(더 볼 때 `cursor` 로 넘김, 끝이면 `null`). 옮긴 노트와 지금 쓰이는 경로는 빠집니다 |
+| GET | `/api/trash/preview?id=&path=` | | 지운 노트의 지우기 직전 내용(소유자만) |
+| POST | `/api/trash/restore` | `{id, paths?}` | 한 번의 삭제를 한 커밋으로 되살리기. 자리에 파일이 있으면 덮어쓰지 않고 ` 2` 를 붙임 → `restored[[from, to]]`, `lost`(되살리지 못한 첨부 수). 소유자만 |
 | GET · POST | `/api/topics` | `{name}` | 토픽 목록 / 위키 토픽 만들기(소유자) |
 | POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | 원본 수집 |
 | POST | `/api/ingest/file?topic=&name=` | 파일 바이트, 헤더 `x-keyring-upload: 1` | 올린 파일 수집 |
