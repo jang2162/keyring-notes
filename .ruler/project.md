@@ -2,7 +2,7 @@
 
 이 파일은 **keyring-notes 저장소만의 규칙**을 담는다. 모든 프로젝트에 공통인 규칙은 `guideline` 서버에서 받은 스택(`.ruler/<스택>/`)이 갖는다.
 
-- 응답·커밋 메시지·문서는 **한국어**로 쓴다. 영어 README(`README.md`)와 한국어 README(`README.ko.md`)는 함께 고친다.
+- 응답·커밋 메시지·문서는 **한국어**로 쓴다. 단 공개 문서는 영어가 원본이다: 영어 README(`README.md`)와 한국어 README(`README.ko.md`), 사용자 문서 `docs/manual/en/`(원본)과 `docs/manual/ko/`(번역)는 같은 커밋에서 함께 고친다. 화면 동작·설정·API 를 바꾸면 그 사용자 문서도 고친다.
 - 진행 중인 사용성 요청·결정·구현 현황은 `docs/ops/ux.md` 에 있다. 화면 동작을 바꾸면 그 절도 고친다. 일이 끝나 굳은 규칙은 `docs/guides/` 로 올린다.
 - 화면 글은 `packages/core/src/messages/{en,ko}.json`(들여쓰기는 한 단계·공백 2칸 — oxfmt 가 맞춘다. 키는 알파벳 순서로 두되 oxfmt 는 키 순서를 맞추지 않으므로 새 키는 정렬된 자리에 손으로 넣는다), 볼트에 남는 글은 `packages/core/src/vaultText.ts` 에 둔다. 영어가 기준이다.
 - 다 했다고 말하기 전에 루트에서 `pnpm test`, `pnpm typecheck`, `pnpm build` 를 돌린다. 화면을 바꿨으면 시험 서버(임시 `KEYRING_DATA`, 다른 포트)로 브라우저에서 확인한다.
@@ -14,3 +14,4 @@
 | Docker 이미지·compose 파일·배포용 환경 변수를 바꿀 때 | `docs/guides/deploy-docker.md` |
 | Komodo 로 서버에 배포하는 Stack 이나 서버의 override 파일을 만들거나 고칠 때 | `docs/guides/deploy-komodo.md` |
 | macOS 앱 릴리스 워크플로·서명·공증·업데이터 설정·제품 버전을 바꾸거나 릴리스할 때 | `docs/guides/release-macos.md` |
+| 서버·앱의 구조를 파악하거나, 개발 서버·시험을 돌리거나, README·사용자 문서를 고칠 때 | `docs/guides/development.md` |
