@@ -68,6 +68,12 @@ describe("휴지통(서버: Git 이력 기반)", () => {
     await owner.move("W/글.md", "W/다른.md", await hash("W/글.md"));
     await owner.moveNode("W/N", "W/M");
     expect((await owner.trash()).items).toEqual([]);
+    // 노드를 옮기며 하위 노트 안의 전체 경로 링크가 고쳐져 내용이 바뀌어도 이동이다(git 의 비슷한 내용 짝짓기)
+    const body = "하위 노트들 사이의 링크가 있는 꽤 긴 본문이다. ".repeat(4);
+    await make({ "W/P.md": "", "W/P/x.md": `${body}\n[[W/P/y]]\n`, "W/P/y.md": `${body}\n[[W/P/x]]\n` });
+    await owner.moveNode("W/P", "W/Q");
+    expect((await owner.read("W/Q/x.md")).content).toContain("[[W/Q/y]]");
+    expect((await owner.trash()).items).toEqual([]);
     // 이동한 뒤 새 자리에서 지우면 그 새 자리가 보인다
     await owner.delete("W/빈2.md", await hash("W/빈2.md"));
     expect((await owner.trash()).items.map((i) => i.notes)).toEqual([["W/빈2.md"]]);

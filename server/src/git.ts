@@ -231,8 +231,8 @@ export class GitHistory {
 
   /**
    * 휴지통: 파일을 지운 커밋(지운 커밋만 세어 최근 것부터 skip 개 건너 limit 개)과 커밋마다 지운 경로.
-   * 커밋 고르기는 git 이 한다(-M --diff-filter=D: 이동·이름 바꾸기는 지운 것이 아니다). 비슷한 내용 짝짓기로 못 잡는
-   * 이동(빈 파일 등)은 같은 커밋에서 같은 blob 이 새로 생겼으면 이동으로 보고 뺀다.
+   * 이동·이름 바꾸기는 지운 것이 아니다: git 의 이름 바꾸기 짝짓기(-M)가 가른다 — 내용이 같으면(빈 파일 포함) 늘,
+   * 이동하며 링크를 고쳐 내용이 바뀌었으면 절반 넘게 같을 때.
    * blobIndex: 이 커밋이 첨부 목록 파일(S3 보관 첨부)을 바꿨는지 — S3 로 간 첨부의 삭제는 그 파일에만 보인다.
    */
   async deletions(skip: number, limit: number): Promise<{ commits: (CommitInfo & { deleted: string[]; blobIndex: boolean })[]; more: boolean }> {
@@ -252,7 +252,7 @@ export class GitHistory {
   private async describeDeletions(revs: string[]): Promise<(CommitInfo & { deleted: string[]; blobIndex: boolean })[]> {
     if (revs.length === 0) return [];
     const fmt = RECORD + ["%H", "%an", "%ae", "%aI", "%s"].join(FIELD);
-    const res = await this.run(["log", "--no-walk=unsorted", "-M", "--raw", "--no-abbrev", `--format=${fmt}`, ...revs], { allowFail: true });
+    const res = await this.run(["log", "--no-walk=unsorted", "-M", "--name-status", `--format=${fmt}`, ...revs], { allowFail: true });
     if (res.code !== 0) return [];
     return res.stdout
       .split(RECORD)
@@ -260,24 +260,14 @@ export class GitHistory {
       .map((r) => {
         const [head, ...rest] = r.split("\n");
         const [rev, author, email, date, message] = head.split(FIELD);
-        const removed: { path: string; blob: string }[] = [];
-        const added: string[] = [];
-        let blobIndex = false;
-        // :<옛 모드> <새 모드> <옛 blob> <새 blob> <상태>\t<경로>[\t<새 경로>]
-        for (const line of rest) {
-          const m = /^:\S+ \S+ (\S+) (\S+) (\S+)\t([^\t]+)(?:\t(.+))?$/.exec(line);
-          if (!m) continue;
-          const [, oldBlob, newBlob, status, p, to] = m;
-          if (p === ".keyring-blobs.json" || to === ".keyring-blobs.json") blobIndex = true;
-          if (status === "D" && !isInternal(p)) removed.push({ path: p, blob: oldBlob });
-          else if (status === "A") added.push(newBlob);
-          else if (status.startsWith("C") && to) added.push(newBlob);
-        }
         const deleted: string[] = [];
-        for (const d of removed) {
-          const i = added.indexOf(d.blob);
-          if (i >= 0) added.splice(i, 1);
-          else deleted.push(d.path);
+        let blobIndex = false;
+        // <상태>\t<경로>[\t<새 경로>]
+        for (const line of rest) {
+          const [status, p, to] = line.split("\t");
+          if (!status || !p) continue;
+          if (p === ".keyring-blobs.json" || to === ".keyring-blobs.json") blobIndex = true;
+          if (status === "D" && !isInternal(p)) deleted.push(p);
         }
         return { rev, author, email, date, message, deleted, blobIndex };
       });
