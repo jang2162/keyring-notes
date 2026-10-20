@@ -190,6 +190,20 @@ describe("휴지통(로컬 볼트: 기록 기반)", () => {
     await sync.run();
     expect(await text(v, "W/새이름.md")).toBe("본문");
     expect(v.trash().items).toEqual([]);
+    // 빈 노트는 짝짓지 않는다: 서버에서 빈 노트를 지우고 다른 빈 노트를 만든 것을 받으면 지운 것이 보인다
+    await server.put("W/빈.md", "");
+    await sync.run();
+    server.files.delete("W/빈.md");
+    await server.put("W/새 빈.md", "");
+    await sync.run();
+    expect(
+      v
+        .entries()
+        .at(-1)!
+        .files.map((f) => `${f.status} ${f.path}`)
+        .sort(),
+    ).toEqual(["A W/새 빈.md", "D W/빈.md"]);
+    expect(v.trash().items.map((i) => i.notes)).toEqual([["W/빈.md"]]);
   });
 
   it("앱 밖 이름 바꾸기는 휴지통에 없고, 빈 노트는 짝짓지 않으며, 같은 내용은 하나씩만 짝짓는다", async () => {
