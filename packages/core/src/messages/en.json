@@ -1242,6 +1242,7 @@
   "trash.others#one": "and {count} more",
   "trash.others#other": "and {count} more",
   "trash.preview": "Preview",
+  "trash.reloaded": "History changed, so the list was reloaded",
   "trash.restore": "Restore",
   "trash.restored": "Restored {name}",
   "trash.restoredAs": "Name taken, restored as {name}",

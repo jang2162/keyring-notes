@@ -1207,6 +1207,7 @@
   "trash.more": "더 보기",
   "trash.others#other": "외 {count}개",
   "trash.preview": "미리보기",
+  "trash.reloaded": "이력이 바뀌어 목록을 처음부터 다시 불러왔습니다",
   "trash.restore": "되살리기",
   "trash.restored": "{name} 되살림",
   "trash.restoredAs": "이름이 겹쳐 새 이름으로 되살림: {name}",

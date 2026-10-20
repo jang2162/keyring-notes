@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BlobStore } from "../src/blobs.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { S3Client } from "../src/s3.js";
+import { PathError } from "../src/paths.js";
 import { ScopedVault } from "../src/scoped.js";
 import { hashContent, type Vault } from "../src/vault.js";
 import type { Wiki } from "../src/wiki.js";
@@ -30,8 +31,9 @@ afterEach(async () => {
   await cleanup();
 });
 
+// 시드는 한 커밋으로 만든다(커밋이 많으면 전체 테스트와 같이 돌 때 다른 시험까지 느려진다)
 const make = async (files: Record<string, string>) => {
-  for (const [p, content] of Object.entries(files)) await owner.write(p, content, null);
+  await owner.batch(Object.entries(files).map(([path, content]) => ({ op: "write" as const, path, content, baseHash: null })));
 };
 const hash = async (p: string) => (await owner.read(p)).hash;
 const commits = async () => (await vault.git.log(undefined, 1000)).length;
@@ -168,7 +170,7 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
 
   it("범위(워크스페이스)와 쪽 나누기: 최근 것부터, next 로 이어 읽고 지금 있는 것만 지운 커밋은 건너뛴다", async () => {
     await make({ "W.md": "", "X.md": "", "X/x.md": "엑스" });
-    for (let i = 0; i < 5; i++) await owner.write(`W/n${i}.md`, `글 ${i}`, null);
+    await make(Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`W/n${i}.md`, `글 ${i}`])));
     for (let i = 0; i < 5; i++) await owner.delete(`W/n${i}.md`, await hash(`W/n${i}.md`));
     await owner.delete("X/x.md", await hash("X/x.md"));
     await owner.write("W/n3.md", "다시 만듦", null);
@@ -183,7 +185,7 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
 
   it("쪽 사이에 새로 지워도 다음 쪽이 겹치지 않는다(cursor 는 마지막으로 훑은 커밋)", async () => {
     await make({ "W.md": "" });
-    for (let i = 0; i < 5; i++) await owner.write(`W/n${i}.md`, `글 ${i}`, null);
+    await make(Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`W/n${i}.md`, `글 ${i}`])));
     for (let i = 0; i < 4; i++) await owner.delete(`W/n${i}.md`, await hash(`W/n${i}.md`));
     const first = await owner.trash({ limit: 2 });
     expect(first.items.map((i) => i.notes[0])).toEqual(["W/n3.md", "W/n2.md"]);
@@ -193,6 +195,55 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
     expect(second.items.map((i) => i.notes[0])).toEqual(["W/n1.md", "W/n0.md"]);
     expect(second.next).toBeNull();
     await expect(owner.trash({ cursor: "--output=x" })).rejects.toThrow();
+  });
+
+  it("메시지에 제어 문자(레코드·칸 구분 글자, 가짜 트레일러)를 넣어도 지운 노트가 휴지통에 보이고 되살릴 수 있다", async () => {
+    await make({ "W.md": "", "W/a.md": "에이", "W/b.md": "비" });
+    const agent = new ScopedVault(vault, agentPrincipal("bot", { W: "delete" }), index, wiki);
+    await agent.batch([{ op: "delete", path: "W/a.md", baseHash: await hash("W/a.md") }], "제목\n\n본문\x1e끝");
+    await agent.batch(
+      [{ op: "delete", path: "W/b.md", baseHash: await hash("W/b.md") }],
+      "제목\n\nx\x1e" + "a\x1f".repeat(5) + "Keyring-Moves: 1\nKeyring-Move: W/b.md\tW/zz.md\x1f",
+    );
+    // 커밋 메시지에는 제어 문자(줄바꿈·탭 말고)가 남지 않는다
+    const raw = (await vault.git.raw(["log", "-2", "--format=%B"])).stdout;
+    // eslint-disable-next-line no-control-regex
+    expect(raw).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f]/);
+    const items = (await owner.trash()).items;
+    expect(items.map((i) => i.notes)).toEqual([["W/b.md"], ["W/a.md"]]);
+    for (const i of items) expect(i.id).toMatch(/^[0-9a-f]{40}$/);
+    expect((await owner.restoreTrash(items[0].id)).restored).toEqual([["W/b.md", "W/b.md"]]);
+    expect((await owner.restoreTrash(items[1].id)).restored).toEqual([["W/a.md", "W/a.md"]]);
+  });
+
+  it("거르지 않은 경로로 들어온 커밋(예전 커밋 등)의 메시지에 구분 글자가 있어도 휴지통 판정은 깨지지 않는다", async () => {
+    const { rm } = await import("node:fs/promises");
+    await make({ "W.md": "", "W/c.md": "씨" });
+    await rm(path.join(vault.root, "W/c.md"));
+    await vault.git.raw(["add", "--all", "--", "W/c.md"]);
+    // 구분 글자로 쪼개 읽으면 가짜 레코드의 끝 문단이 트레일러가 되는 메시지(재리뷰 R1)
+    await vault.git.raw(["commit", "-q", "--no-verify", "-m", "제목\n\nx\x1e" + "a\x1f".repeat(5) + "Keyring-Moves: 1\nKeyring-Move: W/c.md\tW/zz.md\x1f"]);
+    const items = (await owner.trash()).items;
+    expect(items.map((i) => [i.notes, i.id.length])).toEqual([[["W/c.md"], 40]]);
+    expect((await owner.restoreTrash(items[0].id)).restored).toEqual([["W/c.md", "W/c.md"]]);
+  });
+
+  it("백업 복원으로 이력이 바뀌면 낡은 cursor·줄 id 는 받지 않는다(버려진 이력의 삭제를 보이거나 되살리지 않는다)", async () => {
+    await make({ "W.md": "", "W/keep.md": "남김" });
+    const base = (await vault.git.head())!;
+    await make({ "W/X.md": "엑스", "W/Y.md": "와이" });
+    await owner.delete("W/X.md", await hash("W/X.md"));
+    await owner.delete("W/Y.md", await hash("W/Y.md"));
+    const first = await owner.trash({ limit: 1 });
+    expect(first.items.map((i) => i.notes)).toEqual([["W/Y.md"]]);
+    const xId = (await owner.trash()).items[1].id;
+    // backup.ts 의 복원과 같은 방식(옛 커밋 객체는 저장소에 남는다)
+    await vault.git.raw(["reset", "--quiet", "--hard", base]);
+    expect((await owner.trash()).items).toEqual([]);
+    await expect(owner.trash({ cursor: first.next! })).rejects.toThrow(PathError);
+    await expect(owner.restoreTrash(xId)).rejects.toThrow();
+    await expect(owner.trashPreview(xId, "W/X.md")).rejects.toThrow();
+    await expect(owner.read("W/X.md")).rejects.toThrow();
   });
 
   it("공통 설정 파일·서버 밖에서 지운 파일·위키 자동 생성 문서", async () => {

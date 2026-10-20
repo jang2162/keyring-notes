@@ -37,6 +37,15 @@ export interface Doc {
 import { ConflictError, ForbiddenError, KeyedError, NotFoundError } from "@keyring-notes/core";
 export { ConflictError, ForbiddenError, KeyedError, NotFoundError };
 
+/**
+ * 사람·에이전트가 준 커밋 메시지에서 줄바꿈·탭을 뺀 제어 문자를 지운다(거부하지 않는다 — 메시지 때문에 쓰기가 실패하면
+ * 안 된다). 이력을 읽는 쪽이 제어 문자로 레코드를 가르므로(git.ts 의 %x1e·%x1f) 그 글자가 메시지에 들면 이력이 깨진다
+ */
+export function cleanMessage(message: string): string {
+  // eslint-disable-next-line no-control-regex
+  return message.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+}
+
 export function hashContent(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
 }
@@ -554,7 +563,7 @@ export class Vault {
         }
         // 제목은 연산만으로 정한다(볼트 언어). 링크 갱신은 본문에. 숨김 경로 가리기는 메시지가 아니라
         // 커밋의 변경 목록으로 한다(ScopedVault.history) — 메시지가 어떤 언어여도 안전하게
-        const message = opts.message?.trim() || (verbs.length === 1 ? verbs[0].text : T.batch(verbs.length));
+        const message = cleanMessage(opts.message ?? "").trim() || (verbs.length === 1 ? verbs[0].text : T.batch(verbs.length));
         const lines = [
           ...(verbs.length > 1 || opts.message ? verbs.map((v) => v.text) : []),
           ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => T.linkUpdate(p)),

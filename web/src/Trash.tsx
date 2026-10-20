@@ -1,7 +1,7 @@
 import type { TrashItem } from "@keyring-notes/core";
 import { ChevronRight, FileText, FolderClosed, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, appMode } from "./api";
+import { api, ApiError, appMode } from "./api";
 import { fmtDateTime, t } from "./i18n";
 import { renderMarkdown, type LinkResolver } from "./markdown";
 import { Modal } from "./Modal";
@@ -47,6 +47,7 @@ export function TrashPanel({
       if (cursor && loadingRef.current) return;
       loadingRef.current = true;
       setLoading(true);
+      let restart = false;
       try {
         const page = await api.trash(folder, cursor);
         // 이어 붙일 때 이미 있는 줄(id)은 거른다
@@ -58,10 +59,16 @@ export function TrashPanel({
         setNext(page.next);
         setError(null);
       } catch (e) {
-        setError(errorText(e));
+        // 이어 읽을 자리가 지금 이력에 없다(그 사이 백업을 복원함): 처음부터 다시 읽는다
+        if (cursor && e instanceof ApiError && e.key === "rev_invalid") restart = true;
+        else setError(errorText(e));
       } finally {
         loadingRef.current = false;
         setLoading(false);
+      }
+      if (restart) {
+        toast(t("trash.reloaded"));
+        await load();
       }
     },
     [folder],
