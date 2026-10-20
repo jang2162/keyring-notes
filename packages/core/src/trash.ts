@@ -22,8 +22,8 @@ export interface TrashItem {
 
 export interface TrashPage {
   items: TrashItem[];
-  /** 「더 보기」에 넘길 값(더 없으면 null) */
-  next: number | null;
+  /** 「더 보기」에 넘길 값: 이 쪽에서 마지막으로 훑은 커밋·기록 id(그 다음 것부터 읽는다). 더 없으면 null */
+  next: string | null;
 }
 
 /** 한 번에 읽는 묶음 수 기본값 */
@@ -56,11 +56,17 @@ export function trashOrder(notes: string[], node: string | null): string[] {
   return [...notes].sort((a, b) => (a === head ? -1 : b === head ? 1 : a.localeCompare(b)));
 }
 
+/**
+ * 같은 파일인지 대 보는 열쇠: 대소문자와 유니코드 정규화(NFC·NFD)를 가리지 않는다 — macOS 는 둘 다, Windows 는
+ * 대소문자를 같은 파일로 본다(Finder 가 만든 한글 이름은 NFD, 앱이 만든 이름은 NFC)
+ */
+export const trashKey = (p: string) => p.normalize("NFC").toLowerCase();
+
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 const parentOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 
 /**
- * 되살릴 자리. 지금 있는 파일(taken)과 겹치지 않으면(대소문자 무시 — macOS·Windows 는 같은 파일이다) 원래 경로 그대로.
+ * 되살릴 자리. 지금 있는 파일(taken)과 겹치지 않으면(trashKey 로 대 본다) 원래 경로 그대로.
  * 겹치면 덮어쓰지 않고 이름 뒤에 " 2", " 3"…을 붙인다(새 노트 이름 규칙과 같다: 노드 이름은 노트 `A.md` 와 폴더 `A/`가 모두 비어야 한다).
  * 머리 노드가 있으면 노드째(하위까지 같은 새 이름 아래로), 없으면 겹치는 파일만 하나씩.
  */
@@ -68,17 +74,17 @@ export function restoreTargets(paths: string[], node: string | null, taken: Iter
   const files = new Set<string>();
   const dirs = new Set<string>();
   const take = (p: string) => {
-    files.add(p.toLowerCase());
-    for (let d = parentOf(p); d; d = parentOf(d)) dirs.add(d.toLowerCase());
+    files.add(trashKey(p));
+    for (let d = parentOf(p); d; d = parentOf(d)) dirs.add(trashKey(d));
   };
   for (const p of taken) take(p);
-  const free = (p: string) => !files.has(p.toLowerCase());
+  const free = (p: string) => !files.has(trashKey(p));
   const out = new Map(paths.map((p) => [p, p]));
   if (paths.every(free)) return out;
   if (node && paths.every((p) => inNode(p, node))) {
     for (let i = 2; ; i++) {
       const root = `${node} ${i}`;
-      if (!free(nodeNotePath(root)) || dirs.has(root.toLowerCase())) continue;
+      if (!free(nodeNotePath(root)) || dirs.has(trashKey(root))) continue;
       const mapped = paths.map((p) => moveNodePath(p, node, root));
       if (!mapped.every(free)) continue;
       paths.forEach((p, k) => out.set(p, mapped[k]));
@@ -96,7 +102,7 @@ export function restoreTargets(paths: string[], node: string | null, taken: Iter
     const ext = name.slice(dot);
     for (let i = 2; ; i++) {
       const q = join(parentOf(p), `${stem} ${i}${ext}`);
-      if (free(q) && (!isMarkdown(q) || !dirs.has(stripMd(q).toLowerCase()))) {
+      if (free(q) && (!isMarkdown(q) || !dirs.has(trashKey(stripMd(q))))) {
         out.set(p, q);
         take(q);
         break;

@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, writeFile, access } from "node:fs/promises";
 import path from "node:path";
 import { PathError } from "./paths.js";
@@ -23,6 +23,40 @@ const FIELD = "\x1f";
 /** 점으로 시작하는 이름이 든 경로(내부 기록 파일) */
 const isInternal = (p: string) => p.split("/").some((seg) => seg.startsWith("."));
 const RECORD = "\x1e";
+/** 커밋 메시지(%B) 끝 표시(휴지통: 메시지와 그 뒤의 변경 목록을 가른다) */
+const BODY_END = "\x1d";
+
+/**
+ * 서버가 아는 이동을 커밋 메시지 끝 문단(트레일러)으로 남긴다(Vault.batch). 휴지통은 이 문단이 있는 커밋에서는
+ * 내용 유사도(-M) 대신 이것만으로 이동을 가른다. 이동이 없는 일괄 쓰기도 `Keyring-Moves: 0` 을 남긴다 — 「이 커밋의
+ * 이동은 서버가 다 안다」는 표시다. 경로에는 제어 문자(탭·줄바꿈)가 들어갈 수 없다(normalizeVaultPath)
+ *
+ *   Keyring-Moves: 2
+ *   Keyring-Move: W/a.md<탭>V/a.md
+ *   Keyring-Move: W/b.md<탭>V/b.md
+ *
+ * 이력 화면·에이전트 이력·웹훅은 제목 줄(%s)만 읽으므로 이 문단은 보이지 않는다
+ */
+export function moveTrailer(moves: [string, string][]): string {
+  return [`Keyring-Moves: ${moves.length}`, ...moves.map(([from, to]) => `Keyring-Move: ${from}\t${to}`)].join("\n");
+}
+
+/** 메시지 끝 문단이 온전한 이동 트레일러면 옮긴 경로 짝, 아니면 null(트레일러 없는 커밋: 예전 커밋, 서버 밖 변경 흡수) */
+export function parseMoveTrailer(message: string): [string, string][] | null {
+  const paragraphs = message.trim().split(/\n\s*\n/);
+  const lines = paragraphs[paragraphs.length - 1].split("\n");
+  const count = /^Keyring-Moves: (\d+)$/.exec(lines[0] ?? "");
+  if (!count || Number(count[1]) !== lines.length - 1) return null;
+  const moves: [string, string][] = [];
+  for (const line of lines.slice(1)) {
+    const m = /^Keyring-Move: ([^\t]+)\t([^\t]+)$/.exec(line);
+    if (!m) return null;
+    moves.push([m[1], m[2]]);
+  }
+  return moves;
+}
+
+type Deletion = CommitInfo & { deleted: string[]; blobIndex: boolean; moves: [string, string][] | null };
 
 /**
  * 볼트의 변경 이력. Git 디렉터리는 `<vault>/.history`, 작업 트리는 볼트 자체다.
@@ -230,59 +264,106 @@ export class GitHistory {
   }
 
   /**
-   * 휴지통: 파일을 지운 커밋(지운 커밋만 세어 최근 것부터 skip 개 건너 limit 개)과 커밋마다 지운 경로.
-   * 이동·이름 바꾸기는 지운 것이 아니다: git 의 이름 바꾸기 짝짓기(-M)가 가른다 — 내용이 같으면(빈 파일 포함) 늘,
-   * 이동하며 링크를 고쳐 내용이 바뀌었으면 절반 넘게 같을 때.
+   * 휴지통: 파일을 지운 커밋(최근 것부터 limit 개 — after 를 주면 그 커밋 다음, 더 오래된 것부터)과 커밋마다 지운 경로.
+   * 후보는 이름 바꾸기 판정 없이(--no-renames) 고르고 고른 커밋만 자세히 본다(describeDeletions) — 이력 전체를 -M 으로
+   * 훑지 않는다. last: 이번에 훑은 마지막 후보(다음 쪽의 after). 이력은 한 줄이다(병합 커밋을 만들지 않는다)
    * blobIndex: 이 커밋이 첨부 목록 파일(S3 보관 첨부)을 바꿨는지 — S3 로 간 첨부의 삭제는 그 파일에만 보인다.
    */
-  async deletions(skip: number, limit: number): Promise<{ commits: (CommitInfo & { deleted: string[]; blobIndex: boolean })[]; more: boolean }> {
-    // --skip 은 --diff-filter 로 거르기 전의 커밋을 센다(지우지 않은 커밋까지 건너뛴다). 앞에서부터 읽고 자른다
-    const picked = await this.run(["log", "-M", "--diff-filter=D", "--format=%H", `--max-count=${skip + limit + 1}`], { allowFail: true });
-    if (picked.code !== 0) return { commits: [], more: false };
-    const revs = picked.stdout.split("\n").filter(Boolean).slice(skip);
-    return { commits: await this.describeDeletions(revs.slice(0, limit)), more: revs.length > limit };
+  async deletions(after: string | null, limit: number): Promise<{ commits: Deletion[]; more: boolean; last: string | null }> {
+    if (after !== null && !/^[0-9a-f]{40,64}$/i.test(after)) throw new PathError("rev_invalid");
+    const from = after === null ? [] : [`${after}^`];
+    const picked = await this.run(["log", "--no-renames", "--diff-filter=D", "--format=%H", `--max-count=${limit + 1}`, ...from], { allowFail: true });
+    // 커밋이 없는 저장소, 맨 처음 커밋 다음(부모 없음), 백업 복원으로 사라진 커밋
+    if (picked.code !== 0) return { commits: [], more: false, last: null };
+    const revs = picked.stdout.split("\n").filter(Boolean);
+    const page = revs.slice(0, limit);
+    return { commits: await this.describeDeletions(page), more: revs.length > limit, last: page.at(-1) ?? null };
   }
 
   /** 커밋 하나의 지운 경로(휴지통 되살리기·미리보기). 없는 커밋이면 null */
-  async deletion(rev: string): Promise<(CommitInfo & { deleted: string[]; blobIndex: boolean }) | null> {
+  async deletion(rev: string): Promise<Deletion | null> {
     if (!/^[0-9a-f]{40,64}$/i.test(rev)) throw new PathError("rev_invalid");
     return (await this.describeDeletions([rev]))[0] ?? null;
   }
 
-  private async describeDeletions(revs: string[]): Promise<(CommitInfo & { deleted: string[]; blobIndex: boolean })[]> {
+  /**
+   * 커밋마다 지운 경로. 이동 트레일러가 있는 커밋은 이름 바꾸기 판정 없이 보고 트레일러의 옛 경로를 뺀다. 없는 커밋만
+   * git 의 이름 바꾸기 짝짓기(-M)로 가른다 — 내용이 같으면(빈 파일 포함) 늘, 내용이 바뀌었으면 절반 넘게 같을 때.
+   * git 은 두 번까지(트레일러 없는 커밋이 있을 때만 둘째)
+   */
+  private async describeDeletions(revs: string[]): Promise<Deletion[]> {
     if (revs.length === 0) return [];
-    const fmt = RECORD + ["%H", "%an", "%ae", "%aI", "%s"].join(FIELD);
-    const res = await this.run(["log", "--no-walk=unsorted", "-M", "--name-status", `--format=${fmt}`, ...revs], { allowFail: true });
+    const plain = await this.listDeletions(revs, false);
+    const guess = plain.filter((c) => c.moves === null).map((c) => c.rev);
+    const renamed = new Map((await this.listDeletions(guess, true)).map((c) => [c.rev, c]));
+    return plain.map((c) => renamed.get(c.rev) ?? c);
+  }
+
+  private async listDeletions(revs: string[], detectRenames: boolean): Promise<Deletion[]> {
+    if (revs.length === 0) return [];
+    const fmt = RECORD + ["%H", "%an", "%ae", "%aI", "%s", "%B"].join(FIELD) + BODY_END;
+    const res = await this.run(["log", "--no-walk=unsorted", detectRenames ? "-M" : "--no-renames", "--name-status", `--format=${fmt}`, ...revs], {
+      allowFail: true,
+    });
     if (res.code !== 0) return [];
     return res.stdout
       .split(RECORD)
       .filter((r) => r.trim())
       .map((r) => {
-        const [head, ...rest] = r.split("\n");
-        const [rev, author, email, date, message] = head.split(FIELD);
+        const end = r.lastIndexOf(BODY_END);
+        const [rev, author, email, date, message, body] = r.slice(0, end).split(FIELD);
+        const moves = parseMoveTrailer(body ?? "");
+        const movedFrom = new Set((moves ?? []).map(([f]) => f));
         const deleted: string[] = [];
         let blobIndex = false;
         // <상태>\t<경로>[\t<새 경로>]
-        for (const line of rest) {
+        for (const line of r.slice(end + 1).split("\n")) {
           const [status, p, to] = line.split("\t");
           if (!status || !p) continue;
           if (p === ".keyring-blobs.json" || to === ".keyring-blobs.json") blobIndex = true;
-          if (status === "D" && !isInternal(p)) deleted.push(p);
+          if (status === "D" && !isInternal(p) && !movedFrom.has(p)) deleted.push(p);
         }
-        return { rev, author, email, date, message, deleted, blobIndex };
+        return { rev, author, email, date, message, deleted, blobIndex, moves };
       });
   }
 
-  /** 특정 리비전의 파일 바이트(첨부). 그 리비전에 파일이 없으면 null. */
-  showBytes(rev: string, relPath: string): Promise<Buffer | null> {
-    if (!/^[0-9a-f]{7,64}\^?$/i.test(rev)) throw new PathError("rev_invalid");
-    return new Promise((resolve) => {
-      execFile(
-        "git",
-        ["--git-dir", this.gitDir, "--work-tree", this.workTree, "show", `${rev}:${relPath}`],
-        { cwd: this.workTree, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, maxBuffer: 1024 * 1024 * 1024, encoding: "buffer" },
-        (err, stdout) => resolve(err ? null : stdout),
-      );
+  /**
+   * 여러 리비전:경로의 바이트를 git 한 번(cat-file --batch)으로 읽는다. 없는 것은 null.
+   * 리비전은 커밋 해시(끝에 ^ 는 그 부모)만 받는다
+   */
+  readMany(specs: { rev: string; path: string }[]): Promise<(Buffer | null)[]> {
+    for (const s of specs) if (!/^[0-9a-f]{7,64}\^?$/i.test(s.rev)) throw new PathError("rev_invalid");
+    if (specs.length === 0) return Promise.resolve([]);
+    return new Promise((resolve, reject) => {
+      const child = spawn("git", ["--git-dir", this.gitDir, "--work-tree", this.workTree, "cat-file", "--batch"], {
+        cwd: this.workTree,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      });
+      const chunks: Buffer[] = [];
+      child.stdout.on("data", (c: Buffer) => chunks.push(c));
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code !== 0) return reject(new Error(`git cat-file failed: ${code}`));
+        // 하나마다 "<해시> <종류> <크기>\n<내용>\n" 또는 "<이름> missing\n"
+        const out = Buffer.concat(chunks);
+        const result: (Buffer | null)[] = [];
+        let at = 0;
+        for (let i = 0; i < specs.length; i++) {
+          const nl = out.indexOf(0x0a, at);
+          const head = out.subarray(at, nl).toString("utf8");
+          at = nl + 1;
+          const m = / (blob|tree|commit|tag) (\d+)$/.exec(head);
+          if (!m) {
+            result.push(null);
+            continue;
+          }
+          const size = Number(m[2]);
+          result.push(m[1] === "blob" ? out.subarray(at, at + size) : null);
+          at += size + 1;
+        }
+        resolve(result);
+      });
+      child.stdin.end(specs.map((s) => `${s.rev}:${s.path}\n`).join(""));
     });
   }
 

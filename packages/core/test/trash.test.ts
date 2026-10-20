@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { LocalVault, MemoryStore, NotFoundError, restoreTargets, trashHead } from "../src/index.js";
+import { LocalVault, MemoryStore, NotFoundError, restoreTargets, SyncEngine, trashHead, type FileEntry } from "../src/index.js";
+import { FakeServer } from "./fakeServer.js";
 
 async function vault(files: Record<string, string> = {}) {
   const store = new MemoryStore();
@@ -10,6 +11,31 @@ async function vault(files: Record<string, string> = {}) {
 }
 
 const text = async (v: LocalVault, p: string) => (await v.read(p)).content;
+const decode = (d: Uint8Array | null) => (d ? new TextDecoder().decode(d) : null);
+
+/**
+ * macOS 처럼 NFC·NFD 이름을 같은 파일로 보는 저장소: 읽기·쓰기·지우기는 이미 있는 같은 파일을 찾아 그 이름으로 한다.
+ * hidden 은 목록(list)에 안 나오는 파일 — 목록이 모르는 같은 파일을 흉내 낸다
+ */
+class FoldStore extends MemoryStore {
+  hidden = new Set<string>();
+  private same(p: string) {
+    for (const k of this.files.keys()) if (k.normalize("NFC") === p.normalize("NFC")) return k;
+    return p;
+  }
+  async list(): Promise<FileEntry[]> {
+    return (await super.list()).filter((e) => !this.hidden.has(e.path));
+  }
+  async read(p: string) {
+    return super.read(this.same(p));
+  }
+  async write(p: string, data: Uint8Array) {
+    return super.write(this.same(p), data);
+  }
+  async remove(p: string) {
+    return super.remove(this.same(p));
+  }
+}
 
 describe("휴지통 판정(core)", () => {
   it("머리: 노트 하나, 노드(노트+하위), 노트 없는 폴더 노드, 상관없는 여러 노트", () => {
@@ -29,6 +55,8 @@ describe("휴지통 판정(core)", () => {
       ["W/A.md", "W/A 3.md"],
       ["W/A/b.md", "W/A 3/b.md"],
     ]);
+    // NFD 로 된 같은 이름(Finder 가 만든 한글 이름)도 같은 파일로 본다
+    expect([...restoreTargets(["W/한글.md"], "W/한글", ["W/한글.md".normalize("NFD")])]).toEqual([["W/한글.md", "W/한글 2.md"]]);
     expect([...restoreTargets(["W/a.md", "X/b.md", "X/c.png"], null, ["X/b.md", "X/c.png"])]).toEqual([
       ["W/a.md", "W/a.md"],
       ["X/b.md", "X/b 2.md"],
@@ -130,6 +158,97 @@ describe("휴지통(로컬 볼트: 기록 기반)", () => {
     expect(third.items.map((i) => i.notes[0])).toEqual(["W/n0.md"]);
     expect(third.next).toBeNull();
     expect(v.trash().items).toHaveLength(6);
+  });
+
+  it("쪽 사이에 새로 지워도 다음 쪽이 겹치지 않는다(cursor 는 마지막 기록 id), 숨긴 것 사이도 빠짐이 없다", async () => {
+    const files: Record<string, string> = { "W.md": "" };
+    for (let i = 0; i < 7; i++) files[`W/n${i}.md`] = `글 ${i}`;
+    const { v } = await vault(files);
+    for (let i = 0; i < 6; i++) await v.remove(`W/n${i}.md`, (await v.read(`W/n${i}.md`)).hash);
+    const first = v.trash({ limit: 2 });
+    expect(first.items.map((i) => i.notes[0])).toEqual(["W/n5.md", "W/n4.md"]);
+    expect(first.next).toBe(first.items[1].id);
+    await v.remove("W/n6.md", (await v.read("W/n6.md")).hash);
+    // 다시 만들어 숨긴 것(n3·n1) 사이로도 이어 읽는다
+    await v.write("W/n3.md", "다시", null);
+    await v.write("W/n1.md", "다시", null);
+    const second = v.trash({ limit: 2, cursor: first.next! });
+    expect(second.items.map((i) => i.notes[0])).toEqual(["W/n2.md", "W/n0.md"]);
+    expect(second.next).toBeNull();
+    expect(v.trash().items.map((i) => i.notes[0])).toEqual(["W/n6.md", "W/n5.md", "W/n4.md", "W/n2.md", "W/n0.md"]);
+  });
+
+  it("동기화로 받은 이름 바꾸기는 휴지통에 없다(한 기록 안의 지우기와 같은 내용의 만들기)", async () => {
+    const server = new FakeServer();
+    await server.put("W.md", "");
+    await server.put("W/옛이름.md", "본문");
+    const { v } = await vault();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    server.files.delete("W/옛이름.md");
+    await server.put("W/새이름.md", "본문");
+    await sync.run();
+    expect(await text(v, "W/새이름.md")).toBe("본문");
+    expect(v.trash().items).toEqual([]);
+  });
+
+  it("앱 밖 이름 바꾸기는 휴지통에 없고, 빈 노트는 짝짓지 않으며, 같은 내용은 하나씩만 짝짓는다", async () => {
+    const { v, store } = await vault({ "W.md": "" });
+    // 휴지통은 기록에 남은 노트만 다룬다(앱으로 만든 것)
+    for (const [p, c] of Object.entries({ "W/a.md": "같은 글", "W/빈.md": "", "W/x.md": "겹침", "W/y.md": "겹침" })) await v.write(p, c, null);
+    await store.remove("W/a.md");
+    store.touch("W/b.md", "같은 글");
+    // 빈 노트를 지우고 다른 빈 노트를 만들었다: 지운 빈 노트는 휴지통에 보여야 한다
+    await store.remove("W/빈.md");
+    store.touch("W/새 빈.md", "");
+    // 같은 내용 둘을 지우고 하나를 만들었다: 경로 순으로 앞의 것(x)만 이동으로 보고 y 는 지운 것
+    await store.remove("W/x.md");
+    await store.remove("W/y.md");
+    store.touch("W/z.md", "겹침");
+    await v.rescan();
+    // 새 파일 중 사라진 노트와 같은 내용인 것(b·z)만 기록에 남는다(빈 새 노트는 남지 않는다)
+    expect(
+      v
+        .entries()
+        .at(-1)!
+        .files.map((f) => `${f.status} ${f.path}`)
+        .sort(),
+    ).toEqual(["A W/b.md", "A W/z.md", "D W/a.md", "D W/x.md", "D W/y.md", "D W/빈.md"]);
+    expect(v.trash().items.map((i) => [...i.notes].sort())).toEqual([["W/y.md", "W/빈.md"]]);
+  });
+
+  it("되살릴 자리에 NFD 이름의 같은 파일이 생겼으면 휴지통에서 숨기고, 화면이 본 것을 되살려도 덮어쓰지 않는다", async () => {
+    const store = new FoldStore();
+    store.touch("W.md", "");
+    store.touch("W/한글.md", "옛 글");
+    const v = new LocalVault(store, { author: "노트북" });
+    await v.open();
+    await v.remove("W/한글.md", (await v.read("W/한글.md")).hash);
+    const [item] = v.trash().items;
+    expect(item.notes).toEqual(["W/한글.md"]);
+    // 목록을 본 뒤 Finder 가 같은 이름을 NFD 로 만들었다
+    const nfd = "W/한글.md".normalize("NFD");
+    store.touch(nfd, "Finder 글");
+    await v.rescan();
+    expect(v.trash().items).toEqual([]);
+    expect(await v.restoreTrash(item.id, ["W/한글.md"])).toEqual({ restored: [["W/한글.md", "W/한글 2.md"]], lost: 0 });
+    expect(decode(store.files.get(nfd)!.data)).toBe("Finder 글");
+    expect(await text(v, "W/한글 2.md")).toBe("옛 글");
+  });
+
+  it("목록이 모르는 같은 파일도 실제로 읽어 보고 다음 이름으로 되살린다(덮어쓰지 않는다)", async () => {
+    const store = new FoldStore();
+    store.touch("W.md", "");
+    store.touch("W/b.md", "비");
+    const v = new LocalVault(store, { author: "노트북" });
+    await v.open();
+    await v.remove("W/b.md", (await v.read("W/b.md")).hash);
+    const [item] = v.trash().items;
+    store.touch("W/b.md", "목록에 없는 파일");
+    store.hidden.add("W/b.md");
+    expect(await v.restoreTrash(item.id)).toEqual({ restored: [["W/b.md", "W/b 2.md"]], lost: 0 });
+    expect(decode(await store.read("W/b.md"))).toBe("목록에 없는 파일");
+    expect(await text(v, "W/b 2.md")).toBe("비");
   });
 
   it("공통 설정 파일은 휴지통에 넣지 않는다", async () => {

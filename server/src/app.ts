@@ -597,8 +597,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   // 휴지통(소유자만): 지운 노트 목록(folder: 워크스페이스, cursor: 앞 쪽의 next)·지우기 직전 내용·되살리기
   api.get("/trash", async (c) => {
-    const cursor = Number(c.req.query("cursor") ?? 0);
-    return c.json(await c.var.scoped.trash({ folder: c.req.query("folder"), cursor: Number.isFinite(cursor) ? cursor : 0 }));
+    return c.json(await c.var.scoped.trash({ folder: c.req.query("folder"), cursor: c.req.query("cursor") || undefined }));
   });
   api.get("/trash/preview", async (c) => {
     const id = c.req.query("id");

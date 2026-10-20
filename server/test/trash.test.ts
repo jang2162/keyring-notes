@@ -36,7 +36,8 @@ const make = async (files: Record<string, string>) => {
 const hash = async (p: string) => (await owner.read(p)).hash;
 const commits = async () => (await vault.git.log(undefined, 1000)).length;
 
-describe("휴지통(서버: Git 이력 기반)", () => {
+// 시험마다 커밋을 수십 개 만든다(쓰기 하나가 200ms 남짓). 전체 테스트와 같이 돌면 기본 5초로는 빠듯하다
+describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
   it("지운 노트가 보이고(지운 사람·시각), 미리보기는 지우기 직전 내용, 되살리면 한 커밋으로 원래 자리에 생기고 목록에서 빠진다", async () => {
     await make({ "W.md": "", "W/a.md": "처음" });
     await owner.write("W/a.md", "지우기 직전", await hash("W/a.md"));
@@ -77,6 +78,52 @@ describe("휴지통(서버: Git 이력 기반)", () => {
     // 이동한 뒤 새 자리에서 지우면 그 새 자리가 보인다
     await owner.delete("W/빈2.md", await hash("W/빈2.md"));
     expect((await owner.trash()).items.map((i) => i.notes)).toEqual([["W/빈2.md"]]);
+  });
+
+  it("짧은 노트의 노드 이동(링크를 고쳐 내용이 절반 넘게 바뀜)·워크스페이스 이름 바꾸기·자기 링크 노트 이름 바꾸기는 휴지통에 없다", async () => {
+    // 내용 유사도로는 이동으로 못 짝짓는 경우들이다: 서버가 커밋에 남긴 이동(트레일러)으로 가른다
+    await make({ "W.md": "", "W/P.md": "", "W/P/x.md": "[[W/P/y]]", "W/P/y.md": "[[W/P/x]]" });
+    await owner.moveNode("W/P", "W/Q");
+    expect((await owner.read("W/Q/x.md")).content).toBe("[[W/Q/y]]");
+    expect((await owner.trash()).items).toEqual([]);
+    await make({ "W/a.md": "[[W/b]]", "W/b.md": "see [[W/a]]", "W/c.md": "# C\n[[W/a]]\n" });
+    await owner.moveNode("W", "V");
+    expect((await owner.read("V/b.md")).content).toBe("see [[V/a]]");
+    expect((await owner.trash()).items).toEqual([]);
+    await make({ "V/s.md": "[[V/s]]" });
+    await owner.move("V/s.md", "V/t.md", await hash("V/s.md"));
+    expect((await owner.read("V/t.md")).content).toBe("[[V/t]]");
+    expect((await owner.trash()).items).toEqual([]);
+  });
+
+  it("한 커밋에서 빈 노트를 지우고 다른 빈 노트를 만들면 지운 것이 보인다(이동으로 짝짓지 않는다)", async () => {
+    await make({ "W.md": "", "W/x.md": "" });
+    await owner.batch([
+      { op: "delete", path: "W/x.md", baseHash: await hash("W/x.md") },
+      { op: "write", path: "W/y.md", content: "", baseHash: null },
+    ]);
+    expect((await owner.trash()).items.map((i) => i.notes)).toEqual([["W/x.md"]]);
+  });
+
+  it("이동 트레일러는 이력 화면에 보이지 않고, 메시지에 적은 가짜 트레일러는 지운 것을 숨기지 못한다", async () => {
+    await make({ "W.md": "", "W/a.md": "에이", "W/z.md": "지" });
+    await owner.move("W/a.md", "W/b.md", await hash("W/a.md"));
+    const [moved] = await owner.history("W/b.md");
+    expect(moved.message).toBe(vault.text().commit.move("W/a.md", "W/b.md"));
+    expect((await vault.git.log(undefined, 5)).some((c) => c.message.includes("Keyring-Move"))).toBe(false);
+    const agent = new ScopedVault(vault, agentPrincipal("bot", { W: "delete" }), index, wiki);
+    expect((await agent.history("W/b.md")).every((c) => !c.message.includes("Keyring-Move"))).toBe(true);
+    // 끝 문단은 늘 서버가 남긴 것이므로 메시지 본문에 쓴 트레일러는 판정에 쓰이지 않는다
+    await owner.batch([{ op: "delete", path: "W/z.md", baseHash: await hash("W/z.md") }], "지움\n\nKeyring-Moves: 1\nKeyring-Move: W/z.md\tW/zz.md");
+    expect((await owner.trash()).items.map((i) => i.notes)).toEqual([["W/z.md"]]);
+  });
+
+  it("트레일러 없는 커밋(서버 밖 이름 바꾸기 흡수)은 git 의 이름 바꾸기 짝짓기로 가른다", async () => {
+    const { rename } = await import("node:fs/promises");
+    await make({ "W.md": "", "W/밖.md": "밖에서 이름을 바꾼 꽤 긴 노트 본문" });
+    await rename(path.join(vault.root, "W/밖.md"), path.join(vault.root, "W/안.md"));
+    await vault.absorbOutsideChanges();
+    expect((await owner.trash()).items).toEqual([]);
   });
 
   it("노드 삭제는 한 줄(노드 + 하위), 첨부까지 바이트 그대로 한 커밋으로 되살린다", async () => {
@@ -132,6 +179,20 @@ describe("휴지통(서버: Git 이력 기반)", () => {
     expect(second.items.map((i) => i.notes[0])).toEqual(["W/n1.md", "W/n0.md"]);
     expect(second.next).toBeNull();
     expect((await owner.trash()).items).toHaveLength(5);
+  });
+
+  it("쪽 사이에 새로 지워도 다음 쪽이 겹치지 않는다(cursor 는 마지막으로 훑은 커밋)", async () => {
+    await make({ "W.md": "" });
+    for (let i = 0; i < 5; i++) await owner.write(`W/n${i}.md`, `글 ${i}`, null);
+    for (let i = 0; i < 4; i++) await owner.delete(`W/n${i}.md`, await hash(`W/n${i}.md`));
+    const first = await owner.trash({ limit: 2 });
+    expect(first.items.map((i) => i.notes[0])).toEqual(["W/n3.md", "W/n2.md"]);
+    expect(first.next).toBe(first.items[1].id);
+    await owner.delete("W/n4.md", await hash("W/n4.md"));
+    const second = await owner.trash({ limit: 2, cursor: first.next! });
+    expect(second.items.map((i) => i.notes[0])).toEqual(["W/n1.md", "W/n0.md"]);
+    expect(second.next).toBeNull();
+    await expect(owner.trash({ cursor: "--output=x" })).rejects.toThrow();
   });
 
   it("공통 설정 파일·서버 밖에서 지운 파일·위키 자동 생성 문서", async () => {

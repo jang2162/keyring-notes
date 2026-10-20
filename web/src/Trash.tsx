@@ -1,6 +1,6 @@
 import type { TrashItem } from "@keyring-notes/core";
 import { ChevronRight, FileText, FolderClosed, RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, appMode } from "./api";
 import { fmtDateTime, t } from "./i18n";
 import { renderMarkdown, type LinkResolver } from "./markdown";
@@ -33,21 +33,35 @@ export function TrashPanel({
   onOpen: (p: string) => void;
 }) {
   const [items, setItems] = useState<TrashItem[] | null>(null);
-  const [next, setNext] = useState<number | null>(null);
+  const [next, setNext] = useState<string | null>(null);
+  // 불러오는 중에는 「더 보기」를 막는다(연타로 같은 쪽이 두 번 붙지 않게)
+  const [loading, setLoading] = useState(false);
+  const loadingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState<{ id: string; path: string } | null>(null);
   const [previews, setPreviews] = useState<Record<string, string | { error: string }>>({});
 
   const load = useCallback(
-    async (cursor?: number) => {
+    async (cursor?: string) => {
+      if (cursor && loadingRef.current) return;
+      loadingRef.current = true;
+      setLoading(true);
       try {
         const page = await api.trash(folder, cursor);
-        setItems((cur) => (cursor && cur ? [...cur, ...page.items] : page.items));
+        // 이어 붙일 때 이미 있는 줄(id)은 거른다
+        setItems((cur) => {
+          if (!cursor || !cur) return page.items;
+          const seen = new Set(cur.map((i) => i.id));
+          return [...cur, ...page.items.filter((i) => !seen.has(i.id))];
+        });
         setNext(page.next);
         setError(null);
       } catch (e) {
         setError(errorText(e));
+      } finally {
+        loadingRef.current = false;
+        setLoading(false);
       }
     },
     [folder],
@@ -162,7 +176,7 @@ export function TrashPanel({
           })}
         </ul>
         {next !== null && (
-          <button type="button" className="trash-more" onClick={() => void load(next)}>
+          <button type="button" className="trash-more" disabled={loading} onClick={() => void load(next)}>
             {t("trash.more")}
           </button>
         )}

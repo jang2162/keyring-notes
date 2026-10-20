@@ -13,7 +13,7 @@ import { dailyLookup, isVaultSettingsPath, parseVaultSettings, vaultLanguage, VA
 import type { DailyLookup } from "./daily.js";
 import { moveNodePath, nodeFiles, workspaceOf } from "./nodes.js";
 import { vaultText, type VaultText } from "./vaultText.js";
-import { inTrashScope, restoreTargets, trashHead, trashOrder, TRASH_PAGE, type TrashItem, type TrashPage } from "./trash.js";
+import { inTrashScope, restoreTargets, trashHead, trashKey, trashOrder, TRASH_PAGE, type TrashItem, type TrashPage } from "./trash.js";
 
 export interface FileEntry {
   /** 볼트 상대 경로("/" 구분) */
@@ -89,6 +89,9 @@ export const EXTERNAL_AUTHOR = "external";
 export const SYNC_AUTHOR = "sync";
 
 let idSeq = 0;
+/** 빈 내용의 해시(sha256 of "") */
+const EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
 function newId(now: number): string {
   // 시각 순으로 정렬되는 id
   idSeq = (idSeq + 1) % 1296;
@@ -242,6 +245,7 @@ export class LocalVault {
     const external: JournalFile[] = [];
     const contents = new Map<string, string>();
     const changed: string[] = [];
+    const fresh: { path: string; hash: string; content: string }[] = [];
     for (const e of list) {
       if (this.isGenerated(e.path)) continue;
       seen.add(e.path);
@@ -266,13 +270,25 @@ export class LocalVault {
       if (last !== undefined && last !== hash) {
         external.push({ status: last === null ? "A" : "M", path: e.path, hash });
         contents.set(hash, content);
-      }
+      } else if (last === undefined && cur === undefined) fresh.push({ path: e.path, hash, content });
     }
+    const gone = new Set<string>();
     for (const [p, entry] of this.files) {
       if (seen.has(p)) continue;
       this.files.delete(p);
       changed.push(p);
-      if (entry.md && this.lastHash.get(p)) external.push({ status: "D", path: p, hash: null });
+      const last = this.lastHash.get(p);
+      if (entry.md && last) {
+        external.push({ status: "D", path: p, hash: null });
+        gone.add(last);
+      }
+    }
+    // 기록에 없던 새 파일은 남기지 않는다. 다만 이번에 사라진 노트와 같은 내용이면(앱 밖 이름 바꾸기) 만들기로 남겨
+    // 휴지통이 이동으로 짝짓게 한다(LocalVault.deletions). 빈 내용은 짝짓지 않으므로 남기지 않는다
+    for (const f of fresh) {
+      if (f.hash === EMPTY_HASH || !gone.has(f.hash)) continue;
+      external.push({ status: "A", path: f.path, hash: f.hash });
+      contents.set(f.hash, f.content);
     }
     await this.record(EXTERNAL_AUTHOR, this.text().commit.appOutside, external, contents);
     if (this.opened) this.emit(changed, "external");
@@ -979,12 +995,28 @@ export class LocalVault {
     const list: { entry: JournalEntry; deleted: Map<string, string> }[] = [];
     for (const e of this.journal) {
       const deleted = new Map<string, string>();
+      const added: JournalFile[] = [];
       for (const f of e.files) {
-        // 이동(R)은 지운 것이 아니다. 지우기 직전 내용을 모르는 삭제(기록 전에 사라진 파일)는 되살릴 수 없어 뺀다
+        // 앱 안의 이동(R)은 지운 것이 아니다. 지우기 직전 내용을 모르는 삭제(기록 전에 사라진 파일)는 되살릴 수 없어 뺀다
         const before = last.get(f.path);
         if (f.status === "D" && before) deleted.set(f.path, before);
+        if (f.status === "A" && f.hash) added.push(f);
         if (f.from) last.set(f.from, null);
         last.set(f.path, f.hash);
+      }
+      // 동기화로 받은 이름 바꾸기·앱 밖(Finder 등) 이름 바꾸기는 한 기록 안의 지우기(D)와 같은 내용의 만들기(A)로 남는다.
+      // 해시마다 지운 것과 만든 것을 경로 순으로 하나씩 짝지어 짝이 난 지우기는 이동으로 본다(남는 것은 지운 것).
+      // 빈 노트는 서로 구별되지 않으므로 짝짓지 않는다(지운 빈 노트가 숨으면 안 된다)
+      const pending = new Map<string, string[]>();
+      for (const f of [...added].sort((a, b) => a.path.localeCompare(b.path))) {
+        if (f.hash !== EMPTY_HASH) pending.set(f.hash!, [...(pending.get(f.hash!) ?? []), f.path]);
+      }
+      for (const p of [...deleted.keys()].sort((a, b) => a.localeCompare(b))) {
+        const to = pending.get(deleted.get(p)!);
+        if (to?.length) {
+          to.shift();
+          deleted.delete(p);
+        }
       }
       if (deleted.size) list.push({ entry: e, deleted });
     }
@@ -992,9 +1024,9 @@ export class LocalVault {
     return list;
   }
 
-  /** 대소문자를 가리지 않고 지금 있는 경로인지(macOS·Windows 에서는 같은 파일이다) */
-  private takenLower(): Set<string> {
-    return new Set([...this.files.keys()].map((p) => p.toLowerCase()));
+  /** 지금 있는 경로(trashKey: 대소문자·NFC/NFD 를 가리지 않는다 — macOS·Windows 에서는 같은 파일이다) */
+  private takenKeys(): Set<string> {
+    return new Set([...this.files.keys()].map(trashKey));
   }
 
   /** only: 되살릴 때 화면이 본 노트(지금 그 자리에 파일이 생겼어도 그대로 두고 자리를 따로 정한다) */
@@ -1003,8 +1035,8 @@ export class LocalVault {
     const md = [...d.deleted.keys()].filter(keep);
     if (!md.length) return null;
     const attachments = (d.entry.attachments ?? []).filter(keep);
-    const node = trashHead([...md, ...attachments], (dir) => ![...taken].some((p) => p.startsWith(dir.toLowerCase() + "/")));
-    const notes = only ? md.filter((p) => only.has(p)) : md.filter((p) => !taken.has(p.toLowerCase()));
+    const node = trashHead([...md, ...attachments], (dir) => ![...taken].some((p) => p.startsWith(trashKey(dir) + "/")));
+    const notes = only ? md.filter((p) => only.has(p)) : md.filter((p) => !taken.has(trashKey(p)));
     if (!notes.length) return null;
     return {
       id: d.entry.id,
@@ -1013,26 +1045,33 @@ export class LocalVault {
       node,
       notes: trashOrder(notes, node),
       attachments: [],
-      lost: attachments.filter((p) => !taken.has(p.toLowerCase())).length,
+      lost: attachments.filter((p) => !taken.has(trashKey(p))).length,
     };
   }
 
   /**
    * 휴지통: 지운 기록 중 지금 볼트에 없는 마크다운이 남은 것(최근 것부터). folder 를 주면 그 워크스페이스 안만.
-   * cursor 는 앞 쪽에서 돌려준 next(이미 훑은 삭제 기록 수)
+   * cursor 는 앞 쪽에서 돌려준 next(그 쪽에서 마지막으로 훑은 기록 id) — 그보다 오래된 것부터 읽으므로 쪽 사이에 새로
+   * 지워도 겹치지 않는다
    */
-  trash(opts: { folder?: string; cursor?: number; limit?: number } = {}): TrashPage {
+  trash(opts: { folder?: string; cursor?: string; limit?: number } = {}): TrashPage {
     const folder = normalizeFolder(opts.folder);
     const limit = Math.min(Math.max(opts.limit ?? TRASH_PAGE, 1), 200);
     const list = this.deletions();
-    const taken = this.takenLower();
+    const taken = this.takenKeys();
     const items: TrashItem[] = [];
-    let used = Math.max(opts.cursor ?? 0, 0);
-    while (used < list.length && items.length < limit) {
-      const item = this.trashItem(list[list.length - 1 - used++], folder, taken);
+    // 기록 id 는 시각 순으로 정렬된다. 목록에서 못 찾으면(다른 창이 기록을 다시 읽음 등) id 로 대 본다
+    let i = list.length - 1;
+    if (opts.cursor) {
+      const at = list.findIndex((d) => d.entry.id === opts.cursor);
+      if (at >= 0) i = at - 1;
+      else while (i >= 0 && list[i].entry.id >= opts.cursor) i--;
+    }
+    for (; i >= 0 && items.length < limit; i--) {
+      const item = this.trashItem(list[i], folder, taken);
       if (item) items.push(item);
     }
-    return { items, next: used < list.length ? used : null };
+    return { items, next: i >= 0 ? list[i + 1].entry.id : null };
   }
 
   private deletion(id: string) {
@@ -1062,7 +1101,7 @@ export class LocalVault {
       await this.scan();
       const d = this.deletion(id);
       const only = paths ? new Set(paths.map((p) => normalizeVaultPath(p))) : undefined;
-      const found = this.trashItem(d, "", this.takenLower(), only);
+      const found = this.trashItem(d, "", this.takenKeys(), only);
       const contents = new Map<string, string>();
       for (const p of found?.notes ?? []) {
         const content = await this.store.readMeta(objectName(d.deleted.get(p)!));
@@ -1071,7 +1110,17 @@ export class LocalVault {
       }
       if (!found || !contents.size) throw new NotFoundError("trash_empty");
       const item = { ...found, notes: found.notes.filter((p) => contents.has(p)) };
-      const targets = restoreTargets(item.notes, item.node, this.files.keys());
+      // 목록이 모르는 같은 파일(파일 시스템이 다른 이름을 같은 파일로 보는 경우)도 실제로 읽어 보고 다음 이름으로 넘긴다 —
+      // 일반 쓰기(write)와 같은 방식. 덮어쓰지 않는다
+      const taken = [...this.files.keys()];
+      let targets = restoreTargets(item.notes, item.node, taken);
+      for (;;) {
+        const hit: string[] = [];
+        for (const t of targets.values()) if (!this.files.has(t) && (await this.store.read(t)) !== null) hit.push(t);
+        if (!hit.length) break;
+        taken.push(...hit);
+        targets = restoreTargets(item.notes, item.node, taken);
+      }
       const changes = item.notes.map((p) => ({ path: targets.get(p)!, content: contents.get(p)! }));
       await this.apply(changes, this.author, this.text().commit.restoreDeleted(item.node ?? item.notes[0].replace(/\.md$/i, "")), "local");
       return { restored: item.notes.map((p) => [p, targets.get(p)!] as [string, string]), lost: item.lost };

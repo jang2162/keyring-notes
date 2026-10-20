@@ -17,7 +17,7 @@ import {
   type VaultSettings,
   type VaultText,
 } from "@keyring-notes/core";
-import { GitHistory, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
+import { GitHistory, moveTrailer, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
 import { isHiddenSegment, isMarkdown, normalizeVaultPath, PathError, resolveInVault } from "./paths.js";
 
 export interface TreeNode {
@@ -559,7 +559,8 @@ export class Vault {
           ...(verbs.length > 1 || opts.message ? verbs.map((v) => v.text) : []),
           ...linksUpdated.filter((p) => !moves.has(p) && ![...moves.values()].includes(p)).map((p) => T.linkUpdate(p)),
         ];
-        const body = lines.length > 0 ? `${message}\n\n${lines.join("\n")}` : message;
+        // 끝 문단은 이동 트레일러(휴지통이 이동과 삭제를 가른다 — git.ts moveTrailer). 제목 줄이 아니라 이력 화면에는 안 보인다
+        const body = [message, ...(lines.length > 0 ? [lines.join("\n")] : []), moveTrailer(moveList)].join("\n\n");
         const rev = await this.commitOrAmend(body, author, changed, verbs, opts.coalesce === true && !opts.message);
         if (changed.some(([rel]) => !rel.includes("/"))) this.refreshRoots();
         for (const fn of this.listeners) {
