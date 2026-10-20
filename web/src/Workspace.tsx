@@ -51,6 +51,7 @@ import {
 import { api, ApiError, appMode, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
 import type { EditorHandle, LinkCandidate } from "./Editor";
 import { LintPanel, ReviewPanel } from "./Curation";
+import { TrashPanel } from "./Trash";
 import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
 import { invalidateWidgets } from "./Widget";
@@ -342,6 +343,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [refs, setRefs] = useState<SourcesInfo | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [lintOpen, setLintOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [graphOpen, setGraphOpen] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
@@ -2267,6 +2269,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     },
     { id: "graph", group: g.tool, label: t("tool.graph"), run: () => setGraphOpen(true) },
     { id: "lint", group: g.tool, label: t("tool.lint"), run: () => setLintOpen(true) },
+    { id: "trash", group: g.tool, label: t("tool.trash"), run: () => setTrashOpen(true) },
     ...(local
       ? [{ id: "sync", group: g.tool, label: t("tool.device"), run: () => openSettings("device") }]
       : [
@@ -3146,6 +3149,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       hasWorkspace={wsNames.length > 0}
       pendingCount={pendingCount}
       onReview={() => setReviewOpen(true)}
+      onTrash={() => setTrashOpen(true)}
       local={local}
       keyOf={keyOf}
     />
@@ -3396,6 +3400,21 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             onClose={() => setGraphOpen(false)}
             onOpen={(p) => {
               setGraphOpen(false);
+              void open(p);
+            }}
+          />
+        )}
+        {trashOpen && (
+          <TrashPanel
+            folder={scope || undefined}
+            resolver={resolver}
+            onClose={() => setTrashOpen(false)}
+            onChanged={() => {
+              vaultChanged();
+              void refreshTree();
+            }}
+            onOpen={(p) => {
+              setTrashOpen(false);
               void open(p);
             }}
           />
@@ -3708,6 +3727,7 @@ function Home({
   hasWorkspace,
   pendingCount,
   onReview,
+  onTrash,
   local,
   keyOf,
 }: {
@@ -3726,6 +3746,7 @@ function Home({
   hasWorkspace: boolean;
   pendingCount: number;
   onReview: () => void;
+  onTrash: () => void;
   local: boolean;
   keyOf: (id: string) => string | undefined;
 }) {
@@ -3795,6 +3816,11 @@ function Home({
               ))}
             </ul>
           </section>
+        )}
+        {hasWorkspace && (
+          <button type="button" className="home-trash" onClick={onTrash}>
+            <Trash2 size={14} aria-hidden /> {t("tool.trash")}
+          </button>
         )}
         {local && <p className="meta">{t("home.localHint")}</p>}
       </div>
