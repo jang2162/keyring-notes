@@ -16,7 +16,7 @@ export const OFFICIAL_MESSAGES: Record<OfficialLang, Messages> = { en, ko };
 export const OFFICIAL_NAMES: Record<OfficialLang, string> = { en: "English", ko: "한국어" };
 
 /** 앱 버전(언어팩 meta.appVersion) */
-export const APP_VERSION = "0.8.5";
+export const APP_VERSION = "0.8.6";
 
 export function isOfficialLang(v: unknown): v is OfficialLang {
   return v === "en" || v === "ko";

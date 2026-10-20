@@ -2,7 +2,7 @@
 
 All notable user-facing changes to Keyring Notes are listed here. The server and the desktop app share one version.
 
-## Unreleased
+## [0.8.6] - 2026-10-20
 
 ### Added
 
@@ -97,6 +97,7 @@ First tagged release.
 - Notes and folders form one tree of nodes, grouped into workspaces.
 - English and Korean interface.
 
+[0.8.6]: https://github.com/jang2162/keyring-notes/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/jang2162/keyring-notes/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/jang2162/keyring-notes/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/jang2162/keyring-notes/compare/v0.8.2...v0.8.3
