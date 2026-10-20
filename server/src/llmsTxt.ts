@@ -51,6 +51,9 @@ Each token has a per-path permission table: \`hidden\` < \`read\` < \`append\` <
 
 ## Docs
 
-- [README](${DOCS}): installation, permission model, the full MCP tool list and REST API table, LLM Wiki layout, review queue, webhooks.
+- [README](${DOCS}): what Keyring Notes is and how to install it.
+- [Reference](https://github.com/jang2162/keyring-notes/blob/main/docs/manual/en/reference.md): permission rules, the full MCP tool list, the REST API table, webhook events and file formats.
+- [Connect agents](https://github.com/jang2162/keyring-notes/blob/main/docs/manual/en/how-to/connect-agents.md): tokens, MCP setup and the rules agents follow.
+- [Build an LLM Wiki](https://github.com/jang2162/keyring-notes/blob/main/docs/manual/en/how-to/build-an-llm-wiki.md): wiki topic layout and source collection.
 `;
 }

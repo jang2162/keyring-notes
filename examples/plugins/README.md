@@ -1,28 +1,30 @@
-# 위젯 플러그인
+**English** | [한국어](README.ko.md)
 
-위젯 종류를 직접 만들 수 있다. 플러그인은 서버의 플러그인 폴더에 둔 ES 모듈 하나다.
+# Widget plugins
 
-- 폴더: `KEYRING_PLUGINS_DIR`(기본: 소스 실행은 `./plugins`, 도커는 `/data/plugins`). 파일 이름 `<이름>.js`(영문 소문자·숫자·-).
-- 볼트 밖이라 웹 API·MCP 에이전트로는 플러그인을 만들거나 고칠 수 없다. **플러그인은 브라우저에서 소유자 권한으로 돌아가므로 믿을 수 있는 코드만 넣는다.**
-- 쓰기: 문서 안에 `type: plugin`, `plugin: <이름>`. 나머지 `from`/`where`/`show`/`sort`/`limit`는 다른 위젯과 같고(권한 필터 포함, 서버에서 실행), `options:` 아래는 플러그인에 그대로 넘어간다.
+You can add your own widget types. A plugin is one ES module in the server's plugin folder.
+
+- Folder: `KEYRING_PLUGINS_DIR` (default: `./plugins` when running from source, `/data/plugins` in Docker). The file name is `<name>.js`, where the name uses lowercase letters, digits and `-`.
+- The folder is outside the vault, so the web API and MCP agents cannot create or change plugins. **Plugins run in the browser with the owner's permissions, so install only code you trust.**
+- Use it in a note with `type: plugin` and `plugin: <name>`. `from`, `where`, `show`, `sort` and `limit` work as in other widgets (permission filtering included, run on the server), and everything under `options:` is passed to the plugin as is.
 
 ```js
 export default {
   /**
-   * el   : 그릴 자리(div)
-   * data : { rows: [{ path, title, values: { 필드: 값 } }], columns, total, title, options }
-   * api  : { open(path) — 문서 열기, h(태그, 속성, ...자식) — DOM 만들기 도우미 }
-   * 반환 : (선택) 정리 함수. 위젯이 다시 그려지거나 사라질 때 부른다.
+   * el   : the element to draw into (div)
+   * data : { rows: [{ path, title, values: { field: value } }], columns, total, title, options }
+   * api  : { open(path) — open a note, h(tag, attrs, ...children) — DOM helper }
+   * returns: (optional) a cleanup function, called when the widget is redrawn or removed.
    */
   render(el, data, api) {
-    el.append(api.h("p", {}, `문서 ${data.total}개`));
+    el.append(api.h("p", {}, `${data.total} notes`));
   },
 };
 ```
 
-예제: [`kanban.js`](kanban.js) — `options.group` 필드로 칸을 나누는 칸반 보드.
+Example: [`kanban.js`](kanban.js), a kanban board that splits cards into columns by the `options.group` field.
 
 ```bash
-mkdir -p plugins && cp examples/plugins/kanban.js plugins/          # 소스 실행
-docker compose exec keyring sh -c "mkdir -p /data/plugins && cp /app/examples/plugins/kanban.js /data/plugins/"  # 도커(이미지에 예제 포함)
+mkdir -p plugins && cp examples/plugins/kanban.js plugins/          # running from source
+docker compose exec keyring sh -c "mkdir -p /data/plugins && cp /app/examples/plugins/kanban.js /data/plugins/"  # Docker (the image includes the examples)
 ```
