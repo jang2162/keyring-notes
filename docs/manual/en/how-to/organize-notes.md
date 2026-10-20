@@ -72,6 +72,7 @@ Each line is one delete, newest first. It shows the note or node name, where it 
   - In the app: renames received by sync or made in another program (Finder, another editor), when the content changed at the same time or the note is empty.
   - On a server: renames made in another program, when more than half of the content changed at the same time.
 - On a server, a node deleted in the app shows up after sync as one line per file. Restore each line on its own.
+- In the app, a deleted note is not listed if a new file with the same content, such as a copy of a template, appeared at the same time. That means in the same sync, or in the same check for changes made in another program. The content is still in the new file.
 - The trash shows the current workspace, or every workspace when **All workspaces** is on. Load older deletes with **Load more**.
 - On a server, attachments deleted with a node come back too, including attachments kept in S3. The desktop and mobile app does not keep attachment content in its history. There, the line says how many attachments can't be restored, and only the notes come back.
 - There is no permanent delete. Agents can't use the trash.
