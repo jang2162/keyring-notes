@@ -3587,6 +3587,9 @@ function KeysDialog({ commands, onClose, onEdit }: { commands: Command[]; onClos
           mark: formatCombo("Mod+Shift+H"),
           task: formatCombo("Mod+Enter"),
           find: formatCombo("Mod+F"),
+          next: formatCombo("Mod+G"),
+          prev: formatCombo("Mod+Shift+G"),
+          replace: formatCombo("Mod+Alt+F"),
         })}
         <br />
         {t("keys.tree")}

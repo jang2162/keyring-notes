@@ -24,6 +24,9 @@
   --success-bg: #eaf6ed;
   --hover: rgb(0 0 0 / 0.05);
   --active: rgb(59 111 216 / 0.12);
+  /* 노트 안 찾기: 일치·지금 일치 */
+  --find-match: rgb(250 204 21 / 0.4);
+  --find-current: rgb(249 115 22 / 0.45);
   /* 간격(4px 단위)·글자 크기·둥글기·그림자 */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px; --sp-8: 32px;
   --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-base: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-title: 30px;
@@ -67,6 +70,8 @@
     --success-bg: #16281c;
     --hover: rgb(255 255 255 / 0.06);
     --active: rgb(122 162 247 / 0.16);
+    --find-match: rgb(250 204 21 / 0.22);
+    --find-current: rgb(249 115 22 / 0.5);
     --shadow: 0 4px 16px rgb(0 0 0 / 0.45);
     --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.55);
     --focus: 0 0 0 2px var(--bg), 0 0 0 4px rgb(122 162 247 / 0.6);
@@ -96,6 +101,8 @@
     --success-bg: #16281c;
     --hover: rgb(255 255 255 / 0.06);
     --active: rgb(122 162 247 / 0.16);
+    --find-match: rgb(250 204 21 / 0.22);
+    --find-current: rgb(249 115 22 / 0.5);
     --shadow: 0 4px 16px rgb(0 0 0 / 0.45);
     --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.55);
     --focus: 0 0 0 2px var(--bg), 0 0 0 4px rgb(122 162 247 / 0.6);
@@ -1030,6 +1037,30 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .migration-list code { font-size: var(--fs-sm); }
 .sync-settings section + section { margin-top: 18px; }
 .sync-settings + .update-settings { margin-top: 18px; }
+
+/* 노트 안 찾기 막대(findBar.ts): 에디터 위 오른쪽에 떠 있다. 위쪽 패널 칸을 높이 0으로 두어 열고 닫아도 본문이 밀리지 않는다.
+   CodeMirror 기본 테마(.ͼ… .cm-panels)보다 구체적이어야 이긴다 */
+.editor .cm-editor .cm-panels.cm-panels-top { height: 0; overflow: visible; background: transparent; border: none; }
+.find-bar { position: absolute; top: 6px; right: 0; width: min(440px, 100%); display: flex; flex-direction: column; gap: 4px; padding: 5px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); font-family: var(--font-sans); font-size: var(--fs-md); line-height: 1.4; }
+.find-row { display: flex; align-items: center; gap: 2px; }
+.find-replace-row[hidden] { display: none; }
+/* 바꾸기 칸을 찾기 칸과 같은 왼쪽 선에(펼침 단추 24px + 틈 2px) */
+.find-replace-row { padding-left: 26px; }
+.find-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 1px; height: 28px; padding: 0 3px 0 8px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius); }
+.find-field:focus-within { border-color: var(--accent); }
+.find-bar.no-match .find-row:first-child .find-field { border-color: var(--danger); }
+.find-input { flex: 1; min-width: 0; height: 100%; padding: 0; border: none; outline: none; background: transparent; color: inherit; font: inherit; }
+.find-input::placeholder { color: var(--muted); }
+.find-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--muted); flex-shrink: 0; }
+.find-btn:hover:not(:disabled) { background: var(--hover); color: var(--fg); border: none; }
+.find-btn[aria-pressed="true"] { background: var(--active); color: var(--accent); }
+.find-field .find-btn { width: 22px; height: 22px; }
+.find-expand svg { transition: transform 0.12s; }
+.find-expand[aria-expanded="true"] svg { transform: rotate(90deg); }
+.find-count { min-width: 56px; padding: 0 4px; text-align: center; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.find-bar.no-match .find-count { color: var(--danger); }
+.editor .cm-editor .cm-searchMatch { background: var(--find-match); border-radius: 2px; }
+.editor .cm-editor .cm-searchMatch.cm-searchMatch-selected { background: var(--find-current); }
 
 /* 접기: 에디터 ▸/▾(마우스를 올리면 보임), 접힌 자리 …, 미리보기 단추, 개요 */
 .editor .cm-gutters { margin-left: -22px; }
