@@ -636,6 +636,27 @@ body.resizing { cursor: col-resize; user-select: none; }
 .tree-empty button { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; }
 @media (prefers-reduced-motion: reduce) { .tree-chevron { transition: none; } }
 
+/* 트리 위 「고정」 묶음(고정이 있을 때만). 길어지면 이 안에서 스크롤해 트리 자리를 남긴다 */
+.pins { flex-shrink: 0; max-height: 40%; display: flex; flex-direction: column; border-bottom: 1px solid var(--border); padding: var(--sp-1); }
+.pins-head { display: flex; align-items: center; gap: 4px; width: 100%; height: 26px; padding: 0 var(--sp-2) 0 0; border: none; border-radius: var(--radius); background: transparent; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; text-align: left; }
+.pins-head:hover { background: var(--hover); color: var(--fg); border: none; }
+.pins-head .meta { margin-left: auto; font-weight: 400; }
+.pins-chevron { width: 14px; flex-shrink: 0; transition: transform 0.12s; }
+.pins-head[aria-expanded="true"] .pins-chevron { transform: rotate(90deg); }
+.pins-list { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 0; }
+.pins-list li { display: flex; align-items: center; height: 28px; border-radius: var(--radius); }
+.pins-list li:hover { background: var(--hover); }
+.pins-list li.active { background: var(--active); }
+.pins-list li.active a { color: var(--accent); font-weight: 500; }
+.pins-list a { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; height: 100%; padding-left: 18px; color: var(--fg); text-decoration: none; white-space: nowrap; font-size: var(--fs-base); }
+.pins-list .doc-icon { font-size: 15px; margin-right: 0; }
+.pins-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pins-where { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm); }
+.pins-list .pins-unpin { width: 22px; height: 22px; margin-right: 2px; opacity: 0; }
+.pins-list li:hover .pins-unpin, .pins-unpin:focus-visible { opacity: 1; }
+@media (hover: none) { .pins-list .pins-unpin { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pins-chevron { transition: none; } }
+
 /* 검색·태그 */
 .search-box { display: flex; gap: 4px; padding: var(--sp-2); }
 .search-box input { flex: 1; min-width: 0; font: inherit; font-size: var(--fs-md); padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--fg); }

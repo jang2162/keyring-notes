@@ -7,7 +7,7 @@ import { setLanguage, systemLanguage, urlLanguage } from "./i18n";
  * - 따라가는 것(SYNCED_KEYS): 공통 설정 파일(keyring-settings.md)의 "ui" 묶음에 두어 앱 동기화로 모든 기기가 같이 쓴다.
  *   설정마다 "이 기기에서만 다르게"를 켜면 이 기기 localStorage의 덮어쓰기(keyring:prefs-local)에 두고 공통 값을 따라가지 않는다.
  *   값을 고르는 순서: 이 기기 덮어쓰기 → 공통 설정 "ui" → 기본값(화면 언어의 기본은 브라우저·OS 언어).
- * - 기기마다(그 밖): 패널 폭·열림, 왼쪽 보기·오른쪽 탭, 지금 워크스페이스, 업데이트 자동 확인 → localStorage의 keyring:prefs.
+ * - 기기마다(그 밖): 패널 폭·열림, 왼쪽 보기·오른쪽 탭, 고정 묶음 펼침, 지금 워크스페이스, 업데이트 자동 확인 → localStorage의 keyring:prefs.
  * 공통 값은 마지막으로 받은 것을 이 기기에 캐시해(keyring:ui-cache) 시작 때 먼저 쓴다(로그인 화면 포함, 깜빡임 방지).
  * 연달아 바뀌는 값(글자 크기·자동 저장 간격 등)은 멈춘 뒤 한 번만 파일에 쓴다.
  * 덮어쓰기 값은 서버로 보내지 않는다.
@@ -25,6 +25,8 @@ export interface Prefs {
   /** 왼쪽 패널 내용(레일에서 고른 것) */
   leftView: "files" | "search" | "tags" | "attachments";
   rightTab: "outline" | "links" | "props" | "history";
+  /** 왼쪽 패널 트리 위 「고정」 묶음을 펼쳐 두기(기기마다) */
+  pinsOpen: boolean;
   autosave: boolean;
   /** 입력이 멈춘 뒤 저장까지(ms) */
   autosaveDelay: number;
@@ -68,6 +70,7 @@ export const DEFAULT_PREFS: Prefs = {
   rightOpen: false,
   leftView: "files",
   rightTab: "links",
+  pinsOpen: true,
   autosave: true,
   autosaveDelay: 1500,
   readableWidth: true,

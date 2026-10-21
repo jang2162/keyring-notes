@@ -44,6 +44,9 @@ export interface TreeActions {
   openOther: (path: string) => void;
   /** 아이콘 고르기(노드 노트의 icon 속성. 노트가 없으면 그때 만든다) */
   pickIcon: (node: VaultNode, at: { x: number; y: number }) => void;
+  /** 고정했는지·고정 바꾸기(워크스페이스 노드는 고정하지 않는다) */
+  pinned: (node: string) => boolean;
+  togglePin: (node: string) => void;
 }
 
 /** 트리 표시를 바꾸는 것들(모두 선택) */
@@ -238,6 +241,7 @@ export const Tree = forwardRef<
       { label: t("tree.moveTo"), disabled: ro || isWs, run: () => actions.moveTo(n.path, "node") },
       ...(n.note ? [{ label: t("tree.duplicate"), run: () => actions.duplicate(n) }] : []),
       { label: t("tree.changeIcon"), disabled: ro, run: () => actions.pickIcon(n, menuAt()) },
+      ...(isWs ? [] : [{ label: actions.pinned(n.path) ? t("tree.unpin") : t("tree.pin"), run: () => actions.togglePin(n.path) }]),
       "-",
       { label: t("tree.copyPath"), run: () => actions.copyPath(n.note ?? n.path) },
       ...(n.note ? [{ label: t("tree.copyLink"), run: () => actions.copyLink(n.note!) }] : []),

@@ -14,6 +14,7 @@ import {
   BrushCleaning,
   CalendarDays,
   Check,
+  ChevronRight,
   ArrowRightLeft,
   Columns2,
   ExternalLink,
@@ -21,6 +22,7 @@ import {
   Ellipsis,
   FilePlus,
   Files,
+  FileText,
   FolderInput,
   History,
   House,
@@ -35,6 +37,8 @@ import {
   LogOut,
   Menu as MenuIcon,
   Pencil,
+  Pin,
+  PinOff,
   RefreshCw,
   Rows2,
   Search,
@@ -183,6 +187,7 @@ import {
 } from "./panes";
 import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
+import { addPin, dropWorkspacePins, movePins, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import { tearOutAt } from "./tearOut";
 
@@ -395,6 +400,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [now, setNow] = useState(Date.now());
   const closedTabs = useRef<string[]>([]);
   const [recent, setRecent] = useStored<string[]>("keyring:recent", [], isStringArray);
+  /** 고정한 노드(이 기기, pins.ts) */
+  const pins = usePins();
   /** 열어 본 문서 기록(뒤로·앞으로) */
   const nav = useRef<{ list: string[]; i: number }>({ list: [], i: -1 });
   const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | null>(null);
@@ -1592,6 +1599,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     moveFolds(from, to);
     setAllLayouts((l) => renamePath(l, from, to));
     setRecent((r) => r.map((p) => (p === from ? to : p)));
+    updatePins((p) => movePins(p, stripMd(from), stripMd(to), false));
     nav.current.list = nav.current.list.map((p) => (p === from ? to : p));
     const opened = !!docsRef.current[from];
     updateDocs((s) =>
@@ -1676,6 +1684,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         linkCount = r.linkCount;
         others = r.linksUpdated.filter((p) => !r.moved.some(([, b]) => b === p)).length;
       }
+      // 노트 없는 하위 노드의 고정도 따라가게 노드째로(노트의 고정은 afterMove 가 이미 옮겼다)
+      updatePins((p) => movePins(p, from, to));
       if (fileView && inside(fileView)) setFileView(moveNodePath(fileView, from, to));
       vaultChanged();
       await refreshTree();
@@ -1812,18 +1822,31 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const wasCurrent = name === ws;
     const next = workspaceAfterDelete(wsNames, ws, name);
     const saved = workspaceRefs(getVaultSettings(), name);
+    let savedPins: SavedPins = [];
     await removeNode(name, {
       reopen: wasCurrent,
       after: async () => {
         setLayouts((m) => dropWorkspaceLayout(m, name));
         if (wasCurrent) setPrefs({ workspace: next });
+        updatePins((p) => {
+          const r = dropWorkspacePins(p, name);
+          savedPins = r.saved;
+          return r.pins;
+        });
         for (const [p, v] of dropWorkspaceRefs(getVaultSettings(), name)) await updateVaultSetting(p, v);
       },
       undone: async () => {
+        updatePins((p) => restoreWorkspacePins(p, savedPins));
         for (const [p, v] of restoreWorkspaceRefs(getVaultSettings(), name, saved)) await updateVaultSetting(p, v);
         if (wasCurrent) setPrefs({ workspace: name });
       },
     });
+  };
+
+  /** 고정·고정 해제(이 기기). 워크스페이스 노드는 고정하지 않는다 */
+  const togglePin = (node: string) => {
+    if (!node.includes("/")) return;
+    updatePins((p) => (p.includes(node) ? removePin(p, node) : addPin(p, node)));
   };
 
   /** 첨부 하나 지우기 */
@@ -2053,6 +2076,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       await flush();
       const r = await api.moveNode(from, n);
       for (const [a, b] of r.moved) if (/\.md$/i.test(a)) await afterMove(a, b, null, null);
+      updatePins((p) => movePins(p, from, n));
       // 워크스페이스별 설정과 순서도 새 이름으로
       const s = getVaultSettings();
       if (s.workspaces[from]) {
@@ -2156,6 +2180,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             },
           },
           { id: "delete", group: g.doc, label: t("tree.deleteNode"), run: () => void deleteNode(stripMd(doc.path)) },
+        ]
+      : []),
+    ...(doc && doc.path.includes("/")
+      ? [
+          {
+            id: "pin",
+            group: g.doc,
+            label: pins.includes(stripMd(doc.path)) ? t("tree.unpin") : t("tree.pin"),
+            run: () => togglePin(stripMd(doc.path)),
+          },
         ]
       : []),
     ...(doc
@@ -2394,6 +2428,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     copyLink: (p) => void copyText(`[[${linkTo(p)}]]`, "link"),
     openOther: (p) => void openOther(p),
     pickIcon: (n, at) => setIconPick({ ...at, node: n.path }),
+    pinned: (n) => pins.includes(n),
+    togglePin,
   };
 
   const treeDecor = useMemo<TreeDecor>(() => {
@@ -2595,6 +2631,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   // 첨부 보기: 지금 워크스페이스(모든 워크스페이스면 전체)의 마크다운이 아닌 파일
   const attachmentPaths = resolver.paths.filter((p) => !/\.md$/i.test(p) && !isVaultSettingsPath(p) && (allWs || p.startsWith(`${ws}/`)));
   const canInsert = !!doc && !doc.generated && !revision && !doc.virtual;
+  // 고정: 지금 있는 노드 중 지금 워크스페이스의 것(지운 것·다른 기기에서 옮겨 간 것은 숨는다)
+  const pinnedShown = shownPins(pins, (n) => nodeExists(n, resolver.paths), inScope);
   const leftPanel = (
     <aside className="left-panel" aria-label={leftLabel}>
       {prefs.leftView === "files" && (
@@ -2630,6 +2668,36 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               <TreeOptions prefs={prefs} />
             </span>
           </div>
+          {pinnedShown.length > 0 && (
+            <div className="pins">
+              <button type="button" className="pins-head" aria-expanded={prefs.pinsOpen} onClick={() => setPrefs({ pinsOpen: !prefs.pinsOpen })}>
+                <ChevronRight size={14} className="pins-chevron" aria-hidden />
+                {t("tree.pinned")}
+                <span className="meta">{pinnedShown.length}</span>
+              </button>
+              {prefs.pinsOpen && (
+                <ul className="pins-list">
+                  {pinnedShown.map((n) => (
+                    <li key={n} className={doc && stripMd(doc.path) === n ? "active" : ""}>
+                      <a
+                        href={`#/${encodeURIComponent(`${n}.md`)}`}
+                        {...tipProps({ label: n })}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          void openNode(n, { newTab: true });
+                        }}
+                      >
+                        {iconOf(`${n}.md`) ? <DocIcon icon={iconOf(`${n}.md`)} /> : <FileText size={15} strokeWidth={1.75} aria-hidden className="tree-icon" />}
+                        <span className="pins-name">{docLabel(`${n}.md`, { plain: true })}</span>
+                        {allWs && <span className="meta pins-where">{parentOf(n)}</span>}
+                      </a>
+                      <IconButton size={14} icon={PinOff} label={t("tree.unpin")} className="pins-unpin" onClick={() => togglePin(n)} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <Tree
             ref={treeRef}
             nodes={viewNodes}
@@ -2892,6 +2960,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             if (n) void duplicateNode(n);
           },
         },
+        ...(isWsDoc
+          ? []
+          : [
+              pins.includes(docNode)
+                ? { label: t("tree.unpin"), icon: PinOff, run: () => togglePin(docNode) }
+                : { label: t("tree.pin"), icon: Pin, run: () => togglePin(docNode) },
+            ]),
         "-",
         { label: t("doc.openOther"), icon: Columns2, run: () => void openOther(doc.path) },
         { label: t("cmd.modeSplit"), run: () => setFocusedMode("split") },
@@ -3137,6 +3212,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       workspace={allWs ? null : ws}
       wsIcon={allWs ? null : wsIcon(ws)}
       recent={recent.filter((p) => resolver.paths.includes(p) && inScope(p))}
+      pinned={pinnedShown}
+      onOpenNode={(n) => void openNode(n)}
       tabs={allTabs}
       onOpen={(p) => void open(p)}
       onOpenWorkspace={() => void openNode(ws)}
@@ -3715,6 +3792,8 @@ function Home({
   workspace,
   wsIcon,
   recent,
+  pinned,
+  onOpenNode,
   tabs,
   onOpen,
   onOpenWorkspace,
@@ -3734,6 +3813,9 @@ function Home({
   workspace: string | null;
   wsIcon: string | null;
   recent: string[];
+  /** 고정한 노드(노트 경로가 아니라 노드 경로) */
+  pinned: string[];
+  onOpenNode: (node: string) => void;
   tabs: string[];
   onOpen: (p: string) => void;
   onOpenWorkspace: () => void;
@@ -3800,6 +3882,22 @@ function Home({
           <button className="home-review" onClick={onReview}>
             <ListChecks size={16} aria-hidden /> {t("home.review", { count: pendingCount })}
           </button>
+        )}
+        {pinned.length > 0 && (
+          <section>
+            <h2>{t("home.pinned")}</h2>
+            <ul className="home-list">
+              {pinned.map((n) => (
+                <li key={n}>
+                  <button onClick={() => onOpenNode(n)}>
+                    <span className="home-doc">{stemOf(n)}</span>
+                    <span className="meta">{parentOf(n)}</span>
+                    {tabs.includes(`${n}.md`) && <span className="meta"> · {t("home.inTab")}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
         {recent.length > 0 && (
           <section>
