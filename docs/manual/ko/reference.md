@@ -104,7 +104,7 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | GET | `/api/section?path=` | `&heading=` 또는 `&start=&end=` | 섹션 읽기 |
 | GET | `/api/frontmatter` | `?folder=&fields=a,b` | 프런트매터 목록 |
 | GET | `/api/properties` | | 볼 수 있는 노트의 속성 이름·종류·노트 수·자주 쓴 값 |
-| GET | `/api/search?q=` | `&folder=&limit=` | 검색 |
+| GET | `/api/search?q=` | `&folder=&tag=&lines=&limit=` | 검색. `tag` 를 여러 번 주면 그 태그를 모두 가진 노트만 찾습니다. `lines` 를 주면 노트마다 일치 줄을 그만큼(최대 50) 붙입니다 |
 | GET | `/api/semantic` · `/api/semantic/status` | `?q=&folder=&limit=` | 의미 검색 / 상태 |
 | GET | `/api/tags` | `?folder=` | 태그와 노트 수(폴더·노드 범위) |
 | GET | `/api/backlinks?path=` | | 백링크 |

@@ -10,7 +10,20 @@ Click the magnifier on the rail, or press `Ctrl/Cmd+Shift+F`.
 
 - Search finds notes that contain all the space-separated words. It looks in the body, title, path and frontmatter.
 - A `#tag` word becomes a tag filter, sub-tags included.
-- Clicking a result jumps to that line and selects the search term.
+- Each result shows up to 3 matching lines with their line numbers. Click **N more lines** to see the rest, and **Show fewer** to fold them again.
+- Click a line to jump to it and select the search term. Click the note name to jump to its first match.
+
+### Narrow by folder and tag
+
+The filters sit below the search box.
+
+- Click **All folders** and pick a folder to search only inside it. The folder's own note is included. The list shows folders in the current workspace.
+- Pick a tag in **Add tag** to keep only notes with that tag. With several tags, a note needs all of them. Tags also combine with `#tag` words in the box.
+- Click × on a filter to remove it, or **Clear filters** to remove them all.
+
+With tags chosen, you can leave the box empty to list every note that has those tags. A folder alone does not start a search.
+
+Filters stay while the app is open and are not saved. Switching to a workspace that does not contain the chosen folder clears the folder. Filters do not apply to semantic search.
 
 With semantic search set up, **Semantic** next to the search box finds notes close in meaning even when they use different words. See [Enable semantic search](enable-semantic-search.md).
 
