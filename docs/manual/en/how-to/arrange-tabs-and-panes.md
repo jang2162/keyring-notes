@@ -16,7 +16,7 @@ Icon-only buttons show their name and shortcut on hover, or the reason when they
 
 - `Ctrl/Cmd+O` opens a note by name. Partial matches work, and open tabs and recent notes come first. `Ctrl+Enter` opens the result in a new tab.
 - `Ctrl/Cmd+P` opens the command palette, with every command and its shortcut.
-- With no note open, the home screen offers New note, Today's note, Quick open, Search and recent notes.
+- With no note open, the home screen offers New note, Today's note, Quick open, Search, pinned notes and recent notes.
 
 ## Tabs
 
