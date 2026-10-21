@@ -187,7 +187,7 @@ import {
 } from "./panes";
 import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
-import { addPin, dropWorkspacePins, movePins, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
+import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import { tearOutAt } from "./tearOut";
 
@@ -2632,7 +2632,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const attachmentPaths = resolver.paths.filter((p) => !/\.md$/i.test(p) && !isVaultSettingsPath(p) && (allWs || p.startsWith(`${ws}/`)));
   const canInsert = !!doc && !doc.generated && !revision && !doc.virtual;
   // 고정: 지금 있는 노드 중 지금 워크스페이스의 것(지운 것·다른 기기에서 옮겨 간 것은 숨는다)
-  const pinnedShown = shownPins(pins, (n) => nodeExists(n, resolver.paths), inScope);
+  const pinnedShown = shownPins(pins, (n) => pinExists(n, resolver.paths), inScope);
   const leftPanel = (
     <aside className="left-panel" aria-label={leftLabel}>
       {prefs.leftView === "files" && (

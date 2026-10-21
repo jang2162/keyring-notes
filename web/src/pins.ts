@@ -56,6 +56,14 @@ export function restoreWorkspacePins(pins: string[], saved: SavedPins): string[]
   return out;
 }
 
+/**
+ * 고정한 노드가 경로 목록에 있는지(노트 `${node}.md` 또는 하위 `${node}/…`). 대소문자를 가린다 — 고정은 그 문자열 그대로 열리므로,
+ * 다른 기기에서 대소문자만 바꾼 노드를 있다고 보면 누를 때 옛 대소문자 경로가 빈 노드로 열린다(최근 목록과 같은 비교).
+ */
+export function pinExists(node: string, paths: string[]): boolean {
+  return paths.some((p) => p === `${node}.md` || p.startsWith(node + "/"));
+}
+
 /** 화면에 보일 고정: 지금 있는 노드 중 지금 범위(워크스페이스)에 드는 것 */
 export function shownPins(pins: string[], exists: (node: string) => boolean, inScope: (node: string) => boolean): string[] {
   return pins.filter((p) => inScope(p) && exists(p));

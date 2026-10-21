@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { addPin, dropWorkspacePins, getPins, movePins, removePin, restoreWorkspacePins, shownPins, updatePins } from "./pins";
+import { addPin, dropWorkspacePins, getPins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins } from "./pins";
 
 describe("고정 넣기·빼기", () => {
   it("새로 고정한 것은 끝에, 이미 있으면 자리를 바꾸지 않는다", () => {
@@ -46,6 +46,25 @@ describe("이동·이름 바꾸기를 따라간다", () => {
 
   it("옮긴 자리에 이미 고정이 있으면 하나만 남긴다", () => {
     expect(movePins(["W/b", "W/a"], "W/a", "W/b")).toEqual(["W/b"]);
+  });
+
+  it("파일마다 정확히 옮긴 뒤 노드째 옮겨도 노드째 한 번 옮긴 것과 같다(moveNodeTo 의 두 번 적용)", () => {
+    const pins = ["W/a", "W/a/b", "W/a/c", "W/a/c/d", "W/ab", "W/ab/a", "W/a b", "W/x"];
+    // c 는 노트 없는 하위 노드라 옮기는 파일에 없다. 형제 W/ab·W/a b 는 이름 앞부분이 같다
+    const files = ["W/a", "W/a/b", "W/a/c/d"];
+    for (const [from, to] of [
+      ["W/a", "W/a2"],
+      ["W/a", "W/ab/a"],
+      ["W/a", "V/a"],
+      ["W/ab", "W/a/ab"],
+    ]) {
+      const moved = files.filter((f) => f === from || f.startsWith(from + "/"));
+      const once = movePins(pins, from, to);
+      for (const order of [moved, [...moved].reverse()]) {
+        const perFile = order.reduce((acc, f) => movePins(acc, f, to + f.slice(from.length), false), pins);
+        expect(movePins(perFile, from, to)).toEqual(once);
+      }
+    }
   });
 
   it("상관없는 이동이면 같은 목록을 돌려준다(저장하지 않는다)", () => {
@@ -101,6 +120,27 @@ describe("보이는 고정", () => {
       ),
     ).toEqual(["W/a", "W/c"]);
     expect(shownPins(pins, () => true, all)).toEqual(pins);
+  });
+});
+
+describe("고정한 노드가 있는지", () => {
+  const paths = ["W/a.md", "W/p/q.md", "W/ab.md", "W/A b.md"];
+
+  it("노트가 있거나 하위가 있으면 있다", () => {
+    expect(pinExists("W/a", paths)).toBe(true);
+    expect(pinExists("W/p", paths)).toBe(true);
+    expect(pinExists("W/p/q", paths)).toBe(true);
+  });
+
+  it("대소문자가 다르면 없다(누르면 옛 대소문자로 열리므로)", () => {
+    expect(pinExists("W/A", paths)).toBe(false);
+    expect(pinExists("W/P", paths)).toBe(false);
+    expect(pinExists("W/a b", paths)).toBe(false);
+  });
+
+  it("이름 앞부분만 같은 형제로는 있다고 보지 않는다", () => {
+    expect(pinExists("W/A", ["W/Ab.md"])).toBe(false);
+    expect(pinExists("W/p", ["W/pq.md", "W/p.mdx"])).toBe(false);
   });
 });
 
