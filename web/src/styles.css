@@ -1012,11 +1012,18 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 }
 
 /* 이모지 고르기·문서 아이콘 */
-.icon-picker { width: min(340px, calc(100vw - 16px)); max-height: min(420px, 70vh); display: flex; flex-direction: column; padding: 8px; z-index: 100; overflow: hidden; }
+/* 높이를 정해 둔다: 목록을 나중에 불러와도 창 크기가 그대로라 처음 정한 자리(화면 안)를 벗어나지 않는다 */
+.icon-picker { width: min(340px, calc(100vw - 16px)); height: min(420px, 70vh); display: flex; flex-direction: column; padding: 8px; z-index: 100; overflow: hidden; }
 .icon-picker-head { display: flex; gap: 6px; margin-bottom: 6px; }
 .icon-picker-head input { flex: 1; min-width: 0; font: inherit; font-size: var(--fs-md); padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--fg); }
-.icon-picker-label { font-size: var(--fs-xs); color: var(--muted); margin: 4px 2px 2px; }
-.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 2px; overflow: auto; min-height: 0; }
+.icon-picker-tabs { display: flex; gap: 1px; margin-bottom: 2px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.icon-picker-tabs button { flex: 1; min-width: 0; font-size: 16px; line-height: 1; padding: 4px 0; border: 1px solid transparent; background: transparent; border-radius: var(--radius); }
+.icon-picker-tabs button:hover { background: var(--hover); border-color: transparent; }
+.icon-picker-tabs button.on { background: var(--active); }
+/* 스크롤은 여기 한 곳뿐이다. 묶음마다 스크롤을 두면 flex 가 높이를 나눠 깎아 최근 줄이 잘렸다 */
+.icon-picker-body { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.icon-picker-label { position: sticky; top: 0; z-index: 1; background: var(--bg); font-size: var(--fs-xs); color: var(--muted); padding: 4px 2px 2px; }
+.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 2px; }
 .icon-grid button { font-size: 20px; line-height: 1; padding: 5px 0; border: 1px solid transparent; background: transparent; border-radius: var(--radius); }
 .icon-grid button:hover { background: var(--hover); border-color: transparent; }
 .icon-grid button.on { background: var(--active); }
