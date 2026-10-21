@@ -28,6 +28,7 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | wiki topic | 위키 토픽 | A node with `SCHEMA.md`, maintained by agents |
 | structure check | 정리 점검 | The check for broken links, orphan pages and missing sources |
 | trash | 휴지통 | Deleted notes, listed from history so they can be restored |
+| pin | 고정 | Keep a note at the top of the left panel and the home screen, on this device |
 | agent | 에이전트 | An AI client that reaches the vault with a token |
 | token | 토큰 | The secret an agent or device sends as `Authorization: Bearer` |
 | permission level | 권한 | `hidden`, `read`, `append`, `write`, `delete` |

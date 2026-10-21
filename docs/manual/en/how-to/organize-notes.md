@@ -34,12 +34,27 @@ The big title field at the top of a note is the file name. Edit it and press Ent
 - Click a note to open it in a new tab, or go to its tab if it is already open.
 - Drag and drop to move. Hovering over a collapsed node expands it.
 - Keyboard: ↑↓ move, ←→ collapse and expand, Enter open, F2 rename, Delete delete.
-- The right-click menu has **New child note**, rename, move to another note, duplicate, open in a new tab or the other pane, copy path or link, change icon, and delete (with children).
+- The right-click menu has **New child note**, rename, move to another note, duplicate, open in a new tab or the other pane, copy path or link, change icon, pin, and delete (with children).
 - The toolbar above the tree has **New note**, **Reveal current note**, **Collapse all** and display options (show or hide the "N attachments" rows).
 - The workspace's attachment folder is hidden from the tree.
 - Notes sort by name. Inside the daily folder, the newest comes first (configurable).
 
 Renaming, moving or deleting a node handles `A.md` and everything in `A/` in one go: one commit on the server, one journal entry in the app.
+
+## Pin notes
+
+Pin the notes you open often to keep them at hand.
+
+- Choose **Pin** in the tree's right-click menu, in the **Note menu** (⋯) at the top of a note, or in the command palette. **Unpin** in the same places removes it.
+- Pinned notes appear under **Pinned** at the top of the left panel and on the home screen, above recent notes. The list is hidden when nothing is pinned.
+- Click the **Pinned** heading in the left panel to collapse the list. The button next to a pinned note unpins it.
+- New pins go to the end of the list.
+- Each workspace has its own pins. With **All workspaces** on, you see every pin. Workspace notes themselves can't be pinned.
+- A pin follows its note when you rename or move the note, or rename its workspace, on this device.
+- A deleted note disappears from the list. It comes back if you undo the delete, or restore it from the trash at its original path.
+- Deleting a workspace removes its pins. **Undo** on the notice brings them back.
+
+Pins are saved on this device only and are not written to the vault, so agents never see them. Another browser or device keeps its own list. If a note is moved or renamed on another device and synced, it disappears from this device's list. Pin it again at its new path.
 
 ## Move and rename without breaking links
 
