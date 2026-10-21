@@ -82,7 +82,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     history: (path) => wrap(() => vault.history(path)),
     revision: (path, rev) => wrap(() => vault.revision(path, rev)),
     rollback: (path, rev, baseHash) => wrap(() => vault.rollback(path, rev, baseHash)),
-    search: (q, folder) => wrap(() => vault.search(q, { limit: 50, folder })),
+    search: (q, opts = {}) => wrap(() => vault.search(q, { ...opts, limit: 50 })),
     backlinks: (path) => wrap(() => vault.backlinks(path)),
     tags: (folder) => wrap(() => vault.tags(folder)),
     widget: (source) => wrap(() => vault.widget(source)),

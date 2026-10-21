@@ -6,6 +6,7 @@ import { ConflictError, ForbiddenError, NotFoundError, PathError } from "./error
 import { fromUtf8, sha256Hex, utf8 } from "./hash.js";
 import { analyze, anchorExists, parseFrontmatter, resolveLink, setTaskState, sourceRefs } from "./markdown.js";
 import { isMarkdown, normalizeFolder, normalizeVaultPath } from "./paths.js";
+import { hasAllTags, parseSearchQuery, searchHit } from "./search.js";
 import type { CommitInfo, DocMeta, LinkRow, SearchHit, TaskRow, TreeNode } from "./types.js";
 import { parseWidget, runWidget, type WidgetResult } from "./widget.js";
 import { generatedKind, generatedPaths, isTopicName, renderWikiIndex, renderWikiLog, schemaTemplate, schemaTopic, topicCandidate } from "./wiki.js";
@@ -434,20 +435,21 @@ export class LocalVault {
   }
 
   /**
-   * 검색: 공백으로 나눈 모든 단어가 본문·제목·경로 어딘가에 있는 문서. `#태그`는 태그 조건.
+   * 검색: 공백으로 나눈 모든 단어가 본문·제목·경로 어딘가에 있는 문서. `#태그`와 tags 는 태그 조건(모두 가져야 한다).
+   * folder 를 주면 그 노드(노트 포함) 안만. lines 를 주면 결과마다 일치 줄을 그만큼 붙인다(`searchHit`).
    * 서버(SQLite FTS)와 달리 단어 길이 제한이 없고, 점수는 제목·경로·본문 출현 횟수로 매긴다.
    */
-  search(query: string, opts: { folder?: string; limit?: number } = {}): SearchHit[] {
-    const words = query.split(/\s+/).filter(Boolean);
-    const tagTerms = words.filter((w) => w.startsWith("#") && w.length > 1).map((w) => w.slice(1).toLowerCase());
-    const textTerms = words.filter((w) => !(w.startsWith("#") && w.length > 1)).map((w) => w.toLowerCase());
+  search(query: string, opts: { folder?: string; tags?: string[]; limit?: number; lines?: number } = {}): SearchHit[] {
+    const parsed = parseSearchQuery(query, opts.tags);
+    const tagTerms = parsed.tags;
+    const textTerms = parsed.text.map((w) => w.toLowerCase());
     if (tagTerms.length === 0 && textTerms.length === 0) throw new PathError("query_required");
     const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
     const f = normalizeFolder(opts.folder);
     const scored: { e: Entry; s: number }[] = [];
     for (const e of this.mdEntries()) {
       if ((f && e.path !== `${f}.md` && !e.path.startsWith(f + "/")) || isVaultSettingsPath(e.path)) continue;
-      if (tagTerms.length && !tagTerms.every((t) => e.meta!.tags.some((x) => x === t || x.startsWith(t + "/")))) continue;
+      if (tagTerms.length && !hasAllTags(e.meta!.tags, tagTerms)) continue;
       const title = e.meta!.title.toLowerCase();
       const path = e.path.toLowerCase();
       const body = e.content!.toLowerCase();
@@ -455,11 +457,7 @@ export class LocalVault {
       scored.push({ e, s: textTerms.length ? score(textTerms, title, path, body) : 0 });
     }
     scored.sort((a, b) => b.s - a.s || (a.e.path < b.e.path ? -1 : 1));
-    return scored.slice(0, limit).map(({ e }) => {
-      const lines = e.content!.split("\n");
-      const idx = textTerms.length ? lines.findIndex((l) => textTerms.some((t) => l.toLowerCase().includes(t))) : -1;
-      return { path: e.path, title: e.meta!.title, line: idx < 0 ? 1 : idx + 1, snippet: idx < 0 ? "" : lines[idx].trim().slice(0, 200) };
-    });
+    return scored.slice(0, limit).map(({ e }) => searchHit(e.path, e.meta!.title, e.content!, textTerms, opts.lines));
   }
 
   private incoming(rel: string, kind?: "link" | "source"): string[] {

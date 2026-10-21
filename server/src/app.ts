@@ -413,9 +413,12 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.get("/search", async (c) => {
     const limit = Number.parseInt(c.req.query("limit") ?? "", 10);
+    const lines = Number.parseInt(c.req.query("lines") ?? "", 10);
     const hits = await c.var.scoped.search(c.req.query("q") ?? "", {
       folder: c.req.query("folder"),
+      tags: c.req.queries("tag") ?? [],
       limit: Number.isFinite(limit) ? limit : undefined,
+      lines: Number.isFinite(lines) ? lines : undefined,
     });
     return c.json({ hits });
   });

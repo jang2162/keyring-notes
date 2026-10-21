@@ -86,6 +86,7 @@ import {
   parentNode,
   planDailyMigration,
   setFrontmatterField,
+  SEARCH_LINES_MAX,
   sha256Hex,
   shiftDays,
   stripMd,
@@ -190,6 +191,8 @@ import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspace
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import { tearOutAt } from "./tearOut";
+import { SearchFilters, SearchResults } from "./Search";
+import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, type SearchFilter } from "./searchFilter";
 
 /** 비율(0~1) → CSS 퍼센트 */
 const pct = (v: number) => `${(v * 100).toFixed(4)}%`;
@@ -344,6 +347,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   revisionsRef.current = revisions;
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<(SearchHit & { score?: number })[] | null>(null);
+  /** 검색 패널의 폴더·태그 필터(앱이 떠 있는 동안만) */
+  const [searchFilter, setSearchFilter] = useState<SearchFilter>(NO_FILTER);
+  /** 필터에 고를 수 있는 태그(지금 범위, 폴더를 골랐으면 그 안) */
+  const [filterTags, setFilterTags] = useState<{ tag: string; count: number }[]>([]);
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
   const [refs, setRefs] = useState<SourcesInfo | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -404,7 +411,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const pins = usePins();
   /** 열어 본 문서 기록(뒤로·앞으로) */
   const nav = useRef<{ list: string[]; i: number }>({ list: [], i: -1 });
-  const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | null>(null);
+  const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | "search-folder" | null>(null);
   const [moveTarget, setMoveTarget] = useState<{ path: string; kind: "node" | "file" } | null>(null);
   const shared = useVaultSettings();
   const [propStats, setPropStats] = useState<PropertyStat[]>([]);
@@ -722,7 +729,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     const q = query.trim();
-    if (!q) return setHits(null);
+    // 필터는 글 검색에만 쓴다(의미 검색 칸에서는 필터 줄이 숨는다)
+    const filter = searchMode === "text" ? searchFilter : NO_FILTER;
+    if (!hasSearchTerms(q, filter)) return setHits(null);
     const semantic = searchMode === "semantic" && !q.startsWith("#");
     const timer = setTimeout(
       () => {
@@ -732,7 +741,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               .then((hs) =>
                 hs.map((h) => ({ path: h.path, title: h.title, line: 1, snippet: (h.heading ? `${h.heading} · ` : "") + h.snippet, score: h.score })),
               )
-          : api.search(q, scope || undefined)
+          : api.search(q, { folder: filter.folder || scope || undefined, tags: filter.tags, lines: SEARCH_LINES_MAX })
         )
           .then(setHits)
           .catch((e) => {
@@ -743,7 +752,23 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       semantic ? 400 : 200,
     );
     return () => clearTimeout(timer);
-  }, [query, vaultVersion, searchMode, scope]);
+  }, [query, vaultVersion, searchMode, scope, searchFilter]);
+
+  // 워크스페이스를 바꿔 고른 폴더가 범위 밖이 되면 폴더 필터만 걷는다(태그는 칩으로 보이니 둔다)
+  useEffect(() => {
+    if (searchFilter.folder && !folderInScope(searchFilter.folder, scope)) setSearchFilter((f) => ({ ...f, folder: "" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope]);
+
+  // 필터의 태그 목록: 검색 패널이 보일 때만 부른다
+  const searchPanelShown = prefs.leftOpen && prefs.leftView === "search" && searchMode === "text";
+  useEffect(() => {
+    if (!searchPanelShown) return;
+    api
+      .tags(searchFilter.folder || scope || undefined)
+      .then(setFilterTags)
+      .catch(() => setFilterTags([]));
+  }, [searchPanelShown, searchFilter.folder, scope, vaultVersion]);
 
   const remember = (path: string) => setRecent((r) => [path, ...r.filter((p) => p !== path)].slice(0, 30));
 
@@ -2400,6 +2425,22 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moveTarget, nodeTree, allWs, ws]);
 
+  /** 검색 폴더 필터로 고를 노드(지금 범위의 트리 안, 하위가 있는 것). 고르면 검색 칸으로 돌아간다 */
+  const searchFolderItems: PaletteItem[] = useMemo(
+    () =>
+      palette === "search-folder"
+        ? folderChoices(viewNodes).map((f) => ({
+            id: f,
+            label: scope ? f.slice(scope.length + 1) : f,
+            run: () => {
+              setSearchFilter((cur) => ({ ...cur, folder: f }));
+              setTimeout(() => searchInput.current?.focus(), 0);
+            },
+          }))
+        : [],
+    [palette, viewNodes, scope],
+  );
+
   /** 개요에서 접힌 제목(본문과 같은 기억) */
   const outlineFolded = useMemo(
     () => (doc && rightTab === "outline" ? resolveFolds(doc.draft.split("\n"), getFolds(doc.path)) : new Set<number>()),
@@ -2737,36 +2778,22 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               </button>
             )}
           </div>
+          {searchMode === "text" && (
+            <SearchFilters filter={searchFilter} scope={scope} tags={filterTags} onChange={setSearchFilter} onPickFolder={() => setPalette("search-folder")} />
+          )}
           {hits !== null && (
-            <ul className="search-results">
-              {hits.map((h) => (
-                <li key={`${h.path}:${h.line}`}>
-                  <a
-                    href={`#/${encodeURIComponent(h.path)}`}
-                    className={h.path === doc?.path ? "active" : ""}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const q = query.trim();
-                      const text = q.startsWith("#") || searchMode === "semantic" ? undefined : q;
-                      if (h.path === doc?.path) return editorHandle.current?.gotoLine(h.line, text);
-                      if (h.line > 1 || text) setPendingAnchor({ path: h.path, line: h.line, text });
-                      void open(h.path, { newTab: e.ctrlKey || e.metaKey });
-                    }}
-                  >
-                    <span className="hit-title">
-                      <DocIcon icon={iconOf(h.path)} />
-                      {h.title} {h.score !== undefined && <span className="hit-score">{h.score.toFixed(2)}</span>}
-                    </span>
-                    <span className="hit-path">
-                      {h.path}
-                      {h.line > 1 ? ` · ${t("search.line", { line: h.line })}` : ""}
-                    </span>
-                    {h.snippet && <span className="hit-snippet">{h.snippet}</span>}
-                  </a>
-                </li>
-              ))}
-              {hits.length === 0 && <li className="meta">{t("search.none")}</li>}
-            </ul>
+            <SearchResults
+              hits={hits}
+              query={query.trim()}
+              semantic={searchMode === "semantic" && !query.trim().startsWith("#")}
+              current={doc?.path ?? null}
+              iconOf={iconOf}
+              onGo={(path, line, text, newTab) => {
+                if (path === doc?.path) return editorHandle.current?.gotoLine(line, text);
+                if (line > 1 || text) setPendingAnchor({ path, line, text });
+                void open(path, { newTab });
+              }}
+            />
           )}
         </>
       )}
@@ -3634,9 +3661,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                   ? t("palette.commands")
                   : palette === "move"
                     ? t("palette.move", { name: moveTarget ? moveTarget.path.split("/").pop()! : "" })
-                    : palette === "daily"
-                      ? t("palette.daily")
-                      : t("palette.templates", { folder: templateDir || "-" })
+                    : palette === "search-folder"
+                      ? t("search.folderPick")
+                      : palette === "daily"
+                        ? t("palette.daily")
+                        : t("palette.templates", { folder: templateDir || "-" })
             }
             items={
               palette === "files"
@@ -3645,20 +3674,22 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                   ? commandItems
                   : palette === "move"
                     ? moveItems
-                    : palette === "daily"
-                      ? dailyChoices.map((n) => ({
-                          id: n.path,
-                          label: stemOf(n.path),
-                          display: docLabel(n.path),
-                          detail: parentOf(n.path),
-                          run: (alt: boolean) => void open(n.path, { newTab: alt }),
-                        }))
-                      : templatePaths.map((p) => ({
-                          id: p,
-                          label: stemOf(p),
-                          detail: p,
-                          run: () => void (palette === "templates" ? insertTemplate(p) : createFromTemplate(p)),
-                        }))
+                    : palette === "search-folder"
+                      ? searchFolderItems
+                      : palette === "daily"
+                        ? dailyChoices.map((n) => ({
+                            id: n.path,
+                            label: stemOf(n.path),
+                            display: docLabel(n.path),
+                            detail: parentOf(n.path),
+                            run: (alt: boolean) => void open(n.path, { newTab: alt }),
+                          }))
+                        : templatePaths.map((p) => ({
+                            id: p,
+                            label: stemOf(p),
+                            detail: p,
+                            run: () => void (palette === "templates" ? insertTemplate(p) : createFromTemplate(p)),
+                          }))
             }
             hint={palette === "files" ? t("palette.filesHint") : t("palette.hint")}
             onClose={() => setPalette(null)}

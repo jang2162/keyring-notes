@@ -39,6 +39,10 @@ import {
   TRASH_PAGE,
   type TrashItem,
   type TrashPage,
+  hasAllTags,
+  parseSearchQuery,
+  searchHit,
+  type SearchHit,
 } from "@keyring-notes/core";
 import { BLOB_INDEX } from "./blobs.js";
 import type { DocMeta, NoteIndex } from "./noteindex.js";
@@ -74,12 +78,7 @@ const ACTION_LEVEL: Record<Action, Level> = {
   delete: "delete",
 };
 
-export interface SearchHit {
-  path: string;
-  title: string;
-  line: number;
-  snippet: string;
-}
+export type { SearchHit };
 
 export interface Outline {
   path: string;
@@ -339,12 +338,12 @@ export class ScopedVault {
   /**
    * 전체 텍스트 검색(공백으로 나눈 모든 단어가 본문·제목·경로 어딘가에 있는 문서).
    * 인덱스는 권한을 모르므로, 결과를 여기서 권한으로 거른 뒤 자른다.
-   * `#태그`로 시작하는 단어는 태그 조건으로 쓴다.
+   * `#태그`로 시작하는 단어와 tags(화면의 태그 칩)는 태그 조건이다(모두 가져야 한다).
+   * folder 는 권한 판정 뒤에 거르므로, 숨긴 노드를 주면 없는 노드와 똑같이 빈 결과다.
+   * lines 를 주면 결과마다 일치 줄을 그만큼 붙인다(화면용. MCP 는 주지 않아 예전 모양이다).
    */
-  async search(query: string, opts: { folder?: string; limit?: number } = {}): Promise<SearchHit[]> {
-    const words = query.split(/\s+/).filter(Boolean);
-    const tagTerms = words.filter((w) => w.startsWith("#") && w.length > 1).map((w) => w.slice(1).toLowerCase());
-    const textTerms = words.filter((w) => !(w.startsWith("#") && w.length > 1));
+  async search(query: string, opts: { folder?: string; tags?: string[]; limit?: number; lines?: number } = {}): Promise<SearchHit[]> {
+    const { text: textTerms, tags: tagTerms } = parseSearchQuery(query, opts.tags);
     if (tagTerms.length === 0 && textTerms.length === 0) throw new PathError("query_required");
     const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
     const f = normalizeFolder(opts.folder);
@@ -362,15 +361,13 @@ export class ScopedVault {
     if (tagTerms.length > 0) {
       const byPath = new Map<string, string[]>();
       for (const r of this.index.tagRows()) byPath.set(r.path, [...(byPath.get(r.path) ?? []), r.tag]);
-      tagged = new Set([...byPath.entries()].filter(([, tags]) => tagTerms.every((t) => tags.some((x) => x === t || x.startsWith(t + "/")))).map(([p]) => p));
+      tagged = new Set([...byPath.entries()].filter(([, tags]) => hasAllTags(tags, tagTerms)).map(([p]) => p));
     }
     const lowered = textTerms.map((t) => t.toLowerCase());
     const hits: SearchHit[] = [];
     for (const c of candidates) {
       if (!inScope(c.path) || (tagged && !tagged.has(c.path))) continue;
-      const lines = c.body.split("\n");
-      const idx = lowered.length ? lines.findIndex((l) => lowered.some((t) => l.toLowerCase().includes(t))) : -1;
-      hits.push({ path: c.path, title: c.title, line: idx < 0 ? 1 : idx + 1, snippet: idx < 0 ? "" : lines[idx].trim().slice(0, 200) });
+      hits.push(searchHit(c.path, c.title, c.body, lowered, opts.lines));
       if (hits.length >= limit) break;
     }
     return hits;
