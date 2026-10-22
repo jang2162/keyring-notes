@@ -1022,17 +1022,20 @@ Oct 7, 2026 · 사용자 결정(26번 "정할 것" 모두 추천대로)
 사용자가 고른 길은 「빌드 때 자동으로 모으고 앱 안에서 보여 준다」 하나다. 아래 「정함」의 범위·자리·형식은 **메인 세션이 정한 기본값이고 사용자와 합의한 값이 아니다.** 라이선스 판단 셋(아래 「정함」 의 dompurify·MPL-2.0·라이선스 파일 없는 패키지)은 메인 세션이 판정했다. 바꿀 때는 이 절, `docs/guides/development.md` 「의존성과 라이선스 고지」 절, 사용자 문서(`docs/manual/*/how-to/customize-settings.md` 「Open Settings」 의 General 행), README 「License」 를 함께 고친다.
 
 **정함(메인 세션 기본값)·구현**:
-- **자리**: 설정 「일반」 의 맨 끝 줄 「오픈 소스 라이선스」 와 「열기」 단추. 설정 검색에 걸린다. 누르면 모달(크게 보기 단추 있음)에 `licenses.txt` 전문을 고정폭 글로 보인다. 새 창 대신 모달인 것은 앱(Tauri)에 새 탭이 없어서다. 모달은 Esc 로 고지 창만 닫히고 설정은 남는다.
+- **자리**: 설정 「일반」 의 맨 끝 줄 「오픈 소스 라이선스」 와 「열기」 단추. 설정 검색에 걸린다. 누르면 모달(크게 보기 단추 있음)에 `licenses.txt` 전문을 고정폭 글로 보인다. 본문이 처음 포커스를 받아 바로 PageDown·↓·End 로 스크롤된다. 새 창 대신 모달인 것은 앱(Tauri)에 새 탭이 없어서다. 모달은 Esc 로 고지 창만 닫히고 설정은 남는다.
 - **파일**: 빌드가 `licenses.txt` 하나를 낸다 — 패키지마다 「이름 판 — 라이선스 [조각]」 한 줄, 전문이 같은 패키지는 묶어 전문을 한 번만. 서버는 `/licenses.txt`(`text/plain; charset=utf-8`), 앱은 번들에 든 것을 연다. 웹은 서비스 워커가 지연 자산 목록으로 받아 두어 **한 번도 열지 않았어도** 오프라인에서 열린다(데이터 절약 모드면 받지 않고 열 때 받은 것만 남는다). 첫 로드 번들에는 들어가지 않는다(따로 받는 파일).
-- **범위**: 서버·웹 빌드는 web 번들 + 서버 실행 의존성, 앱 빌드는 web 번들 + Rust 크레이트. 손 목록으로 `emojibase-data` 와 Unicode CLDR(이모지 이름·낱말의 출처, Unicode License V3).
-- **라이선스 판단**: `dompurify` 는 `(MPL-2.0 OR Apache-2.0)` 중 Apache-2.0 을 고른 것으로 적는다. MPL-2.0 크레이트(cssparser·cssparser-macros·dtoa-short·selectors·option-ext, Tauri 내부 의존)는 MPL 전문과 크레이트별 소스 주소를 싣는다. 라이선스 파일을 싣지 않은 패키지는 SPDX 표준 전문에 메타데이터의 저작권자를 넣어 붙인다.
+- **범위**: 서버·웹 빌드는 web 번들 + 서버 실행 의존성, 앱 빌드는 web 번들 + Rust 크레이트. 손 목록으로 `emojibase-data` 와 Unicode CLDR(이모지 이름·낱말의 출처, Unicode License V3), 다른 패키지 안에 묶여 실린 것(「bundled in <패키지> <판>」 — `@mermaid-js/parser` 안의 langium·chevrotain 류, `mermaid` 안의 js-yaml, `pdfjs-dist` 안의 core-js, `roughjs` 안의 하위 패키지 넷, 서버의 Skia·pdf.js).
+- **라이선스 판단**: `dompurify` 는 `(MPL-2.0 OR Apache-2.0)` 중 Apache-2.0 을 고른 것으로 적는다. MPL-2.0 크레이트(cssparser·cssparser-macros·dtoa-short·selectors·option-ext, Tauri 내부 의존)는 MPL 전문과 크레이트별 소스 주소를 싣는다. 라이선스 파일을 싣지 않은 패키지는 SPDX 표준 전문에 메타데이터의 저작권자를 넣어 붙인다. 그중 objc2 계열 `Zlib OR Apache-2.0 OR MIT` 7개는 Apache-2.0 을 고른 것으로 적고, MIT 단독 `objc2-foundation` 은 원저장소 LICENSE 의 저작권자를 손으로 넣는다.
 - **글**: 고지 파일은 영어다(라이선스 전문이 영어이고 화면 언어를 따르지 않는다). 설정 줄·모달 제목은 화면 글(`settings.licenses`·`settings.licensesHint`·`licenses.failed`).
 
 **한계**:
-- 모달은 전문을 한 `pre` 로 그린다 — 앱 빌드 고지는 약 1.8MB 다(다시 재기: `TAURI_ENV_TARGET_TRIPLE=universal-apple-darwin pnpm --filter @keyring-notes/web exec vite build` 의 `licenses.txt` 줄). 찾기는 브라우저·앱의 페이지 찾기에 기댄다.
-- 저작권자를 메타데이터에서 찾지 못한 패키지(objc2 계열 등)는 「Copyright holder not stated …; see <소스>」 로 남는다. 빌드 로그의 「저작권자 없음」 목록이 그것이다.
+- 앱 빌드 고지는 약 1.8MB 다(다시 재기: `TAURI_ENV_TARGET_TRIPLE=universal-apple-darwin pnpm --filter @keyring-notes/web exec vite build` 의 `licenses.txt` 줄). 모달은 묶음(구분선)마다 따로 그리고 화면 밖 묶음은 `content-visibility: auto` 로 건너뛴다. 찾기는 브라우저·앱의 페이지 찾기에 기댄다.
+- 저작권자를 메타데이터에서 찾지 못한 패키지는 「Copyright holder not stated …; see <소스>」 로 남는다. 빌드 로그의 「저작권자 없음」 목록이 그것이다 — 지금은 Apache-2.0 을 고른 objc2 7개(저작권 줄이 조건이 아니다)와 서버의 `@napi-rs/canvas-<플랫폼>`(같은 파일에 본 패키지 `@napi-rs/canvas` 의 MIT 전문이 있다).
+- 묶여 실린 것의 자동 검사는 web 번들의, 소스맵을 동봉한 파일만 본다. 소스맵 없는 묶음(`roughjs`·`unpdf`)·네이티브 바이너리(Skia)·서버·앱 조각은 손으로 찾았다. Skia 가 다시 싣는 하위 라이브러리는 확인하지 않았다.
 - 개발 서버(`pnpm dev:web`)에는 파일이 없어 모달이 「불러오지 못했습니다」 를 보인다.
 
 **남은 것**: 고지 안에서 찾기·패키지별 접기, 화면 언어로 된 머리말.
 
 **확인한 것**: 단위 시험 — 웹 `licenseNotices.test.ts`(23). 프로덕션 코드를 18군데 되돌려 새 시험이 모두 떨어지는 것을 봤다. 빌드 단에서 손 목록 어긋남 다섯 가지(설치 안 됨·자동 수집에도 잡힘·`via` 없음·`LICENSE_CHOICES` 의 id 가 식에 없음·표준 전문 없음)가 각각 이유를 적고 멈추는 것을 봤다. 서버 조각은 `pnpm licenses list --prod` 와, Docker 이미지 안의 `node_modules` 와 각각 패키지 이름·판이 같다. 시험 서버(빌드본, 임시 `KEYRING_DATA`, 18911)와 `?local` 에서 헤드리스 Chromium(Playwright)으로 — 설정 「일반」 → 열기 → React·KaTeX·Mermaid·emojibase-data·Unicode CLDR 이 든 고지, Esc 로 고지만 닫힘, 서비스 워커가 열기 전에 받아 둔 뒤 오프라인으로 새로 고쳐 열림(지연 목록에서 빼면 받아 두지 않는다). 데스크톱 앱(Tauri) 창과 앱 번들 안의 파일은 보지 못했다(앱 모드 웹 빌드의 `licenses.txt` 만 봤다).
+
+**리뷰 반영(2026-10-22)**: 묶여 실린 제3자 코드를 손 목록에 넣고(`kind: "bundled"`, 전문 `web/licenses/bundled/`) 빌드가 동봉 소스맵으로 빠진 것을 찾아 멈추게 했다. 고지를 묶음마다 그리고(`content-visibility: auto`), 본문에 포커스(`tabIndex`·`data-autofocus`·`role="region"` 과 이름)를 줬다. objc2 계열 저작권 줄(`LICENSE_CHOICES`·`HOLDERS`, 조각별). 단위 시험 — 웹 `licenseNotices.test.ts`(29, 6개 더함). 순수 함수를 12군데 되돌려 새 시험이 모두 떨어지는 것을 봤다. 빌드 단: 손 목록에서 langium·core-js·js-yaml 을 하나씩 빼면 각각 「(… 안에 묶여 있다) 가 고지에 없다」 로 멈추고, `unpdf` 항목의 조각을 web 으로 바꾸면 「싣고 오는 unpdf 가 [web] 에 없다」 로 멈춘다. 소스맵 없는 `hachure-fill` 을 빼면 멈추지 않는다(알려진 한계). objc2 칸을 걷으면 앱 빌드 로그의 「저작권자 없음」 이 7 → 8(objc2-foundation 이 다시 「Copyright holder not stated」)이 되고 7개의 「used under Apache-2.0」 이 빠진다. 시험 서버(빌드본, 임시 `KEYRING_DATA`, 18931)에서 헤드리스 Chromium(Playwright, 서비스 워커 막음)으로 — 앱판 크기(1,830,790자) 고지 열기 6,852ms → 24ms(250묶음, 중간으로 건너뛰기 13ms), 서버판(308,011자) 273ms → 22ms. 고치기 전에는 포커스가 모달 상자라 PageDown·↓·End 가 0, 고친 뒤 본문(「Open source licenses」 region)에 포커스가 있고 PageDown 640·↓ 680·End 끝까지·Home 0. 390px·어두운 테마·한국어(이름 「오픈 소스 라이선스」)에서 가로 넘침 0, 콘솔 오류 0. 데스크톱 앱(Tauri, WKWebView) 창의 시간·키보드, 스크린 리더는 보지 못했다.
