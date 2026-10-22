@@ -75,6 +75,10 @@ describe("권한: 규칙 X는 노드 노트 X.md도 덮는다", () => {
     await expect(agent.children("업무/비밀")).rejects.toThrow(/노드가 없습니다/);
     expect(await agent.search("기밀단어")).toEqual([]);
     expect(await agent.search("#비밀태그")).toEqual([]);
+    expect(await agent.search("기밀단어", { folder: "업무/비밀", lines: 3 })).toEqual([]);
+    expect(await agent.search("", { tags: ["비밀태그"] })).toEqual([]);
+    expect(await agent.search("", { tags: ["비밀태그2"], folder: "업무" })).toEqual([]);
+    expect(leaks(await agent.search("공개", { folder: "업무", lines: 50 }))).toBe(false);
     expect(leaks(await agent.tags())).toBe(false);
     expect((await agent.backlinks("업무/공개.md")).map((b) => b.path)).toEqual([]);
     const outline = await agent.outline("업무/공개.md");

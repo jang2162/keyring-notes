@@ -84,6 +84,13 @@ function optionalHash(value: unknown): string | null {
   return value;
 }
 
+/** 0 이상의 정수 쿼리 값(없거나 빈 글이면 undefined). `1e3`·`2.9`·음수·글자는 거절한다 */
+function optionalCount(value: string | undefined, field: string): number | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (!/^\d+$/.test(value)) throw new PathError("integer_required", { field });
+  return Number(value);
+}
+
 /** 켜고 끄는 옵션(없으면 기본값) */
 function optionalBool(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined;
@@ -415,7 +422,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     const limit = Number.parseInt(c.req.query("limit") ?? "", 10);
     const hits = await c.var.scoped.search(c.req.query("q") ?? "", {
       folder: c.req.query("folder"),
+      tags: c.req.queries("tag") ?? [],
       limit: Number.isFinite(limit) ? limit : undefined,
+      lines: optionalCount(c.req.query("lines"), "lines"),
     });
     return c.json({ hits });
   });

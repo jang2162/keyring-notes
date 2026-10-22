@@ -290,6 +290,63 @@ describe("MCP", () => {
   });
 });
 
+describe("검색 API", () => {
+  const get = async (params: URLSearchParams, headers: Record<string, string>) => {
+    const res = await app.request(`/api/search?${params}`, { headers });
+    expect(res.status).toBe(200);
+    return (await res.json()).hits as { path: string; matches?: { line: number }[]; matchCount?: number }[];
+  };
+
+  it("tag 를 여러 번 주면 모두 가진 문서, lines 면 일치 줄들", async () => {
+    for (const [p, c] of Object.entries({ "업무/a.md": "# a\n금리 걱정 1\n금리 걱정 2\n#x #y", "업무/b.md": "# b\n금리 걱정 #x" })) {
+      const r = await app.request("/api/file", { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify({ path: p, content: c, baseHash: null }) });
+      expect(r.status).toBe(200);
+    }
+    const params = new URLSearchParams({ q: "금리 걱정", folder: "업무", lines: "5" });
+    params.append("tag", "x");
+    expect((await get(params, { cookie })).map((h) => h.path).sort()).toEqual(["업무/a.md", "업무/b.md"]);
+    params.append("tag", "y");
+    const hits = await get(params, { cookie });
+    expect(hits.map((h) => h.path)).toEqual(["업무/a.md"]);
+    expect(hits[0].matches?.map((m) => m.line)).toEqual([2, 3]);
+    expect(hits[0].matchCount).toBe(2);
+  });
+
+  it("lines 가 0 이상의 정수가 아니면 400 bad_request, 빈 값은 안 준 것", async () => {
+    for (const lines of ["1e3", "2.9", "-1", "abc", " 3", "0x5"]) {
+      const res = await app.request(`/api/search?q=${encodeURIComponent("금리")}&lines=${encodeURIComponent(lines)}`, { headers: { cookie } });
+      expect(res.status, lines).toBe(400);
+      expect(await res.json(), lines).toMatchObject({ error: "bad_request", code: "integer_required", params: { field: "lines" } });
+    }
+    for (const lines of ["", "0", "7", "999"]) {
+      const res = await app.request(`/api/search?q=${encodeURIComponent("금리")}&lines=${lines}`, { headers: { cookie } });
+      expect(res.status, lines).toBe(200);
+    }
+  });
+
+  it("에이전트: 숨긴 폴더·태그를 필터로 줘도 응답이 없는 폴더·태그와 같다", async () => {
+    const r = await app.request("/api/file", {
+      method: "PUT",
+      headers: { ...json, cookie },
+      body: JSON.stringify({ path: "개인/비밀.md", content: "# 비밀\n금리 #개인태그", baseHash: null }),
+    });
+    expect(r.status).toBe(200);
+    const agent = { authorization: `Bearer ${workToken}` };
+    const hidden = await (
+      await app.request(`/api/search?q=${encodeURIComponent("금리")}&folder=${encodeURIComponent("개인")}&lines=5`, { headers: agent })
+    ).text();
+    const missing = await (
+      await app.request(`/api/search?q=${encodeURIComponent("금리")}&folder=${encodeURIComponent("없음")}&lines=5`, { headers: agent })
+    ).text();
+    expect(hidden).toBe(missing);
+    expect(JSON.parse(hidden)).toEqual({ hits: [] });
+    const tag = await app.request(`/api/search?q=&tag=${encodeURIComponent("개인태그")}`, { headers: agent });
+    expect(await tag.json()).toEqual({ hits: [] });
+    const all = await (await app.request(`/api/search?q=${encodeURIComponent("금리")}&lines=50`, { headers: agent })).text();
+    expect(all).not.toContain("개인");
+  });
+});
+
 describe("휴지통 API", () => {
   it("소유자: 목록·미리보기·되살리기, 에이전트 토큰은 403", async () => {
     const doc = await (await app.request(`/api/file?path=${encodeURIComponent("개인/일기.md")}`, { headers: { cookie } })).json();

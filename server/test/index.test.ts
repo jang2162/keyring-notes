@@ -93,9 +93,54 @@ describe("검색", () => {
     expect((await owner.search("금리", { folder: "개인" })).map((x) => x.path)).toEqual(["개인/가계부.md"]);
   });
 
+  it("태그 칩(tags)은 모두 가진 문서만, `#태그` 문법과 함께면 둘 다 만족, 글 없이 칩만으로도", async () => {
+    await owner.write("업무/프로젝트A/메모.md", "# 메모\n금리 메모 #회의 #업무", null);
+    expect((await owner.search("금리", { tags: ["회의"] })).map((x) => x.path).sort()).toEqual(["업무/프로젝트A/메모.md", "업무/프로젝트A/회의록.md"]);
+    expect((await owner.search("금리", { tags: ["#회의", "업무"] })).map((x) => x.path)).toEqual(["업무/프로젝트A/메모.md"]);
+    expect((await owner.search("#업무", { tags: ["프로젝트"] })).map((x) => x.path)).toEqual(["업무/프로젝트A/계획.md"]);
+    expect((await owner.search("", { tags: ["회의"], folder: "업무/프로젝트A" })).map((x) => x.path).sort()).toEqual([
+      "업무/프로젝트A/메모.md",
+      "업무/프로젝트A/회의록.md",
+    ]);
+    await expect(owner.search(" ", { tags: [] })).rejects.toThrow();
+  });
+
+  it("폴더는 노드 노트와 하위만, 앞부분만 같은 형제는 빼고", async () => {
+    await owner.write("업무/프로젝트A.md", "# A\n금리 노드 노트", null);
+    await owner.write("업무/프로젝트AB/x.md", "# x\n금리 형제", null);
+    expect((await owner.search("금리", { folder: "업무/프로젝트A" })).map((x) => x.path).sort()).toEqual([
+      "업무/프로젝트A.md",
+      "업무/프로젝트A/계획.md",
+      "업무/프로젝트A/회의록.md",
+    ]);
+  });
+
+  it("lines: 결과마다 일치 줄들과 전체 개수, 주지 않으면 예전 모양", async () => {
+    await owner.write("업무/줄.md", "# 줄\n금리 1\n없음\n기준금리 2\n금리 3\n금리 4", null);
+    const [hit] = await owner.search("금리", { folder: "업무/줄", lines: 3 });
+    expect(hit).toEqual({
+      path: "업무/줄.md",
+      title: "줄",
+      line: 2,
+      snippet: "금리 1",
+      matches: [
+        { line: 2, snippet: "금리 1" },
+        { line: 4, snippet: "기준금리 2" },
+        { line: 5, snippet: "금리 3" },
+      ],
+      matchCount: 4,
+    });
+    expect(Object.keys((await owner.search("금리", { folder: "업무/줄" }))[0]).sort()).toEqual(["line", "path", "snippet", "title"]);
+  });
+
   it("권한 밖 문서는 검색에 나오지 않는다", async () => {
     expect((await agent.search("금리")).map((x) => x.path)).not.toContain("개인/가계부.md");
     expect(await agent.search("#비밀")).toEqual([]);
+    // 숨긴 폴더·태그를 필터로 줘도 없는 폴더·태그와 똑같이 빈 결과
+    expect(await agent.search("금리", { folder: "개인", lines: 3 })).toEqual([]);
+    expect(await agent.search("금리", { folder: "개인", lines: 3 })).toEqual(await agent.search("금리", { folder: "없는폴더", lines: 3 }));
+    expect(await agent.search("", { tags: ["비밀"] })).toEqual([]);
+    expect(await agent.search("금리", { tags: ["비밀"], lines: 3 })).toEqual([]);
   });
 
   it("변경·삭제가 바로 반영된다", async () => {

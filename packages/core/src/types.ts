@@ -34,11 +34,22 @@ export interface LinkRow {
   kind: "link" | "source";
 }
 
+/** 검색 결과 안의 일치 줄 하나 */
+export interface SearchMatch {
+  line: number;
+  snippet: string;
+}
+
 export interface SearchHit {
   path: string;
   title: string;
+  /** 첫 일치 줄(없으면 1) */
   line: number;
   snippet: string;
+  /** 일치 줄들(앞에서부터, 검색 옵션 lines 만큼). lines 를 달라고 했을 때만 */
+  matches?: SearchMatch[];
+  /** 일치 줄의 전체 개수(matches 보다 많을 수 있다) */
+  matchCount?: number;
 }
 
 export interface CommitInfo {

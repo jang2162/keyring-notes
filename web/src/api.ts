@@ -99,8 +99,20 @@ function toBase64(data: Uint8Array): string {
 export interface SearchHit {
   path: string;
   title: string;
+  /** 첫 일치 줄(없으면 1) */
   line: number;
   snippet: string;
+  /** 일치 줄들(앞에서부터, lines 만큼) */
+  matches?: { line: number; snippet: string }[];
+  /** 일치 줄의 전체 개수 */
+  matchCount?: number;
+}
+
+/** 검색 범위·조건. folder: 그 노드(노트 포함) 안만, tags: 모두 가진 문서, lines: 결과마다 일치 줄 몇 개까지 */
+export interface SearchOptions {
+  folder?: string;
+  tags?: string[];
+  lines?: number;
 }
 
 export interface TaskRow {
@@ -492,9 +504,14 @@ const remoteApi = {
   history: (path: string) => request<{ commits: CommitInfo[] }>("GET", `/api/history?path=${q(path)}`).then((r) => r.commits),
   revision: (path: string, rev: string) => request<{ content: string | null }>("GET", `/api/revision?path=${q(path)}&rev=${rev}`).then((r) => r.content),
   rollback: (path: string, rev: string, baseHash: string | null) => request<Doc>("POST", "/api/rollback", { path, rev, baseHash }),
-  /** 검색(folder: 워크스페이스 안만) */
-  search: (query: string, folder?: string) =>
-    request<{ hits: SearchHit[] }>("GET", `/api/search?q=${encodeURIComponent(query)}&limit=50${folder ? `&folder=${q(folder)}` : ""}`).then((r) => r.hits),
+  /** 검색(SearchOptions 참고) */
+  search: (query: string, opts: SearchOptions = {}) => {
+    const params = new URLSearchParams({ q: query, limit: "50" });
+    if (opts.folder) params.set("folder", opts.folder);
+    for (const tag of opts.tags ?? []) params.append("tag", tag);
+    if (opts.lines) params.set("lines", String(opts.lines));
+    return request<{ hits: SearchHit[] }>("GET", `/api/search?${params}`).then((r) => r.hits);
+  },
   backlinks: (path: string) => request<{ backlinks: { path: string; title: string }[] }>("GET", `/api/backlinks?path=${q(path)}`).then((r) => r.backlinks),
   /** 태그와 문서 수(folder: 워크스페이스·노드 안만) */
   tags: (folder?: string) => request<{ tags: { tag: string; count: number }[] }>("GET", `/api/tags${folder ? `?folder=${q(folder)}` : ""}`).then((r) => r.tags),

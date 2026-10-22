@@ -44,6 +44,7 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | restore | 복원 | Switching the vault to a backup |
 | passkey | 패스키 | Password-less login with WebAuthn |
 | setup code | 설정 코드 | The one-time code in the log for the first password |
+| search filter | 검색 필터 | A folder or tags that narrow text search |
 | semantic search | 의미 검색 | Search by meaning with an embedding model |
 | embedding | 임베딩 | The vector a model computes for a text |
 | webhook | 웹훅 | An HTTP POST sent on an event |
