@@ -515,6 +515,7 @@
   "error.heading_missing": "Heading not found: {heading}",
   "error.host_not_allowed": "Host not allowed (KEYRING_ALLOWED_HOSTS)",
   "error.ingest_kind": "kind must be url, html or text",
+  "error.integer_required": "{field} must be a whole number, 0 or more",
   "error.internal": "Server error",
   "error.invalid": "{message}",
   "error.job_missing": "No such job",

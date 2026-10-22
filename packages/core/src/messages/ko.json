@@ -504,6 +504,7 @@
   "error.heading_missing": "제목을 찾을 수 없습니다: {heading}",
   "error.host_not_allowed": "허용되지 않은 호스트입니다 (KEYRING_ALLOWED_HOSTS)",
   "error.ingest_kind": "kind는 url, html, text 중 하나입니다",
+  "error.integer_required": "{field}는 0 이상의 정수여야 합니다",
   "error.internal": "서버 오류",
   "error.invalid": "{message}",
   "error.job_missing": "작업이 없습니다",

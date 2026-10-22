@@ -1,7 +1,21 @@
 import { buildNodeTree } from "@keyring-notes/core";
 import { describe, expect, it } from "vitest";
 import type { SearchHit } from "./api";
-import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, SEARCH_LINES_SHOWN, selectionFor, shownMatches } from "./searchFilter";
+import {
+  chipAfterRemove,
+  folderChoices,
+  folderInScope,
+  followSearch,
+  hasSearchTerms,
+  NO_EXPANDED,
+  NO_FILTER,
+  SEARCH_LINES_FETCH,
+  SEARCH_LINES_SHOWN,
+  searchKey,
+  selectionFor,
+  shownMatches,
+  toggleExpanded,
+} from "./searchFilter";
 
 const hit = (count: number, returned = count): SearchHit => ({
   path: "a.md",
@@ -37,6 +51,15 @@ describe("검색 필터", () => {
     expect(folderChoices(nodes)).toEqual(["업무", "업무/프로젝트"]);
   });
 
+  it("칩 × 로 지운 뒤 포커스: 지운 칩 다음의 태그 칩, 없으면 검색 칸(null)", () => {
+    expect(chipAfterRemove(["a", "b", "c"], "a")).toBe("b");
+    expect(chipAfterRemove(["a", "b", "c"], "b")).toBe("c");
+    expect(chipAfterRemove(["a", "b", "c"], "c")).toBeNull();
+    // 폴더 칩 다음은 첫 태그 칩
+    expect(chipAfterRemove(["a", "b"], null)).toBe("a");
+    expect(chipAfterRemove([], null)).toBeNull();
+  });
+
   it("워크스페이스가 바뀌면 그 범위 밖의 폴더는 걷는다(앞부분만 같은 형제는 밖)", () => {
     expect(folderInScope("업무/프로젝트", "업무")).toBe(true);
     expect(folderInScope("업무", "업무")).toBe(true);
@@ -56,9 +79,30 @@ describe("결과의 일치 줄", () => {
     expect(shownMatches(hit(7), true).lines).toHaveLength(7);
   });
 
-  it("서버 상한을 넘은 줄은 「N줄 더」에 세고, 펼친 뒤에는 남은 수로 보인다", () => {
+  it("받은 줄(화면은 SEARCH_LINES_FETCH)을 넘은 줄은 「N줄 더」에 세고, 펼친 뒤에는 남은 수로 보인다", () => {
     expect(shownMatches(hit(60, 50), false).more).toBe(57);
     expect(shownMatches(hit(60, 50), true)).toMatchObject({ more: 0, beyond: 10 });
+    const big = hit(12, SEARCH_LINES_FETCH);
+    expect(shownMatches(big, false).more).toBe(12 - SEARCH_LINES_SHOWN);
+    expect(shownMatches(big, true).lines).toHaveLength(SEARCH_LINES_FETCH);
+    expect(shownMatches(big, true).beyond).toBe(2);
+  });
+
+  it("펼친 결과는 그 검색(검색어·폴더·태그) 동안만 남고, 바뀌면 비어 같은 검색으로 돌아와도 접힌 채다", () => {
+    const k = searchKey("금리", NO_FILTER);
+    const open = toggleExpanded(NO_EXPANDED, k, "a.md", true);
+    expect([...followSearch(open, k).paths]).toEqual(["a.md"]);
+    // 앞뒤 공백만 다르면 같은 검색(같은 객체라 다시 그리지 않는다)
+    expect(followSearch(open, searchKey(" 금리 ", NO_FILTER))).toBe(open);
+    for (const other of [searchKey("금리 줄", NO_FILTER), searchKey("금리", { folder: "업무", tags: [] }), searchKey("금리", { folder: "", tags: ["회의"] })]) {
+      const changed = followSearch(open, other);
+      expect(changed.paths.size).toBe(0);
+      expect(followSearch(changed, k).paths.size).toBe(0);
+    }
+    // 다른 검색에서 펴면 앞의 검색에서 편 것은 따라오지 않는다
+    const other = searchKey("환율", NO_FILTER);
+    expect([...toggleExpanded(open, other, "b.md", true).paths]).toEqual(["b.md"]);
+    expect(toggleExpanded(open, k, "a.md", false).paths.size).toBe(0);
   });
 
   it("줄이 없는 결과(의미 검색·태그로만 맞음)는 줄도 「더」도 없다", () => {

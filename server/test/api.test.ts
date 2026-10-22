@@ -312,6 +312,18 @@ describe("검색 API", () => {
     expect(hits[0].matchCount).toBe(2);
   });
 
+  it("lines 가 0 이상의 정수가 아니면 400 bad_request, 빈 값은 안 준 것", async () => {
+    for (const lines of ["1e3", "2.9", "-1", "abc", " 3", "0x5"]) {
+      const res = await app.request(`/api/search?q=${encodeURIComponent("금리")}&lines=${encodeURIComponent(lines)}`, { headers: { cookie } });
+      expect(res.status, lines).toBe(400);
+      expect(await res.json(), lines).toMatchObject({ error: "bad_request", code: "integer_required", params: { field: "lines" } });
+    }
+    for (const lines of ["", "0", "7", "999"]) {
+      const res = await app.request(`/api/search?q=${encodeURIComponent("금리")}&lines=${lines}`, { headers: { cookie } });
+      expect(res.status, lines).toBe(200);
+    }
+  });
+
   it("에이전트: 숨긴 폴더·태그를 필터로 줘도 응답이 없는 폴더·태그와 같다", async () => {
     const r = await app.request("/api/file", {
       method: "PUT",

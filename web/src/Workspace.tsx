@@ -86,7 +86,6 @@ import {
   parentNode,
   planDailyMigration,
   setFrontmatterField,
-  SEARCH_LINES_MAX,
   sha256Hex,
   shiftDays,
   stripMd,
@@ -192,7 +191,7 @@ import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorks
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import { tearOutAt } from "./tearOut";
 import { SearchFilters, SearchResults } from "./Search";
-import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, type SearchFilter } from "./searchFilter";
+import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, SEARCH_LINES_FETCH, searchKey, type SearchFilter } from "./searchFilter";
 
 /** 비율(0~1) → CSS 퍼센트 */
 const pct = (v: number) => `${(v * 100).toFixed(4)}%`;
@@ -741,7 +740,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               .then((hs) =>
                 hs.map((h) => ({ path: h.path, title: h.title, line: 1, snippet: (h.heading ? `${h.heading} · ` : "") + h.snippet, score: h.score })),
               )
-          : api.search(q, { folder: filter.folder || scope || undefined, tags: filter.tags, lines: SEARCH_LINES_MAX })
+          : api.search(q, { folder: filter.folder || scope || undefined, tags: filter.tags, lines: SEARCH_LINES_FETCH })
         )
           .then(setHits)
           .catch((e) => {
@@ -2779,12 +2778,20 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             )}
           </div>
           {searchMode === "text" && (
-            <SearchFilters filter={searchFilter} scope={scope} tags={filterTags} onChange={setSearchFilter} onPickFolder={() => setPalette("search-folder")} />
+            <SearchFilters
+              filter={searchFilter}
+              scope={scope}
+              tags={filterTags}
+              onChange={setSearchFilter}
+              onPickFolder={() => setPalette("search-folder")}
+              onFocusSearch={() => searchInput.current?.focus()}
+            />
           )}
           {hits !== null && (
             <SearchResults
               hits={hits}
               query={query.trim()}
+              searchKey={searchKey(query, searchFilter)}
               semantic={searchMode === "semantic" && !query.trim().startsWith("#")}
               current={doc?.path ?? null}
               iconOf={iconOf}

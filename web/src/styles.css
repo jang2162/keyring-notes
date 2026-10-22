@@ -683,6 +683,12 @@ body.resizing { cursor: col-resize; user-select: none; }
 .search-add-tag { max-width: 140px; height: 24px; padding: 0 4px; border: 1px dashed var(--border); border-radius: 999px; background: var(--bg); color: var(--muted); font: inherit; font-size: var(--fs-sm); color-scheme: light dark; }
 .search-clear { height: 24px; padding: 0 6px; border: none; background: transparent; color: var(--accent); font-size: var(--fs-sm); }
 .search-clear:hover { text-decoration: underline; border: none; background: transparent; }
+/* 굵은 포인터·좁은 화면: 칩 × 의 누르는 자리를 32px 로 넓힌다(보이는 크기는 그대로). 왼쪽(폴더 칩의 고르기 단추)은 덜, 오른쪽(칩 사이 틈)은 더 */
+@media (pointer: coarse), (max-width: 800px) {
+  .search-filters { gap: 6px; }
+  .search-chip-x { position: relative; }
+  .search-chip-x::before { content: ""; position: absolute; inset: -6px -8px -6px -4px; }
+}
 .search-hit { margin-bottom: 2px; }
 .hit-lines { list-style: none; margin: 0; padding: 0 0 0 8px; }
 .search-results .hit-lines a { flex-direction: row; align-items: baseline; gap: 6px; padding: 2px 8px; }
