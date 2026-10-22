@@ -96,6 +96,10 @@ Each line is one delete, newest first. It shows the note or node name, where it 
 
 Click the spot left of the title field (it appears on hover when there is no icon), or choose **Change icon…** in the tree menu. Pick an emoji, search, clear it or paste your own.
 
+The picker lists Unicode emoji up to Emoji 14.0, grouped into smileys and emotion, people and body, animals and nature, food, travel and places, activities, objects, symbols and flags. Your recent emoji come first. Click a category button at the top to jump to that group.
+
+Search matches English and Korean names and keywords. Results show without groups, and **Enter** picks the first one. Skin tone variants and newer emoji are not listed. Paste one into the search field and press **Enter** to use it.
+
 The icon is stored as the note's frontmatter `icon: 📘`, so other editors and agents can read it and it moves with the node. A workspace's icon is its note's `icon` too. Icons show in the tree, tabs, note header, quick open, search results and widget lists.
 
 ## Add attachments
