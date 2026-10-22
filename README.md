@@ -77,3 +77,5 @@ The status bar shows **Saved**, and the note is now a Markdown file in `Work/` w
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+Third-party software included in Keyring Notes is listed with its licenses in **Settings** → **General** → **Open source licenses**, and at `/licenses.txt` on your server.

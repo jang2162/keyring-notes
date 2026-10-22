@@ -78,3 +78,5 @@ curl http://127.0.0.1:8787/api/health
 ## 라이선스
 
 MIT License. 자세한 내용은 [LICENSE](LICENSE)를 보세요.
+
+Keyring Notes 에 들어 있는 제3자 소프트웨어와 그 라이선스는 **설정** → **일반** → **오픈 소스 라이선스**와 서버의 `/licenses.txt` 에서 볼 수 있습니다.

@@ -10,7 +10,7 @@ Click the gear at the bottom of the rail, press `Ctrl/Cmd+,`, or go to `#/:setti
 
 | Group | What it holds |
 | --- | --- |
-| **General** | Theme, show icons, labels on the side bar, reset |
+| **General** | Theme, show icons, labels on the side bar, reset, open source licenses |
 | **Language** | Display language, vault language, language packs. On a server also agent language and server language |
 | **Editor** | Autosave, Live Preview, font and size, readable width, line numbers, properties above the document |
 | **Files & links** | New link format, attachments in the tree, backlinks at the end of the document, daily display |

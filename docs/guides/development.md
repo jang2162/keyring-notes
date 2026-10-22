@@ -65,3 +65,44 @@ pnpm build
 - 사용자 문서는 `docs/manual/en/`(원본)과 `docs/manual/ko/`(번역)에 둔다. 둘은 파일 이름·구조·섹션 순서가 같다. 화면 동작이나 설정을 바꾸면 두 언어를 함께 고친다.
 - README 는 `README.md`(영어 원본)와 `README.ko.md`(번역)다. 번역본마다 맨 위에 기준 원본과 판을 적는다 — `README.ko.md` 는 `<!-- source: README.md @ vX.Y.Z -->`, `docs/manual/ko/<경로>` 는 `<!-- source: docs/manual/en/<같은 경로> @ vX.Y.Z -->`, `examples/plugins/README.ko.md` 는 `<!-- source: examples/plugins/README.md @ vX.Y.Z -->`. 판은 그 번역을 맞춘 원본이 실린 릴리스 버전이다. 아직 릴리스하지 않은 원본에 맞췄으면 판을 그대로 두고, 릴리스할 때 한꺼번에 올린다(`docs/guides/release-macos.md` 「버전 올리고 릴리스하기」 절). 판을 미리 다음 버전으로 적지 않는다 — 릴리스 버전이 바뀌면 전부 틀린 값이 된다.
 - 영어↔한국어 용어는 `docs/manual/glossary.md` 에 모은다. 한국어 문서의 화면 이름은 `packages/core/src/messages/ko.json` 의 실제 글을 쓴다.
+
+## 의존성과 라이선스 고지
+
+웹 빌드(`vite build`)가 빌드 결과에 제3자 라이선스 고지 `web/dist/licenses.txt` 를 함께 낸다. 서버는 그것을 `/licenses.txt` 로 내주고, 화면은 설정 「일반」 의 「오픈 소스 라이선스」 에서 모달로 연다. 웹은 서비스 워커가 지연 자산과 함께 받아 두어 오프라인에서도 열린다. 생성물이라 커밋하지 않는다. 개발 서버(`vite`)에는 없다.
+
+| 조각 | 덮는 배포물 | 모으는 방법 |
+| --- | --- | --- |
+| `web` | 브라우저·앱 창으로 가는 번들 | 번들러가 내보내는 청크의 모듈과 자산의 원본 파일(글꼴, `?url` 로 싣는 pdf.js 워커)이 든 `node_modules` 패키지 |
+| `server` | Docker 이미지의 Node 실행 의존성 | `server` 에서 `dependencies`·`optionalDependencies`·필수 peer 를 따라간다 — Dockerfile 의 `pnpm install --prod --filter "@keyring-notes/server..."` 와 같은 범위 |
+| `app` | 앱 실행 파일의 Rust 크레이트 | `cargo metadata --filter-platform <대상>` 에서 일반 의존성만(빌드·개발 의존성과 경로 의존성은 뺀다). cargo 만 있으면 되고 따로 설치할 도구가 없다 |
+
+Tauri 가 부른 빌드(`beforeBuildCommand` — 환경 변수 `TAURI_ENV_TARGET_TRIPLE` 이 있다)면 `server` 대신 `app` 을 싣는다. 앱에는 서버의 `node_modules` 가 들어가지 않고 Docker 이미지에는 Rust 가 들어가지 않는다. universal 빌드는 두 아키텍처를 함께 거른다.
+
+전문은 패키지 폴더 맨 위의 `LICENSE`·`LICENCE`·`COPYING`·`NOTICE`·`UNLICENSE` 류 파일을 그대로 싣고, 전문이 같은 패키지끼리 묶어 한 번만 싣는다. 코드는 `web/licenses/plugin.ts`(파일·cargo 읽기)와 `web/src/licenseNotices.ts`(순수 함수, 시험 `licenseNotices.test.ts`)다.
+
+- **라이선스 파일이 없는 패키지**에는 `web/licenses/spdx/<SPDX id>.txt`(SPDX License List 의 `text/<id>.txt` 를 그대로 받은 것)를 SPDX 식의 id 마다 붙이고, 저작권 자리에 패키지 메타데이터의 `author`·`authors` 를 넣는다. 저작권자가 없으면 그렇다고 적고 소스 주소를 남긴다. 그 id 의 파일이 없으면 빌드가 멈춘다 — `https://raw.githubusercontent.com/spdx/license-list-data/main/text/<id>.txt` 를 받아 그 폴더에 더한다.
+- **MPL-2.0 구성요소**는 줄에 소스 주소를 적고 머리에 그 사실을 한 줄 밝힌다. 실행 형태로 배포할 때 소스를 얻는 법을 알려야 한다(MPL-2.0 §3.2).
+- **여러 라이선스 중 고르는 패키지**는 `web/licenses/manual.ts` 의 `LICENSE_CHOICES` 에 고른 id 를 적는다(`dompurify` 는 `(MPL-2.0 OR Apache-2.0)` 중 Apache-2.0). 패키지가 빠지거나 고른 id 가 식에 없으면 빌드가 멈춘다.
+
+### 손 목록에 넣는 것
+
+`web/licenses/manual.ts` 의 `MANUAL_NOTICES` 에는 **배포물에 들어가지만 자동 수집이 보지 못하는 것**만 넣고, 항목마다 `why` 에 이유를 적는다.
+
+- 빌드 플러그인이 fs 로 직접 읽어 번들에 싣는 데이터 — import 그래프에 없다. 예: `emojibase-data`(`vite.config.ts` 의 `emojiData` 가 읽는다).
+- 패키지가 아닌 데이터의 원래 라이선스 — 그 데이터를 싣고 오는 패키지(`via`)의 판을 함께 적는다. 예: 이모지 이름·낱말의 출처인 Unicode CLDR(Unicode License V3, 전문 `web/licenses/unicode-license-v3.txt`).
+- `web/public/` 처럼 번들러를 거치지 않고 그대로 복사되는 제3자 파일.
+
+손 목록이 실제와 어긋나면 빌드가 이유를 적고 멈춘다 — 패키지가 web 의 의존성에 없을 때, 그 패키지가 자동 수집에도 잡힐 때(그래프에 들어왔으니 손 목록에서 지운다).
+
+자동 수집이 보지 않는 것: 실행 중에 네트워크에서 받는 것(플러그인 등), 저장소 코드에 옮겨 붙인 남의 코드, OS 가 주는 라이브러리(WebKit 등). 이것들은 손 목록에 넣거나 따로 판단한다. 새 의존성의 라이선스가 GPL·LGPL·AGPL·MPL 처럼 소스 제공 의무가 따르거나 출처가 불분명하면 넣기 전에 정한다.
+
+### 확인
+
+```bash
+pnpm --filter @keyring-notes/web build
+# 끝에 「licenses.txt: web N, server M, 표준 전문 K(저작권자 없음 …), … KB」 한 줄
+TAURI_ENV_TARGET_TRIPLE=universal-apple-darwin pnpm --filter @keyring-notes/web exec vite build
+# 앱 빌드와 같은 고지(web + app). cargo 가 필요하다
+pnpm licenses list --prod --json --filter "@keyring-notes/server..."
+# server 조각과 같은 범위 — 패키지 이름·판을 licenses.txt 의 [server] 줄과 대조한다
+```
