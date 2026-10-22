@@ -1,7 +1,20 @@
 import enData from "emojibase-data/en/data.json";
 import koData from "emojibase-data/ko/data.json";
 import { describe, expect, it } from "vitest";
-import { activeSection, buildCatalog, canonicalEmoji, EMOJI_GROUPS, MAX_EMOJI_VERSION, searchable, searchEmoji, type SourceEmoji } from "./emojiCatalog";
+import {
+  activeSection,
+  addRecentIcon,
+  buildCatalog,
+  canonicalEmoji,
+  EMOJI_GROUPS,
+  MAX_EMOJI_VERSION,
+  pastedEmoji,
+  recentIcons,
+  sameEmoji,
+  searchable,
+  searchEmoji,
+  type SourceEmoji,
+} from "./emojiCatalog";
 import { HAND_WORDS } from "./emojiWords";
 
 const ko: SourceEmoji[] = koData;
@@ -94,6 +107,42 @@ describe("FE0F", () => {
   it("목록에는 예전 목록과 같은 글로 들어 있다(⭐·👍·🗓️·☀️)", () => {
     const es = new Set(all.map((x) => x.e));
     for (const [e] of HAND_WORDS) expect(es.has(e), e).toBe(true);
+  });
+
+  it("붙여 넣은 이모지도 정식 형태로 고른다(Enter)", () => {
+    expect(pastedEmoji(" ⭐\uFE0F ")).toBe("⭐");
+    expect(pastedEmoji("🗓\uFE0F")).toBe("🗓\uFE0F");
+    expect(pastedEmoji("🦊")).toBe("🦊");
+    expect(pastedEmoji("🇰🇷")).toBe("🇰🇷");
+    expect(pastedEmoji("star")).toBeNull();
+    expect(pastedEmoji("  ")).toBeNull();
+  });
+
+  it("FE0F 만 다른 것은 같은 이모지다(「지금 아이콘」 켜짐)", () => {
+    expect(sameEmoji("⭐\uFE0F", "⭐")).toBe(true);
+    expect(sameEmoji("⭐", "🌟")).toBe(false);
+    expect(sameEmoji("🗓\uFE0F", "🗓\uFE0F")).toBe(true);
+  });
+
+  it("FE0F 붙은 것으로 찾아도 목록의 정식 형태가 나온다", () => {
+    expect(find("⭐\uFE0F")).toEqual(["⭐"]);
+  });
+});
+
+describe("최근 목록", () => {
+  it("같은 이모지의 다른 형태는 한 번만, 새것이 앞", () => {
+    expect(addRecentIcon(["⭐\uFE0F", "🦊"], "⭐")).toEqual(["⭐", "🦊"]);
+    expect(addRecentIcon(["🦊", "⭐"], "🦊")).toEqual(["🦊", "⭐"]);
+  });
+
+  it("이미 두 형태가 함께 저장돼 있으면 읽을 때 앞의 것만 남기고 글은 그대로 둔다", () => {
+    expect(recentIcons(["⭐\uFE0F", "🦊", "⭐"])).toEqual(["⭐\uFE0F", "🦊"]);
+  });
+
+  it("16개까지, 글이 아닌 값은 뺀다", () => {
+    const many = all.slice(0, 20).map((x) => x.e);
+    expect(addRecentIcon(many, "🦊")).toHaveLength(16);
+    expect(recentIcons(["🦊", 1, "", null] as unknown as string[])).toEqual(["🦊"]);
   });
 });
 

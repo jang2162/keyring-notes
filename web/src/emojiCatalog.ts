@@ -45,6 +45,13 @@ const bare = (s: string) => s.replace(/\uFE0F/g, "");
  * 예전에 고른 아이콘(프런트매터 `icon`, 최근 목록)과 같은 글이 되게 한다. 🗓️ 처럼 글자로 그려지는 것에는 FE0F 가 있어야 하므로 둔다.
  */
 export const canonicalEmoji = (s: string) => (/^\p{Emoji_Presentation}$/u.test(bare(s)) ? bare(s) : s);
+/** 검색칸에 붙여 넣은 이모지(글자·숫자만이 아닌 짧은 것)면 정식 형태로, 아니면 null */
+export function pastedEmoji(q: string): string | null {
+  const v = q.trim();
+  return v && [...v].length <= 8 && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(v) ? canonicalEmoji(v) : null;
+}
+/** 같은 이모지인가(FE0F 만 다른 `⭐️`·`⭐` 는 같다) */
+export const sameEmoji = (a: string, b: string) => canonicalEmoji(a) === canonicalEmoji(b);
 const lower = (xs: (string | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x).map((x) => x.toLowerCase().trim()))];
 
 /**
@@ -96,7 +103,7 @@ export function searchEmoji(list: Searchable[], query: string): string[] {
   for (const it of list) {
     let tier = 0;
     for (const w of words) {
-      const t = it.e === w || it.name.has(w) ? 0 : it.tag.has(w) ? 1 : it.hay.includes(w) ? 2 : -1;
+      const t = it.e === canonicalEmoji(w) || it.name.has(w) ? 0 : it.tag.has(w) ? 1 : it.hay.includes(w) ? 2 : -1;
       if (t < 0) {
         tier = -1;
         break;
@@ -114,3 +121,16 @@ export function activeSection(tops: { key: string; top: number }[], scrollTop: n
   for (const s of tops) if (s.top <= scrollTop + slack) cur = s.key;
   return cur;
 }
+
+/**
+ * 최근 아이콘 목록(새것이 앞, 같은 이모지는 한 번). 같은지는 FE0F 를 가리지 않고 보되 글은 바꾸지 않는다 —
+ * 붙여 넣기 정규화 전에 저장된 `⭐️`·`⭐` 가 함께 있으면 앞의 것만 남긴다.
+ */
+export function recentIcons(list: string[], max = 16): string[] {
+  const out: string[] = [];
+  for (const x of list) if (typeof x === "string" && x && !out.some((y) => sameEmoji(x, y))) out.push(x);
+  return out.slice(0, max);
+}
+
+/** 최근 목록 맨 앞에 `icon` 을 넣는다(같은 이모지의 다른 형태는 뺀다) */
+export const addRecentIcon = (list: string[], icon: string, max = 16) => recentIcons([icon, ...list], max);

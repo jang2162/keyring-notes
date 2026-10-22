@@ -1,6 +1,18 @@
 import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { activeSection, EMOJI_GROUPS, searchable, searchEmoji, type Catalog, type CatalogEmoji, type Searchable } from "./emojiCatalog";
+import {
+  activeSection,
+  addRecentIcon,
+  EMOJI_GROUPS,
+  pastedEmoji,
+  recentIcons,
+  sameEmoji,
+  searchable,
+  searchEmoji,
+  type Catalog,
+  type CatalogEmoji,
+  type Searchable,
+} from "./emojiCatalog";
 import { locale, t } from "./i18n";
 import { tipProps } from "./Tooltip";
 
@@ -20,6 +32,8 @@ function loadCatalog() {
       return loaded;
     },
     (err: unknown) => {
+      // 다음에 창을 열 때 다시 시도하려고 비우지만, 브라우저(적어도 Chromium)는 실패한 동적 import 를 모듈 맵에 기억해 같은 URL 을
+      // 다시 받지 않는다 — 한 번 실패하면 페이지를 새로 고쳐야 다시 받는다(icon.loadFailed 문구가 그렇게 안내한다).
       catalogLoad = null;
       throw err;
     },
@@ -33,7 +47,7 @@ const RECENT_KEY = "keyring:recent-icons";
 
 function loadRecent(): string[] {
   try {
-    return (JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as string[]).slice(0, 16);
+    return recentIcons(JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as string[]);
   } catch {
     return [];
   }
@@ -41,17 +55,11 @@ function loadRecent(): string[] {
 
 function remember(icon: string) {
   try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify([icon, ...loadRecent().filter((x) => x !== icon)].slice(0, 16)));
+    localStorage.setItem(RECENT_KEY, JSON.stringify(addRecentIcon(loadRecent(), icon)));
   } catch {
     /* 저장소를 못 쓰는 환경 */
   }
 }
-
-/** 이모지처럼 보이는 글(글자·숫자만이 아닌 짧은 것) */
-const looksLikeEmoji = (s: string) => {
-  const v = s.trim();
-  return !!v && [...v].length <= 8 && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(v);
-};
 
 export function IconPicker({
   at,
@@ -151,7 +159,7 @@ export function IconPicker({
     return it ? (locale() === "ko" ? it.ko : it.en) : e;
   };
   const cell = (e: string) => (
-    <button key={e} type="button" className={e === value ? "on" : ""} onClick={() => pick(e)} aria-label={nameOf(e)}>
+    <button key={e} type="button" className={value && sameEmoji(e, value) ? "on" : ""} onClick={() => pick(e)} aria-label={nameOf(e)}>
       {e}
     </button>
   );
@@ -180,7 +188,8 @@ export function IconPicker({
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
             e.preventDefault();
-            if (looksLikeEmoji(q)) pick(q.trim());
+            const pasted = pastedEmoji(q);
+            if (pasted) pick(pasted);
             else if (shown[0]) pick(shown[0]);
           }}
         />

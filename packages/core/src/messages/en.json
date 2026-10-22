@@ -688,7 +688,7 @@
   "icon.group.symbols": "Symbols",
   "icon.group.travel": "Travel & places",
   "icon.groups": "Emoji categories",
-  "icon.loadFailed": "Couldn't load the emoji list · paste an emoji and press Enter",
+  "icon.loadFailed": "Couldn't load the emoji list · reload the page and open this again, or paste an emoji and press Enter",
   "icon.noMatch": "No match · paste an emoji and press Enter",
   "icon.of": "Icon of {name}",
   "icon.pickTitle": "Choose {title}",
