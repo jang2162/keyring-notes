@@ -44,6 +44,7 @@ import { SyncSettings } from "./Sync";
 import { localContext } from "./local/boot";
 import { updateVaultSetting, useVaultSettings, vaultLang } from "./vaultSettings";
 import { IconPicker } from "./IconPicker";
+import { LicensesDialog } from "./Licenses";
 import { errorText, toast, toastError } from "./toast";
 import { getPack, languages, PSEUDO, putPack, removePack, systemLanguage, t, useLang } from "./i18n";
 import { confirmDialog, promptDialog } from "./dialog";
@@ -443,6 +444,7 @@ function SectionBody({
               {t("common.reset")}
             </button>
           </Row>
+          <LicensesRow query={query} />
         </>
       );
     case "language":
@@ -563,6 +565,19 @@ function SectionBody({
     default:
       return <ServerSettings section={id} folders={folders} />;
   }
+}
+
+/** 오픈 소스 라이선스: 이 판에 든 제3자 소프트웨어의 고지를 연다 */
+function LicensesRow({ query }: { query: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Row label="settings.licenses" hint="settings.licensesHint" query={query}>
+      <button type="button" onClick={() => setOpen(true)}>
+        {t("common.open")}
+      </button>
+      {open && <LicensesDialog onClose={() => setOpen(false)} />}
+    </Row>
+  );
 }
 
 /** 데스크톱 앱 업데이트: 실행 때 자동 확인 켜기·끄기(이 기기), 지금 확인 */
