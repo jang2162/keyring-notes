@@ -96,6 +96,8 @@ Apple ID 비밀번호 대신 API 키로 공증한다(2단계 인증·앱 암호�
 
 버전의 원천은 **루트 `package.json`** 이고, 아래 명령이 나머지 네 곳(`tauri.conf.json`, `Cargo.toml`, `Cargo.lock`, `packages/core/src/i18n.ts`)을 맞춘다. 손으로 고치지 않는다.
 
+릴리스 커밋 전에 번역본 맨 위의 판(`<!-- source: … @ vX.Y.Z -->`)을 새 버전으로 올린다. 원본에 맞춘 번역만 올린다 — 지난 릴리스 뒤로 원본(`README.md`, `docs/manual/en/`, `examples/plugins/README.md`)이 바뀌었는데 번역이 따라가지 않았으면 그 문서는 판을 그대로 둔다. 어느 원본이 바뀌었는지는 `git diff --name-only v<지난 버전> -- README.md docs/manual/en examples/plugins/README.md` 로 본다. 바꾼 번역본도 릴리스 커밋에 함께 stage 한다. 판 규칙은 `docs/guides/development.md` 「문서」 절.
+
 ```bash
 pnpm version:set <버전>       # 앞에 v 없이. 예: 0.8.6
 pnpm version:check            # 다섯 곳이 같은지
