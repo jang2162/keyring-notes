@@ -4,11 +4,15 @@ import path from "node:path";
 import type { Logger, Plugin } from "vite";
 import {
   applyChoices,
+  applyHolders,
+  bundledInSourceMap,
+  bundledProblems,
   cargoTargets,
   cratesFromMetadata,
   isLicenseFile,
   licenseField,
   manualConflicts,
+  manualForParts,
   mergeNotices,
   packageOfModule,
   renderNotices,
@@ -16,10 +20,11 @@ import {
   holderNames,
   withStandardText,
   type CargoMetadata,
+  type ManualNotice,
   type Notice,
   type NoticePart,
 } from "../src/licenseNotices.ts";
-import { LICENSE_CHOICES, MANUAL_NOTICES } from "./manual.ts";
+import { HOLDERS, LICENSE_CHOICES, MANUAL_NOTICES } from "./manual.ts";
 
 type PackageJson = {
   name?: string;
@@ -87,6 +92,44 @@ function bundlePackages(root: string, bundle: Record<string, { type: string; mod
   return [...dirs];
 }
 
+/** 파일이 동봉한 소스맵의 sources(끝의 `sourceMappingURL` — 따로 둔 .map 이나 data: 주소 — 또는 옆의 `<파일>.map`). 없으면 null */
+function sourceMapSources(file: string): (string | null)[] | null {
+  let raw: string | null = null;
+  const url = /\/[/*][#@]\s*sourceMappingURL=([^\s*]+)/.exec(readFileSync(file, "utf8").slice(-4096))?.[1];
+  if (url?.startsWith("data:")) {
+    const [head, body = ""] = url.split(",", 2);
+    raw = head.endsWith(";base64") ? Buffer.from(body, "base64").toString("utf8") : decodeURIComponent(body);
+  } else {
+    const map = url ? path.resolve(path.dirname(file), decodeURIComponent(url)) : `${file}.map`;
+    if (existsSync(map)) raw = readFileSync(map, "utf8");
+  }
+  if (raw === null) return null;
+  try {
+    return (JSON.parse(raw) as { sources?: (string | null)[] }).sources ?? [];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 출력에 쓰인 node_modules 파일 안에 미리 묶여 실린 다른 패키지(이름 → 싣고 온 패키지들). 동봉 소스맵으로만 보므로
+ * 소스맵이 없는 묶음과 네이티브 바이너리는 못 본다(docs/guides/development.md 「의존성과 라이선스 고지」).
+ */
+function bundledInside(bundle: Record<string, { type: string; moduleIds?: string[] }>): Map<string, Set<string>> {
+  const found = new Map<string, Set<string>>();
+  const files = new Set(
+    Object.values(bundle)
+      .flatMap((out) => (out.type === "chunk" ? (out.moduleIds ?? []) : []))
+      .map((id) => id.replace(/^\0/, "").replace(/[?#].*$/, "")),
+  );
+  for (const file of files) {
+    const pkg = packageOfModule(file);
+    if (!pkg || !existsSync(file)) continue;
+    for (const name of bundledInSourceMap(sourceMapSources(file) ?? [], pkg.name)) found.set(name, (found.get(name) ?? new Set()).add(pkg.name));
+  }
+  return found;
+}
+
 /** 서버 이미지의 실행 의존성: server 와 그것이 쓰는 워크스페이스 패키지에서 dependencies·optionalDependencies·필수 peer 를 따라간다(Dockerfile 의 `--prod` 설치와 같은 범위) */
 function serverPackages(repo: string): string[] {
   const start = [path.join(repo, "server")];
@@ -125,21 +168,27 @@ function appCrates(repo: string, triple: string): Notice[] {
   }));
 }
 
-/** 손 목록(manual.ts)을 고지로. 설치돼 있지 않으면 멈춘다 — 의존성에서 빠졌는데 손 목록에 남은 것 */
-function manualNotices(webRoot: string, auto: Notice[]): Notice[] {
-  const stale = manualConflicts(MANUAL_NOTICES, auto);
+/**
+ * 손 목록(manual.ts, 이 빌드가 싣는 조각만)을 고지로. 패키지는 그 조각의 뿌리(web·server)에서 찾고, 설치돼 있지 않으면 멈춘다
+ * — 의존성에서 빠졌는데 손 목록에 남은 것
+ */
+function manualNotices(repo: string, manual: ManualNotice[], auto: Notice[]): Notice[] {
+  const stale = manualConflicts(manual, auto);
   if (stale.length) throw new Error(`라이선스 고지: ${stale.join(", ")} 은 이제 자동으로 모인다 — web/licenses/manual.ts 에서 지운다`);
-  const need = (name: string) => {
-    const dir = resolvePackage(webRoot, name);
-    if (!dir) throw new Error(`라이선스 고지: 손 목록의 ${name} 이 web 의 의존성에 없다 — web/licenses/manual.ts 를 고친다`);
+  const need = (name: string, parts: NoticePart[]) => {
+    const root = parts.includes("server") ? "server" : "web";
+    const dir = resolvePackage(path.join(repo, root), name);
+    if (!dir) throw new Error(`라이선스 고지: 손 목록의 ${name} 이 ${root} 의 의존성에 없다 — web/licenses/manual.ts 를 고친다`);
     return dir;
   };
-  return MANUAL_NOTICES.map((m) => {
-    if (m.kind === "package") return npmNotice(need(m.package), m.parts);
-    const via = npmNotice(need(m.via), m.parts);
+  return manual.map((m) => {
+    if (m.kind === "package") return npmNotice(need(m.package, m.parts), m.parts);
+    // 묶여 실린 것은 싣고 온 패키지가 이 빌드에 실제로 들어간 판으로 적는다. 없으면 bundledProblems 가 지우라고 멈춘다
+    const via =
+      m.kind === "bundled" ? auto.find((n) => n.name === m.via && n.parts.some((p) => m.parts.includes(p))) : npmNotice(need(m.via, m.parts), m.parts);
     return {
       name: m.name,
-      version: `via ${via.name} ${via.version}`,
+      version: `${m.kind === "bundled" ? "bundled in" : "via"} ${via ? `${via.name} ${via.version}` : m.via}`,
       license: m.license,
       texts: [readFileSync(new URL(m.textFile, import.meta.url), "utf8")],
       parts: m.parts,
@@ -178,11 +227,18 @@ export function licenseNotices(): Plugin {
       const web = bundlePackages(webRoot, bundle as never).map((dir) => npmNotice(dir, ["web"]));
       const other = triple ? appCrates(repo, triple) : serverPackages(repo).map((dir) => npmNotice(dir, ["server"]));
       const auto = [...web, ...other];
-      const chosen = applyChoices(mergeNotices([...auto, ...manualNotices(webRoot, auto)]), LICENSE_CHOICES);
+      const parts: NoticePart[] = ["web", triple ? "app" : "server"];
+      const manual = manualForParts(MANUAL_NOTICES, parts);
+      const merged = mergeNotices([...auto, ...manualNotices(repo, manual, auto)]);
+      const bundled = bundledProblems(bundledInside(bundle as never), merged, manual);
+      if (bundled.length) throw new Error(`라이선스 고지: 다른 패키지 안에 묶여 실린 것이 손 목록(web/licenses/manual.ts)과 어긋난다 — ${bundled.join("; ")}`);
+      const chosen = applyChoices(merged, LICENSE_CHOICES, parts);
       if (chosen.problems.length)
         throw new Error(`라이선스 고지: web/licenses/manual.ts 의 LICENSE_CHOICES 가 실제와 어긋난다 — ${chosen.problems.join("; ")}`);
+      const held = applyHolders(chosen.notices, HOLDERS, parts);
+      if (held.problems.length) throw new Error(`라이선스 고지: web/licenses/manual.ts 의 HOLDERS 가 실제와 어긋난다 — ${held.problems.join("; ")}`);
       const standard = standardTexts();
-      const filled = chosen.notices.map((n) => withStandardText(n, standard));
+      const filled = held.notices.map((n) => withStandardText(n, standard));
       const missing = filled.filter((f) => f.missing.length).map((f) => `${f.notice.name} ${f.notice.version} (${f.missing.join(", ")})`);
       if (missing.length) throw new Error(`라이선스 고지: 라이선스 파일이 없고 표준 전문(web/licenses/spdx/)도 없는 패키지 — ${missing.join("; ")}`);
       const notices = filled.map((f) => f.notice);

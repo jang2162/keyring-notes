@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   applyChoices,
+  applyHolders,
+  bundledInSourceMap,
+  bundledProblems,
   cargoTargets,
   cratesFromMetadata,
   holderNames,
   isLicenseFile,
   licenseField,
   manualConflicts,
+  manualForParts,
   mergeNotices,
   normalizeText,
   packageOfModule,
   renderNotices,
   spdxIds,
+  splitNoticeBlocks,
   walkPackages,
   withStandardText,
   type CargoMetadata,
@@ -207,9 +212,40 @@ describe("손 목록·선택·합치기", () => {
 
   it("고른 라이선스를 붙이고, 패키지가 없거나 식에 없는 id 면 문제로 돌려준다", () => {
     const list = [notice("dompurify", { license: "(MPL-2.0 OR Apache-2.0)" })];
-    expect(applyChoices(list, { dompurify: "Apache-2.0" })).toEqual({ notices: [{ ...list[0], chosen: "Apache-2.0" }], problems: [] });
-    expect(applyChoices(list, { dompurify: "MIT" }).problems).toEqual(["dompurify 1.0.0: (MPL-2.0 OR Apache-2.0) 에 MIT 가 없다"]);
-    expect(applyChoices(list, { gone: "MIT" }).problems).toEqual(["gone: 목록에 없다"]);
+    const web = (license: string) => ({ license, part: "web" as const });
+    expect(applyChoices(list, { dompurify: web("Apache-2.0") }, ["web", "server"])).toEqual({
+      notices: [{ ...list[0], chosen: "Apache-2.0" }],
+      problems: [],
+    });
+    expect(applyChoices(list, { dompurify: web("MIT") }, ["web"]).problems).toEqual(["dompurify 1.0.0: (MPL-2.0 OR Apache-2.0) 에 MIT 가 없다"]);
+    expect(applyChoices(list, { gone: web("MIT") }, ["web"]).problems).toEqual(["gone: 목록에 없다"]);
+  });
+
+  it("이 빌드가 싣지 않는 조각의 선택은 패키지가 없어도 문제가 아니다(서버 빌드의 앱 크레이트)", () => {
+    const choices = { "objc2-app-kit": { license: "Apache-2.0", part: "app" as const } };
+    expect(applyChoices([notice("react")], choices, ["web", "server"]).problems).toEqual([]);
+    expect(applyChoices([notice("react")], choices, ["web", "app"]).problems).toEqual(["objc2-app-kit: 목록에 없다"]);
+  });
+
+  it("손으로 찾은 저작권자를 붙이고, 패키지가 없거나 이제 라이선스 파일을 실으면 문제로 돌려준다", () => {
+    const holders = { "objc2-foundation": { holders: ["Mads Marquart"], part: "app" as const } };
+    const bare = notice("objc2-foundation", { texts: [], parts: ["app"] });
+    expect(applyHolders([bare], holders, ["web", "app"])).toEqual({ notices: [{ ...bare, holders: ["Mads Marquart"] }], problems: [] });
+    expect(applyHolders([], holders, ["web", "server"]).problems).toEqual([]);
+    expect(applyHolders([], holders, ["web", "app"]).problems).toEqual(["objc2-foundation: 목록에 없다"]);
+    expect(applyHolders([{ ...bare, texts: ["MIT"] }], holders, ["app"]).problems).toEqual([
+      "objc2-foundation 1.0.0: 이제 라이선스 파일을 싣는다 — 손 칸을 지운다",
+    ]);
+    // 붙인 저작권자는 표준 전문의 저작권 자리로 간다
+    const filled = withStandardText(applyHolders([bare], holders, ["app"]).notices[0], { MIT: "Copyright (c) <year> <copyright holders>\n\nPermission" });
+    expect(filled.notice.texts[1]).toBe("Copyright (c) Mads Marquart\n\nPermission");
+  });
+
+  it("손 목록은 이 빌드가 싣는 조각만 남긴다", () => {
+    const both: ManualNotice = { kind: "bundled", name: "x", license: "MIT", textFile: "x.txt", via: "v", parts: ["web", "server"], why: "" };
+    const server: ManualNotice = { ...both, name: "skia", parts: ["server"] };
+    expect(manualForParts([both, server], ["web", "app"])).toEqual([{ ...both, parts: ["web"] }]);
+    expect(manualForParts([both, server], ["web", "server"])).toEqual([both, server]);
   });
 
   it("같은 이름·판은 하나로: 조각은 합치고 전문은 먼저 찾은 것(없으면 뒤의 것)", () => {
@@ -220,6 +256,52 @@ describe("손 목록·선택·합치기", () => {
     ]);
     expect(merged).toHaveLength(2);
     expect(merged[0]).toMatchObject({ parts: ["web", "server"], texts: ["yaml text"] });
+  });
+});
+
+describe("묶여 실린 것", () => {
+  const bundled = (name: string, via: string, parts: Notice["parts"] = ["web"]): ManualNotice => ({
+    kind: "bundled",
+    name,
+    license: "MIT",
+    textFile: `${name}.txt`,
+    via,
+    parts,
+    why: "",
+  });
+
+  it("소스맵 sources 의 node_modules 자리에서 다른 패키지 이름만(자기 소스·자기 자신은 빼고, 상대·webpack 주소 모두)", () => {
+    const sources = [
+      "../src/language/index.ts",
+      "../../../node_modules/.pnpm/langium@4.2.1/node_modules/langium/lib/parser.js",
+      "../../node_modules/@chevrotain/gast/lib/src/api.js",
+      "../../node_modules/@chevrotain/gast/lib/src/visitor.js",
+      "webpack://pdf.js/./node_modules/core-js/internals/export.js",
+      "C:\\r\\node_modules\\js-yaml\\dist\\js-yaml.mjs",
+      "../node_modules/@mermaid-js/parser/src/x.ts",
+      "../node_modules/.pnpm/lock.yaml",
+      "../node_modules/@scope",
+      null,
+    ];
+    expect(bundledInSourceMap(sources, "@mermaid-js/parser")).toEqual(["@chevrotain/gast", "core-js", "js-yaml", "langium"]);
+  });
+
+  it("찾은 묶임이 고지에 없으면 넣으라고, 싣고 온 패키지가 그 조각에 없는 손 항목은 지우라고 알린다", () => {
+    const found = new Map([
+      ["langium", new Set(["@mermaid-js/parser"])],
+      ["js-yaml", new Set(["mermaid"])],
+    ]);
+    const notices = [notice("@mermaid-js/parser"), notice("mermaid"), notice("langium", { version: "bundled in @mermaid-js/parser 1.0.0" })];
+    expect(bundledProblems(found, notices, [bundled("langium", "@mermaid-js/parser")])).toEqual([
+      'js-yaml(mermaid 안에 묶여 있다) 가 고지에 없다 — kind "bundled" 로 넣는다',
+    ]);
+    // 자동 수집으로 이미 실린 패키지는 묶임으로 따로 넣지 않아도 된다
+    expect(bundledProblems(new Map([["mermaid", new Set(["x"])]]), notices, [])).toEqual([]);
+    // via 가 다른 조각에만 있으면 없는 것이다
+    expect(bundledProblems(new Map(), [notice("unpdf", { parts: ["web"] })], [bundled("PDF.js", "unpdf", ["server"])])).toEqual([
+      "PDF.js 를 싣고 오는 unpdf 가 [server] 에 없다 — 손 목록에서 지운다",
+    ]);
+    expect(bundledProblems(new Map(), [notice("unpdf", { parts: ["server"] })], [bundled("PDF.js", "unpdf", ["server"])])).toEqual([]);
   });
 });
 
@@ -254,6 +336,17 @@ describe("licenses.txt 글", () => {
 
   it("전문이 빈 고지는 받지 않는다(표준 전문을 먼저 붙인다)", () => {
     expect(() => renderNotices([notice("bare", { texts: [] })], "1")).toThrow(/bare/);
+  });
+
+  it("화면용 묶음 나누기: 머리와 묶음마다 하나씩, 이어 붙이면 원래 글", () => {
+    const text = renderNotices([notice("a"), notice("b"), notice("c", { texts: ["a text"] })], "1");
+    const blocks = splitNoticeBlocks(text);
+    expect(blocks).toHaveLength(3);
+    expect(blocks[0]).toMatch(/^Keyring Notes 1/);
+    expect(blocks.slice(1).every((b) => b.startsWith("=".repeat(80)))).toBe(true);
+    expect(blocks.join("")).toBe(text);
+    // 줄 안에 = 가 80개 이어져도 줄 전체가 아니면 나누지 않는다
+    expect(splitNoticeBlocks(`x${"=".repeat(80)}\ny`)).toHaveLength(1);
   });
 
   it("전문 비교는 BOM·CRLF·줄 끝 공백·앞뒤 빈 줄만 맞춘다", () => {
