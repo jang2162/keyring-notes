@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { defaultClientConditions, defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { licenseNotices } from "./licenses/plugin.ts";
 import { buildCatalog } from "./src/emojiCatalog.ts";
 import { HAND_WORDS } from "./src/emojiWords.ts";
 
@@ -20,10 +21,14 @@ function stampServiceWorker(): Plugin {
     },
     closeBundle() {
       const file = path.join(outDir, "sw.js");
+      // 앞 단계(번들 쓰기 전)에서 빌드가 실패해도 closeBundle 은 돈다 — 번들이 없으면 건너뛰어 원래 오류를 가리지 않는다
+      if (!existsSync(path.join(outDir, "assets"))) return;
       const build = Date.now().toString(36);
       const lazy = readdirSync(path.join(outDir, "assets"))
         .filter((f) => /\.(m?js|css|woff2)$/.test(f))
         .map((f) => `/assets/${f}`);
+      // 제3자 라이선스 고지(licenseNotices)도 오프라인에서 열리게
+      if (existsSync(path.join(outDir, "licenses.txt"))) lazy.push("/licenses.txt");
       writeFileSync(file, readFileSync(file, "utf8").replace("__KEYRING_BUILD__", build).replace('"__KEYRING_LAZY__"', JSON.stringify(lazy)));
     },
   };
@@ -49,7 +54,7 @@ function emojiData(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), stampServiceWorker(), emojiData()],
+  plugins: [react(), stampServiceWorker(), emojiData(), licenseNotices()],
   // 같은 저장소의 core 패키지는 빌드 없이 TypeScript 원본을 쓴다
   resolve: { conditions: ["keyring-source", ...defaultClientConditions] },
   // vitest 는 Node(ssr) 쪽 해석을 쓰므로 여기에도 둬야 시험이 dist 가 아닌 원본을 읽는다

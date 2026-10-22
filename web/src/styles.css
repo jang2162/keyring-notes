@@ -253,6 +253,8 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .admin-dl dt { color: var(--muted); }
 .admin-dl dd { margin: 0; word-break: break-all; }
 .kmodal pre { background: var(--bg-soft); padding: 8px 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+/* 오픈 소스 라이선스 고지: 한 줄짜리 긴 문단(BSD 전문 등)이 가로로 넘치지 않게 */
+.kmodal pre.licenses-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .inline-form { display: flex; gap: 8px; margin: 10px 0; }
 .inline-form input, .rules input, .rules select, .backup-settings input[type="number"], .password-form input {
   font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg);
