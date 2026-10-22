@@ -10,7 +10,7 @@ Click the magnifier on the rail, or press `Ctrl/Cmd+Shift+F`.
 
 - Search finds notes that contain all the space-separated words. It looks in the body, title, path and frontmatter.
 - A `#tag` word becomes a tag filter, sub-tags included.
-- Each result shows up to 3 matching lines with their line numbers. Click **N more lines** to see the rest, and **Show fewer** to fold them again.
+- Each result shows up to 3 matching lines with their line numbers. Click **N more lines** to see up to 10, and **Show fewer** to fold them again. If a note has more matches than that, the result says how many are left to find in the note.
 - Click a line to jump to it and select the search term. Click the note name to jump to its first match.
 
 ### Narrow by folder and tag

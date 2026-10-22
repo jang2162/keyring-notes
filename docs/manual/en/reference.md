@@ -103,7 +103,7 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | GET | `/api/section?path=` | `&heading=` or `&start=&end=` | Read a section |
 | GET | `/api/frontmatter` | `?folder=&fields=a,b` | Frontmatter list |
 | GET | `/api/properties` | | Property names, types, note counts and frequent values across visible notes |
-| GET | `/api/search?q=` | `&folder=&tag=&lines=&limit=` | Search. Repeat `tag` to require several tags. `lines` adds up to that many matching lines per note (at most 50) |
+| GET | `/api/search?q=` | `&folder=&tag=&lines=&limit=` | Search. Repeat `tag` to require several tags. `lines` adds up to that many matching lines per note (a whole number, at most 50) |
 | GET | `/api/semantic` · `/api/semantic/status` | `?q=&folder=&limit=` | Semantic search / status |
 | GET | `/api/tags` | `?folder=` | Tags and note counts, within a folder or node |
 | GET | `/api/backlinks?path=` | | Backlinks |
