@@ -52,6 +52,8 @@ export default defineConfig({
   plugins: [react(), stampServiceWorker(), emojiData()],
   // 같은 저장소의 core 패키지는 빌드 없이 TypeScript 원본을 쓴다
   resolve: { conditions: ["keyring-source", ...defaultClientConditions] },
+  // vitest 는 Node(ssr) 쪽 해석을 쓰므로 여기에도 둬야 시험이 dist 가 아닌 원본을 읽는다
+  ssr: { resolve: { conditions: ["keyring-source"] } },
   // 데스크톱·모바일 앱(Tauri) 개발 서버: 같은 화면을 띄운다
   clearScreen: false,
   server: {

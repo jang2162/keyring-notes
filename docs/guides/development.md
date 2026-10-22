@@ -52,7 +52,7 @@ pnpm typecheck
 pnpm build
 ```
 
-각 패키지의 시험은 `packages/core/test`, `server/test`, `web/src/*.test.ts` 에 있다. 출력에서 실행된 시험 수가 0 이 아닌지 본다.
+각 패키지의 시험은 `packages/core/test`, `server/test`, `web/src/*.test.ts` 에 있다. 출력에서 실행된 시험 수가 0 이 아닌지 본다. server·web 시험은 core 를 `dist` 가 아니라 원본(`keyring-source` 조건)으로 읽으므로, core 를 고친 뒤 core 를 먼저 빌드하지 않아도 새 코드로 돈다.
 
 포맷과 린트는 `pnpm fmt`, `pnpm lint`. lefthook 이 커밋 전에는 stage 된 파일을, push 전에는 저장소 전체를 검사한다(`lefthook.yml`).
 
