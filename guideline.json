@@ -31,6 +31,7 @@
         "rules/browser/02-console-network.md",
         "rules/browser/03-cdp.md",
         "rules/browser/04-shared-profile.md",
+        "rules/browser/05-page-scripts.md",
         "rules/browseros-neo/00-switch.md",
         "rules/browseros-neo/01-limits.md",
         "rules/browseros-neo/02-playwright.md",
@@ -66,6 +67,7 @@
         "rules/ruler/01-nested.md",
         "rules/ruler/02-documents.md",
         "rules/ruler/SETUP.md",
+        "rules/web/00-llms-txt.md",
         "skills/guideline-export",
         "skills/guideline-sync",
         "skills/orca-worker"

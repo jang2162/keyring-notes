@@ -5,7 +5,7 @@
 - `git check-ignore -q .superpowers/handoff/x && echo ignored` 가 `ignored` 를 낸다.
 - `git check-ignore -q .worktrees/x && echo ignored` 가 `ignored` 를 낸다.
 - `find docs -maxdepth 1 -type f` 가 아무것도 내지 않는다(`docs/` 직속 문서가 없다).
-- `docs/` 아래에 한글·대문자·공백이 든 파일 이름이 없다.
+- `docs/` 아래(`docs/guideline/` 제외)에 한글·대문자·공백이 든 파일 이름이 없다. `docs/guideline/` 은 `guideline` CLI 가 쓰는 사본 자리라 이 검사에서 뺀다.
 - README 가 링크하는 `docs/` 문서가 모두 `guides/` 나 `manual/` 안에 있다.
 
 ## 세팅

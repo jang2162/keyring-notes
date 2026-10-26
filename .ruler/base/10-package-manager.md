@@ -17,3 +17,4 @@
   - `npm install` 이 습관으로 나오기 쉽다. 명령을 쓰기 전에 `pnpm-lock.yaml` 이 있는지 본다.
   - 다른 매니저의 lockfile(`package-lock.json`, `yarn.lock`)을 만들거나 커밋하지 않는다. 실수로 생겼으면 지운다.
   - 이미 다른 매니저를 쓰는 저장소를 pnpm 으로 옮길지는 사용자에게 묻는다. 말없이 lockfile 을 바꾸지 않는다.
+  - MCP 서버 기동 명령과 저장소 밖 도구의 일회성 실행(`mcp/*` 항목의 `npx -y …`, 인덱서 초기화 등)은 이 규칙의 대상이 아니다 — 저장소의 lockfile·`node_modules` 를 건드리지 않는다. 저장소의 스크립트·훅·셋업 안에서 부를 때만 `pnpm dlx` 로 쓴다.

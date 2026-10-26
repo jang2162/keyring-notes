@@ -1,7 +1,7 @@
 {
   "version": 2,
   "revisions": {
-    "default": 25
+    "default": 29
   },
   "sources": {
     "default:mcp/codegraph": "01d216780214053bd3728391bbb87db603034af0d566ca43dc52bc228378cc00",
@@ -16,19 +16,20 @@
     "default:rules/base/06-worktree-setup.md": "4fb84f38bbe4bb6b47e6d6a1c57f9df3a358f75d52737c029dac4c4fa653c66b",
     "default:rules/base/07-worktree-cleanup.md": "acfd9442e38a843ac88f0210fb7674ff435c2b4e3e0db65d6f0fd942c79f7a9f",
     "default:rules/base/08-shared-resources.md": "f68b3db0fea9443d254766dc5739596f79c986c20c82f76002e40876b22cf97d",
-    "default:rules/base/09-worker-brief.md": "f8bfeacc7060334737380faf6cef4cd1a386f5c510cbc28ad27af13f3e20c23a",
-    "default:rules/base/10-package-manager.md": "4393e7b5203dbdf3cae0b02259a3989023c359f751a9c109fe10315283412c22",
+    "default:rules/base/09-worker-brief.md": "4e44668d5f8890cf3c7a45d1961c3a8d536036366deedfec72deda8c78f0c478",
+    "default:rules/base/10-package-manager.md": "806ebd01304ffd9074c89775ecf643e3d88a83f2adb65399bfb5d32bcd59835b",
     "default:rules/base/11-docs-layout.md": "8def8e3594ee2bad6e268e1bc64b01bb337228cdd0d3d2771abe033c08bb4bd2",
     "default:rules/base/12-handoff-docs.md": "af802bc8c52903064076d2973d2da191bfcc8f6c849917ede35394cab9ac48a2",
-    "default:rules/base/SETUP.md": "a77b269479829fadbb5958a3337e42bae48d4cda4376cda1eded9df524e0ac8f",
+    "default:rules/base/SETUP.md": "81c3c324112f164aaf89d13166ae4e57642ab6937e9ad855d3787d7d48e52103",
     "default:rules/browser/00-tool-choice.md": "779cb81c72fca06734d9a7b468af40ea26b2031e0c0f3ea4330763be589d5322",
     "default:rules/browser/01-mcp-lifecycle.md": "6f930dd92208de7c838a0091be2dd21208052e855f0972bc9d7c25bb6e604ebd",
     "default:rules/browser/02-console-network.md": "b5649ad1e5c645c3524fb4ad0acf1930e25766a981bfa0c349438e789a493697",
     "default:rules/browser/03-cdp.md": "271e112b29f9fa6235fb3919e64feb80b9abbece5249accf03ca1dc4b593f9c8",
     "default:rules/browser/04-shared-profile.md": "5f306b8212cff5572c7e8d1f2e012cd6ce7bd80e9ae0b1f985d61593635473d5",
+    "default:rules/browser/05-page-scripts.md": "f4cd5fd94a30564e33a552a810dc453c75ffa0b59370a2ab821358d31670d3f7",
     "default:rules/browseros-neo/00-switch.md": "9fad10f2d0fff095abafdd649b366431e14155f929b8aff77fe105f141e67433",
     "default:rules/browseros-neo/01-limits.md": "52fa2c34c80c0b91776f11e4f8f3bb4bfb9aa04cde757882c3c653fb6b8331ab",
-    "default:rules/browseros-neo/02-playwright.md": "c25f640696256793957ba742ba64334040ebb7bea6c24d43977dbcc8ba87ce21",
+    "default:rules/browseros-neo/02-playwright.md": "804d4f46ea93b2442427527a0a694bb4cf2212d761b6139ee1e4698a6171df0b",
     "default:rules/browseros-neo/03-tabs.md": "5ef01cc4bffdc79f36b1fa3c319547c72eb62717d89d55124ef767f5b93aa1d4",
     "default:rules/browseros-neo/SETUP.md": "b7376822d2ad4eae0857a1654bc5ddf6c1304c75ec2c898097c4362f0d46a80f",
     "default:rules/codegraph/00-index.md": "dfb04e418ad4e592a161c6cc0d895ba534c7191106b3945d91f4c29dde211f8e",
@@ -39,7 +40,7 @@
     "default:rules/komodo/02-override.md": "06bce5f009fafa0173c91f0e6729ef538f36d2d18c28729b3790c94e8589ea28",
     "default:rules/lefthook/00-toolchain.md": "1b778edb3d410653acc7c23acc3967268125e08da90522289fd6386d2af21589",
     "default:rules/lefthook/01-pre-push.md": "abacc327081e93b49348ff865cae466c25ff2a2fd4c3a1330a0c94ea51d943c3",
-    "default:rules/lefthook/02-post-checkout.md": "b1ae4b5a5c77b92d6b1614d37d8ae1f31c6fb774e88b093d3bdc6e0b8ada91e0",
+    "default:rules/lefthook/02-post-checkout.md": "bcce8285f4b9a779ae3086f15e939cf6b6600d722dca69730d8b1d63ffa76bb1",
     "default:rules/mise/00-source.md": "6694bcfb4a8af598cf02642c41c7989f22977de9b913e2e327201e7892792f97",
     "default:rules/mise/01-path.md": "2e25464ea31b9db5388074df777b3628418ed032d0495963ed23a4a70b36c15d",
     "default:rules/mise/02-pnpm.md": "9cbc7883c4b75918af7241daa2c63a97264f4f3d4e8ab7a99328089ca39f1a15",
@@ -49,10 +50,10 @@
     "default:rules/orca/SETUP.md": "cb49f07b7fb192f376ff40672866ee878cec64e5d73d1829b91cc8ac32944cd3",
     "default:rules/oxc/00-version.md": "b6358ea4358d8b9df6e2ca52d2b0a8dfa3047d4a0e9c8b6d0a8c3a532b8b5f57",
     "default:rules/oxc/01-formatting.md": "6b1b6ed02c4c5ee9406c3a4d4c0254cfd26e4c5851dbcb4d68d980ba92caf2a2",
-    "default:rules/public-docs/00-readme.md": "010a23668222d8944e6cb5bfd06e34209fbb688ac4196239d647fd66813b7703",
+    "default:rules/public-docs/00-readme.md": "12e42a49fa850a87bebdd79f752315084dc31e690d5ed41c9be2f12edddd0127",
     "default:rules/public-docs/01-images.md": "aff2406ed0070c5b90d98f4c664246582fad6e73e197b302b5cbd4a27392328a",
     "default:rules/public-docs/02-manual.md": "5522399adf3416795693f54aa1ac91abd7ec89d167de35cbc81eaa80d619131a",
-    "default:rules/public-docs/03-i18n.md": "143641bb9c9e22e0efc1b38aa2943d180b034d4250d4aea90e54e5f603fa540b",
+    "default:rules/public-docs/03-i18n.md": "c2ad0855890bb1e60b76d0e58315e95d2593810f6cda6970eaafb2775b56509c",
     "default:rules/public-docs/04-style.md": "c5e9a38a6fbf3b59153f3f359dc17cc99fd6f5e942e02d2cb861d03ca0ec78db",
     "default:rules/public-docs/05-support.md": "e3d49377aaa7a9c27dead714beb90a96fe56aa7008334087e63b434e16665846",
     "default:rules/public-docs/06-readme-template.md": "4a5b65383ab8b3b32764a9f7e07489516c0d105c128d31bd68c1515e06b4b435",
@@ -61,6 +62,7 @@
     "default:rules/ruler/01-nested.md": "aac752f0592f7c5d863df6da387504a5b62809b5fcdaca201e3774f68bc7367a",
     "default:rules/ruler/02-documents.md": "5ec1a082098d747b22905bea5178f76bd9d46b84db83216506b874da3ab08189",
     "default:rules/ruler/SETUP.md": "a39cccbe591d83034567c291707a1e9a6ce17359b8ce40135cdc05dcfd867407",
+    "default:rules/web/00-llms-txt.md": "6955a39ebcfb57a41677a9a9bbd0d2ffca45f1474737d10d988ac772ad450060",
     "default:skills/guideline-export": "410661cf5e1afd5e91146070db113e4986e687b01ebf3e6815d7e22243027acb",
     "default:skills/guideline-sync": "853f8c2d3688e5ddce2b6a43c1ada349639f9177619a1b32ef58683ee0494dec",
     "default:skills/orca-worker": "21c16400cced87f4d35cee13adf38f62def59244408ba41aa5dc00c1074d6568"
@@ -99,7 +101,7 @@
       "items": [
         "default:rules/base/10-package-manager.md"
       ],
-      "hash": "ba6bb1c11815ad9721fc42f18519f55f850623c7db27a03cd17f68407ff0d161"
+      "hash": "09bf1d2cc4b1ff455fbabcf040777fde1628030c8d606c5fe06550cd1afabe40"
     },
     {
       "path": ".ruler/base/99-reference.md",
@@ -109,7 +111,7 @@
     {
       "path": ".ruler/browser/99-reference.md",
       "items": [],
-      "hash": "fa874a7e2604594f7308a6cb112bdcc39d0ccc0e98e5663972d28437582d525a"
+      "hash": "17e897af727df9e933e0e95724cd74e6ec7648a92e7d968097da277a6dd15c4d"
     },
     {
       "path": ".ruler/browseros-neo/00-switch.md",
@@ -270,6 +272,11 @@
       "hash": "84715e3b693649831cd757ba544d2d6a6bf66c11a9bb1b38bca0d7b6d0e69a89"
     },
     {
+      "path": ".ruler/web/99-reference.md",
+      "items": [],
+      "hash": "cfb0b968effa6f11172f18a4162e868936cf7341f3b20cdb19dc608a6ee12040"
+    },
+    {
       "path": "docs/guideline/README.md",
       "items": [],
       "hash": "fde54907d2df64c10707b9551e654d7fdd8a8fea07df1c2a4edfda817a9c64db"
@@ -314,7 +321,7 @@
       "items": [
         "default:rules/base/09-worker-brief.md"
       ],
-      "hash": "7c08b69056987d19444f2c2c68e915898e57f0cedab1f437d953008ccda61eec"
+      "hash": "94459ddf23a9e99d1c1665194db1ae92ae29fae597260a2c8f65874baaf931f5"
     },
     {
       "path": "docs/guideline/base/11-docs-layout.md",
@@ -335,7 +342,7 @@
       "items": [
         "default:rules/base/SETUP.md"
       ],
-      "hash": "a77b269479829fadbb5958a3337e42bae48d4cda4376cda1eded9df524e0ac8f"
+      "hash": "81c3c324112f164aaf89d13166ae4e57642ab6937e9ad855d3787d7d48e52103"
     },
     {
       "path": "docs/guideline/browser/00-tool-choice.md",
@@ -373,6 +380,13 @@
       "hash": "4dce11291aa256f7953cb9595b33d71802bc85681103c36981f7ce8a79af9682"
     },
     {
+      "path": "docs/guideline/browser/05-page-scripts.md",
+      "items": [
+        "default:rules/browser/05-page-scripts.md"
+      ],
+      "hash": "7a0d9a22a92ac856259d43b7c88696bc93f00f089cbbe9afb48f2f3f76021209"
+    },
+    {
       "path": "docs/guideline/browseros-neo/01-limits.md",
       "items": [
         "default:rules/browseros-neo/01-limits.md"
@@ -384,7 +398,7 @@
       "items": [
         "default:rules/browseros-neo/02-playwright.md"
       ],
-      "hash": "c900dc39c38114f7715a62d4834209b9d849195437c36e680166c0f673125b22"
+      "hash": "fff8fa2486a10e098200f7a7035df2f5dda8523ad47c3c44993ead224d75c259"
     },
     {
       "path": "docs/guideline/browseros-neo/03-tabs.md",
@@ -461,7 +475,7 @@
       "items": [
         "default:rules/lefthook/02-post-checkout.md"
       ],
-      "hash": "3e470fa35bfd4919ac0e6ceaa1f03d772dd5811e7bdde969dad4eff341f3c983"
+      "hash": "f35f21e4379f18802212a8763ee67cd1b0a04292a4b7f8d2c985d5b1c3631d4d"
     },
     {
       "path": "docs/guideline/mise/00-source.md",
@@ -517,7 +531,7 @@
       "items": [
         "default:rules/public-docs/00-readme.md"
       ],
-      "hash": "b959b878779c114e4f79d59fc6b59834e1e81c7ad5483586b2baf57c4ee81364"
+      "hash": "3dd4db72079e33ceb1d1195c671708acb0aaea35acad4a69a81ee3fd8339e9ac"
     },
     {
       "path": "docs/guideline/public-docs/01-images.md",
@@ -538,7 +552,7 @@
       "items": [
         "default:rules/public-docs/03-i18n.md"
       ],
-      "hash": "e2cb86fb3da4c95766ed616b1b1ea2a2bd9466176e639372e04c797a343d6565"
+      "hash": "53f89fa930e3fdeb7afb59dd91a3f6a14fa12fa6432cde8620be64daa85da8c9"
     },
     {
       "path": "docs/guideline/public-docs/04-style.md",
@@ -588,6 +602,13 @@
         "default:rules/ruler/SETUP.md"
       ],
       "hash": "a39cccbe591d83034567c291707a1e9a6ce17359b8ce40135cdc05dcfd867407"
+    },
+    {
+      "path": "docs/guideline/web/00-llms-txt.md",
+      "items": [
+        "default:rules/web/00-llms-txt.md"
+      ],
+      "hash": "47bef340fe12e5c4e121781ac967a978dda611f5fe5bd2955f1610a3dc074270"
     }
   ]
 }

@@ -9,3 +9,4 @@
 | 브라우저 콘솔이나 네트워크 요청을 읽어 판단할 때 | `docs/guideline/browser/02-console-network.md` |
 | Playwright 같은 페이지 자동화 도구를 이미 떠 있는 브라우저에 붙일 때 | `docs/guideline/browser/03-cdp.md` |
 | 여러 세션이나 워커가 한 브라우저를 함께 쓸 때 | `docs/guideline/browser/04-shared-profile.md` |
+| Playwright 같은 페이지 자동화 스크립트로 비동기로 정해지는 값을 기다릴 때 | `docs/guideline/browser/05-page-scripts.md` |
