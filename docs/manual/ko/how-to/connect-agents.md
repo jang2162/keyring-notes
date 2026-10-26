@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/connect-agents.md @ v0.8.5 -->
+<!-- source: docs/manual/en/how-to/connect-agents.md @ v0.9.0 -->
 # 에이전트 연결하기
 
 에이전트용 토큰을 발급하고, 볼 수 있는 것과 바꿀 수 있는 것을 제한하고, MCP 나 REST 로 연결합니다.

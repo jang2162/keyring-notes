@@ -2,6 +2,25 @@
 
 All notable user-facing changes to Keyring Notes are listed here. The server and the desktop app share one version.
 
+## [0.9.0] - 2026-10-26
+
+### Added
+
+- Trash: open **Trash** from the command palette or the link on Home to see deleted notes, grouped by delete, preview them and restore them. A restore never overwrites: if the path is taken, the note comes back with ` 2` added to its name. The server restores attachments too; the desktop app's local vault cannot. The REST API has `/api/trash`, `/api/trash/preview` and `/api/trash/restore` (owner only).
+- Pin notes from the tree menu, the note menu (⋯) or the command palette. Pinned notes show above recent notes on Home and in a collapsible **Pinned** group above the tree. Pins are kept on this device only.
+- Search can be narrowed to a folder and to tags. Tag chips combine, so a note must have every chosen tag. Each result shows up to three matching lines, and **N more lines** shows up to ten; clicking a line opens the note at that line. `/api/search` takes `tag` (repeatable) and `lines`.
+- **Settings** → **General** → **Open source licenses** lists the third-party software included in the server and the app with its licenses. The server also serves it at `/licenses.txt`.
+
+### Changed
+
+- The icon picker offers the full emoji set (up to Emoji 14.0), grouped by category with tabs at the top, and finds emoji by English or Korean name.
+
+### Fixed
+
+- Recently used icons are no longer cut off at the top of the icon picker.
+- A pasted emoji with a trailing variation selector, such as `⭐️`, is saved the same as `⭐`.
+- Clicking a search result now selects the match even when the query has several words or a `#tag`.
+
 ## [0.8.6] - 2026-10-20
 
 ### Added

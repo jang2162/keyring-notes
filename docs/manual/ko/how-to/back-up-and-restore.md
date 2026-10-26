@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/back-up-and-restore.md @ v0.8.5 -->
+<!-- source: docs/manual/en/how-to/back-up-and-restore.md @ v0.9.0 -->
 # 백업과 복원
 
 백업을 만들고 복원하고, 볼트를 다른 서버로 옮기고, S3 호환 저장소에 사본을 둡니다.

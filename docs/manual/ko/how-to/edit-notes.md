@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/edit-notes.md @ v0.8.5 -->
+<!-- source: docs/manual/en/how-to/edit-notes.md @ v0.9.0 -->
 # 노트 편집하기
 
 에디터에서 쓰는 일을 다룹니다: 저장, 링크, 서식, 속성, 템플릿, 오프라인 편집.

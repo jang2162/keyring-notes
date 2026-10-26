@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/manage-the-server.md @ v0.8.5 -->
+<!-- source: docs/manual/en/how-to/manage-the-server.md @ v0.9.0 -->
 # 서버 관리하기
 
 관리 콘솔을 다룹니다: 서버 상태, 에이전트, 기기, 업데이트, 비밀번호, 패스키 로그인.

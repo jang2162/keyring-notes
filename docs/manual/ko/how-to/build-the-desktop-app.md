@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/build-the-desktop-app.md @ v0.8.5 -->
+<!-- source: docs/manual/en/how-to/build-the-desktop-app.md @ v0.9.0 -->
 # 데스크톱·모바일 앱 빌드하기
 
 Windows, macOS, Linux, Android, iOS 용 Keyring Notes 앱을 소스에서 빌드합니다.

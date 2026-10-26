@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/review-agent-changes.md @ v0.8.5 -->
+<!-- source: docs/manual/en/how-to/review-agent-changes.md @ v0.9.0 -->
 # 에이전트 변경 검토하기
 
 고른 폴더에 에이전트가 쓴 것이 승인을 받은 뒤에만 볼트에 들어가게 합니다.

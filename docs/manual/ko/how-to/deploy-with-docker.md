@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/deploy-with-docker.md @ v0.8.5 -->
+<!-- source: docs/manual/en/how-to/deploy-with-docker.md @ v0.9.0 -->
 # Docker 로 배포하기
 
 Docker Compose 로 서버에 Keyring Notes 를 띄우고 다른 기기에서 접속할 수 있게 합니다.

@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/customize-settings.md @ v0.8.5 -->
+<!-- source: docs/manual/en/how-to/customize-settings.md @ v0.9.0 -->
 # 설정 바꾸기
 
 설정 창, 기기를 넘어 따라가는 설정, 언어가 어떻게 동작하는지 설명합니다.

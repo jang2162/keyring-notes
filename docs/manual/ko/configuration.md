@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/configuration.md @ v0.8.5 -->
+<!-- source: docs/manual/en/configuration.md @ v0.9.0 -->
 # 설정값
 
 서버가 읽는 환경 변수와 Docker Compose `.env` 파일이 받는 키를 모두 모았습니다.
