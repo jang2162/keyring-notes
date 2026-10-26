@@ -236,6 +236,7 @@ Press `Ctrl/Cmd+/` to see the full list, and change shortcuts in Settings → **
 | --- | --- |
 | New note | `Alt+N` (desktop app: `Ctrl/Cmd+N`) |
 | Close tab | `Alt+W` (desktop app: `Ctrl/Cmd+W`) |
+| Close window | desktop app only: `Ctrl/Cmd+Shift+W` |
 | Reopen closed tab | `Alt+Shift+T` (desktop app: `Ctrl/Cmd+Shift+T`) |
 | Previous / next tab | `Alt+[` / `Alt+]` (desktop app: `Ctrl+Shift+Tab` / `Ctrl+Tab`) |
 | Nth tab | `Alt+1` … `Alt+9` (desktop app: `Ctrl/Cmd+1` … `Ctrl/Cmd+9`) |

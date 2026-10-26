@@ -189,6 +189,7 @@ import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
+import { canCloseWindow, closeCurrentWindow, closeWindowCommands, closeWindowSafely } from "./closeWindow";
 import { tearOutAt } from "./tearOut";
 import { SearchFilters, SearchResults } from "./Search";
 import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, SEARCH_LINES_FETCH, searchKey, type SearchFilter } from "./searchFilter";
@@ -1231,10 +1232,29 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  /**
+   * 「창 닫기」(데스크톱 앱): 탭 닫기처럼 먼저 저장하고, 남은 변경은 묻는다. 버리기로 했으면 아래 beforeunload 경고가 다시 묻거나
+   * 닫기를 막지 않게 표시해 둔다
+   */
+  const closingWindow = useRef(false);
+  const closeWindow = async () => {
+    try {
+      await closeWindowSafely({
+        dirty: () => dirtyPaths(docsRef.current),
+        flush: () => flush(),
+        confirm: (paths) => confirmDialog(t("window.discardClose", { names: paths.map((p) => `"${stemOf(p)}"`).join(", ") }), t("tab.discardCloseButton")),
+        close: () => ((closingWindow.current = true), closeCurrentWindow()),
+      });
+    } catch (err) {
+      closingWindow.current = false;
+      toastError(err);
+    }
+  };
+
   // 저장 안 한 변경(지금 문서 또는 뒤에 있는 탭)이 있으면 창을 닫기 전에 저장을 시도하고 묻는다
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
-      if (!dirtyPaths(docsRef.current).length) return;
+      if (closingWindow.current || !dirtyPaths(docsRef.current).length) return;
       void flushRef.current();
       e.preventDefault();
     };
@@ -2236,6 +2256,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       webKeys: "Alt+W",
       run: () => doc && void closeTab(curLayout().focused, doc.path),
     },
+    ...closeWindowCommands(canCloseWindow(), { group: g.tab, label: t("cmd.closeWindow"), run: () => void closeWindow() }),
     {
       id: "reopen-tab",
       group: g.tab,

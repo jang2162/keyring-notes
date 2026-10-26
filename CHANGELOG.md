@@ -7,6 +7,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 ### Added
 
 - With line numbers on, clicking a line number selects that line without its line break. Dragging over line numbers selects whole lines, Shift-click extends the selection to a line, and clicking a folded line selects everything folded under it.
+- Desktop app: `Ctrl/Cmd+Shift+W` closes the current window, like its close button. Unsaved changes are saved first; if some can't be saved, you are asked before they are discarded.
 
 ## [0.9.0] - 2026-10-26
 
