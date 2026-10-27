@@ -23,13 +23,14 @@ import {
 import { tags } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
-import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { findBar, findKeymap } from "./findBar";
 import { codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 import { t } from "./i18n";
+import { lineNumberGutter } from "./lineSelect";
 import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
 
 export interface LinkCandidate {
@@ -346,7 +347,7 @@ export function Editor({
       state: EditorState.create({
         doc: initial,
         extensions: [
-          linesSlot.current.of(linesRef.current ? lineNumbers() : []),
+          linesSlot.current.of(linesRef.current ? lineNumberGutter() : []),
           history(),
           drawSelection(),
           highlightActiveLine(),
@@ -544,7 +545,7 @@ export function Editor({
   }, [docKey, readOnly]);
 
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: linesSlot.current.reconfigure(showLines ? lineNumbers() : []) });
+    viewRef.current?.dispatch({ effects: linesSlot.current.reconfigure(showLines ? lineNumberGutter() : []) });
   }, [showLines]);
 
   useEffect(() => {
