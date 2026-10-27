@@ -11,7 +11,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ### Fixed
 
-- Desktop app: closing a window with its close button, or quitting with `Cmd+Q`, discarded unsaved changes without asking. Now, whenever a window with unsaved changes closes, you are asked to **Save and close**, **Close without saving** or cancel, even with autosave on. With several windows open, `Cmd+Q` asks in each window in turn, and canceling stops the quit.
+- Desktop app: closing a window with its close button, quitting with `Cmd+Q`, or restarting after installing an update discarded unsaved changes without asking. Now, whenever a window with unsaved changes closes, you are asked to **Save and close**, **Close without saving** or cancel, even with autosave on. With several windows open, `Cmd+Q` and the update restart ask in each window in turn, and canceling stops them. If the window isn't responding, the app asks with a system dialog instead.
 
 ## [0.9.0] - 2026-10-26
 

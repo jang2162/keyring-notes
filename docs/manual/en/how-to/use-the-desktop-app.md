@@ -26,13 +26,15 @@ The app keeps its own metadata in `.keyring-app/` inside the vault. It is a dot 
 
 When you close a window that has unsaved changes, the app asks first: **Save and close** (the default, `Enter`), **Close without saving**, or **Cancel**. It asks even with autosave on, whichever way you close: the close button, `Ctrl/Cmd+Shift+W`, the **Close Window** menu item or `Cmd+Q`. **Save and close** closes the window only after every note is saved. If a note can't be saved, the window stays open and the app tells you which note.
 
-With several windows open, `Cmd+Q` asks in each window that has unsaved changes, starting with the current one. Canceling in any window stops the quit, and the windows not closed yet stay open.
+With several windows open, `Cmd+Q` asks in each window that has unsaved changes, starting with the current one. Each window comes to the front when its turn comes. Canceling in any window stops the quit, and the windows not closed yet stay open.
+
+If a window with unsaved changes stops responding, the app asks with a system dialog instead, a few seconds after you close it: **Close without saving** or **Cancel**.
 
 On macOS, quitting from the Dock, logging out or shutting down does not ask yet. Close your windows or use `Cmd+Q` first.
 
 ## Update the desktop app
 
-A few seconds after start, the app asks GitHub Releases whether a new version is out. If there is one, it asks you first. Only after you choose **Update and restart** does it download the update, verify its signature, install it and restart.
+A few seconds after start, the app asks GitHub Releases whether a new version is out. If there is one, it asks you first. Only after you choose **Update and restart** does it download the update, verify its signature, install it and restart. Before restarting, it asks in each window with unsaved changes, as `Cmd+Q` does. If you cancel, the app doesn't restart; the update is already installed and is used the next time you open the app.
 
 To turn the startup check off, go to Settings → **This device & sync** → **App updates**. With the check off, no request is sent at startup. **Check for updates** in the same place checks on demand.
 
