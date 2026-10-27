@@ -24,7 +24,7 @@ export async function startupCheck<U>(opts: {
 
 /**
  * 받아 설치하고 다시 시작한다. 다시 시작은 창마다 닫기 물음을 거친다(저장 안 한 초안을 묻지 않고 버리지 않는다 — closeWindow.ts).
- * 플러그인의 relaunch 를 쓰지 않는다: 창에 닫기 요청 없이 곧바로 끝난다.
+ * process 플러그인의 relaunch 는 쓰지 않는다(의존성에서도 뺐다): 창에 닫기 요청 없이 곧바로 끝난다.
  * 다 닫히면 앱이 다시 시작하므로 돌아오지 않는다. 누가 닫지 않기로 하면 "cancelled"(업데이트는 설치된 채 다음 실행 때 적용된다)
  */
 export async function installAndRestart(

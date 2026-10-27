@@ -26,8 +26,10 @@ serde = { version = "1", features = ["derive"] }
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # 데스크톱에서 고른 볼트 폴더 접근 권한을 다시 켤 때도 유지
 tauri-plugin-persisted-scope = "2"
-tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
+# 응답하지 않는 창의 OS 대화상자(close_guard). dialog 플러그인이 쓰는 판을 그대로 쓴다 — 플러그인을 거치면 단추 아닌 끝(Escape·창 닫기)이
+# 두 번째 단추로 읽혀 「취소」를 첫 단추(기본)로 둘 수 없다
+rfd = { version = "0.16", default-features = false }
 
 [profile.release]
 codegen-units = 1

@@ -16,8 +16,7 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_persisted_scope::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(desktop)]
     let builder = close_guard::install(builder);
     #[cfg(target_os = "macos")]

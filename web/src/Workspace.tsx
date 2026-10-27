@@ -197,6 +197,7 @@ import {
   closeCurrentWindow,
   closeWindowCommands,
   destroyCurrentWindow,
+  dropAutosaves,
   listenCloseAsks,
   listenRestartCancelled,
   savesHeld,
@@ -1285,11 +1286,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       unsaved: (paths) => toast(t("window.saveFailed", { names: unsavedSummary(paths, stemOf).names }), { kind: "error" }),
       close: destroyCurrentWindow,
       hold: closeHold.current,
-      dropPending: () => {
-        autosaveTimers.current.forEach(clearTimeout);
-        autosaveTimers.current.clear();
-        autosaveArmed.current.clear();
-      },
+      dropPending: () => dropAutosaves(autosaveTimers.current, autosaveArmed.current),
       cancelled: () => void cancelQuit().catch(() => undefined),
       failed: toastError,
     });

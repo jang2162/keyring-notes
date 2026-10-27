@@ -4,8 +4,11 @@ import {
   closeAskHandler,
   closeWindowCommands,
   closeWindowSafely,
+  dropAutosaves,
+  guardPage,
   restartAfterClosing,
   savesHeld,
+  setCloseGuard,
   unsavedSummary,
   type CloseChoice,
   type CloseWindowSteps,
@@ -13,6 +16,9 @@ import {
 } from "./closeWindow";
 import { normalizeCombo } from "./shortcuts";
 import workspaceSrc from "./Workspace.tsx?raw";
+
+const { invoke } = vi.hoisted(() => ({ invoke: vi.fn(async () => undefined) }));
+vi.mock("@tauri-apps/api/core", async (orig) => ({ ...(await orig<typeof import("@tauri-apps/api/core")>()), invoke }));
 
 const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15";
 
@@ -262,6 +268,42 @@ describe("restartAfterClosing", () => {
   });
 });
 
+describe("dropAutosaves", () => {
+  it("걸려 있는 자동 저장 타이머를 지워 돌지 않게 하고, 건 기록도 비운다", () => {
+    vi.useFakeTimers();
+    try {
+      const fire = vi.fn();
+      const timers = new Map([["a.md", setTimeout(fire, 1000)]]);
+      const armed = new Map([["a.md", "armed"]]);
+      dropAutosaves(timers, armed);
+      vi.advanceTimersByTime(5000);
+      expect(fire).not.toHaveBeenCalled();
+      expect(timers.size).toBe(0);
+      expect(armed.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("setCloseGuard", () => {
+  it("페이지 번호는 문서를 만든 시각에서 얻어 나중 페이지가 크다(앱이 페이지가 바뀐 뒤 늦게 닿은 옛 요청을 가른다)", () => {
+    expect(guardPage(1_730_000_000_000.123)).toBeLessThan(guardPage(1_730_000_000_000.5));
+    expect(Number.isSafeInteger(guardPage(4_102_444_800_000))).toBe(true);
+  });
+
+  it("한 페이지에서는 같은 페이지 번호에 늘어나는 번호를 싣는다", async () => {
+    invoke.mockClear();
+    await setCloseGuard(null);
+    await setCloseGuard({ message: "m", discard: "d", cancel: "c" });
+    const [a, b] = invoke.mock.calls.map((c) => (c as unknown[])[1] as { page: number; seq: number });
+    expect(invoke.mock.calls.map((c) => (c as unknown[])[0])).toEqual(["set_close_guard", "set_close_guard"]);
+    expect(a.page).toBe(guardPage());
+    expect(b.page).toBe(a.page);
+    expect(b.seq).toBeGreaterThan(a.seq);
+  });
+});
+
 describe("Workspace 배선", () => {
   it("Tauri 의 JS 닫기 리스너를 걸지 않는다(새로고침 뒤에도 남아 창이 닫히지 않는다 — 막을지는 앱의 지킴이 정한다)", () => {
     expect(workspaceSrc).not.toMatch(/onCloseRequested/);
@@ -273,6 +315,10 @@ describe("Workspace 배선", () => {
     // 자동 저장 타이머(fire), 창 blur·숨김(go), 편집기 이탈 저장 — 셋 모두 savesHeld 로 검사한다
     expect(workspaceSrc.match(/savesHeld\(closeHold\.current\)/g)).toHaveLength(3);
     expect(workspaceSrc).not.toMatch(/askingClose/);
+  });
+
+  it("버리기로 정하면(dropPending) 걸려 있는 자동 저장 타이머를 지운다", () => {
+    expect(workspaceSrc).toMatch(/dropPending: \(\) => dropAutosaves\(autosaveTimers\.current, autosaveArmed\.current\)/);
   });
 });
 

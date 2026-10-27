@@ -122,12 +122,25 @@ export interface GuardText {
   cancel: string;
 }
 
+/**
+ * 이 페이지(문서)의 번호: 문서를 만든 시각(마이크로초). 새로고침하면 바뀌고 나중 페이지가 크다 — 앱이 페이지가 바뀐 뒤 늦게 닿은
+ * 옛 페이지의 요청을 가려 버린다(close_guard.rs 의 Guards::set)
+ */
+export const guardPage = (origin = performance.timeOrigin): number => Math.floor(origin * 1000);
+
 let guardSeq = 0;
 
-/** 이 창의 지킴을 켜거나(저장 안 한 변경이 있다. text 는 그때 언어의 OS 대화상자 글) 끈다(null). 번호로 늦게 도착한 옛 요청을 앱이 버린다 */
+/** 이 창의 지킴을 켜거나(저장 안 한 변경이 있다. text 는 그때 언어의 OS 대화상자 글) 끈다(null). 페이지 번호와 번호로 늦게 도착한 옛 요청을 앱이 버린다 */
 export async function setCloseGuard(text: GuardText | null): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("set_close_guard", { seq: ++guardSeq, text });
+  await invoke("set_close_guard", { page: guardPage(), seq: ++guardSeq, text });
+}
+
+/** 걸려 있는 자동 저장 타이머를 모두 지우고, 건 기록(armed)도 비운다(창 닫기로 버리기로 정한 뒤: 닫히기 전에 저장되지 않게) */
+export function dropAutosaves(timers: Map<string, ReturnType<typeof setTimeout>>, armed: Map<string, string>): void {
+  timers.forEach(clearTimeout);
+  timers.clear();
+  armed.clear();
 }
 
 /** 앱이 이 창에 보내는 물음 요청(close-ask)에 처리기를 건다. 떼어 낼 함수를 돌려준다 */

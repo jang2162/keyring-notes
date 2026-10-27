@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { installAndRestart, startupCheck } from "./updateCheck";
 
-// 다시 시작은 창마다 묻는 길(restartAfterClosing)로만 한다. 플러그인의 relaunch 는 묻지 않고 초안을 버린다
-const { relaunch, restartAfterClosing } = vi.hoisted(() => ({ relaunch: vi.fn(), restartAfterClosing: vi.fn(async () => "cancelled" as const) }));
-vi.mock("@tauri-apps/plugin-process", () => ({ relaunch }));
+// 다시 시작은 창마다 묻는 길(restartAfterClosing)로만 한다
+const { restartAfterClosing } = vi.hoisted(() => ({ restartAfterClosing: vi.fn(async () => "cancelled" as const) }));
 vi.mock("./closeWindow", async (orig) => ({ ...(await orig<typeof import("./closeWindow")>()), restartAfterClosing }));
 
 describe("실행 때 업데이트 확인", () => {
@@ -40,7 +39,7 @@ describe("실행 때 업데이트 확인", () => {
 });
 
 describe("업데이트 설치 뒤 다시 시작", () => {
-  it("설치한 뒤 창마다 닫기 물음을 거치는 다시 시작을 요청하고, 묻지 않는 relaunch 는 부르지 않는다", async () => {
+  it("설치한 뒤 창마다 닫기 물음을 거치는 다시 시작을 요청한다", async () => {
     const update = { downloadAndInstall: vi.fn(async () => {}) };
     const onRestart = vi.fn();
     await installAndRestart(update, () => {}, onRestart);
@@ -48,7 +47,6 @@ describe("업데이트 설치 뒤 다시 시작", () => {
     expect(restartAfterClosing).toHaveBeenCalledOnce();
     expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(restartAfterClosing.mock.invocationCallOrder[0]);
     expect(onRestart).toHaveBeenCalledOnce();
-    expect(relaunch).not.toHaveBeenCalled();
   });
 
   it("누가 취소하면 다시 시작하지 않고 cancelled 로 끝난다(업데이트는 설치된 채)", async () => {
@@ -61,7 +59,6 @@ describe("업데이트 설치 뒤 다시 시작", () => {
         restart,
       ),
     ).toBe("cancelled");
-    expect(relaunch).not.toHaveBeenCalled();
   });
 
   it("설치가 실패하면 다시 시작을 요청하지 않는다", async () => {
