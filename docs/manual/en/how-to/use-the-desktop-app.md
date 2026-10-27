@@ -22,6 +22,14 @@ The app works **without a server**. Notes are Markdown files in a folder on the 
 
 The app keeps its own metadata in `.keyring-app/` inside the vault. It is a dot folder, so the server and Obsidian ignore it.
 
+## Close windows and quit
+
+When you close a window that has unsaved changes, the app asks first: **Save and close** (the default, `Enter`), **Close without saving**, or **Cancel**. It asks even with autosave on, whichever way you close: the close button, `Ctrl/Cmd+Shift+W`, the **Close Window** menu item or `Cmd+Q`. **Save and close** closes the window only after every note is saved. If a note can't be saved, the window stays open and the app tells you which note.
+
+With several windows open, `Cmd+Q` asks in each window that has unsaved changes, starting with the current one. Canceling in any window stops the quit, and the windows not closed yet stay open.
+
+On macOS, quitting from the Dock, logging out or shutting down does not ask yet. Close your windows or use `Cmd+Q` first.
+
 ## Update the desktop app
 
 A few seconds after start, the app asks GitHub Releases whether a new version is out. If there is one, it asks you first. Only after you choose **Update and restart** does it download the update, verify its signature, install it and restart.
