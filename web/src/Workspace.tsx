@@ -106,7 +106,7 @@ import { Properties } from "./Properties";
 import { PdfViewer } from "./PdfViewer";
 import { localContext } from "./local/boot";
 import { useSyncStatus } from "./Sync";
-import { confirmDialog, promptDialog } from "./dialog";
+import { chooseDialog, confirmDialog, promptDialog } from "./dialog";
 import { mentionTarget, References, UnlinkedMentions } from "./Links";
 import { DEFAULT_PREFS, setPrefs, usePrefs, type Prefs } from "./prefs";
 import { errorText, toast, toastError, Toasts } from "./toast";
@@ -189,7 +189,16 @@ import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
-import { canCloseWindow, closeCurrentWindow, closeWindowCommands, closeWindowSafely } from "./closeWindow";
+import {
+  canCloseWindow,
+  cancelQuit,
+  closeCurrentWindow,
+  closeRequestHandler,
+  closeWindowCommands,
+  destroyCurrentWindow,
+  listenCloseRequests,
+  unsavedSummary,
+} from "./closeWindow";
 import { tearOutAt } from "./tearOut";
 import { SearchFilters, SearchResults } from "./Search";
 import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, SEARCH_LINES_FETCH, searchKey, type SearchFilter } from "./searchFilter";
@@ -913,6 +922,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const flushRef = useRef(flush);
   flushRef.current = flush;
 
+  /** 창 닫기 물음이 떠 있다(그동안 자동 저장을 멈춘다. 아래 「창 닫기」) */
+  const askingClose = useRef(false);
+
   // 자동 저장: 문서마다 타이머 하나. 그 문서의 입력이 멈추고 잠시 뒤. 충돌·과거 판 보기 중인 문서는 건너뛴다
   const autosaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   /** 타이머를 건 때의 초안·저장본·간격. 같으면 다시 걸지 않는다(실패한 저장을 혼자 되풀이하지 않게) */
@@ -933,7 +945,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       autosaveArmed.current.set(p, armed);
       autosaveTimers.current.set(
         p,
-        setTimeout(() => {
+        setTimeout(function fire() {
+          // 창 닫기 물음이 떠 있는 동안에는 저장하지 않고 미룬다(「저장하지 않고 닫기」를 고를 수 있다)
+          if (askingClose.current) return void autosaveTimers.current.set(p, setTimeout(fire, prefs.autosaveDelay));
           autosaveTimers.current.delete(p);
           void saveRef.current(p, { auto: true });
         }, prefs.autosaveDelay),
@@ -946,7 +960,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   // 창에서 포커스가 빠지거나 숨겨질 때도 저장(저장 안 한 문서 전부)
   useEffect(() => {
     if (!prefs.autosave) return;
-    const go = () => void flushRef.current();
+    const go = () => askingClose.current || void flushRef.current();
     const vis = () => document.visibilityState === "hidden" && go();
     window.addEventListener("blur", go);
     document.addEventListener("visibilitychange", vis);
@@ -1233,23 +1247,54 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   /**
-   * 「창 닫기」(데스크톱 앱): 탭 닫기처럼 먼저 저장하고, 남은 변경은 묻는다. 버리기로 했으면 아래 beforeunload 경고가 다시 묻거나
-   * 닫기를 막지 않게 표시해 둔다
+   * 창 닫기(데스크톱 앱): 닫는 길(닫기 단추·Cmd+Q·「창 닫기」 명령·메뉴)은 모두 이 창의 닫기 요청으로 모이고, 저장 안 한 변경이
+   * 있으면 여기서 막고 묻는다(closeWindow.ts). 묻는 동안에는 자동 저장을 멈춘다 — 「저장하지 않고 닫기」를 고를 수 있으므로.
+   * 닫기로 정했으면 아래 beforeunload 경고가 다시 묻지 않게 표시해 둔다
    */
   const closingWindow = useRef(false);
-  const closeWindow = async () => {
-    try {
-      await closeWindowSafely({
-        dirty: () => dirtyPaths(docsRef.current),
-        flush: () => flush(),
-        confirm: (paths) => confirmDialog(t("window.discardClose", { names: paths.map((p) => `"${stemOf(p)}"`).join(", ") }), t("tab.discardCloseButton")),
-        close: () => ((closingWindow.current = true), closeCurrentWindow()),
-      });
-    } catch (err) {
-      closingWindow.current = false;
-      toastError(err);
-    }
-  };
+  useEffect(() => {
+    if (!canCloseWindow()) return;
+    const onClose = closeRequestHandler({
+      dirty: () => dirtyPaths(docsRef.current),
+      ask: async (paths) => {
+        askingClose.current = true;
+        try {
+          const { names, count, more } = unsavedSummary(paths, stemOf);
+          return await chooseDialog(t(more ? "window.unsavedMore" : "window.unsaved", { names, count }), { value: "save", label: t("window.closeSave") }, [
+            { value: "discard", label: t("window.closeDiscard") },
+          ]);
+        } finally {
+          askingClose.current = false;
+        }
+      },
+      // 자동 저장 설정과 상관없이 모두 저장한다. 자동 저장이 저장하던 문서는 끝나기를 기다렸다가 다시 저장한다
+      save: async () => {
+        for (const p of dirtyPaths(docsRef.current)) {
+          while (savingRef.current.has(p)) await new Promise((r) => setTimeout(r, 50));
+          await saveRef.current(p);
+        }
+      },
+      unsaved: (paths) => toast(t("window.saveFailed", { names: unsavedSummary(paths, stemOf).names }), { kind: "error" }),
+      close: async () => {
+        closingWindow.current = true;
+        try {
+          await destroyCurrentWindow();
+        } catch (err) {
+          closingWindow.current = false;
+          throw err;
+        }
+      },
+      cancelled: () => void cancelQuit().catch(() => undefined),
+      failed: toastError,
+    });
+    let gone = false;
+    let unlisten: (() => void) | undefined;
+    listenCloseRequests(onClose).then((u) => (gone ? u() : (unlisten = u)), toastError);
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, []);
 
   // 저장 안 한 변경(지금 문서 또는 뒤에 있는 탭)이 있으면 창을 닫기 전에 저장을 시도하고 묻는다
   useEffect(() => {
@@ -2256,7 +2301,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       webKeys: "Alt+W",
       run: () => doc && void closeTab(curLayout().focused, doc.path),
     },
-    ...closeWindowCommands(canCloseWindow(), { group: g.tab, label: t("cmd.closeWindow"), run: () => void closeWindow() }),
+    ...closeWindowCommands(canCloseWindow(), { group: g.tab, label: t("cmd.closeWindow"), run: () => void closeCurrentWindow().catch(toastError) }),
     {
       id: "reopen-tab",
       group: g.tab,
@@ -3225,7 +3270,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       if (!prefsRef.current.autosave) return;
       // 포커스가 어디로 갔는지는 다음 틱에 안다. 같은 문서를 연 다른 칸의 에디터면 아직 그 문서를 치는 중이라
       // 이탈 저장을 건너뛴다(자동 저장 타이머가 맡는다) — 안 그러면 칸을 옮길 때마다 쓰기가 한 건씩 더 나간다
+      // 창 닫기 물음이 포커스를 가져가서 빠진 것이면 저장하지 않는다(「저장하지 않고 닫기」를 고를 수 있다)
       setTimeout(() => {
+        if (askingClose.current) return;
         const elsewhere = panesOf(curLayout()).some((p) => p.id !== pane && p.active === path && paneRefs.current.get(p.id)?.handle.current?.hasFocus());
         if (elsewhere) return;
         void saveRef.current(path, { auto: true });

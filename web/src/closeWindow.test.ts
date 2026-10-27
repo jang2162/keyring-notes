@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { canCloseWindow, closeWindowCommands, closeWindowSafely, type CloseWindowSteps } from "./closeWindow";
+import {
+  canCloseWindow,
+  closeRequestHandler,
+  closeWindowCommands,
+  closeWindowSafely,
+  unsavedSummary,
+  type CloseChoice,
+  type CloseWindowSteps,
+} from "./closeWindow";
 import { normalizeCombo } from "./shortcuts";
 import workspaceSrc from "./Workspace.tsx?raw";
 
@@ -41,46 +49,141 @@ describe("closeWindowCommands", () => {
 });
 
 describe("closeWindowSafely", () => {
-  const steps = (dirtyBefore: string[], dirtyAfter: string[], answer: boolean) => {
-    let flushed = false;
-    const s = {
-      dirty: vi.fn(() => (flushed ? dirtyAfter : dirtyBefore)),
-      flush: vi.fn(async () => {
-        flushed = true;
+  /** dirty: 처음 저장 안 한 문서, left: save 뒤에 남는 문서 */
+  const steps = (dirty: string[], answer: CloseChoice | null, left: string[] = []) => {
+    let saved = false;
+    return {
+      dirty: vi.fn(() => (saved ? left : dirty)),
+      ask: vi.fn(async () => answer),
+      save: vi.fn(async () => {
+        saved = true;
       }),
-      confirm: vi.fn(async () => answer),
+      unsaved: vi.fn(),
       close: vi.fn(async () => {}),
     } satisfies CloseWindowSteps;
-    return s;
   };
 
   it("저장 안 한 변경이 없으면 묻지 않고 닫는다", async () => {
-    const s = steps([], [], false);
+    const s = steps([], null);
     expect(await closeWindowSafely(s)).toBe(true);
-    expect(s.flush).not.toHaveBeenCalled();
-    expect(s.confirm).not.toHaveBeenCalled();
+    expect(s.ask).not.toHaveBeenCalled();
+    expect(s.save).not.toHaveBeenCalled();
     expect(s.close).toHaveBeenCalledOnce();
   });
 
-  it("먼저 저장하고, 저장으로 다 풀리면 묻지 않고 닫는다", async () => {
-    const s = steps(["a.md"], [], false);
+  it("저장 안 한 변경이 있으면 저장하기 전에 먼저 그 문서들을 들어 묻는다(자동 저장이 켜져 있어도)", async () => {
+    const s = steps(["a.md", "b.md"], "save");
+    await closeWindowSafely(s);
+    expect(s.ask).toHaveBeenCalledWith(["a.md", "b.md"]);
+    expect(s.ask.mock.invocationCallOrder[0]).toBeLessThan(s.save.mock.invocationCallOrder[0]);
+  });
+
+  it("저장하고 닫기: 다 저장되면 닫는다", async () => {
+    const s = steps(["a.md"], "save");
     expect(await closeWindowSafely(s)).toBe(true);
-    expect(s.flush).toHaveBeenCalledOnce();
-    expect(s.confirm).not.toHaveBeenCalled();
+    expect(s.save).toHaveBeenCalledOnce();
+    expect(s.unsaved).not.toHaveBeenCalled();
     expect(s.close).toHaveBeenCalledOnce();
   });
 
-  it("저장하고도 남은 변경은 그 문서들을 들어 묻고, 취소하면 닫지 않는다", async () => {
-    const s = steps(["a.md", "b.md"], ["b.md"], false);
+  it("저장하고 닫기: 저장하지 못한 것이 남으면 그 문서들을 알리고 닫지 않는다", async () => {
+    const s = steps(["a.md", "b.md"], "save", ["b.md"]);
     expect(await closeWindowSafely(s)).toBe(false);
-    expect(s.flush.mock.invocationCallOrder[0]).toBeLessThan(s.confirm.mock.invocationCallOrder[0]);
-    expect(s.confirm).toHaveBeenCalledWith(["b.md"]);
+    expect(s.unsaved).toHaveBeenCalledWith(["b.md"]);
     expect(s.close).not.toHaveBeenCalled();
   });
 
-  it("버리기로 하면 닫는다", async () => {
-    const s = steps(["a.md"], ["a.md"], true);
+  it("저장하지 않고 닫기: 저장하지 않고 닫는다", async () => {
+    const s = steps(["a.md"], "discard", ["a.md"]);
     expect(await closeWindowSafely(s)).toBe(true);
+    expect(s.save).not.toHaveBeenCalled();
     expect(s.close).toHaveBeenCalledOnce();
+  });
+
+  it("취소하면 저장도 닫기도 하지 않는다", async () => {
+    const s = steps(["a.md"], null);
+    expect(await closeWindowSafely(s)).toBe(false);
+    expect(s.save).not.toHaveBeenCalled();
+    expect(s.close).not.toHaveBeenCalled();
+  });
+});
+
+describe("closeRequestHandler", () => {
+  const request = () => ({ preventDefault: vi.fn() });
+  const flushAsync = () => new Promise((r) => setTimeout(r, 0));
+  const handler = (dirty: string[], answer: () => Promise<CloseChoice | null>) => {
+    const s = {
+      dirty: vi.fn(() => dirty),
+      ask: vi.fn(answer),
+      save: vi.fn(async () => {}),
+      unsaved: vi.fn(),
+      close: vi.fn(async () => {}),
+      cancelled: vi.fn(),
+      failed: vi.fn(),
+    };
+    return { s, on: closeRequestHandler(s) };
+  };
+
+  it("저장 안 한 변경이 없으면 막지 않는다(그대로 닫힌다)", () => {
+    const { s, on } = handler([], async () => null);
+    const e = request();
+    on(e);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+    expect(s.ask).not.toHaveBeenCalled();
+  });
+
+  it("있으면 막고 묻고, 닫기로 정하면 닫기 요청을 다시 거치지 않는 close 로 닫는다", async () => {
+    const { s, on } = handler(["a.md"], async () => "discard");
+    const e = request();
+    on(e);
+    expect(e.preventDefault).toHaveBeenCalled();
+    await flushAsync();
+    expect(s.ask).toHaveBeenCalledOnce();
+    expect(s.close).toHaveBeenCalledOnce();
+    expect(s.cancelled).not.toHaveBeenCalled();
+  });
+
+  it("묻는 동안 또 온 요청은 막기만 하고 다시 묻지 않는다", async () => {
+    let answer!: (v: CloseChoice | null) => void;
+    const { s, on } = handler(["a.md"], () => new Promise((r) => (answer = r)));
+    on(request());
+    const again = request();
+    on(again);
+    expect(again.preventDefault).toHaveBeenCalled();
+    expect(s.ask).toHaveBeenCalledOnce();
+    answer(null);
+    await flushAsync();
+    // 물음이 끝난 뒤의 요청은 다시 묻는다
+    on(request());
+    expect(s.ask).toHaveBeenCalledTimes(2);
+  });
+
+  it("취소하면 cancelled 를 부르고(앱 끝내기를 멈춘다) 닫지 않는다", async () => {
+    const { s, on } = handler(["a.md"], async () => null);
+    on(request());
+    await flushAsync();
+    expect(s.cancelled).toHaveBeenCalledOnce();
+    expect(s.close).not.toHaveBeenCalled();
+  });
+
+  it("닫다가 실패하면 cancelled 와 failed 를 부른다", async () => {
+    const { s, on } = handler(["a.md"], async () => "discard");
+    s.close.mockRejectedValueOnce(new Error("denied"));
+    on(request());
+    await flushAsync();
+    expect(s.cancelled).toHaveBeenCalledOnce();
+    expect(s.failed).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe("unsavedSummary", () => {
+  const stem = (p: string) => p.replace(/^.*\//, "").replace(/\.md$/, "");
+
+  it("셋까지는 이름을 모두 든다", () => {
+    expect(unsavedSummary(["w/a.md", "w/b.md", "w/c.md"], stem)).toEqual({ names: '"a", "b", "c"', count: 3, more: false });
+  });
+
+  it("넘으면 앞의 셋만 들고 몇 개인지 알린다", () => {
+    expect(unsavedSummary(["a.md", "b.md", "c.md", "d.md"], stem)).toEqual({ names: '"a", "b", "c"', count: 4, more: true });
   });
 });

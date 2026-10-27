@@ -4,7 +4,7 @@ import { t } from "./i18n";
  * 앱 안 확인·입력 대화상자. 데스크톱·모바일 WebView(특히 macOS·iOS)는 window.confirm/prompt를
  * 지원하지 않거나 막을 수 있어, 앱에서도 쓰는 화면은 이것을 쓴다.
  */
-function open(message: string, input: { value: string } | null, okLabel: string, cancelable = true): Promise<string | null> {
+function open(message: string, input: { value: string } | null, okLabel: string, cancelable = true, extra: Choice<string>[] = []): Promise<string | null> {
   return new Promise((resolve) => {
     const backdrop = document.createElement("div");
     backdrop.className = "modal-backdrop";
@@ -32,6 +32,14 @@ function open(message: string, input: { value: string } | null, okLabel: string,
     ok.type = "submit";
     ok.className = "on";
     ok.textContent = okLabel;
+    // 덧붙인 단추는 취소 앞(왼쪽)에 둔다. 기본(Enter)은 늘 맨 오른쪽 확인 단추다
+    for (const x of extra) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = x.label;
+      b.addEventListener("click", () => done(x.value));
+      actions.append(b);
+    }
     if (cancelable) actions.append(cancel);
     actions.append(ok);
     form.append(actions);
@@ -63,6 +71,17 @@ function open(message: string, input: { value: string } | null, okLabel: string,
       field.setSelectionRange(field.value.length, field.value.length);
     } else ok.focus();
   });
+}
+
+interface Choice<T extends string> {
+  value: T;
+  label: string;
+}
+
+/** 단추를 더 둔 물음: 기본(Enter, 맨 오른쪽) ok, 그 왼쪽에 others 와 취소. 고른 단추의 value, 취소(Esc·바깥 누르기 포함)면 null */
+export async function chooseDialog<T extends string>(message: string, ok: Choice<T>, others: Choice<T>[]): Promise<T | null> {
+  const v = await open(message, null, ok.label, true, others);
+  return v === null ? null : v === "" ? ok.value : (v as T);
 }
 
 /** 확인(true) / 취소(false) */
