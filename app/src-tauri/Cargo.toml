@@ -20,6 +20,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-http = "2"
 # generate_context!가 설정(plugins 등)을 JSON으로 넣는다
 serde_json = "1"
+# 화면이 넘기는 값(창 닫기 지킴의 대화상자 글)
+serde = { version = "1", features = ["derive"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # 데스크톱에서 고른 볼트 폴더 접근 권한을 다시 켤 때도 유지

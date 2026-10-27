@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   canCloseWindow,
-  closeRequestHandler,
+  closeAskHandler,
   closeWindowCommands,
   closeWindowSafely,
+  restartAfterClosing,
+  savesHeld,
   unsavedSummary,
   type CloseChoice,
   type CloseWindowSteps,
+  type SaveHold,
 } from "./closeWindow";
 import { normalizeCombo } from "./shortcuts";
 import workspaceSrc from "./Workspace.tsx?raw";
@@ -60,6 +63,8 @@ describe("closeWindowSafely", () => {
       }),
       unsaved: vi.fn(),
       close: vi.fn(async () => {}),
+      hold: { asking: false, closing: false } as SaveHold,
+      dropPending: vi.fn(),
     } satisfies CloseWindowSteps;
   };
 
@@ -108,60 +113,115 @@ describe("closeWindowSafely", () => {
   });
 });
 
-describe("closeRequestHandler", () => {
-  const request = () => ({ preventDefault: vi.fn() });
-  const flushAsync = () => new Promise((r) => setTimeout(r, 0));
-  const handler = (dirty: string[], answer: () => Promise<CloseChoice | null>) => {
+describe("closeWindowSafely: 자동 저장 멈춤", () => {
+  /** 단계마다 그때의 SaveHold 를 적어 둔다 */
+  const recorded = (answer: CloseChoice | null) => {
+    const hold: SaveHold = { asking: false, closing: false };
+    const seen: Record<string, boolean> = {};
+    let saved = false;
+    const s: CloseWindowSteps = {
+      dirty: () => (saved ? [] : ["a.md"]),
+      ask: async () => {
+        seen.ask = savesHeld(hold);
+        return answer;
+      },
+      save: async () => {
+        seen.save = savesHeld(hold);
+        saved = true;
+      },
+      unsaved: () => {},
+      close: vi.fn(async () => {
+        seen.close = savesHeld(hold);
+      }),
+      hold,
+      dropPending: vi.fn(() => {
+        seen.drop = savesHeld(hold);
+      }),
+    };
+    return { s, hold, seen };
+  };
+
+  it("묻는 동안 자동 저장을 멈춘다", async () => {
+    const { s, seen } = recorded(null);
+    await closeWindowSafely(s);
+    expect(seen.ask).toBe(true);
+  });
+
+  it("취소하면 다시 자동 저장한다", async () => {
+    const { s, hold } = recorded(null);
+    await closeWindowSafely(s);
+    expect(savesHeld(hold)).toBe(false);
+  });
+
+  it("저장하지 않고 닫기: 창이 사라질 때까지 자동 저장을 멈추고, 닫기 전에 걸린 타이머를 지운다", async () => {
+    const { s, seen } = recorded("discard");
+    await closeWindowSafely(s);
+    expect(seen.drop).toBe(true);
+    expect(seen.close).toBe(true);
+    expect((s.dropPending as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]).toBeLessThan(
+      (s.close as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("저장하고 닫기: 저장할 때는 멈추지 않는다", async () => {
+    const { s, seen } = recorded("save");
+    await closeWindowSafely(s);
+    expect(seen.save).toBe(false);
+    expect(seen.close).toBe(true);
+  });
+
+  it("닫다가 실패하면 다시 자동 저장한다", async () => {
+    const { s, hold } = recorded("discard");
+    (s.close as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("denied"));
+    await expect(closeWindowSafely(s)).rejects.toThrow("denied");
+    expect(savesHeld(hold)).toBe(false);
+  });
+});
+
+describe("closeAskHandler", () => {
+  const handler = (dirty: string[], answer: () => Promise<CloseChoice | null>, ack = true) => {
     const s = {
+      ack: vi.fn(async () => ack),
       dirty: vi.fn(() => dirty),
       ask: vi.fn(answer),
       save: vi.fn(async () => {}),
       unsaved: vi.fn(),
       close: vi.fn(async () => {}),
+      hold: { asking: false, closing: false },
+      dropPending: vi.fn(),
       cancelled: vi.fn(),
       failed: vi.fn(),
     };
-    return { s, on: closeRequestHandler(s) };
+    return { s, on: closeAskHandler(s) };
   };
 
-  it("저장 안 한 변경이 없으면 막지 않는다(그대로 닫힌다)", () => {
-    const { s, on } = handler([], async () => null);
-    const e = request();
-    on(e);
-    expect(e.preventDefault).not.toHaveBeenCalled();
-    expect(s.ask).not.toHaveBeenCalled();
-  });
-
-  it("있으면 막고 묻고, 닫기로 정하면 닫기 요청을 다시 거치지 않는 close 로 닫는다", async () => {
+  it("먼저 받았다고 답하고 나서 묻는다", async () => {
     const { s, on } = handler(["a.md"], async () => "discard");
-    const e = request();
-    on(e);
-    expect(e.preventDefault).toHaveBeenCalled();
-    await flushAsync();
-    expect(s.ask).toHaveBeenCalledOnce();
+    await on(7);
+    expect(s.ack).toHaveBeenCalledWith(7);
+    expect(s.ack.mock.invocationCallOrder[0]).toBeLessThan(s.ask.mock.invocationCallOrder[0]);
     expect(s.close).toHaveBeenCalledOnce();
     expect(s.cancelled).not.toHaveBeenCalled();
   });
 
-  it("묻는 동안 또 온 요청은 막기만 하고 다시 묻지 않는다", async () => {
-    let answer!: (v: CloseChoice | null) => void;
-    const { s, on } = handler(["a.md"], () => new Promise((r) => (answer = r)));
-    on(request());
-    const again = request();
-    on(again);
-    expect(again.preventDefault).toHaveBeenCalled();
-    expect(s.ask).toHaveBeenCalledOnce();
-    answer(null);
-    await flushAsync();
-    // 물음이 끝난 뒤의 요청은 다시 묻는다
-    on(request());
-    expect(s.ask).toHaveBeenCalledTimes(2);
+  it("앱이 새로 묻지 말라고 하면(이미 묻는 중·늦은 답) 묻지도 닫지도 않는다", async () => {
+    const { s, on } = handler(["a.md"], async () => "discard", false);
+    await on(7);
+    expect(s.ask).not.toHaveBeenCalled();
+    expect(s.close).not.toHaveBeenCalled();
+    expect(s.cancelled).not.toHaveBeenCalled();
   });
 
-  it("취소하면 cancelled 를 부르고(앱 끝내기를 멈춘다) 닫지 않는다", async () => {
+  it("그사이 저장돼 저장 안 한 변경이 없으면 묻지 않고 닫는다", async () => {
+    const { s, on } = handler([], async () => null);
+    await on(1);
+    expect(s.ask).not.toHaveBeenCalled();
+    expect(s.close).toHaveBeenCalledOnce();
+  });
+
+  it("취소하면 cancelled 를 부르고(앱의 차례 닫기를 멈춘다) 닫지 않는다", async () => {
     const { s, on } = handler(["a.md"], async () => null);
-    on(request());
-    await flushAsync();
+    await on(1);
     expect(s.cancelled).toHaveBeenCalledOnce();
     expect(s.close).not.toHaveBeenCalled();
   });
@@ -169,10 +229,50 @@ describe("closeRequestHandler", () => {
   it("닫다가 실패하면 cancelled 와 failed 를 부른다", async () => {
     const { s, on } = handler(["a.md"], async () => "discard");
     s.close.mockRejectedValueOnce(new Error("denied"));
-    on(request());
-    await flushAsync();
+    await on(1);
     expect(s.cancelled).toHaveBeenCalledOnce();
     expect(s.failed).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe("restartAfterClosing", () => {
+  it("알림을 먼저 듣고 나서 앱에 창마다 물은 뒤 다시 시작하라고 요청한다", async () => {
+    let fire!: () => void;
+    const off = vi.fn();
+    const listenCancelled = vi.fn(async (on: () => void) => {
+      fire = on;
+      return off;
+    });
+    const request = vi.fn(async () => {});
+    const done = restartAfterClosing({ listenCancelled, request });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(listenCancelled.mock.invocationCallOrder[0]).toBeLessThan(request.mock.invocationCallOrder[0]);
+    expect(request).toHaveBeenCalledOnce();
+    // 누가 취소하면 다시 시작하지 않고 cancelled 로 끝나고, 듣기를 그만둔다
+    fire();
+    expect(await done).toBe("cancelled");
+    expect(off).toHaveBeenCalledOnce();
+  });
+
+  it("요청이 실패하면 그 오류로 끝난다", async () => {
+    const off = vi.fn();
+    const done = restartAfterClosing({ listenCancelled: async () => off, request: async () => Promise.reject(new Error("denied")) });
+    await expect(done).rejects.toThrow("denied");
+    expect(off).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Workspace 배선", () => {
+  it("Tauri 의 JS 닫기 리스너를 걸지 않는다(새로고침 뒤에도 남아 창이 닫히지 않는다 — 막을지는 앱의 지킴이 정한다)", () => {
+    expect(workspaceSrc).not.toMatch(/onCloseRequested/);
+    expect(workspaceSrc).toMatch(/setCloseGuard\(/);
+    expect(workspaceSrc).toMatch(/listenCloseAsks\(/);
+  });
+
+  it("자동 저장 타이머·창 blur·숨김·편집기 이탈 저장은 묻는 동안과 닫는 중 모두 멈춘다", () => {
+    // 자동 저장 타이머(fire), 창 blur·숨김(go), 편집기 이탈 저장 — 셋 모두 savesHeld 로 검사한다
+    expect(workspaceSrc.match(/savesHeld\(closeHold\.current\)/g)).toHaveLength(3);
+    expect(workspaceSrc).not.toMatch(/askingClose/);
   });
 });
 

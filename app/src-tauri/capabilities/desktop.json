@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "데스크톱 앱 업데이트 확인·받기·설치와 설치 뒤 다시 시작(모바일에는 업데이터가 없다)",
+  "description": "데스크톱 앱 업데이트 확인·받기·설치(모바일에는 업데이터가 없다). 설치 뒤 다시 시작은 화면이 하지 않는다 — 앱이 창마다 닫기 물음을 거친 뒤 한다(src/close_guard.rs 의 restart_after_closing)",
   "platforms": ["macOS", "windows", "linux"],
   "windows": ["main"],
-  "permissions": ["updater:default", "process:allow-restart"]
+  "permissions": ["updater:default"]
 }
