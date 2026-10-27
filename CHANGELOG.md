@@ -4,9 +4,9 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- With line numbers on, clicking a line number selects that line without its line break, so copying it no longer brings a trailing newline. Dragging over line numbers selects whole lines, Shift-click extends the selection to a line, and a folded line selects everything folded under it.
+- With line numbers on, clicking a line number selects that line without its line break. Dragging over line numbers selects whole lines, Shift-click extends the selection to a line, and clicking a folded line selects everything folded under it.
 
 ## [0.9.0] - 2026-10-26
 

@@ -1,5 +1,5 @@
 import { EditorSelection, type Extension } from "@codemirror/state";
-import { EditorView, lineNumbers, type BlockInfo } from "@codemirror/view";
+import { EditorView, ViewPlugin, lineNumbers, type BlockInfo } from "@codemirror/view";
 
 /** 줄 번호로 고르는 한 덩어리의 문서 위치 */
 export interface Span {
@@ -18,8 +18,10 @@ export function lineSpan(block: Pick<BlockInfo, "from" | "to">): Span {
 /**
  * base 에서 cur 까지 줄 단위로 고른다(둘을 합친 범위).
  * cur 가 base 보다 위에서 시작하면 방향만 뒤집는다(head 가 위) — 범위는 같다.
+ * base 가 한 점(Shift+누르기의 기준점)이고 cur 가 그 점이 든 줄이면 기준점은 지키고 줄 끝까지만 고른다.
  */
 export function spanSelection(base: Span, cur: Span): EditorSelection {
+  if (base.from === base.to && cur.from <= base.from && base.from <= cur.to) return EditorSelection.single(base.from, cur.to);
   const from = Math.min(base.from, cur.from);
   const to = Math.max(base.to, cur.to);
   return cur.from < base.from ? EditorSelection.single(to, from) : EditorSelection.single(from, to);
@@ -37,6 +39,20 @@ export function shiftBase(selection: EditorSelection, last: { base: Span; sel: E
 
 /** 뷰마다 줄 번호로 마지막에 고른 것(Shift+누르기가 처음 누른 줄을 기준으로 넓히게) */
 const lastPick = new WeakMap<EditorView, { base: Span; sel: EditorSelection }>();
+
+/** 뷰마다 진행 중인 끌기를 끝내는 함수 */
+const activeDrag = new WeakMap<EditorView, () => void>();
+
+/**
+ * 끌기 중 문서가 바뀌거나 뷰가 사라지면 그 끌기를 끝낸다.
+ * 끌기의 기준 줄은 누를 때의 문서 위치라, 바뀐 문서에 쓰면 문서 밖을 고르거나(RangeError) 엉뚱한 줄을 고른다.
+ */
+const endDragOnChange = ViewPlugin.define((view) => ({
+  update: (update) => {
+    if (update.docChanged) activeDrag.get(view)?.();
+  },
+  destroy: () => activeDrag.get(view)?.(),
+}));
 
 // 끌다가 가장자리에 닿으면 굴리는 기준. CodeMirror 본문 끌기(MouseSelection)와 같은 값이다.
 const DRAG_SCROLL_MARGIN = 6;
@@ -94,7 +110,10 @@ function pickLines(view: EditorView, block: BlockInfo, event: MouseEvent): boole
     clearInterval(timer);
     doc.removeEventListener("mousemove", move);
     doc.removeEventListener("mouseup", done);
+    if (activeDrag.get(view) === done) activeDrag.delete(view);
   };
+  activeDrag.get(view)?.();
+  activeDrag.set(view, done);
   doc.addEventListener("mousemove", move);
   doc.addEventListener("mouseup", done);
   // 기본 동작(포커스 이동, 줄 번호 글자 고르기)을 막는다
@@ -103,5 +122,5 @@ function pickLines(view: EditorView, block: BlockInfo, event: MouseEvent): boole
 
 /** 줄 번호 칸. 누르기·끌기·Shift+누르기로 줄을 고르되 마지막 줄의 줄바꿈은 넣지 않는다 */
 export function lineNumberGutter(): Extension {
-  return lineNumbers({ domEventHandlers: { mousedown: (view, block, event) => pickLines(view, block, event as MouseEvent) } });
+  return [lineNumbers({ domEventHandlers: { mousedown: (view, block, event) => pickLines(view, block, event as MouseEvent) } }), endDragOnChange];
 }

@@ -61,6 +61,13 @@ describe("Shift+누르기", () => {
     expect(picked(spanSelection(base, line(6)))).toEqual({ anchor: 30, head: 40, text: "gamma\nlast" });
   });
 
+  it("기준점이 든 줄을 누르면 기준점은 그대로 두고 그 줄 맨 끝까지", () => {
+    const base = shiftBase(EditorSelection.single(10), undefined);
+    expect(picked(spanSelection(base, line(2)))).toEqual({ anchor: 10, head: 18, text: "pha line" });
+    // 기준점이 줄 맨 앞이어도 같은 규칙(줄 전체가 골라진다)
+    expect(picked(spanSelection(shiftBase(EditorSelection.single(8), undefined), line(2)))).toEqual({ anchor: 8, head: 18, text: "alpha line" });
+  });
+
   it("그 뒤 선택이 바뀌었으면 지금 선택의 기준점 한 점이 기준이다", () => {
     const sel = spanSelection(line(5), line(5));
     expect(shiftBase(EditorSelection.single(12, 14), { base: line(5), sel })).toEqual({ from: 12, to: 12 });
