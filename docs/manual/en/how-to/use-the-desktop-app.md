@@ -28,7 +28,7 @@ When you close a window that has unsaved changes, the app asks first: **Save and
 
 With several windows open, `Cmd+Q` asks in each window that has unsaved changes, starting with the current one. Each window comes to the front when its turn comes. Canceling in any window stops the quit, and the windows not closed yet stay open.
 
-If a window with unsaved changes stops responding, the app asks with a system dialog instead, a few seconds after you close it: **Close without saving** or **Cancel**.
+If a window with unsaved changes stops responding, the app asks with a system dialog instead, a few seconds after you close it: **Cancel** or **Close without saving**.
 
 On macOS, quitting from the Dock, logging out or shutting down does not ask yet. Close your windows or use `Cmd+Q` first.
 
