@@ -7,6 +7,11 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 ### Added
 
 - With line numbers on, clicking a line number selects that line without its line break. Dragging over line numbers selects whole lines, Shift-click extends the selection to a line, and clicking a folded line selects everything folded under it.
+- Desktop app: `Ctrl/Cmd+Shift+W` closes the current window, like its close button. On macOS the **Close Window** menu item now uses the same shortcut, so `Cmd+W` always closes the tab.
+
+### Fixed
+
+- Desktop app: closing a window with its close button, quitting with `Cmd+Q`, or restarting after installing an update discarded unsaved changes without asking. Now, whenever a window with unsaved changes closes, you are asked to **Save and close**, **Close without saving** or cancel, even with autosave on. With several windows open, `Cmd+Q` and the update restart ask in each window in turn, and canceling stops them. If the window isn't responding, the app asks with a system dialog instead.
 
 ## [0.9.0] - 2026-10-26
 

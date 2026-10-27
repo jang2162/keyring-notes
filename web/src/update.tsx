@@ -5,7 +5,7 @@ import { Modal } from "./Modal";
 import { t, useLang } from "./i18n";
 import { getPrefs } from "./prefs";
 import { errorText } from "./toast";
-import { startupCheck } from "./updateCheck";
+import { installAndRestart, startupCheck } from "./updateCheck";
 import { SOLO } from "./soloWindow";
 
 /**
@@ -56,30 +56,38 @@ export function UpdateChecker() {
   return update ? <UpdateDialog update={update} onClose={() => showUpdate(null)} /> : null;
 }
 
-type Phase = { phase: "ask" } | { phase: "download"; done: number; total?: number } | { phase: "install" } | { phase: "error"; message: string };
+type Phase =
+  | { phase: "ask" }
+  | { phase: "download"; done: number; total?: number }
+  | { phase: "install" }
+  | { phase: "restart" }
+  | { phase: "installed" }
+  | { phase: "error"; message: string };
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 
 function UpdateDialog({ update, onClose }: { update: Update; onClose: () => void }) {
   useLang();
   const [state, setState] = useState<Phase>({ phase: "ask" });
-  const busy = state.phase === "download" || state.phase === "install";
+  const busy = state.phase === "download" || state.phase === "install" || state.phase === "restart";
 
   const install = async () => {
     let done = 0;
     let total: number | undefined;
     setState({ phase: "download", done });
     try {
-      // 서명 검증은 플러그인이 설치 전에 한다(tauri.conf.json 의 pubkey)
-      await update.downloadAndInstall((e) => {
-        if (e.event === "Started") total = e.data.contentLength;
-        else if (e.event === "Progress") {
-          done += e.data.chunkLength;
-          setState({ phase: "download", done, total });
-        } else setState({ phase: "install" });
-      });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
+      await installAndRestart(
+        update,
+        (e) => {
+          if (e.event === "Started") total = e.data.contentLength;
+          else if (e.event === "Progress") {
+            done += e.data.chunkLength;
+            setState({ phase: "download", done, total });
+          } else setState({ phase: "install" });
+        },
+        () => setState({ phase: "restart" }),
+      );
+      setState({ phase: "installed" });
     } catch (e) {
       setState({ phase: "error", message: errorText(e) });
     }
@@ -111,14 +119,32 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: () => void
           {t("update.installing")}
         </p>
       )}
+      {state.phase === "restart" && (
+        <p className="meta" role="status">
+          {t("update.restarting")}
+        </p>
+      )}
+      {state.phase === "installed" && (
+        <p className="meta" role="status">
+          {t("update.restartCancelled")}
+        </p>
+      )}
       {state.phase === "error" && <p className="form-error">{t("update.failed", { message: state.message })}</p>}
       <div className="ask-actions">
-        <button type="button" onClick={close} disabled={busy}>
-          {t("update.later")}
-        </button>
-        <button type="button" className="on" onClick={() => void install()} disabled={busy} data-autofocus>
-          {state.phase === "error" ? t("common.retry") : t("update.install")}
-        </button>
+        {state.phase === "installed" ? (
+          <button type="button" className="on" onClick={close} data-autofocus>
+            {t("common.ok")}
+          </button>
+        ) : (
+          <>
+            <button type="button" onClick={close} disabled={busy}>
+              {t("update.later")}
+            </button>
+            <button type="button" className="on" onClick={() => void install()} disabled={busy} data-autofocus>
+              {state.phase === "error" ? t("common.retry") : t("update.install")}
+            </button>
+          </>
+        )}
       </div>
     </Modal>
   );

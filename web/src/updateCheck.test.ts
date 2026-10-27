@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { startupCheck } from "./updateCheck";
+import { installAndRestart, startupCheck } from "./updateCheck";
+
+// 다시 시작은 창마다 묻는 길(restartAfterClosing)로만 한다
+const { restartAfterClosing } = vi.hoisted(() => ({ restartAfterClosing: vi.fn(async () => "cancelled" as const) }));
+vi.mock("./closeWindow", async (orig) => ({ ...(await orig<typeof import("./closeWindow")>()), restartAfterClosing }));
 
 describe("실행 때 업데이트 확인", () => {
   it("「업데이트 자동 확인」 이 꺼져 있으면 확인 요청을 보내지 않는다", async () => {
@@ -31,5 +35,43 @@ describe("실행 때 업데이트 확인", () => {
     expect(await startupCheck({ enabled: true, supported: true, check: async () => null, onFound })).toBe("none");
     expect(await startupCheck({ enabled: true, supported: true, check: () => Promise.reject(new Error("offline")), onFound })).toBe("failed");
     expect(onFound).not.toHaveBeenCalled();
+  });
+});
+
+describe("업데이트 설치 뒤 다시 시작", () => {
+  it("설치한 뒤 창마다 닫기 물음을 거치는 다시 시작을 요청한다", async () => {
+    const update = { downloadAndInstall: vi.fn(async () => {}) };
+    const onRestart = vi.fn();
+    await installAndRestart(update, () => {}, onRestart);
+    expect(update.downloadAndInstall).toHaveBeenCalledOnce();
+    expect(restartAfterClosing).toHaveBeenCalledOnce();
+    expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(restartAfterClosing.mock.invocationCallOrder[0]);
+    expect(onRestart).toHaveBeenCalledOnce();
+  });
+
+  it("누가 취소하면 다시 시작하지 않고 cancelled 로 끝난다(업데이트는 설치된 채)", async () => {
+    const restart = vi.fn(async () => "cancelled" as const);
+    expect(
+      await installAndRestart(
+        { downloadAndInstall: async () => {} },
+        () => {},
+        () => {},
+        restart,
+      ),
+    ).toBe("cancelled");
+  });
+
+  it("설치가 실패하면 다시 시작을 요청하지 않는다", async () => {
+    const restart = vi.fn(async () => "cancelled" as const);
+    const update = { downloadAndInstall: async () => Promise.reject(new Error("bad signature")) };
+    await expect(
+      installAndRestart(
+        update,
+        () => {},
+        () => {},
+        restart,
+      ),
+    ).rejects.toThrow("bad signature");
+    expect(restart).not.toHaveBeenCalled();
   });
 });

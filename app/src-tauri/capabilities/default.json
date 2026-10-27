@@ -1,11 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "볼트 폴더(문서·앱 데이터·홈 아래, 그리고 사용자가 고른 폴더) 읽기·쓰기, 폴더 고르기, 동기화 서버 HTTP, 노트 하나만 띄운 새 창(solo-*) 만들기. 새 창도 같은 볼트를 읽고 쓰므로 같은 권한을 받는다",
+  "description": "볼트 폴더(문서·앱 데이터·홈 아래, 그리고 사용자가 고른 폴더) 읽기·쓰기, 폴더 고르기, 동기화 서버 HTTP, 노트 하나만 띄운 새 창(solo-*) 만들기, 창 닫기(닫기 요청 close, 저장 안 한 변경을 물은 뒤 다시 묻지 않고 닫는 destroy). 새 창도 같은 볼트를 읽고 쓰므로 같은 권한을 받는다",
   "windows": ["main", "solo-*"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
     "dialog:allow-open",
     "fs:allow-exists",
     "fs:allow-mkdir",

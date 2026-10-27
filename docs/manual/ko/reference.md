@@ -237,6 +237,7 @@ Keyring Notes 는 Obsidian 과 같은 문법을 읽습니다.
 | --- | --- |
 | 새 노트 | `Alt+N`(데스크톱 앱: `Ctrl/Cmd+N`) |
 | 탭 닫기 | `Alt+W`(데스크톱 앱: `Ctrl/Cmd+W`) |
+| 창 닫기 | 데스크톱 앱만: `Ctrl/Cmd+Shift+W` |
 | 닫은 탭 다시 열기 | `Alt+Shift+T`(데스크톱 앱: `Ctrl/Cmd+Shift+T`) |
 | 이전 / 다음 탭 | `Alt+[` / `Alt+]`(데스크톱 앱: `Ctrl+Shift+Tab` / `Ctrl+Tab`) |
 | N번째 탭 | `Alt+1` … `Alt+9`(데스크톱 앱: `Ctrl/Cmd+1` … `Ctrl/Cmd+9`) |

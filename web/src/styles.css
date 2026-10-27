@@ -351,7 +351,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .ask-dialog { width: min(440px, 100%); }
 .ask-message { white-space: pre-line; }
 .ask-dialog input { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
-.ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ask-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 /* 업데이트 대화상자의 릴리스 글: 길면 창 안에서 내린다 */
 .update-notes pre { white-space: pre-wrap; max-height: 40vh; overflow: auto; margin: 6px 0 0; font-size: 13px; }
 
