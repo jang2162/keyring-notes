@@ -6,16 +6,15 @@ import {
   parseFrontmatter,
   pdfAnnotations,
   pdfCompanionPath,
-  removePdfAnnotation,
   resolveLink,
   setFrontmatterField,
-  translate,
   type PdfAnnotation,
 } from "@keyring-notes/core";
 import { api, ApiError } from "./api";
-import { confirmDialog } from "./dialog";
+import { removeAnnotation } from "./askFirst";
 import { t } from "./i18n";
 import type { LinkResolver } from "./markdown";
+import { editCompanion, type Companion, type CompanionTarget } from "./pdfCompanion";
 import { errorText } from "./toast";
 import { vaultLang } from "./vaultSettings";
 import { tipProps } from "./Tooltip";
@@ -58,7 +57,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
   const [base, setBase] = useState<{ width: number; height: number } | null>(null);
   const [current, setCurrent] = useState(page ?? 1);
   // 짝 노트: 경로와 (열린 문서가 아니면) 마지막으로 읽은 내용
-  const [companion, setCompanion] = useState<{ path: string; content: string | null; hash: string | null } | null>(null);
+  const [companion, setCompanion] = useState<Companion | null>(null);
   const [pick, setPick] = useState<{ page: number; text: string } | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -208,22 +207,15 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     pagesRef.current?.querySelector(`[data-page="${p}"]`)?.scrollIntoView({ block: "start" });
   };
 
-  /** 짝 노트를 고친다: 열린 문서면 초안을, 아니면 읽었던 버전 기준으로 저장한다 */
-  const editCompanion = async (fn: (content: string) => string) => {
-    if (!companion) return;
-    if (companionIsOpen) {
-      onEditOpenDoc(fn(from!.draft));
-      return;
-    }
-    let { content, hash } = companion;
-    if (content === null) {
-      content = `---\ntitle: ${JSON.stringify(stem(path).replace(/\.pdf$/i, ""))}\noriginal: '[[${path}]]'\n---\n# ${stem(path).replace(/\.pdf$/i, "")}\n\n> ${translate(vaultLang(), "pdf.companionSource")}: [[${path}]]\n`;
-      hash = null;
-    }
-    const next = fn(content);
-    const saved = await api.write(companion.path, next, hash);
-    setCompanion({ path: companion.path, content: next, hash: saved.hash });
-    onSaved(companion.path);
+  const companionTarget: CompanionTarget = {
+    pdf: path,
+    companion,
+    openDraft: companionIsOpen ? from!.draft : null,
+    onEditOpenDoc,
+    onWritten: (saved) => {
+      setCompanion(saved);
+      onSaved(saved.path);
+    },
   };
 
   const target = companion
@@ -239,7 +231,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     setMessage(null);
     try {
       const id = newPdfAnnotationId(companionText, pick.page);
-      await editCompanion((c) => addPdfAnnotation(c, { pdf: pdfTarget, page: pick.page, quote: pick.text, note, id }, vaultLang()));
+      await editCompanion(companionTarget, (c) => addPdfAnnotation(c, { pdf: pdfTarget, page: pick.page, quote: pick.text, note, id }, vaultLang()));
       setPick(null);
       setNote("");
       window.getSelection()?.removeAllRanges();
@@ -253,10 +245,9 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
   };
 
   const remove = async (a: PdfAnnotation) => {
-    if (!(await confirmDialog(t("pdf.removeAsk", { page: a.page }), t("common.delete")))) return;
     setBusy(true);
     try {
-      await editCompanion((c) => removePdfAnnotation(c, a.id));
+      await removeAnnotation(companionTarget, a);
     } catch (e) {
       setMessage(errorText(e));
     } finally {

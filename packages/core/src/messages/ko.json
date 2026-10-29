@@ -1080,6 +1080,7 @@
   "settings.readable": "읽기 폭",
   "settings.readableHint": "본문을 약 760px 폭으로 가운데 정렬합니다. 끄면 화면 폭을 다 씁니다.",
   "settings.resetDevice": "이 기기 설정 초기화",
+  "settings.resetDeviceAsk": "이 기기 설정을 처음 값으로 되돌릴까요? 패널 폭·트리 상태·\"이 기기에서만 다르게\" 값은 되살릴 수 없습니다.",
   "settings.resetDeviceHint": "패널 폭·트리 상태·\"이 기기에서만 다르게\" 값을 처음으로(모든 기기 공통 설정은 그대로)",
   "settings.resetShared": "모든 기기 화면 설정 초기화",
   "settings.resetSharedAsk": "모든 기기의 공통 화면 설정을 처음 값으로 되돌릴까요?",

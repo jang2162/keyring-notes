@@ -1111,6 +1111,7 @@
   "settings.readable": "Readable width",
   "settings.readableHint": "Center the text at about 760px. Off uses the full width.",
   "settings.resetDevice": "Reset this device",
+  "settings.resetDeviceAsk": "Reset this device's settings to defaults? Panel widths, tree state and \"different on this device only\" values can't be restored.",
   "settings.resetDeviceHint": "Panel widths, tree state and \"different on this device only\" values go back to defaults (shared settings stay)",
   "settings.resetShared": "Reset display settings for all devices",
   "settings.resetSharedAsk": "Reset the shared display settings on all devices?",
