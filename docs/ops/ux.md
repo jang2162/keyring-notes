@@ -1106,10 +1106,22 @@ Oct 7, 2026 · 사용자 결정(26번 "정할 것" 모두 추천대로)
 **확인한 것(2회차)**: 단위 시험 `local/mode.test.ts` 14개(동기화 화면 열기 조건, 돌아갈 노트 state, 주소의 노트 경로). 프로덕션 코드를 9군데 되돌려 8군데에서 떨어졌고, 안 떨어진 1군데(`settingsBack` 의 객체 검사 — 선택적 체이닝이 같은 일을 함)는 줄였다. 에뮬레이터의 실제 설치 앱(`WebappActivity`)에서 사이트 데이터를 지우고 `#/Notes%2Fnote2.md` 로 처음 열기 → 주소 `#/:settings/device`·`history.state` `{ back: "Notes/note2.md" }` → 비밀번호 → 받음 3 → 닫기(×) → `#/Notes%2Fnote2.md` 에 note2 내용. `#/Notes%2Fnote1.md` 로 처음 열고 「일반」 묶음으로 바꿔도 state 유지 → 연결하지 않고 닫기 → 홈 + 「No such note: Notes/note1.md」. 닫기의 노트 열기(`closeSettings`)는 화면으로만 봤다(단위 시험 없음).
 
 **확인한 것(3회차, 리뷰 반영)**:
-- 단위 시험 — 웹 `local/mode.test.ts`(24: 모드 입력 읽기·새 창 주소·사람이 쓴 노트·동기화 화면 열기), `settingsNav.test.ts`(10: 주소의 노트·돌아갈 노트·닫기 대상·묶음 바꾸기), `offline.test.ts`(4: 검색 오프라인 판정·대기열의 보존 요청), `local/browserStore.test.ts`(1). 리뷰 실증표 M8·M16~M25 와 새 조건(노트 수·세지 않는 것·새 창 모드)에 해당하는 되돌림 20곳이 모두 시험을 떨어뜨린다. 함수 결과를 적용만 하는 한 줄 넷(`main.tsx` 의 노트 수 넘기기, `Workspace.tsx` `onSection`·`closeSettings` 의 적용, `soloUrl` 의 `appMode.local`)은 시험이 없고 화면으로 봤다.
+- 단위 시험 — 웹 `local/mode.test.ts`(24: 모드 입력 읽기·새 창 주소·사람이 쓴 노트·동기화 화면 열기), `settingsNav.test.ts`(10: 주소의 노트·돌아갈 노트·닫기 대상·묶음 바꾸기), `offline.test.ts`(4: 검색 오프라인 판정·대기열의 보존 요청), `local/browserStore.test.ts`(1). 리뷰 실증표 M8·M16~M25 와 새 조건(노트 수·세지 않는 것·새 창 모드)에 해당하는 되돌림 20곳이 모두 시험을 떨어뜨린다. **함수를 부르거나 결과를 적용하는 호출 자리 9곳은 시험이 없다** — 되돌려도 웹 시험 270개가 모두 통과한다(재리뷰가 하나씩 되돌려 실증). 「시험이 지킨다」 고 읽지 않는다:
+  - G1 `Workspace.tsx` 검색 catch 의 `searchFailedOffline(appMode.local, e)` 결과(`off`)
+  - G2 `boot.ts` `wantsLocal` 이 `remember` 를 `keyring:mode` 에 쓰는 줄 — 빠지면 `?local=0` 이 다시 기억되지 않는다
+  - G3 `boot.ts` `startLocal` 의 `openBrowserStore()` — `new IdbStore()` 로 바뀌면 보존 요청이 빠진다
+  - G4 `main.tsx` 의 `history.replaceState(go.state, …)` — `null` 이면 리뷰 1 이 되살아난다
+  - G5 `main.tsx` 의 `hasNotes: hasOwnNotes(…)` — 리뷰 4
+  - G6 `Workspace.tsx` `closeSettings` 의 `back: settingsBack(history.state)` — 리뷰 2
+  - G7 `Workspace.tsx` `SettingsModal` `onSection` 의 `replaceSettingsSection`
+  - G8 `soloWindow.ts` `soloUrl` 의 `appMode.local` — 리뷰 3
+  - G9 `boot.ts` `wantsLocal` 의 `pending`(대기열 읽기) — 늘 빈 것으로 바뀌면 대기분이 먼저 가지 않는다
+
+  화면으로 본 것: G4·G5·G6·G7·G8 은 3회차 코드로(헤드리스·에뮬레이터, 아래). G1·G2·G3·G9 의 동작(오프라인 검색 문구, `?local=0` 기억, `persist()` 호출 수, 대기열이 있으면 서버 모드)은 1회차 에뮬레이터에서 3회차 리팩터링 **전** 코드로만 봤고, 3회차 코드로 다시 보지 않았다.
 - 헤드리스 Chromium(시험 서버 8917, `addInitScript` standalone 흉내, 서비스 워커 막음): 리뷰 1 경로 — 고치기 전 새로 고침 뒤 state `null`, 고친 뒤 `{ back: "Notes/note2.md" }` 유지 → 비밀번호 → 닫기 → note2. 「General」 로 바꿔도 state 유지. 리뷰 2 경로 — 고치기 전 note3 대신 note1. 고친 뒤에는 볼트에 노트가 있어 동기화 화면 자체가 열리지 않는다(4번). 닫기 대상은 note1 을 연 채 설정을 열고 state 에 `{ back: note3 }` 을 넣어 닫으면 note3 이 열리는 것으로 봤다. 빈 볼트 `?local` 탭은 동기화 화면, 노트가 있고 동기화가 없는 볼트는 열지 않음.
 - 새 창(리뷰 3): 에뮬레이터의 실제 설치 앱(`WebappActivity`)은 세로(약 411 CSS px)에서 탭 줄이 숨어 「새 창으로 열기」 에 닿을 수 없고, 가로(914×363)에서 탭 오른쪽 클릭 메뉴로 열었다. 새 창은 같은 `WebappActivity` 안에 열렸고 `display-mode: standalone` 참(그래서 이 환경에서는 고치기 전 주소 `?solo=1` 도 로컬이었다). 고친 주소 `?solo=1&local=1`, 서버를 끄고 새 창에서 note2 를 열면 로컬 볼트의 내용, `keyring:mode` 는 null 그대로. 데스크톱처럼 새 창이 설치 앱이 아닌 경우는 헤드리스에서 새 창만 standalone 흉내를 빼고 봤다: 고치기 전 주소는 **로그인 화면(서버 모드)**, 고친 주소는 로컬 볼트, 메인 창의 기억 키는 null.
-- **이 브랜치 전부터 있던 것(고치지 않음)**: 열린 탭이 저장돼 있으면 노트 주소로 새로 열어도 복원된 탭이 이긴다(서버 모드에서도, 기준 커밋 `5d6b300` 빌드에서도 note3 주소 → note1). 설치 아이콘이 노트 주소로 시작하는 경우와 겹치면 그 노트가 아닌 마지막 탭이 보인다.
+- **이 브랜치 전부터 있던 것(고치지 않음, 이 브랜치 범위 밖)**: 노트 주소로 새로 열면 그 노트가 열리지 않는다. 저장된 탭이 있으면 복원된 탭이 보이고(note3 주소 → note1), **저장된 탭이 없어도** 주소가 곧 `""` 로 바뀌고 그 노트는 보이지 않는다(재리뷰: `/?local#/Notes%2Fnote1.md`, 100ms 안에 `""`). 서버 모드도, 기준 커밋 `5d6b300` 빌드도 같다. 추정 원인(미확인): `Workspace.tsx` 의 첫 열기(`initial`)가 워크스페이스 범위가 정해지기 전(`*`)의 배치에 탭을 넣고, 범위가 바뀌며 보이는 배치가 바뀐다(`?solo` 쪽에 같은 이유의 주석이 있다). 그래서 설치 아이콘이 노트 주소로 시작해도 볼트가 이미 있으면 그 노트가 아니라 홈이나 마지막 탭이 보인다. 빈 볼트는 동기화 화면 → 설정 닫기(`closeSettings`)로 그 노트를 열므로 괜찮다.
+- **설치 앱이 새 창 주소로 다시 시작하는가(4회차, 재리뷰 권함 3)**: 재현되지 않았다. 에뮬레이터의 실제 설치 앱(`WebappActivity`)에서 가로로 돌려 note1 탭의 「새 창으로 열기」 → 페이지 둘(`#/Notes%2Fnote1.md`, `?solo=1&local=1#/Notes%2Fnote1.md`, 둘 다 visible) → `am force-stop com.android.chrome` → 아이콘으로 다시 열기 → 페이지 하나, 주소 `http://localhost:8917/#/Notes%2Fnote1.md`(`?solo` 없음). 새 창을 앞으로 가져와 편집기를 누른 뒤(visible·focus 참) 같은 순서로 한 번 더 해도 같은 주소였다. 실제 기기·WebAPK·강제 종료가 아닌 종료(최근 앱에서 밀어 닫기 등)는 보지 않았다. 재현되더라도 `?solo=1` 은 이 브랜치 전부터 같고 `local=1` 은 기억하지 않으므로 이 브랜치가 더 나쁘게 만들지 않는다.
 
 **못 본 것·한계**:
 - 데스크톱 Chrome 의 실제 설치 앱에서 「새 창으로 열기」(헤드리스 흉내로만 봤다).

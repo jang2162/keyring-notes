@@ -60,6 +60,7 @@ $A forward tcp:9333 localabstract:chrome_devtools_remote   # Chrome 이 뜬 뒤.
 - **설치 상태(`display-mode: standalone`)**: CDP `Emulation.setEmulatedMedia` 는 Chrome 149 에서 `display-mode` 를 바꾸지 못한다(`prefers-color-scheme` 은 바뀐다). `page.addInitScript` 로 `matchMedia` 를 문서 시작 전에 덮거나(스크립트가 끝나면 풀린다), Chrome 메뉴 「홈 화면에 추가 → 앱 설치」 로 실제로 설치한다. 에뮬레이터의 설치는 WebAPK 가 아니라 `WebappActivity` 로 열렸고, 아이콘은 설치할 때 열려 있던 주소로 처음 시작했다.
 - **사이트 데이터 지우기**: 앱이 떠 있지 않은 같은 출처 페이지(예: `/licenses.txt`)로 옮겨 localStorage·IndexedDB·서비스 워커·캐시를 지운다. 앱이 떠 있는 동안 지우면 앱이 `keyring:sync` 등을 다시 써 넣는다. 브라우저 세션의 `Storage.clearDataForOrigin` 은 Internal error 였다.
 - `navigator.storage.persisted()` 는 브라우저 탭·설치한 앱 모두 false 였다(`persist()` 를 부른 뒤에도). 실제 기기는 다를 수 있다.
+- 휴대폰 세로 화면(웹 화면 폭 약 411px)은 800px 아래라 탭 줄이 숨어, 설치 앱의 탭 메뉴(「새 창으로 열기」 등)에 닿지 않았다. 가로(약 914px)로 돌려서 봤다: `$A shell cmd window user-rotation lock 1`(되돌리기 `lock 0`). `settings put system user_rotation 1` 은 한 번은 돌았고 다음 부팅에서는 돌지 않았다. 홈 화면(런처)은 가로로 돌지 않으므로 아이콘을 누를 때는 세로로 둔다.
 - 끝나면 `$A emu kill` 로 에뮬레이터를 끄고 시험 서버를 내린다.
 
 ## 검사
