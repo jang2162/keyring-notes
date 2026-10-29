@@ -71,6 +71,8 @@ Click a PDF in the tree, or a `[[x.pdf]]` or `[[x.pdf#page=3]]` link, to open it
 2. A line like `- [[x.pdf#page=3|Page 3]] “selected text” — memo ^pdf-3-k2x9` is added, in page order, to a `## PDF annotations` section in the PDF's companion note. The section title and page labels follow the vault language.
 3. If you opened the PDF from a wiki page, **Cite in this note** on an annotation adds `[[companion note#^pdf-3-k2x9]]` to that page's `sources`.
 
+**Delete** on an annotation removes its line from the companion note. It asks you to confirm first.
+
 The companion note is the collected source note (`raw/x.md` for `raw/assets/x.pdf`), otherwise the note the PDF was opened from, otherwise a new note next to the PDF. Reopening the PDF highlights the annotated spots. Agents read annotations with `read_section`.
 
 ## Check the wiki's structure

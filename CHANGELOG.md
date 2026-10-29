@@ -18,6 +18,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 ### Fixed
 
 - Desktop app: on a slow connection, installing an update failed when the download took longer than 15 seconds.
+- Desktop app on macOS: the first click on a window behind another app only brought the window forward, so you had to click again. That click now also reaches the button or field you clicked. Deleting a PDF annotation, deleting a property and **Reset this device** in Settings now ask you to confirm, since a single click can reach them.
 - Desktop app: closing a window with its close button, quitting with `Cmd+Q`, or restarting after installing an update discarded unsaved changes without asking. Now, whenever a window with unsaved changes closes, you are asked to **Save and close**, **Close without saving** or cancel, even with autosave on. With several windows open, `Cmd+Q` and the update restart ask in each window in turn, and canceling stops them. If the window isn't responding, the app asks with a system dialog instead.
 
 ## [0.9.0] - 2026-10-26

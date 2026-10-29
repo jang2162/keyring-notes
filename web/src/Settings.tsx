@@ -42,20 +42,10 @@ import {
   type SettingPath,
   type VaultSettings,
 } from "@keyring-notes/core";
-import {
-  DEFAULT_PREFS,
-  isLocalOverride,
-  resetDevicePrefs,
-  resetSharedPrefs,
-  setLocalOverride,
-  setPrefs,
-  sharedPref,
-  usePrefs,
-  type Prefs,
-  type SyncedKey,
-} from "./prefs";
+import { DEFAULT_PREFS, isLocalOverride, resetSharedPrefs, setLocalOverride, setPrefs, sharedPref, usePrefs, type Prefs, type SyncedKey } from "./prefs";
 import { commandKey, eventCombo, formatCombo, inApp, keyCapture, normalizeCombo, type Command } from "./shortcuts";
 import { Modal, useModalControl } from "./Modal";
+import { resetDevice } from "./askFirst";
 import { SERVER_SECTIONS, ServerSettings, type ServerSection } from "./Admin";
 import { SyncSettings } from "./Sync";
 import { localContext } from "./local/boot";
@@ -465,7 +455,7 @@ function SectionBody({
             </button>
           </Row>
           <Row label="settings.resetDevice" hint="settings.resetDeviceHint" query={query} scope="device">
-            <button type="button" onClick={() => resetDevicePrefs()}>
+            <button type="button" onClick={() => void resetDevice()}>
               {t("common.reset")}
             </button>
           </Row>
