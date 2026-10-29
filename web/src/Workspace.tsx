@@ -206,6 +206,7 @@ import {
   type SaveHold,
 } from "./closeWindow";
 import { tearOutAt } from "./tearOut";
+import { useAvailableUpdate } from "./update";
 import { SearchFilters, SearchResults } from "./Search";
 import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, SEARCH_LINES_FETCH, searchKey, type SearchFilter } from "./searchFilter";
 
@@ -404,6 +405,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const searchInput = useRef<HTMLInputElement>(null);
   const [ingestOpen, setIngestOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsSection | null>(settingsFromLocation);
+  const newVersion = useAvailableUpdate();
   const [keysOpen, setKeysOpen] = useState(false);
   const [fileView, setFileView] = useState<string | null>(null);
   const [docMenu, setDocMenu] = useState<{ x: number; y: number } | null>(null);
@@ -2724,11 +2726,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         />
         <IconButton
           icon={SettingsIcon}
-          label={t("settings.title")}
+          label={newVersion ? `${t("settings.title")} · ${t("update.availableShort", { version: newVersion.version })}` : t("settings.title")}
+          shortLabel={t("settings.title")}
           side={railSide}
           showLabel={rl}
           keys={keyOf("settings")}
           active={!!settings}
+          dot={!!newVersion}
           onClick={() => (settings ? closeSettings() : openSettings())}
         />
         {!local && (

@@ -70,6 +70,7 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | Settings | 설정 |
 | General · Language · Editor · Files & links · Workspaces · Shortcuts | 일반 · 언어 · 편집기 · 파일·링크 · 워크스페이스 · 단축키 |
 | This device & sync | 이 기기·동기화 |
+| About | 정보 |
 | Open source licenses | 오픈 소스 라이선스 |
 | Server status · Agents & permissions · Devices · Backup & restore · Automation · Updates · Security | 서버 상태 · 에이전트·권한 · 기기 · 백업·복원 · 자동화 · 업데이트 · 보안 |
 | Display language · Vault language · Agent language · Server language | 화면 언어 · 볼트 언어 · 에이전트 언어 · 서버 언어 |
