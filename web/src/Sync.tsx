@@ -8,6 +8,7 @@ import { fmtDateTime, t } from "./i18n";
 import { errorText } from "./toast";
 import { isSynced, setLocalOverride, type SyncedKey } from "./prefs";
 import { SOLO } from "./soloWindow";
+import { requestPersist } from "./persist";
 
 const msg = errorText;
 
@@ -162,6 +163,7 @@ export function SyncSettings({ ctx, onOpen }: { ctx: LocalContext; onOpen: (p: s
       <section>
         <h3>{t("sync.vaultTitle")}</h3>
         <p className="meta">{ctx.kind === "app" ? t("sync.vaultHintApp") : t("sync.vaultHintWeb")}</p>
+        {ctx.kind === "browser" && <PersistNote />}
         {ctx.vaultDir && (
           <p>
             <code className="vault-dir">{ctx.vaultDir}</code>{" "}
@@ -182,7 +184,15 @@ export function SyncSettings({ ctx, onOpen }: { ctx: LocalContext; onOpen: (p: s
             <p className="meta">{t("sync.serverHint")}</p>
             <label>
               {t("sync.serverUrl")}
-              <input name="server" placeholder="https://notes.example.com" required autoComplete="url" inputMode="url" />
+              <input
+                name="server"
+                // 브라우저 로컬 볼트는 이 앱을 내준 서버가 곧 동기화 서버다
+                defaultValue={ctx.kind === "browser" ? location.origin : undefined}
+                placeholder="https://notes.example.com"
+                required
+                autoComplete="url"
+                inputMode="url"
+              />
             </label>
             <label>
               {t("sync.deviceName")}
@@ -227,6 +237,20 @@ export function SyncSettings({ ctx, onOpen }: { ctx: LocalContext; onOpen: (p: s
       </section>
     </div>
   );
+}
+
+/** 브라우저 로컬 볼트: 이 기기 저장소가 보존되는지. 모르면(API 없음) 아무것도 보이지 않는다 */
+function PersistNote() {
+  const [kept, setKept] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void requestPersist().then((v) => live && setKept(v));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (kept === null) return null;
+  return <p className={kept ? "meta" : "note-warn"}>{kept ? t("sync.persisted") : t("sync.notPersisted")}</p>;
 }
 
 /** 서버에 처음 연결하는 동안은 닫지 않는다 */

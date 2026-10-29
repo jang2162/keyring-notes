@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import { isTauri } from "@tauri-apps/api/core";
 import { App } from "./App";
 import { startLocal, wantsLocal } from "./local/boot";
+import { needsSyncSetup } from "./local/mode";
+import { SOLO } from "./soloWindow";
+import { SETTINGS_HASH } from "./Workspace";
 import "./styles.css";
 import { t } from "./i18n";
 
@@ -15,9 +18,13 @@ async function boot() {
       navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("service worker registration failed", e));
     });
   }
-  if (wantsLocal()) {
+  if (await wantsLocal()) {
     try {
-      await startLocal();
+      const ctx = await startLocal();
+      // 비밀번호만 넣으면 되게: 동기화 화면은 서버 주소(이 출처)·기기 이름을 채워 둔다(Sync.tsx)
+      if (needsSyncSetup({ kind: ctx.kind, solo: SOLO, connected: !!ctx.sync.get().settings, hash: location.hash })) {
+        history.replaceState(null, "", `${SETTINGS_HASH}/device`);
+      }
     } catch (e) {
       root.render(
         <div className="boot-error">

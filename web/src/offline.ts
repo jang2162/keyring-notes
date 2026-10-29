@@ -7,6 +7,7 @@
  * 그 사이 서버에서 바뀌었으면 덮어쓰지 않고 충돌 사본으로 남긴다.
  */
 import type { Doc, TreeNode } from "./api";
+import { requestPersist } from "./persist";
 
 export interface OutboxItem {
   path: string;
@@ -74,6 +75,8 @@ export const offline = {
   },
   /** 오프라인 저장. 같은 문서를 여러 번 저장하면 내용만 바꾸고 처음 baseHash는 유지한다. */
   async queue(path: string, content: string, baseHash: string | null, baseContent: string | null = null): Promise<void> {
+    // 대기분은 서버에 아직 없다: 브라우저가 공간을 비우며 지우지 않게 보존을 청한다(페이지마다 한 번)
+    void requestPersist();
     const prev = (await tx("outbox", "readonly", (s) => s.get(path))) as OutboxItem | undefined;
     const item: OutboxItem = prev
       ? { ...prev, content, queuedAt: new Date().toISOString() }

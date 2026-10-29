@@ -220,7 +220,7 @@ const NO_PANES: Layout = emptyLayout();
 const IDLE: SaveState = { kind: "idle" };
 
 /** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
-const SETTINGS_HASH = "#/:settings";
+export const SETTINGS_HASH = "#/:settings";
 
 function pathFromLocation(): string | null {
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
@@ -362,6 +362,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   revisionsRef.current = revisions;
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<(SearchHit & { score?: number })[] | null>(null);
+  /** 지난 검색이 연결이 없어 실패했다(서버 모드) */
+  const [searchOffline, setSearchOffline] = useState(false);
   /** 검색 패널의 폴더·태그 필터(앱이 떠 있는 동안만) */
   const [searchFilter, setSearchFilter] = useState<SearchFilter>(NO_FILTER);
   /** 필터에 고를 수 있는 태그(지금 범위, 폴더를 골랐으면 그 안) */
@@ -758,10 +760,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               )
           : api.search(q, { folder: filter.folder || scope || undefined, tags: filter.tags, lines: SEARCH_LINES_FETCH })
         )
-          .then(setHits)
+          .then((hs) => {
+            setSearchOffline(false);
+            setHits(hs);
+          })
           .catch((e) => {
             setHits([]);
-            toastError(e);
+            // 서버 모드에서 연결이 없으면 「결과 없음」이 아니라 검색할 수 없다고 말한다(결과 칸이 말하니 알림은 띄우지 않는다)
+            const off = !appMode.local && isNetworkError(e);
+            setSearchOffline(off);
+            if (!off) toastError(e);
           });
       },
       semantic ? 400 : 200,
@@ -2871,6 +2879,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           {hits !== null && (
             <SearchResults
               hits={hits}
+              offline={searchOffline}
               query={query.trim()}
               searchKey={searchKey(query, searchFilter)}
               semantic={searchMode === "semantic" && !query.trim().startsWith("#")}

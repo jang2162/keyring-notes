@@ -6,6 +6,9 @@ import { createLocalApi } from "./localApi";
 import { defaultDeviceName, SyncController } from "./syncController";
 import { SOLO } from "../soloWindow";
 import { t } from "../i18n";
+import { offline } from "../offline";
+import { requestPersist } from "../persist";
+import { queryChoice, startsLocal, storedChoice, type ModeInput } from "./mode";
 
 export interface LocalContext {
   vault: LocalVault;
@@ -32,17 +35,30 @@ function storage(): Storage | null {
   }
 }
 
-/** 앱(Tauri)이면 늘 로컬. 브라우저는 `?local`로 켜고 `?local=0`으로 끈다(이 브라우저에 기억). */
-export function wantsLocal(): boolean {
-  if (isTauri()) return true;
-  const q = new URLSearchParams(location.search);
-  if (q.has("local")) {
-    const on = q.get("local") !== "0";
-    if (on) storage()?.setItem(MODE_KEY, "local");
-    else storage()?.removeItem(MODE_KEY);
-    return on;
+function installed(): boolean {
+  try {
+    return matchMedia("(display-mode: standalone)").matches;
+  } catch {
+    return false;
   }
-  return storage()?.getItem(MODE_KEY) === "local";
+}
+
+/**
+ * 로컬 모드로 시작할지(판정은 mode.ts startsLocal). 브라우저는 `?local` 로 켜고 `?local=0` 으로 끄며 그 선택을 이 브라우저에 기억한다.
+ * `?local=0` 을 지우지 않고 "server" 로 남기는 것은 설치한 웹 앱의 자동 로컬 시작이 그 선택을 덮지 않게 하려는 것이다.
+ */
+export async function wantsLocal(): Promise<boolean> {
+  if (isTauri()) return true;
+  const query = queryChoice(location.search);
+  if (query) storage()?.setItem(MODE_KEY, query);
+  const input: ModeInput = { tauri: false, installed: installed(), query, stored: storedChoice(storage()?.getItem(MODE_KEY) ?? null), pendingOutbox: false };
+  // 대기열은 판정을 가를 때만 연다. 못 읽으면 남은 것으로 본다(서버 모드가 대기분을 보낼 기회를 잃지 않게)
+  if (input.installed && !query && !input.stored)
+    input.pendingOutbox = await offline.pending().then(
+      (l) => l.length > 0,
+      () => true,
+    );
+  return startsLocal(input);
 }
 
 const isMobile = () => /Android|iPhone|iPad/.test(navigator.userAgent);
@@ -81,6 +97,7 @@ export async function startLocal(): Promise<LocalContext> {
     }
   } else {
     store = new IdbStore();
+    void requestPersist();
   }
   let device = defaultDeviceName();
   try {

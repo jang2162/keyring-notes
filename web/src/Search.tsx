@@ -116,6 +116,7 @@ export function SearchFilters({
  */
 export function SearchResults({
   hits,
+  offline = false,
   query,
   searchKey,
   semantic,
@@ -124,6 +125,8 @@ export function SearchResults({
   onGo,
 }: {
   hits: (SearchHit & { score?: number })[];
+  /** 연결이 없어 검색하지 못했다: 빈 결과를 「결과 없음」으로 보이지 않는다 */
+  offline?: boolean;
   query: string;
   /** 지금 검색(검색어·필터, searchFilter.ts searchKey). 바뀌면 펼친 결과를 다시 접는다 */
   searchKey: string;
@@ -191,7 +194,7 @@ export function SearchResults({
           </li>
         );
       })}
-      {hits.length === 0 && <li className="meta">{t("search.none")}</li>}
+      {hits.length === 0 && <li className="meta">{offline ? t("search.offline") : t("search.none")}</li>}
     </ul>
   );
 }
