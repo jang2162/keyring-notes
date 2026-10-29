@@ -1118,17 +1118,17 @@ Oct 7, 2026 · 사용자 결정(26번 "정할 것" 모두 추천대로)
 
 **정함(사용자 결정)·구현**:
 - **창마다 켠다**: 창을 만드는 자리는 둘이다 — 메인 창(`app/src-tauri/tauri.conf.json` 의 `app.windows[]` `main`, `"acceptFirstMouse": true`)과 탭의 「새 창으로 열기」·탭 떼어 내기 창(`web/src/soloWindow.ts` 의 `new WebviewWindow(…)`, `solo-*`, 옵션 `acceptFirstMouse: true`). Rust 에는 창을 만드는 코드가 없다. 「왜 켰는가」 주석은 JSON 에 달 수 없어 `soloWindow.ts` 옵션 옆에 두고 메인 창은 그 주석이 가리킨다. 새 창 생성 자리를 더하면 거기도 켠다(`web/src/firstMouse.test.ts` 가 설정의 모든 창과 `openSolo` 를 본다).
-- **한 번에 지우던 단추에 확인**: 켜면 비활성 창의 첫 클릭이 곧바로 단추에 닿는다. 사용자는 확인 없이 한 번에 지우던 두 단추에 「둘 다 확인 추가」 를 골랐다 — PDF 주석 목록의 「삭제」(`PdfViewer.tsx` `remove`, 「{page}쪽 주석을 삭제할까요?」)와 속성 행의 「×」(`Properties.tsx` `remove`, 「속성 "{key}"을(를) 삭제할까요?」). 둘 다 앱 안 대화상자(`confirmDialog`, 단추 「삭제」, 기본 Enter)다. 글은 `pdf.removeAsk`·`props.removeAsk`.
-- 다른 한 번 클릭 삭제(워크스페이스 삭제·노드 삭제·첨부 삭제·기기 연결 해제·패스키 삭제·저장 안 한 탭 닫기)는 이미 묻는다.
+- **한 번에 지우던 단추에 확인**: 켜면 비활성 창의 첫 클릭이 곧바로 단추에 닿는다. 사용자는 확인 없이 한 번에 지우던 두 단추에 「둘 다 확인 추가」 를 골랐다 — PDF 주석 목록의 「삭제」(「{page}쪽 주석을 삭제할까요?」)와 속성 행의 「×」(「속성 "{key}"을(를) 삭제할까요?」). 리뷰에서 찾은 설정 「이 기기 설정 초기화」(패널 폭·트리 상태·이 기기만 덮어쓴 값을 localStorage 에서 지워 되살릴 수 없다)에도 사용자가 「확인창 추가」 를 골랐다(「이 기기 설정을 처음 값으로 되돌릴까요? …」, 단추 「초기화」 — 바로 아래 「모든 기기 화면 설정 초기화」 와 같은 꼴). 셋 다 앱 안 대화상자(`confirmDialog`, 기본 Enter)이고, 묻고 고치는 함수는 `web/src/askFirst.ts`(`removeAnnotation`·`removeProperty`·`resetDevice`)에 모여 있다. 글은 `pdf.removeAsk`·`props.removeAsk`·`settings.resetDeviceAsk`.
+- 다른 한 번 클릭 삭제(워크스페이스 삭제·노드 삭제·첨부 삭제·저장 안 한 탭 닫기·모든 기기 화면 설정 초기화)는 이미 묻는다. 기기 연결 해제·패스키 삭제는 서버 관리 화면이라 데스크톱 앱 창에는 없다(앱은 로컬 모드).
 
 **한계**:
 - 비활성 창의 첫 클릭이 바로 동작하므로, 다른 앱에서 돌아오며 무심코 누른 자리의 단추가 실행된다. 지우는 단추는 묻지만 되돌릴 수 있는 바꿈(목록 속성 값의 「×」(`props.removeItem`), 체크 상자, 탭의 「×」(저장한 탭) 등)은 묻지 않는다 — 초안에만 들어가거나 다시 열 수 있다.
 - 관리 화면의 기기 연결 해제·패스키 삭제는 앱 안 대화상자가 아니라 `window.confirm` 이다(`Admin.tsx`). 서버 관리 화면이라 이번에 바꾸지 않았다.
-- 노트 안 링크로 여는 첨부(`Links.tsx` 의 `window.open`)는 이 앱이 만드는 창이 아니라 이 설정의 범위 밖이다.
+- 노트 안 링크로 여는 첨부(`Links.tsx` 의 `window.open`)는 앱에서 창을 열지 않는다 — 앱에 새 창 핸들러(`on_new_window`)가 없고 wry 는 핸들러가 없으면 새 웹뷰를 만들지 않으므로, 이 설정이 닿을 창이 없다(소스로 본 것, 앱 창에서 눌러 보지는 않았다). 그 링크가 앱에서 아무것도 하지 않을 수 있는 것은 이번 변경 전부터의 별개 문제다.
 
-**남은 것**: 확인창 두 개를 데스크톱 앱 창에서 직접 누르는 실측(단위 시험만 봤다), Windows·Linux 창(이 설정은 macOS 에만 뜻이 있다).
+**남은 것**: 확인창 세 개를 데스크톱 앱 창에서 직접 누르는 실측(단위 시험만 봤다), Windows·Linux 창(이 설정은 macOS 에만 뜻이 있다).
 
-**확인한 것**: 단위 시험 — 웹 `firstMouse.test.ts`(4: 설정의 모든 창이 켬, `openSolo` 가 켬, PDF 주석 삭제·속성 행 삭제가 고치기 전에 묻는다). 고친 곳 네 군데(설정·`openSolo`·두 확인)를 하나씩 되돌리면 새 시험이 각각 떨어지는 것을 봤다. 데스크톱 앱 실측(macOS, 디버그 빌드) — 워크트리 전용 vite(5191)와 임시 `HOME`·별도 identifier(`com.develma.keyringnotes.afmtest`)로 띄워 사람의 볼트를 쓰지 않았고, `TAURI_CONFIG` 로 메인 창 설정을, `soloWindow.ts` 를 잠시 고쳐 solo 창 옵션을 끈 빌드(OFF)와 켠 빌드(ON)를 만들었다. 절차: 시험 창을 앞으로 → Finder 활성화(시험 창은 맨 위에 보이지만 비활성, 클릭 지점의 맨 위 창이 시험 창인지 `CGWindowList` 로 확인) → **CGEvent**(`cghidEventTap` 에 mouseMoved·leftMouseDown·leftMouseUp, 접근성 press 아님)로 **한 번** 클릭 → 0.8초 뒤 앞 앱·접근성 포커스 요소(읽기만)·창 스크린샷. 누른 곳은 레일의 검색 아이콘(단추)과, 포커스를 뗀 뒤의 검색 패널 「볼트 검색」 칸(입력란)이다.
+**확인한 것**: 단위 시험 — 웹 `firstMouse.test.ts`(7: 설정의 모든 창이 켬, `openSolo` 가 켬, 그리고 `confirmDialog` 를 mock 한 행동 시험으로 취소하면 아무것도 고치지 않고 확인하면 고친다 — PDF 주석 삭제는 짝 노트가 열린 길(`onEditOpenDoc`)과 닫힌 길(`api.write`) 둘 다, 속성 행 삭제(`onChange`), 이 기기 설정 초기화(`resetDevicePrefs`). 화면의 단추가 `askFirst.ts` 를 거치는지는 소스로 본다). 변형 15개를 하나씩 걸어 모두 떨어지는 것을 봤다 — 확인 제거·확인을 고친 뒤로·결과 무시(취소해도 지움)·극성 반대·확인을 다른 함수로 옮김, 설정·`openSolo` 의 `acceptFirstMouse` 제거, 화면이 `askFirst.ts` 를 건너뛰고 바로 지움(세 단추). 데스크톱 앱 실측(macOS, 디버그 빌드) — 워크트리 전용 vite(5191)와 임시 `HOME`·별도 identifier(`com.develma.keyringnotes.afmtest`)로 띄워 사람의 볼트를 쓰지 않았고, `TAURI_CONFIG` 로 메인 창 설정을, `soloWindow.ts` 를 잠시 고쳐 solo 창 옵션을 끈 빌드(OFF)와 켠 빌드(ON)를 만들었다. 절차: 시험 창을 앞으로 → Finder 활성화(시험 창은 맨 위에 보이지만 비활성, 클릭 지점의 맨 위 창이 시험 창인지 `CGWindowList` 로 확인) → **CGEvent**(`cghidEventTap` 에 mouseMoved·leftMouseDown·leftMouseUp, 접근성 press 아님)로 **한 번** 클릭 → 0.8초 뒤 앞 앱·접근성 포커스 요소(읽기만)·창 스크린샷. 누른 곳은 레일의 검색 아이콘(단추)과, 포커스를 뗀 뒤의 검색 패널 「볼트 검색」 칸(입력란)이다.
 
 | 창 · 누른 것 | OFF | ON |
 | --- | --- | --- |
@@ -1137,4 +1137,4 @@ Oct 7, 2026 · 사용자 결정(26번 "정할 것" 모두 추천대로)
 | 새 창(solo) · 검색 아이콘 | 창만 앞으로 오고(아이콘에 툴팁만) 패널 그대로 | 그 한 번에 검색 패널이 열림 |
 | 새 창(solo) · 검색 칸 | 포커스는 편집기(`AXTextArea`) 그대로 | 포커스 `AXSearchField` 「볼트 검색」 |
 
-OFF 에서 창이 활성인 채로 같은 자리를 누르면 검색 패널이 열리고 칸이 포커스를 받는다(좌표가 맞다는 대조). 확인창 두 개를 앱 창에서 직접 누르는 것과 Windows·Linux 는 보지 못했다.
+OFF 에서 창이 활성인 채로 같은 자리를 누르면 검색 패널이 열리고 칸이 포커스를 받는다(좌표가 맞다는 대조). 확인창 세 개를 앱 창에서 직접 누르는 것과 Windows·Linux 는 보지 못했다.

@@ -24,7 +24,7 @@ The app keeps its own metadata in `.keyring-app/` inside the vault. It is a dot 
 
 ## Click a window in the background
 
-On macOS, clicking a Keyring Notes window while another app is in front brings the window forward and also acts on what you clicked. A button works and a field takes the cursor on that first click. Buttons that delete in one click, such as deleting a PDF annotation or a property, ask you to confirm first.
+On macOS, clicking a Keyring Notes window while another app is in front brings the window forward and also acts on what you clicked. A button works and a field takes the cursor on that first click. Buttons that delete in one click, such as deleting a PDF annotation or a property, or **Reset this device** in Settings, ask you to confirm first.
 
 ## Close windows and quit
 
