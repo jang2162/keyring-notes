@@ -1,5 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Download, Search, Trash2, Upload, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Download,
+  Folder,
+  Info,
+  Keyboard,
+  Languages,
+  LayoutGrid,
+  PenLine,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  Upload,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import {
   DAILY_PRESETS,
   dailyFormatProblem,
@@ -50,22 +67,32 @@ import { getPack, languages, PSEUDO, putPack, removePack, systemLanguage, t, use
 import { confirmDialog, promptDialog } from "./dialog";
 import { tipProps } from "./Tooltip";
 import { admin } from "./api";
-import { checkForUpdate, showUpdate, updatesSupported } from "./update";
+import { available, checkForUpdate, showUpdate, updatesSupported, useAvailableUpdate } from "./update";
 
-export type SettingsSection = "general" | "language" | "editor" | "files" | "workspaces" | "keys" | "device" | ServerSection;
+export type SettingsSection = "general" | "language" | "editor" | "files" | "workspaces" | "keys" | "device" | "about" | ServerSection;
 
 /** 모바일(좁은 터치 화면)에서는 단축키 화면을 숨긴다(단축키는 데스크톱·웹만 따라간다) */
 const isMobile = () => typeof window !== "undefined" && (window.matchMedia?.("(pointer: coarse)").matches ?? false) && window.innerWidth < 900;
 
 /** 묶음(이름·검색 낱말은 메시지 키) */
-const SECTIONS: { id: SettingsSection; label: string; local?: boolean; server?: boolean; keywords?: string; group?: string; mobileHidden?: boolean }[] = [
-  { id: "general", label: "settings.general" },
-  { id: "language", label: "settings.language", keywords: "settings.languageKeywords" },
-  { id: "editor", label: "settings.editor" },
-  { id: "files", label: "settings.files" },
-  { id: "workspaces", label: "settings.workspaces", keywords: "settings.workspacesKeywords" },
-  { id: "keys", label: "settings.keys", keywords: "settings.keysKeywords", mobileHidden: true },
-  { id: "device", label: "settings.device", local: true, keywords: "settings.deviceKeywords" },
+const SECTIONS: {
+  id: SettingsSection;
+  label: string;
+  icon: LucideIcon;
+  local?: boolean;
+  server?: boolean;
+  keywords?: string;
+  group?: string;
+  mobileHidden?: boolean;
+}[] = [
+  { id: "general", label: "settings.general", icon: SlidersHorizontal },
+  { id: "language", label: "settings.language", icon: Languages, keywords: "settings.languageKeywords" },
+  { id: "editor", label: "settings.editor", icon: PenLine },
+  { id: "files", label: "settings.files", icon: Folder },
+  { id: "workspaces", label: "settings.workspaces", icon: LayoutGrid, keywords: "settings.workspacesKeywords" },
+  { id: "keys", label: "settings.keys", icon: Keyboard, keywords: "settings.keysKeywords", mobileHidden: true },
+  { id: "device", label: "settings.device", icon: RefreshCw, local: true, keywords: "settings.deviceKeywords" },
+  { id: "about", label: "settings.about", icon: Info, keywords: "settings.aboutKeywords" },
   ...SERVER_SECTIONS.map((s) => ({ ...s, server: true, group: "settings.server" })),
 ];
 
@@ -337,6 +364,7 @@ function SettingsNav({
   renderGroup: (g: string | undefined) => ReactNode;
 }) {
   const ctl = useModalControl();
+  const update = useAvailableUpdate();
   return (
     <>
       <label className="settings-search">
@@ -368,7 +396,9 @@ function SettingsNav({
               onSection(s.id);
             }}
           >
-            {t(s.label)}
+            <s.icon size={15} strokeWidth={1.75} aria-hidden />
+            <span className="settings-tab-label">{t(s.label)}</span>
+            {s.id === "about" && update && <span className="update-dot" role="img" aria-label={t("update.availableShort", { version: update.version })} />}
           </button>
         </span>
       ))}
@@ -444,7 +474,6 @@ function SectionBody({
               {t("common.reset")}
             </button>
           </Row>
-          <LicensesRow query={query} />
         </>
       );
     case "language":
@@ -556,12 +585,9 @@ function SectionBody({
     case "keys":
       return <KeySettings commands={commands} query={query} />;
     case "device":
-      return localContext ? (
-        <>
-          <SyncSettings ctx={localContext} onOpen={onOpen} />
-          {updatesSupported() && <UpdateSettings query={query} />}
-        </>
-      ) : null;
+      return localContext ? <SyncSettings ctx={localContext} onOpen={onOpen} /> : null;
+    case "about":
+      return <AboutSettings />;
     default:
       return <ServerSettings section={id} folders={folders} />;
   }
@@ -580,19 +606,20 @@ function LicensesRow({ query }: { query: string }) {
   );
 }
 
-/** 데스크톱 앱 업데이트: 실행 때 자동 확인 켜기·끄기(이 기기), 지금 확인 */
-function UpdateSettings({ query }: { query: string }) {
+/**
+ * 정보: 지금 버전, 데스크톱 앱 업데이트(새 버전 알림·지금 확인·실행 때 자동 확인), 오픈 소스 라이선스.
+ * 검색 낱말(settings.aboutKeywords)이 맞으면 묶음이 통째로 보이므로 줄은 거르지 않는다
+ */
+function AboutSettings() {
   const prefs = usePrefs();
+  const update = useAvailableUpdate();
   const [busy, setBusy] = useState(false);
-  // 검색: 맞는 줄이 없으면 제목도 숨기고, 제목(「앱 업데이트」)이 맞으면 두 줄을 다 보인다
-  const q = query.trim().toLowerCase();
-  const titleHit = !!q && both("settings.updates").includes(q);
-  const hit = !q || titleHit || ["settings.updateCheck", "settings.updateCheckHint", "settings.updateNow"].some((k) => both(k).includes(q));
-  const rowQuery = titleHit ? "" : query;
+  // 사람이 누른 확인은 찾으면 바로 대화상자를 띄우고, 새 버전이 있다는 상태(레드닷)도 함께 바꾼다
   const checkNow = async () => {
     setBusy(true);
     try {
       const u = await checkForUpdate();
+      available.set(u);
       if (u) showUpdate(u);
       else toast(t("update.latest", { version: APP_VERSION }), { kind: "success" });
     } catch (e) {
@@ -601,19 +628,34 @@ function UpdateSettings({ query }: { query: string }) {
       setBusy(false);
     }
   };
-  if (!hit) return null;
   return (
-    <section className="update-settings">
-      <h3>{t("settings.updates")}</h3>
-      <Row label="settings.updateCheck" hint="settings.updateCheckHint" query={rowQuery} scope="device">
-        <Toggle label={t("settings.updateCheck")} value={prefs.updateCheck} onChange={(v) => setPrefs({ updateCheck: v })} />
+    <>
+      <Row label="settings.version" query="">
+        <span className="meta">{APP_VERSION}</span>
       </Row>
-      <Row label="settings.updateNow" hintNode={t("settings.updateNowHint", { version: APP_VERSION })} query={rowQuery} scope="device">
-        <button type="button" onClick={() => void checkNow()} disabled={busy}>
-          {busy ? t("update.checking") : t("settings.updateNow")}
-        </button>
-      </Row>
-    </section>
+      {updatesSupported() && (
+        <>
+          {update && (
+            <div className="update-available">
+              <Row label="update.title" hintNode={t("settings.updateAvailableHint", { version: update.version, current: update.currentVersion })} query="">
+                <button type="button" className="on" onClick={() => showUpdate(update)}>
+                  {t("settings.updateOpen")}
+                </button>
+              </Row>
+            </div>
+          )}
+          <Row label="settings.updateNow" hint="settings.updateNowHint" query="">
+            <button type="button" onClick={() => void checkNow()} disabled={busy}>
+              {busy ? t("update.checking") : t("settings.updateNow")}
+            </button>
+          </Row>
+          <Row label="settings.updateCheck" hint="settings.updateCheckHint" query="" scope="device">
+            <Toggle label={t("settings.updateCheck")} value={prefs.updateCheck} onChange={(v) => setPrefs({ updateCheck: v })} />
+          </Row>
+        </>
+      )}
+      <LicensesRow query="" />
+    </>
   );
 }
 

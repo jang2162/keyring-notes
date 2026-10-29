@@ -32,11 +32,11 @@ pub fn run() {
 ///   화면의 「창 닫기」 명령과 같은 Cmd+Shift+W 로 바꾼다. 웹뷰가 그 키를 먼저 받아 처리하면 메뉴는 돌지 않는다.
 /// - Quit: 기본은 terminate: 인데 tao 가 applicationShouldTerminate 를 두지 않아 창에 닫기 요청 없이 곧바로 끝났다.
 ///   창을 하나씩 닫기 요청한다(close_guard 의 차례 닫기: 지금 창 먼저, 어느 창이든 닫지 않기로 하면 멈춘다).
-///   마지막 창이 사라지면 Tauri 가 앱을 끝낸다.
+///   마지막 창이 사라지면 Tauri 가 앱을 끝낸다. 새 버전이 있으면 그 전에 업데이트를 묻는다(close_guard::quit).
 ///   Dock 의 Quit·로그아웃은 여전히 terminate: 라 묻지 않는다(docs/ops/ux.md 6번 「남은 것」).
 #[cfg(target_os = "macos")]
 mod macos_menu {
-    use crate::close_guard::{self, After};
+    use crate::close_guard;
     use tauri::menu::{
         AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
         WINDOW_SUBMENU_ID,
@@ -59,7 +59,7 @@ mod macos_menu {
                         let _ = w.close();
                     }
                 }
-                QUIT => close_guard::close_all(app, After::Exit),
+                QUIT => close_guard::quit(app),
                 _ => {}
             })
     }

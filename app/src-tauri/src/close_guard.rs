@@ -12,6 +12,8 @@
 //!
 //! 여러 창을 차례로 닫는 순서(Sequence)는 macOS 메뉴의 Quit 과 업데이트 뒤 다시 시작이 쓴다: 지금 창 먼저, 나머지는 이름 순서.
 //! 어느 창이든 닫지 않기로 하면 멈추고 남은 창은 그대로 둔다.
+//!
+//! 메뉴의 Quit 은 새 버전이 있으면 차례에 앞서 업데이트를 묻는다(UpdateQuit). 새 버전은 화면만 알므로 실행 때 확인한 창이 알려 둔다.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -276,10 +278,95 @@ pub fn stop_for(seq: &mut Option<Sequence>, label: &str) -> Option<After> {
     }
 }
 
+/// Quit 앞의 업데이트 물음. 새 버전을 찾은 창이 알려 두면(set_update_pending) Quit 이 그 창에 물음을 요청한다(quit-ask).
+/// 화면이 ANSWER_TIMEOUT 안에 받았다고 답하지 않으면 묻지 않고 Quit 차례로 간다 — 응답하지 않는 창 때문에 Quit 이 막히지 않게
+#[derive(Default)]
+pub struct UpdateQuit {
+    /// 새 버전이 있다고 알린 창
+    pending: Option<String>,
+    /// 물음 요청을 보내고 화면의 답을 기다리는 중(요청 번호)
+    probe: Option<u64>,
+    /// 화면이 묻고 있다(받고 설치하는 동안도)
+    asking: bool,
+    next: u64,
+}
+
+/// Quit 을 어떻게 할지
+#[derive(Debug, PartialEq)]
+pub enum OnQuit {
+    /// 새 버전이 없다: 바로 Quit 차례로
+    CloseAll,
+    /// 앞서 보낸 물음 요청의 답을 기다리는 중
+    Wait,
+    /// 이 창에 이 번호로 물음을 요청한다
+    Ask(String, u64),
+}
+
+impl UpdateQuit {
+    pub fn set_pending(&mut self, label: &str, pending: bool) {
+        if pending {
+            self.pending = Some(label.into());
+        } else if self.pending.as_deref() == Some(label) {
+            self.pending = None;
+        }
+    }
+
+    pub fn quit(&mut self) -> OnQuit {
+        let Some(label) = self.pending.clone() else {
+            return OnQuit::CloseAll;
+        };
+        if self.probe.is_some() {
+            return OnQuit::Wait;
+        }
+        // 화면이 묻는 중이어도 다시 요청한다 — 묻다가 멈춘 창이면 답이 없어 Quit 차례로 넘어간다
+        self.next += 1;
+        self.probe = Some(self.next);
+        OnQuit::Ask(label, self.next)
+    }
+
+    /// 화면이 물음 요청을 받았다. 새로 물어야 하면 true(이미 묻고 있거나, 늦어서 Quit 차례로 넘어갔으면 false)
+    pub fn ack(&mut self, id: u64) -> bool {
+        if self.probe != Some(id) {
+            return false;
+        }
+        self.probe = None;
+        if self.asking {
+            return false;
+        }
+        self.asking = true;
+        true
+    }
+
+    /// 기다리던 답이 오지 않았다. 묻지 않고 Quit 차례로 가야 하면 true
+    pub fn timed_out(&mut self, id: u64) -> bool {
+        if self.probe != Some(id) {
+            return false;
+        }
+        self.probe = None;
+        self.asking = false;
+        true
+    }
+
+    /// 화면이 묻기를 끝냈다(고른 것과 상관없이)
+    pub fn done(&mut self) {
+        self.asking = false;
+    }
+
+    /// 창이 다시 로드되기 시작했거나 사라졌다: 그 창이 알린 새 버전은 잊는다(새 페이지가 다시 확인해 알린다).
+    /// 기다리던 요청은 그대로 두어 시간이 지나면 Quit 차례로 간다
+    pub fn gone(&mut self, label: &str) {
+        if self.pending.as_deref() == Some(label) {
+            self.pending = None;
+            self.asking = false;
+        }
+    }
+}
+
 #[derive(Default)]
 struct State {
     guards: Mutex<Guards>,
     sequence: Mutex<Option<Sequence>>,
+    update_quit: Mutex<UpdateQuit>,
 }
 
 pub fn install(builder: Builder<Wry>) -> Builder<Wry> {
@@ -289,7 +376,10 @@ pub fn install(builder: Builder<Wry>) -> Builder<Wry> {
             set_close_guard,
             close_ask_ack,
             close_ask_done,
-            restart_after_closing
+            restart_after_closing,
+            set_update_pending,
+            quit_ask_ack,
+            quit_ask_done
         ])
         .on_window_event(|w, e| match e {
             WindowEvent::CloseRequested { api, .. } => {
@@ -318,6 +408,11 @@ pub fn install(builder: Builder<Wry>) -> Builder<Wry> {
                 return;
             }
             let app = wv.app_handle();
+            app.state::<State>()
+                .update_quit
+                .lock()
+                .unwrap()
+                .gone(wv.label());
             let cut = app
                 .state::<State>()
                 .guards
@@ -385,6 +480,38 @@ fn ask_natively(app: &AppHandle, label: String, text: Fallback) {
     });
 }
 
+/// 메뉴의 Quit: 새 버전이 있으면 그 창에 먼저 묻고(quit-ask), 없으면 차례로 닫는다
+pub fn quit(app: &AppHandle) {
+    let on = app.state::<State>().update_quit.lock().unwrap().quit();
+    match on {
+        OnQuit::CloseAll => close_all(app, After::Exit),
+        OnQuit::Wait => {}
+        OnQuit::Ask(label, id) => ask_quit(app, label, id),
+    }
+}
+
+/// 새 버전을 알린 창에 Quit 물음을 요청하고, 답이 없으면 묻지 않고 차례로 닫는다
+fn ask_quit(app: &AppHandle, label: String, id: u64) {
+    if let Some(w) = app.get_webview_window(&label) {
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        let _ = app.emit_to(EventTarget::webview_window(&label), "quit-ask", id);
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(ANSWER_TIMEOUT);
+        let late = app
+            .state::<State>()
+            .update_quit
+            .lock()
+            .unwrap()
+            .timed_out(id);
+        if late {
+            close_all(&app, After::Exit);
+        }
+    });
+}
+
 /// 차례로 닫기를 시작한다(지금 창 먼저)
 pub fn close_all(app: &AppHandle, after: After) {
     let labels: Vec<String> = app.webview_windows().into_keys().collect();
@@ -416,6 +543,7 @@ fn request_close(app: &AppHandle, label: &str) {
 
 fn destroyed(app: &AppHandle, label: &str) {
     app.state::<State>().guards.lock().unwrap().destroyed(label);
+    app.state::<State>().update_quit.lock().unwrap().gone(label);
     let step = match app.state::<State>().sequence.lock().unwrap().as_mut() {
         Some(seq) => seq.destroyed(label),
         None => return,
@@ -489,6 +617,31 @@ fn close_ask_done(app: AppHandle, window: WebviewWindow, state: tauri::State<'_,
 #[tauri::command]
 fn restart_after_closing(app: AppHandle) {
     close_all(&app, After::Restart);
+}
+
+/// 이 창이 새 버전을 찾았다(true), 설치했거나 다음 확인에서 없었다(false). 메뉴의 Quit 이 이 창에 먼저 묻는다
+#[tauri::command]
+fn set_update_pending(window: WebviewWindow, state: tauri::State<'_, State>, pending: bool) {
+    state
+        .update_quit
+        .lock()
+        .unwrap()
+        .set_pending(window.label(), pending);
+}
+
+/// Quit 물음 요청(quit-ask)을 받았다. 새로 물어야 하면 true
+#[tauri::command]
+fn quit_ask_ack(state: tauri::State<'_, State>, id: u64) -> bool {
+    state.update_quit.lock().unwrap().ack(id)
+}
+
+/// Quit 물음을 끝냈다. quit 이면(설치하고 종료·그냥 종료) 차례로 닫는다 — 창마다 저장 안 한 변경을 묻는다
+#[tauri::command]
+fn quit_ask_done(app: AppHandle, state: tauri::State<'_, State>, quit: bool) {
+    state.update_quit.lock().unwrap().done();
+    if quit {
+        close_all(&app, After::Exit);
+    }
 }
 
 #[cfg(test)]
@@ -760,5 +913,88 @@ mod tests {
             ..t
         };
         assert!(!chose_discard(&same, &R::Custom("x".into())));
+    }
+    #[test]
+    fn 새_버전이_없으면_quit_은_바로_차례로_닫는다() {
+        let mut q = UpdateQuit::default();
+        assert_eq!(q.quit(), OnQuit::CloseAll);
+        q.set_pending("main", true);
+        q.set_pending("main", false);
+        assert_eq!(q.quit(), OnQuit::CloseAll);
+    }
+
+    #[test]
+    fn 새_버전이_있으면_알린_창에_먼저_묻는다() {
+        let mut q = UpdateQuit::default();
+        q.set_pending("main", true);
+        let OnQuit::Ask(label, id) = q.quit() else {
+            panic!()
+        };
+        assert_eq!(label, "main");
+        assert!(q.ack(id));
+        assert!(!q.timed_out(id));
+        // 다른 창이 「없다」고 해도 알린 창의 것은 지우지 않는다
+        q.done();
+        q.set_pending("solo-a", false);
+        assert!(matches!(q.quit(), OnQuit::Ask(..)));
+    }
+
+    #[test]
+    fn 화면이_답하지_않으면_묻지_않고_차례로_닫고_늦은_답은_묻지_않게_한다() {
+        let mut q = UpdateQuit::default();
+        q.set_pending("main", true);
+        let OnQuit::Ask(_, id) = q.quit() else {
+            panic!()
+        };
+        // 답을 기다리는 동안 또 누른 Quit 은 기다린다
+        assert_eq!(q.quit(), OnQuit::Wait);
+        assert!(q.timed_out(id));
+        assert!(!q.ack(id));
+    }
+
+    #[test]
+    fn 묻는_중_또_누른_quit_은_답을_다시_확인하되_물음을_겹치지_않는다() {
+        let mut q = UpdateQuit::default();
+        q.set_pending("main", true);
+        let OnQuit::Ask(_, a) = q.quit() else {
+            panic!()
+        };
+        assert!(q.ack(a));
+        let OnQuit::Ask(_, b) = q.quit() else {
+            panic!()
+        };
+        assert!(!q.ack(b));
+        // 묻다가 멈춘 창이면 답이 없어 차례로 넘어간다
+        let OnQuit::Ask(_, c) = q.quit() else {
+            panic!()
+        };
+        assert!(q.timed_out(c));
+        // 묻기를 끝내면(취소) 다음 Quit 에 다시 묻는다
+        let OnQuit::Ask(_, d) = q.quit() else {
+            panic!()
+        };
+        assert!(q.ack(d));
+        q.done();
+        let OnQuit::Ask(_, e) = q.quit() else {
+            panic!()
+        };
+        assert!(q.ack(e));
+    }
+
+    #[test]
+    fn 알린_창이_다시_로드되거나_사라지면_묻지_않는다() {
+        let mut q = UpdateQuit::default();
+        q.set_pending("main", true);
+        q.gone("solo-a");
+        assert!(matches!(q.quit(), OnQuit::Ask(..)));
+        let mut q = UpdateQuit::default();
+        q.set_pending("main", true);
+        let OnQuit::Ask(_, id) = q.quit() else {
+            panic!()
+        };
+        q.gone("main");
+        // 기다리던 요청은 시간이 지나면 차례로 간다(Quit 을 누른 것은 그대로다)
+        assert!(q.timed_out(id));
+        assert_eq!(q.quit(), OnQuit::CloseAll);
     }
 }
