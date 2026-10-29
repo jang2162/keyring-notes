@@ -13,6 +13,7 @@ import {
   type PdfAnnotation,
 } from "@keyring-notes/core";
 import { api, ApiError } from "./api";
+import { confirmDialog } from "./dialog";
 import { t } from "./i18n";
 import type { LinkResolver } from "./markdown";
 import { errorText } from "./toast";
@@ -252,6 +253,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
   };
 
   const remove = async (a: PdfAnnotation) => {
+    if (!(await confirmDialog(t("pdf.removeAsk", { page: a.page }), t("common.delete")))) return;
     setBusy(true);
     try {
       await editCompanion((c) => removePdfAnnotation(c, a.id));
