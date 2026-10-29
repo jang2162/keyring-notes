@@ -8,6 +8,12 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 - With line numbers on, clicking a line number selects that line without its line break. Dragging over line numbers selects whole lines, Shift-click extends the selection to a line, and clicking a folded line selects everything folded under it.
 - Desktop app: `Ctrl/Cmd+Shift+W` closes the current window, like its close button. On macOS the **Close Window** menu item now uses the same shortcut, so `Cmd+W` always closes the tab.
+- Desktop app: while a new version is waiting, `Cmd+Q` asks first: **Install and quit** installs it and quits without restarting, so the next start runs the new version. **Just quit** and **Cancel** are there too.
+- **Settings** → **About** shows the version, app updates and open source licenses. Each Settings group has an icon in the side bar.
+
+### Changed
+
+- Desktop app: a new version found at startup no longer opens a dialog. A red dot on the Settings gear and on **Settings** → **About** shows it instead, until the update is installed. Update settings moved from **This device & sync** to **About**.
 
 ### Fixed
 

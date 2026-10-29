@@ -34,9 +34,20 @@ On macOS, quitting from the Dock, logging out or shutting down does not ask yet.
 
 ## Update the desktop app
 
-A few seconds after start, the app asks GitHub Releases whether a new version is out. If there is one, it asks you first. Only after you choose **Update and restart** does it download the update, verify its signature, install it and restart. Before restarting, it asks in each window with unsaved changes, as `Cmd+Q` does. If you cancel, the app doesn't restart; the update is already installed and is used the next time you open the app.
+A few seconds after start, the app asks GitHub Releases whether a new version is out. If there is one, the app doesn't interrupt you. Instead, a red dot appears on the gear at the bottom of the rail and on **About** in Settings. The dot stays until the update is installed.
 
-To turn the startup check off, go to Settings → **This device & sync** → **App updates**. With the check off, no request is sent at startup. **Check for updates** in the same place checks on demand.
+Settings → **About** shows the new version. Choose **Install…** to see what's new. Only after you choose **Update and restart** does the app download the update, verify its signature, install it and restart. Before restarting, it asks in each window with unsaved changes, as `Cmd+Q` does. If you cancel, the app doesn't restart; the update is already installed and is used the next time you open the app.
+
+While a new version is waiting, `Cmd+Q` asks about it first: **Install and quit**, **Just quit** or **Cancel**.
+
+- **Install and quit** downloads and installs the update, then quits without restarting. The next time you open the app, it runs the new version.
+- **Just quit** quits without updating.
+- Either way, the app then asks in each window with unsaved changes, as above. If you cancel there, the app stays open, and an update you installed stays installed.
+- If the download or install fails, the app shows the error, and you choose **Just quit** or **Cancel**.
+
+Quitting from the Dock, logging out, or closing the last window with its close button doesn't ask about the update.
+
+To turn the startup check off, go to Settings → **About** → **Check for updates automatically**. With the check off, no request is sent at startup, so no red dot appears. **Check for updates** in the same place checks on demand and shows a new version right away.
 
 ## Sync with a server
 
