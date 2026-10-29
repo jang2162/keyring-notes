@@ -44,6 +44,7 @@ While a new version is waiting, `Cmd+Q` asks about it first: **Install and quit*
 - **Just quit** quits without updating.
 - Either way, the app then asks in each window with unsaved changes, as above. If you cancel there, the app stays open, and an update you installed stays installed.
 - If the download or install fails, the app shows the error, and you choose **Just quit** or **Cancel**.
+- If an update is already downloading from Settings, `Cmd+Q` doesn't quit. Quit again when it finishes.
 
 Quitting from the Dock, logging out, or closing the last window with its close button doesn't ask about the update.
 
