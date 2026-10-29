@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { needsSyncSetup, queryChoice, startsLocal, storedChoice, type ModeChoice, type ModeInput } from "./mode";
+import { needsSyncSetup, notePathOfHash, queryChoice, settingsBack, startsLocal, storedChoice, syncSetupState, type ModeChoice, type ModeInput } from "./mode";
 
 const base: ModeInput = { tauri: false, installed: false, query: null, stored: null, pendingOutbox: false };
 const run = (m: Partial<ModeInput>) => startsLocal({ ...base, ...m });
@@ -56,17 +56,37 @@ describe("모드 선택 읽기", () => {
 });
 
 describe("처음 화면으로 동기화 연결 열기", () => {
-  const setup = { kind: "browser" as const, solo: false, connected: false, hash: "" };
+  const setup = { kind: "browser" as const, solo: false, connected: false };
 
-  it("브라우저 로컬 볼트가 동기화 없이 빈 주소로 열리면 연다", () => {
+  it("브라우저 로컬 볼트가 동기화 없이 열리면 연다", () => {
     expect(needsSyncSetup(setup)).toBe(true);
-    expect(needsSyncSetup({ ...setup, hash: "#" })).toBe(true);
   });
 
-  it("앱 볼트·연결됨·새 창·노트 주소에서는 열지 않는다", () => {
+  it("앱 볼트·연결됨·새 창에서는 열지 않는다", () => {
     expect(needsSyncSetup({ ...setup, kind: "app" })).toBe(false);
     expect(needsSyncSetup({ ...setup, connected: true })).toBe(false);
     expect(needsSyncSetup({ ...setup, solo: true })).toBe(false);
-    expect(needsSyncSetup({ ...setup, hash: "#/a.md" })).toBe(false);
+  });
+
+  it("주소가 노트면 닫을 때 그 노트로 돌아가게 state 에 남긴다", () => {
+    expect(syncSetupState("#/Notes%2Fnote3.md")).toEqual({ back: "Notes/note3.md" });
+    expect(settingsBack(syncSetupState("#/Notes%2Fnote3.md"))).toBe("Notes/note3.md");
+  });
+
+  it("빈 주소·설정 주소는 돌아갈 노트가 없다", () => {
+    for (const h of ["", "#", "#/", "#/:settings/general"]) expect(syncSetupState(h)).toBeNull();
+  });
+
+  it("모양이 다른 state 는 돌아갈 노트로 보지 않는다", () => {
+    for (const st of [null, undefined, "a.md", {}, { back: "" }, { back: 1 }]) expect(settingsBack(st)).toBeNull();
+  });
+});
+
+describe("주소의 노트 경로", () => {
+  it("인코딩을 풀고 ':' 로 시작하는 화면은 노트가 아니다", () => {
+    expect(notePathOfHash("#/%EC%97%85%EB%AC%B4%2Fa.md")).toBe("업무/a.md");
+    expect(notePathOfHash("#a.md")).toBe("a.md");
+    expect(notePathOfHash("#/:settings")).toBeNull();
+    expect(notePathOfHash("")).toBeNull();
   });
 });

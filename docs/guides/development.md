@@ -42,6 +42,26 @@ pnpm dev:web         # 웹: http://localhost:5173 (API 는 프록시)
 KEYRING_DATA=<임시 폴더> KEYRING_PORT=<빈 포트> pnpm start
 ```
 
+## 안드로이드 에뮬레이터로 웹 앱 보기
+
+설치한 웹 앱(PWA)·오프라인 동작은 에뮬레이터의 Chrome 에서 본다. 시험 서버는 위처럼 임시 `KEYRING_DATA` 와 빈 포트로 띄우고, 비밀번호는 `KEYRING_DATA=<임시 폴더> KEYRING_PASSWORD=<비밀번호> pnpm --filter @keyring-notes/server keyring passwd` 로 넣는다. AVD 이름(`Medium_Phone`)은 이 머신의 예시다 — `emulator -list-avds` 로 본다.
+
+```bash
+SDK=~/Library/Android/sdk; A=$SDK/platform-tools/adb
+$SDK/emulator/emulator -avd Medium_Phone -no-window -no-audio -no-boot-anim -no-snapshot-save &
+$A wait-for-device; until [ "$($A shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 2; done
+$A reverse tcp:<포트> tcp:<포트>       # 폰의 localhost:<포트> = 시험 서버(localhost 라 서비스 워커가 HTTPS 없이 돈다)
+$A shell am start -a android.intent.action.VIEW -n com.android.chrome/com.google.android.apps.chrome.Main -d http://localhost:<포트>/
+$A forward tcp:9333 localabstract:chrome_devtools_remote   # Chrome 이 뜬 뒤. Chrome 을 다시 띄우면 다시 건다
+```
+
+- 조작은 저장소 밖 scratch 폴더에 `playwright-core` 를 깔아 `chromium.connectOverCDP("http://localhost:9333")` 로 붙는다. 화면 좌표로 누르는 `adb shell input tap` 보다 locator 가 안정적이다. **스크립트 끝은 `browser.close()` 가 아니라 `process.exit(0)`** — close 는 폰의 Chrome 을 닫는다.
+- 오프라인은 시험 서버 프로세스를 죽여 만든다(`adb reverse` 는 비행기 모드와 상관없이 adb 로 간다). 콜드 스타트는 `$A shell am force-stop com.android.chrome` 뒤 다시 연다.
+- **설치 상태(`display-mode: standalone`)**: CDP `Emulation.setEmulatedMedia` 는 Chrome 149 에서 `display-mode` 를 바꾸지 못한다(`prefers-color-scheme` 은 바뀐다). `page.addInitScript` 로 `matchMedia` 를 문서 시작 전에 덮거나(스크립트가 끝나면 풀린다), Chrome 메뉴 「홈 화면에 추가 → 앱 설치」 로 실제로 설치한다. 에뮬레이터의 설치는 WebAPK 가 아니라 `WebappActivity` 로 열렸고, 아이콘은 설치할 때 열려 있던 주소로 처음 시작했다.
+- **사이트 데이터 지우기**: 앱이 떠 있지 않은 같은 출처 페이지(예: `/licenses.txt`)로 옮겨 localStorage·IndexedDB·서비스 워커·캐시를 지운다. 앱이 떠 있는 동안 지우면 앱이 `keyring:sync` 등을 다시 써 넣는다. 브라우저 세션의 `Storage.clearDataForOrigin` 은 Internal error 였다.
+- `navigator.storage.persisted()` 는 브라우저 탭·설치한 앱 모두 false 였다(`persist()` 를 부른 뒤에도). 실제 기기는 다를 수 있다.
+- 끝나면 `$A emu kill` 로 에뮬레이터를 끄고 시험 서버를 내린다.
+
 ## 검사
 
 다 했다고 말하기 전에 루트에서 돌린다.
@@ -52,7 +72,7 @@ pnpm typecheck
 pnpm build
 ```
 
-각 패키지의 시험은 `packages/core/test`, `server/test`, `web/src/*.test.ts` 에 있다. 출력에서 실행된 시험 수가 0 이 아닌지 본다. server·web 시험은 core 를 `dist` 가 아니라 원본(`keyring-source` 조건)으로 읽으므로, core 를 고친 뒤 core 를 먼저 빌드하지 않아도 새 코드로 돈다.
+각 패키지의 시험은 `packages/core/test`, `server/test`, `web/src/**/*.test.{ts,tsx}` 에 있다. 출력에서 실행된 시험 수가 0 이 아닌지 본다. server·web 시험은 core 를 `dist` 가 아니라 원본(`keyring-source` 조건)으로 읽으므로, core 를 고친 뒤 core 를 먼저 빌드하지 않아도 새 코드로 돈다.
 
 포맷과 린트는 `pnpm fmt`, `pnpm lint`. lefthook 이 커밋 전에는 stage 된 파일을, push 전에는 저장소 전체를 검사한다(`lefthook.yml`).
 

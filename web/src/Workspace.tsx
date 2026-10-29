@@ -59,6 +59,7 @@ import { TrashPanel } from "./Trash";
 import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
 import { invalidateWidgets } from "./Widget";
+import { notePathOfHash, settingsBack } from "./local/mode";
 import { isNetworkError, offline } from "./offline";
 import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
@@ -223,9 +224,7 @@ const IDLE: SaveState = { kind: "idle" };
 export const SETTINGS_HASH = "#/:settings";
 
 function pathFromLocation(): string | null {
-  const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
-  if (h.startsWith(":")) return null;
-  return h || null;
+  return notePathOfHash(location.hash);
 }
 
 function settingsFromLocation(): SettingsSection | null {
@@ -2145,7 +2144,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const openSettings = (s: SettingsSection = "general") => {
     void flush();
     setDrawer(null);
-    if (settingsFromLocation()) history.replaceState(null, "", `${SETTINGS_HASH}/${s}`);
+    if (settingsFromLocation()) history.replaceState(history.state, "", `${SETTINGS_HASH}/${s}`);
     else history.pushState(null, "", `${SETTINGS_HASH}/${s}`);
     setSettings(s);
   };
@@ -2153,7 +2152,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const closeSettings = (restore = true) => {
     setSettings(null);
     const cur = docRef.current;
-    history.replaceState(null, "", restore && cur ? `#/${encodeURIComponent(cur.path)}` : "#");
+    // 연 노트가 없으면 설정을 처음 화면으로 열기 전의 주소(노트)로 돌아간다(main.tsx 의 동기화 연결)
+    const back = restore && !cur ? settingsBack(history.state) : null;
+    history.replaceState(null, "", restore && cur ? `#/${encodeURIComponent(cur.path)}` : back ? `#/${encodeURIComponent(back)}` : "#");
+    if (back) void openRef.current(back);
     // 복원·동기화 등으로 볼트가 바뀌었을 수 있다: 트리·문서·공통 설정을 다시 읽는다
     vaultChanged();
     void refreshTree();
@@ -3638,7 +3640,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           <SettingsModal
             section={settings}
             onSection={(sec) => {
-              history.replaceState(null, "", `${SETTINGS_HASH}/${sec}`);
+              // state(닫으면 돌아갈 노트, settingsBack)는 묶음을 바꿔도 남긴다
+              history.replaceState(history.state, "", `${SETTINGS_HASH}/${sec}`);
               setSettings(sec);
             }}
             onClose={() => closeSettings()}

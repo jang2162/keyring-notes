@@ -72,7 +72,7 @@ Template variables are listed in [Reference](../reference.md#template-variables)
 
 ## Edit offline
 
-The web app can be installed to your home screen. The installed app keeps the whole vault on the device and syncs it with the server, so every note opens and search works without a connection. On its first launch it opens **Settings** → **This device & sync** with the server address filled in; enter the server password to download the vault. The **Vault on this device** section says whether the browser keeps this storage. If it doesn't, the browser may delete the notes on this device when space runs low, including changes not yet synced.
+The web app can be installed to your home screen. The installed app keeps the whole vault on the device and syncs it with the server, so every note opens and search works without a connection. On its first launch it opens **Settings** → **This device & sync** with the server address filled in, and keeps opening there until you connect. Enter the server password to download the vault. If the app started at a note, closing the window opens that note. The **Vault on this device** section says whether the browser keeps this storage. If it doesn't, the browser may delete the notes on this device when space runs low, including changes not yet synced.
 
 The installed app starts this way unless you chose a mode yourself: open it once with `?local=0` to keep it in the server mode below, or with `?local` to use the device vault in a browser tab too. If saves made offline in the server mode are still waiting, the installed app starts in the server mode once more so they are sent first.
 

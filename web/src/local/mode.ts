@@ -47,8 +47,29 @@ export function storedChoice(v: string | null): ModeChoice {
 
 /**
  * 처음 화면으로 동기화 연결(설정 「이 기기·동기화」)을 열지: 브라우저 로컬 볼트인데 서버 동기화가 없을 때.
- * 노트 하나만 띄운 창(solo)은 동기화를 돌리지 않으므로 열지 않고, 주소가 노트·설정을 가리키면 그쪽이 먼저다.
+ * 노트 하나만 띄운 창(solo)은 동기화를 돌리지 않으므로 열지 않는다.
+ * 주소가 노트여도 연다 — 연결 전의 빈 볼트에서 그 노트는 「없음」으로 열리고, 설치한 웹 앱은 설치 때 주소(노트)로 시작하기도 한다.
+ * 그 노트로는 동기화 화면을 닫을 때 돌아간다(syncSetupState).
  */
-export function needsSyncSetup(m: { kind: "app" | "browser"; solo: boolean; connected: boolean; hash: string }): boolean {
-  return m.kind === "browser" && !m.solo && !m.connected && (m.hash === "" || m.hash === "#");
+export function needsSyncSetup(m: { kind: "app" | "browser"; solo: boolean; connected: boolean }): boolean {
+  return m.kind === "browser" && !m.solo && !m.connected;
+}
+
+/** 주소(location.hash)가 가리키는 노트 경로. 비었거나 설정 등 ":" 로 시작하는 화면이면 null */
+export function notePathOfHash(hash: string): string | null {
+  const h = decodeURIComponent(hash.replace(/^#\/?/, ""));
+  if (h.startsWith(":")) return null;
+  return h || null;
+}
+
+/** 동기화 화면으로 바꿔 연 주소의 history.state: 닫으면 돌아갈 노트(원래 주소) */
+export function syncSetupState(hash: string): { back: string } | null {
+  const back = notePathOfHash(hash);
+  return back ? { back } : null;
+}
+
+/** history.state 에서 설정을 닫으면 돌아갈 노트를 읽는다 */
+export function settingsBack(state: unknown): string | null {
+  const back = (state as { back?: unknown } | null | undefined)?.back;
+  return typeof back === "string" && back ? back : null;
 }
