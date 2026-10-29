@@ -4,8 +4,8 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import { Modal } from "./Modal";
 import { t, useLang } from "./i18n";
 import { getPrefs } from "./prefs";
-import { errorText } from "./toast";
-import { availableUpdate, installAndQuit, installAndRestart, startupCheck } from "./updateCheck";
+import { errorText, toast } from "./toast";
+import { availableUpdate, installAndQuit, installAndRestart, InstallBusyError, installBusy, quitAskHandler, startupCheck } from "./updateCheck";
 import { ackQuitAsk, listenQuitAsks, quitAskDone } from "./closeWindow";
 import { SOLO } from "./soloWindow";
 
@@ -75,13 +75,16 @@ export function UpdateChecker() {
     if (!updatesSupported()) return;
     let off: (() => void) | undefined;
     let gone = false;
-    // 먼저 받았다고 답한다 — 답이 늦으면 앱이 묻지 않고 Quit 차례로 간다. 이미 묻고 있으면 앱이 false 를 준다
-    void listenQuitAsks(async (id) => {
-      if (!(await ackQuitAsk(id))) return;
-      const u = available.get();
-      if (u) setQuitting(u);
-      else void quitAskDone(true);
-    }).then((u) => (gone ? u() : (off = u)));
+    // 받는 중이면(설정의 대화상자) 묻지 않는다 — 그 대화상자가 이미 이 창에 떠 있다
+    const onQuitAsk = quitAskHandler({
+      ack: ackQuitAsk,
+      busy: installBusy,
+      pending: available.get,
+      ask: setQuitting,
+      done: (quit) => void quitAskDone(quit),
+      onBusy: () => toast(t("update.busy"), { kind: "info" }),
+    });
+    void listenQuitAsks((id) => void onQuitAsk(id)).then((u) => (gone ? u() : (off = u)));
     return () => {
       gone = true;
       off?.();
@@ -104,6 +107,7 @@ type Phase =
   | { phase: "error"; message: string };
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+const installError = (e: unknown) => (e instanceof InstallBusyError ? t("update.busy") : errorText(e));
 
 function UpdateDialog({ update, onClose }: { update: Update; onClose: () => void }) {
   useLang();
@@ -131,7 +135,7 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: () => void
       );
       setState({ phase: "installed" });
     } catch (e) {
-      setState({ phase: "error", message: errorText(e) });
+      setState({ phase: "error", message: installError(e) });
     }
   };
   const close = () => {
@@ -234,7 +238,7 @@ function QuitUpdateDialog({ update, onClose }: { update: Update; onClose: () => 
         },
       );
     } catch (e) {
-      setState({ phase: "error", message: errorText(e) });
+      setState({ phase: "error", message: installError(e) });
     }
   };
 

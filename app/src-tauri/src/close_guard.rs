@@ -997,4 +997,21 @@ mod tests {
         assert!(q.timed_out(id));
         assert_eq!(q.quit(), OnQuit::CloseAll);
     }
+
+    #[test]
+    fn 묻던_창이_다시_로드되면_새_페이지가_알린_뒤의_quit_에_다시_묻는다() {
+        // 묻는 중(asking)이 남으면 새 페이지의 ack 가 false 라 묻지도, 시한으로 차례로 가지도 않아 Quit 이 아무 일도 하지 않는다
+        let mut q = UpdateQuit::default();
+        q.set_pending("main", true);
+        let OnQuit::Ask(_, id) = q.quit() else {
+            panic!()
+        };
+        assert!(q.ack(id));
+        q.gone("main");
+        q.set_pending("main", true);
+        let OnQuit::Ask(_, id) = q.quit() else {
+            panic!()
+        };
+        assert!(q.ack(id));
+    }
 }

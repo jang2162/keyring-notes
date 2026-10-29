@@ -92,7 +92,7 @@ const SECTIONS: {
   { id: "workspaces", label: "settings.workspaces", icon: LayoutGrid, keywords: "settings.workspacesKeywords" },
   { id: "keys", label: "settings.keys", icon: Keyboard, keywords: "settings.keysKeywords", mobileHidden: true },
   { id: "device", label: "settings.device", icon: RefreshCw, local: true, keywords: "settings.deviceKeywords" },
-  { id: "about", label: "settings.about", icon: Info, keywords: "settings.aboutKeywords" },
+  { id: "about", label: "settings.about", icon: Info },
   ...SERVER_SECTIONS.map((s) => ({ ...s, server: true, group: "settings.server" })),
 ];
 
@@ -587,7 +587,7 @@ function SectionBody({
     case "device":
       return localContext ? <SyncSettings ctx={localContext} onOpen={onOpen} /> : null;
     case "about":
-      return <AboutSettings />;
+      return <AboutSettings query={query} />;
     default:
       return <ServerSettings section={id} folders={folders} />;
   }
@@ -606,11 +606,8 @@ function LicensesRow({ query }: { query: string }) {
   );
 }
 
-/**
- * 정보: 지금 버전, 데스크톱 앱 업데이트(새 버전 알림·지금 확인·실행 때 자동 확인), 오픈 소스 라이선스.
- * 검색 낱말(settings.aboutKeywords)이 맞으면 묶음이 통째로 보이므로 줄은 거르지 않는다
- */
-function AboutSettings() {
+/** 정보: 지금 버전, 데스크톱 앱 업데이트(새 버전 알림·지금 확인·실행 때 자동 확인), 오픈 소스 라이선스. 검색은 줄마다 거른다 */
+function AboutSettings({ query }: { query: string }) {
   const prefs = usePrefs();
   const update = useAvailableUpdate();
   const [busy, setBusy] = useState(false);
@@ -630,31 +627,36 @@ function AboutSettings() {
   };
   return (
     <>
-      <Row label="settings.version" query="">
+      <Row label="settings.version" query={query}>
         <span className="meta">{APP_VERSION}</span>
       </Row>
       {updatesSupported() && (
         <>
           {update && (
             <div className="update-available">
-              <Row label="update.title" hintNode={t("settings.updateAvailableHint", { version: update.version, current: update.currentVersion })} query="">
+              <Row
+                label="update.title"
+                hint="settings.updateAvailableHint"
+                hintNode={t("settings.updateAvailableHint", { version: update.version, current: update.currentVersion })}
+                query={query}
+              >
                 <button type="button" className="on" onClick={() => showUpdate(update)}>
                   {t("settings.updateOpen")}
                 </button>
               </Row>
             </div>
           )}
-          <Row label="settings.updateNow" hint="settings.updateNowHint" query="">
+          <Row label="settings.updateNow" hint="settings.updateNowHint" query={query}>
             <button type="button" onClick={() => void checkNow()} disabled={busy}>
               {busy ? t("update.checking") : t("settings.updateNow")}
             </button>
           </Row>
-          <Row label="settings.updateCheck" hint="settings.updateCheckHint" query="" scope="device">
+          <Row label="settings.updateCheck" hint="settings.updateCheckHint" query={query} scope="device">
             <Toggle label={t("settings.updateCheck")} value={prefs.updateCheck} onChange={(v) => setPrefs({ updateCheck: v })} />
           </Row>
         </>
       )}
-      <LicensesRow query="" />
+      <LicensesRow query={query} />
     </>
   );
 }

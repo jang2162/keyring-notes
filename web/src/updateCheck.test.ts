@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { availableUpdate, installAndQuit, installAndRestart, startupCheck } from "./updateCheck";
+import {
+  availableUpdate,
+  DOWNLOAD_TIMEOUT_MS,
+  InstallBusyError,
+  installAndQuit,
+  installAndRestart,
+  installBusy,
+  quitAskHandler,
+  startupCheck,
+} from "./updateCheck";
 
 // 다시 시작·끄기는 창마다 묻는 길(restartAfterClosing·quitAfterClosing)로만 한다
 const { restartAfterClosing, quitAfterClosing } = vi.hoisted(() => ({
@@ -47,6 +56,9 @@ describe("업데이트 설치 뒤 다시 시작", () => {
     const onRestart = vi.fn();
     await installAndRestart(update, () => {}, onRestart);
     expect(update.downloadAndInstall).toHaveBeenCalledOnce();
+    // 확인 때의 15초 제한이 받기에도 걸리지 않게 받기에는 긴 제한을 따로 준다
+    expect(update.downloadAndInstall).toHaveBeenCalledWith(expect.any(Function), { timeout: DOWNLOAD_TIMEOUT_MS });
+    expect(DOWNLOAD_TIMEOUT_MS).toBeGreaterThanOrEqual(10 * 60_000);
     expect(restartAfterClosing).toHaveBeenCalledOnce();
     expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(restartAfterClosing.mock.invocationCallOrder[0]);
     expect(onRestart).toHaveBeenCalledOnce();
@@ -131,5 +143,86 @@ describe("「새 버전이 있다」 상태(레드닷)", () => {
     a.set(other);
     a.set(upd("0.9.2"));
     expect(other.close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("받기·설치는 한 번에 하나만(설정의 대화상자와 Quit 물음이 겹칠 때)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("받는 중에 다른 길로 또 설치하면 downloadAndInstall 을 다시 부르지 않고 거절한다", async () => {
+    let finish = () => {};
+    const update = { downloadAndInstall: vi.fn(() => new Promise<void>((r) => (finish = r))) };
+    const first = installAndRestart(
+      update,
+      () => {},
+      () => {},
+    );
+    expect(installBusy()).toBe(true);
+    const onInstalled = vi.fn();
+    await expect(installAndQuit(update, () => {}, onInstalled)).rejects.toBeInstanceOf(InstallBusyError);
+    expect(update.downloadAndInstall).toHaveBeenCalledOnce();
+    expect(onInstalled).not.toHaveBeenCalled();
+    expect(quitAfterClosing).not.toHaveBeenCalled();
+    finish();
+    await first;
+    expect(installBusy()).toBe(false);
+  });
+
+  it("앞의 설치가 끝나거나 실패하면 다시 설치할 수 있다", async () => {
+    const failing = { downloadAndInstall: vi.fn(async () => Promise.reject(new Error("offline"))) };
+    await expect(
+      installAndQuit(
+        failing,
+        () => {},
+        () => {},
+      ),
+    ).rejects.toThrow("offline");
+    expect(installBusy()).toBe(false);
+    const ok = { downloadAndInstall: vi.fn(async () => {}) };
+    await installAndQuit(
+      ok,
+      () => {},
+      () => {},
+    );
+    expect(ok.downloadAndInstall).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Quit 물음 요청(quit-ask) 처리", () => {
+  const steps = (over: Partial<Parameters<typeof quitAskHandler<string>>[0]> = {}) => ({
+    ack: vi.fn(async () => true),
+    busy: () => false,
+    pending: () => "0.9.1" as string | null,
+    ask: vi.fn(),
+    done: vi.fn(),
+    onBusy: vi.fn(),
+    ...over,
+  });
+
+  it("받는 중이면 묻지 않고 물음을 끝낸다(끄지도 않는다)", async () => {
+    const s = steps({ busy: () => true });
+    await quitAskHandler(s)(1);
+    expect(s.ask).not.toHaveBeenCalled();
+    expect(s.done).toHaveBeenCalledWith(false);
+    expect(s.onBusy).toHaveBeenCalledOnce();
+  });
+
+  it("새 버전이 있으면 묻고, 상태가 비었으면 묻지 않고 Quit 차례로 간다", async () => {
+    const s = steps();
+    await quitAskHandler(s)(1);
+    expect(s.ask).toHaveBeenCalledWith("0.9.1");
+    expect(s.done).not.toHaveBeenCalled();
+    const empty = steps({ pending: () => null });
+    await quitAskHandler(empty)(2);
+    expect(empty.ask).not.toHaveBeenCalled();
+    expect(empty.done).toHaveBeenCalledWith(true);
+  });
+
+  it("앱이 새로 묻지 말라고 하면(이미 묻는 중·늦은 답) 아무것도 하지 않는다", async () => {
+    const s = steps({ ack: vi.fn(async () => false), busy: () => true });
+    await quitAskHandler(s)(3);
+    expect(s.ask).not.toHaveBeenCalled();
+    expect(s.done).not.toHaveBeenCalled();
+    expect(s.onBusy).not.toHaveBeenCalled();
   });
 });

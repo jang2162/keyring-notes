@@ -1127,7 +1127,6 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .migration-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow: auto; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 2px; }
 .migration-list code { font-size: var(--fs-sm); }
 .sync-settings section + section { margin-top: 18px; }
-.sync-settings + .update-settings { margin-top: 18px; }
 
 /* 노트 안 찾기 막대(findBar.ts): 에디터 위 오른쪽에 떠 있다. 위쪽 패널 칸을 높이 0으로 두어 열고 닫아도 본문이 밀리지 않는다.
    CodeMirror 기본 테마(.ͼ… .cm-panels)보다 구체적이어야 이긴다 */
