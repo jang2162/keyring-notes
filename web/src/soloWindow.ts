@@ -3,6 +3,8 @@
  * 웹은 브라우저 팝업 창, 데스크톱 앱은 Tauri 창을 하나 더 만든다(모바일 앱은 창이 하나라 열지 않는다).
  */
 import { isTauri } from "@tauri-apps/api/core";
+import { appMode } from "./api";
+import { soloHref } from "./local/mode";
 
 /** 이 창이 새 창(노트 하나만)인가 */
 export const SOLO = new URLSearchParams(location.search).has("solo");
@@ -18,10 +20,7 @@ export const canTearOut = () => isTauri() && !/Android|iPhone|iPad/.test(navigat
 
 /** 그 노트 하나를 보여 줄 새 창 주소(같은 앱·같은 볼트) */
 export function soloUrl(path: string): string {
-  const u = new URL(location.href);
-  u.searchParams.set("solo", "1");
-  u.hash = `#/${encodeURIComponent(path)}`;
-  return u.toString();
+  return soloHref(location.href, path, appMode.local);
 }
 
 /**

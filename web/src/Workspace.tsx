@@ -59,8 +59,8 @@ import { TrashPanel } from "./Trash";
 import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
 import { invalidateWidgets } from "./Widget";
-import { notePathOfHash, settingsBack } from "./local/mode";
-import { isNetworkError, offline } from "./offline";
+import { notePathOfHash, replaceSettingsSection, settingsBack, settingsCloseTarget, SETTINGS_HASH } from "./settingsNav";
+import { isNetworkError, offline, searchFailedOffline } from "./offline";
 import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
@@ -219,9 +219,6 @@ const ARROW: Record<Side, string> = { left: "ArrowLeft", right: "ArrowRight", to
 /** 칸이 없는 배치(매번 새 객체를 만들지 않게 하나만 둔다) */
 const NO_PANES: Layout = emptyLayout();
 const IDLE: SaveState = { kind: "idle" };
-
-/** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
-export const SETTINGS_HASH = "#/:settings";
 
 function pathFromLocation(): string | null {
   return notePathOfHash(location.hash);
@@ -766,7 +763,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           .catch((e) => {
             setHits([]);
             // 서버 모드에서 연결이 없으면 「결과 없음」이 아니라 검색할 수 없다고 말한다(결과 칸이 말하니 알림은 띄우지 않는다)
-            const off = !appMode.local && isNetworkError(e);
+            const off = searchFailedOffline(appMode.local, e);
             setSearchOffline(off);
             if (!off) toastError(e);
           });
@@ -2144,18 +2141,17 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const openSettings = (s: SettingsSection = "general") => {
     void flush();
     setDrawer(null);
-    if (settingsFromLocation()) history.replaceState(history.state, "", `${SETTINGS_HASH}/${s}`);
+    if (settingsFromLocation()) replaceSettingsSection(history, s);
     else history.pushState(null, "", `${SETTINGS_HASH}/${s}`);
     setSettings(s);
   };
   /** restore: 지금 문서 주소로 되돌린다(아니면 곧 다른 문서를 여는 중이라 비워 둔다) */
   const closeSettings = (restore = true) => {
     setSettings(null);
-    const cur = docRef.current;
-    // 연 노트가 없으면 설정을 처음 화면으로 열기 전의 주소(노트)로 돌아간다(main.tsx 의 동기화 연결)
-    const back = restore && !cur ? settingsBack(history.state) : null;
-    history.replaceState(null, "", restore && cur ? `#/${encodeURIComponent(cur.path)}` : back ? `#/${encodeURIComponent(back)}` : "#");
-    if (back) void openRef.current(back);
+    // 부팅이 동기화 화면으로 바꿔 치운 노트(settingsNav.ts)가 있으면 그 노트로 돌아간다
+    const go = settingsCloseTarget({ restore, current: docRef.current?.path ?? null, back: settingsBack(history.state) });
+    history.replaceState(null, "", go.hash);
+    if (go.open) void openRef.current(go.open);
     // 복원·동기화 등으로 볼트가 바뀌었을 수 있다: 트리·문서·공통 설정을 다시 읽는다
     vaultChanged();
     void refreshTree();
@@ -3640,8 +3636,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           <SettingsModal
             section={settings}
             onSection={(sec) => {
-              // state(닫으면 돌아갈 노트, settingsBack)는 묶음을 바꿔도 남긴다
-              history.replaceState(history.state, "", `${SETTINGS_HASH}/${sec}`);
+              replaceSettingsSection(history, sec);
               setSettings(sec);
             }}
             onClose={() => closeSettings()}

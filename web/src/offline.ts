@@ -59,6 +59,11 @@ export function isNetworkError(e: unknown): boolean {
   return e instanceof TypeError || (typeof navigator !== "undefined" && navigator.onLine === false);
 }
 
+/** 검색이 연결이 없어 실패했는지: 서버 모드의 네트워크 오류만. 서버가 준 오류(4xx·5xx)·로컬 볼트는 아니다 */
+export function searchFailedOffline(local: boolean, e: unknown): boolean {
+  return !local && isNetworkError(e);
+}
+
 export const offline = {
   async saveDoc(doc: Doc): Promise<void> {
     if (doc.generated) return;
