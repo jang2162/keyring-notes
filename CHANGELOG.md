@@ -14,9 +14,13 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 ### Changed
 
 - Desktop app: a new version found at startup no longer opens a dialog. A red dot on the Settings gear and on **Settings** → **About** shows it instead, until the update is installed. Update settings moved from **This device & sync** to **About**.
+- The web app installed to the home screen now keeps the whole vault on the device and syncs it with the server, so notes you never opened also open offline. While the device vault is empty and not connected, it opens sync settings with the server address filled in. A mode you chose with `?local` or `?local=0` still wins, and saves still waiting from the server mode are sent first.
+- To keep using the server mode in the installed web app, open `https://<server>/?local=0` once in a tab of the same browser. Choosing `?local=0` before this release was not remembered.
+- On a device vault in the browser, and when saving offline in the server mode, the app asks the browser to keep its storage. **This device & sync** says whether it does.
 
 ### Fixed
 
+- Search in the server mode said "No results" without a connection. It now says it can't search without the server.
 - Desktop app: on a slow connection, installing an update failed when the download took longer than 15 seconds.
 - Desktop app on macOS: the first click on a window behind another app only brought the window forward, so you had to click again. That click now also reaches the button or field you clicked. Deleting a PDF annotation, deleting a property and **Reset this device** in Settings now ask you to confirm, since a single click can reach them.
 - Desktop app: closing a window with its close button, quitting with `Cmd+Q`, or restarting after installing an update discarded unsaved changes without asking. Now, whenever a window with unsaved changes closes, you are asked to **Save and close**, **Close without saving** or cancel, even with autosave on. With several windows open, `Cmd+Q` and the update restart ask in each window in turn, and canceling stops them. If the window isn't responding, the app asks with a system dialog instead.

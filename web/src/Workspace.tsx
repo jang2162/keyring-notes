@@ -59,7 +59,8 @@ import { TrashPanel } from "./Trash";
 import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
 import { invalidateWidgets } from "./Widget";
-import { isNetworkError, offline } from "./offline";
+import { notePathOfHash, replaceSettingsSection, settingsBack, settingsCloseTarget, SETTINGS_HASH } from "./settingsNav";
+import { isNetworkError, offline, searchFailedOffline } from "./offline";
 import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
@@ -220,13 +221,8 @@ const ARROW: Record<Side, string> = { left: "ArrowLeft", right: "ArrowRight", to
 const NO_PANES: Layout = emptyLayout();
 const IDLE: SaveState = { kind: "idle" };
 
-/** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
-const SETTINGS_HASH = "#/:settings";
-
 function pathFromLocation(): string | null {
-  const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
-  if (h.startsWith(":")) return null;
-  return h || null;
+  return notePathOfHash(location.hash);
 }
 
 function settingsFromLocation(): SettingsSection | null {
@@ -363,6 +359,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   revisionsRef.current = revisions;
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<(SearchHit & { score?: number })[] | null>(null);
+  /** 지난 검색이 연결이 없어 실패했다(서버 모드) */
+  const [searchOffline, setSearchOffline] = useState(false);
   /** 검색 패널의 폴더·태그 필터(앱이 떠 있는 동안만) */
   const [searchFilter, setSearchFilter] = useState<SearchFilter>(NO_FILTER);
   /** 필터에 고를 수 있는 태그(지금 범위, 폴더를 골랐으면 그 안) */
@@ -760,10 +758,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               )
           : api.search(q, { folder: filter.folder || scope || undefined, tags: filter.tags, lines: SEARCH_LINES_FETCH })
         )
-          .then(setHits)
+          .then((hs) => {
+            setSearchOffline(false);
+            setHits(hs);
+          })
           .catch((e) => {
             setHits([]);
-            toastError(e);
+            // 서버 모드에서 연결이 없으면 「결과 없음」이 아니라 검색할 수 없다고 말한다(결과 칸이 말하니 알림은 띄우지 않는다)
+            const off = searchFailedOffline(appMode.local, e);
+            setSearchOffline(off);
+            if (!off) toastError(e);
           });
       },
       semantic ? 400 : 200,
@@ -2139,15 +2143,17 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const openSettings = (s: SettingsSection = "general") => {
     void flush();
     setDrawer(null);
-    if (settingsFromLocation()) history.replaceState(null, "", `${SETTINGS_HASH}/${s}`);
+    if (settingsFromLocation()) replaceSettingsSection(history, s);
     else history.pushState(null, "", `${SETTINGS_HASH}/${s}`);
     setSettings(s);
   };
   /** restore: 지금 문서 주소로 되돌린다(아니면 곧 다른 문서를 여는 중이라 비워 둔다) */
   const closeSettings = (restore = true) => {
     setSettings(null);
-    const cur = docRef.current;
-    history.replaceState(null, "", restore && cur ? `#/${encodeURIComponent(cur.path)}` : "#");
+    // 부팅이 동기화 화면으로 바꿔 치운 노트(settingsNav.ts)가 있으면 그 노트로 돌아간다
+    const go = settingsCloseTarget({ restore, current: docRef.current?.path ?? null, back: settingsBack(history.state) });
+    history.replaceState(null, "", go.hash);
+    if (go.open) void openRef.current(go.open);
     // 복원·동기화 등으로 볼트가 바뀌었을 수 있다: 트리·문서·공통 설정을 다시 읽는다
     vaultChanged();
     void refreshTree();
@@ -2875,6 +2881,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           {hits !== null && (
             <SearchResults
               hits={hits}
+              offline={searchOffline}
               query={query.trim()}
               searchKey={searchKey(query, searchFilter)}
               semantic={searchMode === "semantic" && !query.trim().startsWith("#")}
@@ -3633,7 +3640,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           <SettingsModal
             section={settings}
             onSection={(sec) => {
-              history.replaceState(null, "", `${SETTINGS_HASH}/${sec}`);
+              replaceSettingsSection(history, sec);
               setSettings(sec);
             }}
             onClose={() => closeSettings()}

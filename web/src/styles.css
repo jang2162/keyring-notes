@@ -280,6 +280,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .backups .row-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; white-space: nowrap; }
 .backups .row-actions a { color: var(--accent); font-size: 12px; }
 .note-ok { color: var(--fg); background: var(--info-bg); padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+.note-warn { color: var(--warn-fg); background: var(--warn-bg); padding: 6px 10px; border-radius: 6px; font-size: 13px; }
 .badge { margin-left: 8px; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: #fff; }
 .password-form { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
 .password-form button { align-self: flex-start; }

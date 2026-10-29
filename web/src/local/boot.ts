@@ -1,11 +1,13 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { LocalVault, type FileStore } from "@keyring-notes/core";
 import { setLocalBackend } from "../api";
-import { IdbStore } from "./idbStore";
+import { openBrowserStore } from "./browserStore";
 import { createLocalApi } from "./localApi";
 import { defaultDeviceName, SyncController } from "./syncController";
 import { SOLO } from "../soloWindow";
 import { t } from "../i18n";
+import { offline } from "../offline";
+import { readMode } from "./mode";
 
 export interface LocalContext {
   vault: LocalVault;
@@ -32,17 +34,25 @@ function storage(): Storage | null {
   }
 }
 
-/** 앱(Tauri)이면 늘 로컬. 브라우저는 `?local`로 켜고 `?local=0`으로 끈다(이 브라우저에 기억). */
-export function wantsLocal(): boolean {
-  if (isTauri()) return true;
-  const q = new URLSearchParams(location.search);
-  if (q.has("local")) {
-    const on = q.get("local") !== "0";
-    if (on) storage()?.setItem(MODE_KEY, "local");
-    else storage()?.removeItem(MODE_KEY);
-    return on;
+function installed(): boolean {
+  try {
+    return matchMedia("(display-mode: standalone)").matches;
+  } catch {
+    return false;
   }
-  return storage()?.getItem(MODE_KEY) === "local";
+}
+
+/** 로컬 모드로 시작할지(판정은 mode.ts readMode). 주소로 고른 것은 이 브라우저에 기억한다 */
+export async function wantsLocal(): Promise<boolean> {
+  const { local, remember } = await readMode({
+    tauri: isTauri(),
+    search: location.search,
+    stored: storage()?.getItem(MODE_KEY) ?? null,
+    installed: installed(),
+    pending: () => offline.pending().then((l) => l.length > 0),
+  });
+  if (remember) storage()?.setItem(MODE_KEY, remember);
+  return local;
 }
 
 const isMobile = () => /Android|iPhone|iPad/.test(navigator.userAgent);
@@ -80,7 +90,7 @@ export async function startLocal(): Promise<LocalContext> {
       };
     }
   } else {
-    store = new IdbStore();
+    store = openBrowserStore();
   }
   let device = defaultDeviceName();
   try {

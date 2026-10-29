@@ -1138,3 +1138,62 @@ Oct 7, 2026 · 사용자 결정(26번 "정할 것" 모두 추천대로)
 | 새 창(solo) · 검색 칸 | 포커스는 편집기(`AXTextArea`) 그대로 | 포커스 `AXSearchField` 「볼트 검색」 |
 
 OFF 에서 창이 활성인 채로 같은 자리를 누르면 검색 패널이 열리고 칸이 포커스를 받는다(좌표가 맞다는 대조). 확인창 세 개를 앱 창에서 직접 누르는 것과 Windows·Linux 는 보지 못했다.
+
+## 설치한 웹 앱의 오프라인 보기 (2026-10-29)
+
+### 설치한 PWA 는 로컬 모드로, 저장소 보존, 오프라인 검색 문구
+
+사용자는 PWA 와 안드로이드 앱 중 PWA 를 먼저 하기로 했다(「pwa 먼저 진행해줘」, 질문 없이 진행). 아래 값·동작은 **코디네이터·워커가 정한 기본값이고 사용자가 고른 값이 아니다.**
+
+**문제(코디네이터가 안드로이드 17 에뮬레이터 Chrome 에서 서버를 끄고 콜드 스타트로 잰 것)**: 서버 모드는 한 번 연 노트만 오프라인에서 열리고 안 연 노트는 「서버에 연결할 수 없습니다」, 검색은 연 노트의 낱말로도 「결과 없음」. `?local` 은 동기화로 볼트 전체가 내려와 안 연 노트도 열렸다. `navigator.storage.persisted()` 는 false 이고 `persist()` 를 부르는 곳이 없었다.
+
+**정함·구현**:
+- **모드 판정**(`web/src/local/mode.ts` `startsLocal`·`readMode`, 브라우저 값을 넘기는 것은 `boot.ts` `wantsLocal`): 앱(Tauri)은 늘 로컬. 고른 것(주소 `?local`·`?local=0` > 기억 `keyring:mode`)이 설치 여부와 상관없이 이긴다. 고른 적 없고 `matchMedia("(display-mode: standalone)")` 가 맞으면 로컬. 단 서버 모드 대기열(`keyring-offline` 의 `outbox`)에 남은 것이 있으면(못 읽어도) 이번 실행은 서버 모드 — 로컬 볼트는 그 대기열을 보내지 않는다. 비면 다음 실행부터 로컬. 자동으로 정한 것은 기억하지 않는다(브라우저 탭으로 열면 그대로 서버 모드).
+- **새 창(`?solo`)의 모드**(3회차, 리뷰 3): 부모 창이 새 창 주소에 자기 모드를 `?local=1`·`?local=0` 으로 싣고(`mode.ts` `soloHref`, `soloWindow.ts` `soloUrl`), 새 창은 그것을 따르되 기억하지 않는다(`readMode` 는 `?solo` 가 있으면 `remember` 가 null). 새 창 전용 표시를 따로 만들지 않고 이미 있는 `?solo` 를 「기억하지 않음」 표시로 썼다 — 새 창은 그 창 하나만의 것이고, 자동으로 정한 로컬을 `keyring:mode` 에 쓰면 브라우저 탭까지 로컬로 바뀐다. `window.opener` 를 따르는 길은 쓰지 않았다(새로 고침·opener 없음에도 같은 모드여야 한다).
+- **「서버 모드 선택」 기억**: `?local=0` 은 기억을 지우던 것을 `keyring:mode=server` 로 남기게 바꿨다. 그래야 설치한 앱의 자동 로컬 시작이 그 선택을 덮지 않는다. 모르는 값은 고르지 않은 것으로 본다.
+- **동기화 연결을 바로 보이기**: 브라우저 로컬 볼트가 동기화 없이(`keyring:sync` 없음) **사람이 쓴 노트 없이** 열리면(3회차, 리뷰 4 — 동기화 없이 `?local` 로 쓰는 사람은 노트가 있으므로 끌려가지 않는다. 세지 않는 것: 볼트가 만드는 공통 설정 파일 `keyring-settings.md`, 위키 토픽의 자동 생성 문서, 점으로 시작하는 폴더·파일 — `mode.ts` `hasOwnNotes`), 렌더 전에 주소를 `#/:settings/device` 로 바꿔(`main.tsx`, 판정은 `mode.ts` `needsSyncSetup`) 기존의 「주소로 설정 열기」 길(`Workspace.tsx` `settingsFromLocation`)을 탄다. 새 모달·새 상태를 만들지 않았다. 서버 주소 칸은 `location.origin`, 기기 이름은 기본값(`defaultDeviceName`)으로 채운다 — 비밀번호만 넣으면 된다. 볼트가 빈 채 연결하지 않은 동안은 **실행마다** 연다. 노트 하나만 띄운 창(`?solo`)은 열지 않는다. **주소가 노트여도 연다**(2회차, 코디네이터 판단) — 연결 전의 빈 볼트에서 그 노트는 「없음」으로 열리고, 설치 아이콘이 설치 때 주소(노트)로 시작하기도 한다. 원래 노트는 바꾼 주소의 `history.state`(`{ back }`, `settingsNav.ts` `syncSetupState`)에 남긴다. 동기화 화면에서 새로 고침하면 주소가 이미 설정이므로 보존된 state 의 노트를 이어받는다(3회차, 리뷰 1). 설정을 닫을 때 돌아갈 노트가 있으면 복원된 탭보다 먼저 그 노트를 연다(3회차, 리뷰 2 — `settingsCloseTarget`, `Workspace.tsx` `closeSettings`). 설정 안에서 묶음을 바꿔도(`replaceSettingsSection` — `openSettings`·`SettingsModal` 의 `onSection`) state 는 그대로 둔다. 연결하지 않고 닫으면 그 노트가 아직 없어 「노트 없음」 알림과 함께 홈으로 간다.
+- **저장소 보존**(`web/src/persist.ts`): 브라우저 로컬 모드 시작(`startLocal`)과 서버 모드 대기열에 넣을 때(`offline.queue`) `navigator.storage.persist()` 를 부른다. 페이지 로드마다 많아야 한 번, 이미 `persisted()` 면 부르지 않는다, API 가 없거나 실패하면 null 로 조용히 넘긴다. 설정 「이 기기·동기화」 의 「이 기기의 볼트」 아래에 보존되면 한 줄(`sync.persisted`), 아니면 경고 색 한 줄(`sync.notPersisted`). 모르면(API 없음) 보이지 않는다.
+- **서버 모드 오프라인 검색**: 검색이 `isNetworkError` 로 실패하면 결과 칸에 「결과 없음」 대신 `search.offline`(「서버에 연결되어 있지 않아 검색할 수 없습니다」) 을 보이고 오류 알림은 띄우지 않는다. 로컬 모드는 해당 없다.
+
+**확인한 것**:
+- 단위 시험 — 웹 `local/mode.test.ts`(10, 판정: 설치 여부 × 명시 선택 × 대기열 × Tauri, 선택 읽기, 동기화 화면 열기), `persist.test.ts`(4), `Search.test.tsx`(2, 한·영 문구). 프로덕션 코드를 14군데 되돌려 13군데에서 새 시험이 떨어졌다. 안 떨어진 1군데(API 유무 검사)는 `catch` 가 같은 일을 해 지웠다.
+- 안드로이드 에뮬레이터(Medium_Phone, Chrome 149) + 시험 서버(임시 `KEYRING_DATA`, 8917, `adb reverse`), Playwright(CDP):
+  - CDP `Emulation.setEmulatedMedia` 는 이 Chrome 에서 `display-mode` 를 바꾸지 못했다(`prefers-color-scheme` 은 됨). 그래서 판정 분기는 문서 시작 전에 `matchMedia` 를 덮는 init script 로 봤다: 고른 적 없음 → 동기화 화면(주소 `http://localhost:8917`·기기 `Android` 채워짐) → 비밀번호 → 「받음 3」 → 서버 끄고 Chrome 강제 종료 후 다시 열기 → 한 번도 안 연 노트가 열림. `?local=0` → `keyring:mode=server`, 주소 없이 다시 열어도 서버 모드. 서버 모드 대기열 1개 + 선택 지움 → 서버 모드(「1개 지금 보내기」), 다시 연결해 보낸 뒤 → 로컬(보낸 내용이 로컬 볼트에 있음). 오프라인 저장 두 번에 `persist()` 1회, 로컬 시작에 1회. 서버 모드 오프라인 검색 영어·한국어 문구.
+  - **실제 설치**: Chrome 메뉴 「홈 화면에 추가」 → 「앱 설치」 → 홈 화면 아이콘. 열면 `WebappActivity`(WebAPK 아님), `display-mode: standalone` 참, 로컬 모드. 사이트 데이터를 비우고 시작 주소 `/` 로 열면 동기화 화면(주소·기기 이름 채워짐) → 비밀번호 → 받음 3 → 서버 끄고 콜드 스타트 → 안 연 노트 열림, 로컬 검색 됨.
+  - `persisted()` 는 **브라우저 탭·설치한 앱 모두 false** 였다(`persist()` 를 불러도). 그래서 에뮬레이터에서는 동기화 화면에 늘 경고 줄이 보였다.
+
+**확인한 것(2회차)**: 단위 시험 `local/mode.test.ts` 14개(동기화 화면 열기 조건, 돌아갈 노트 state, 주소의 노트 경로). 프로덕션 코드를 9군데 되돌려 8군데에서 떨어졌고, 안 떨어진 1군데(`settingsBack` 의 객체 검사 — 선택적 체이닝이 같은 일을 함)는 줄였다. 에뮬레이터의 실제 설치 앱(`WebappActivity`)에서 사이트 데이터를 지우고 `#/Notes%2Fnote2.md` 로 처음 열기 → 주소 `#/:settings/device`·`history.state` `{ back: "Notes/note2.md" }` → 비밀번호 → 받음 3 → 닫기(×) → `#/Notes%2Fnote2.md` 에 note2 내용. `#/Notes%2Fnote1.md` 로 처음 열고 「일반」 묶음으로 바꿔도 state 유지 → 연결하지 않고 닫기 → 홈 + 「No such note: Notes/note1.md」. 닫기의 노트 열기(`closeSettings`)는 화면으로만 봤다(단위 시험 없음).
+
+**확인한 것(3회차, 리뷰 반영)**:
+- 단위 시험 — 웹 `local/mode.test.ts`(24: 모드 입력 읽기·새 창 주소·사람이 쓴 노트·동기화 화면 열기), `settingsNav.test.ts`(10: 주소의 노트·돌아갈 노트·닫기 대상·묶음 바꾸기), `offline.test.ts`(4: 검색 오프라인 판정·대기열의 보존 요청), `local/browserStore.test.ts`(1). 리뷰 실증표 M8·M16~M25 와 새 조건(노트 수·세지 않는 것·새 창 모드)에 해당하는 되돌림 20곳이 모두 시험을 떨어뜨린다. **함수를 부르거나 결과를 적용하는 호출 자리 9곳은 시험이 없다** — 되돌려도 웹 시험 270개가 모두 통과한다(재리뷰가 하나씩 되돌려 실증). 「시험이 지킨다」 고 읽지 않는다:
+  - G1 `Workspace.tsx` 검색 catch 의 `searchFailedOffline(appMode.local, e)` 결과(`off`)
+  - G2 `boot.ts` `wantsLocal` 이 `remember` 를 `keyring:mode` 에 쓰는 줄 — 빠지면 `?local=0` 이 다시 기억되지 않는다
+  - G3 `boot.ts` `startLocal` 의 `openBrowserStore()` — `new IdbStore()` 로 바뀌면 보존 요청이 빠진다
+  - G4 `main.tsx` 의 `history.replaceState(go.state, …)` — `null` 이면 리뷰 1 이 되살아난다
+  - G5 `main.tsx` 의 `hasNotes: hasOwnNotes(…)` — 리뷰 4
+  - G6 `Workspace.tsx` `closeSettings` 의 `back: settingsBack(history.state)` — 리뷰 2
+  - G7 `Workspace.tsx` `SettingsModal` `onSection` 의 `replaceSettingsSection`
+  - G8 `soloWindow.ts` `soloUrl` 의 `appMode.local` — 리뷰 3
+  - G9 `boot.ts` `wantsLocal` 의 `pending`(대기열 읽기) — 늘 빈 것으로 바뀌면 대기분이 먼저 가지 않는다
+
+  화면으로 본 것: G4·G5·G6·G7·G8 은 3회차 코드로(헤드리스·에뮬레이터, 아래). G1·G2·G3·G9 의 동작(오프라인 검색 문구, `?local=0` 기억, `persist()` 호출 수, 대기열이 있으면 서버 모드)은 1회차 에뮬레이터에서 3회차 리팩터링 **전** 코드로만 봤고, 3회차 코드로 다시 보지 않았다.
+- 헤드리스 Chromium(시험 서버 8917, `addInitScript` standalone 흉내, 서비스 워커 막음): 리뷰 1 경로 — 고치기 전 새로 고침 뒤 state `null`, 고친 뒤 `{ back: "Notes/note2.md" }` 유지 → 비밀번호 → 닫기 → note2. 「General」 로 바꿔도 state 유지. 리뷰 2 경로 — 고치기 전 note3 대신 note1. 고친 뒤에는 볼트에 노트가 있어 동기화 화면 자체가 열리지 않는다(4번). 닫기 대상은 note1 을 연 채 설정을 열고 state 에 `{ back: note3 }` 을 넣어 닫으면 note3 이 열리는 것으로 봤다. 빈 볼트 `?local` 탭은 동기화 화면, 노트가 있고 동기화가 없는 볼트는 열지 않음.
+- 새 창(리뷰 3): 에뮬레이터의 실제 설치 앱(`WebappActivity`)은 세로(약 411 CSS px)에서 탭 줄이 숨어 「새 창으로 열기」 에 닿을 수 없고, 가로(914×363)에서 탭 오른쪽 클릭 메뉴로 열었다. 새 창은 같은 `WebappActivity` 안에 열렸고 `display-mode: standalone` 참(그래서 이 환경에서는 고치기 전 주소 `?solo=1` 도 로컬이었다). 고친 주소 `?solo=1&local=1`, 서버를 끄고 새 창에서 note2 를 열면 로컬 볼트의 내용, `keyring:mode` 는 null 그대로. 데스크톱처럼 새 창이 설치 앱이 아닌 경우는 헤드리스에서 새 창만 standalone 흉내를 빼고 봤다: 고치기 전 주소는 **로그인 화면(서버 모드)**, 고친 주소는 로컬 볼트, 메인 창의 기억 키는 null.
+- **이 브랜치 전부터 있던 것(고치지 않음, 이 브랜치 범위 밖)**: 노트 주소로 새로 열면 그 노트가 열리지 않는다. 저장된 탭이 있으면 복원된 탭이 보이고(note3 주소 → note1), **저장된 탭이 없어도** 주소가 곧 `""` 로 바뀌고 그 노트는 보이지 않는다(재리뷰: `/?local#/Notes%2Fnote1.md`, 100ms 안에 `""`). 서버 모드도, 기준 커밋 `5d6b300` 빌드도 같다. 추정 원인(미확인): `Workspace.tsx` 의 첫 열기(`initial`)가 워크스페이스 범위가 정해지기 전(`*`)의 배치에 탭을 넣고, 범위가 바뀌며 보이는 배치가 바뀐다(`?solo` 쪽에 같은 이유의 주석이 있다). 그래서 설치 아이콘이 노트 주소로 시작해도 볼트가 이미 있으면 그 노트가 아니라 홈이나 마지막 탭이 보인다. 빈 볼트는 동기화 화면 → 설정 닫기(`closeSettings`)로 그 노트를 열므로 괜찮다.
+- **설치 앱이 새 창 주소로 다시 시작하는가(4회차, 재리뷰 권함 3)**: 재현되지 않았다. 에뮬레이터의 실제 설치 앱(`WebappActivity`)에서 가로로 돌려 note1 탭의 「새 창으로 열기」 → 페이지 둘(`#/Notes%2Fnote1.md`, `?solo=1&local=1#/Notes%2Fnote1.md`, 둘 다 visible) → `am force-stop com.android.chrome` → 아이콘으로 다시 열기 → 페이지 하나, 주소 `http://localhost:8917/#/Notes%2Fnote1.md`(`?solo` 없음). 새 창을 앞으로 가져와 편집기를 누른 뒤(visible·focus 참) 같은 순서로 한 번 더 해도 같은 주소였다. 실제 기기·WebAPK·강제 종료가 아닌 종료(최근 앱에서 밀어 닫기 등)는 보지 않았다. 재현되더라도 `?solo=1` 은 이 브랜치 전부터 같고 `local=1` 은 기억하지 않으므로 이 브랜치가 더 나쁘게 만들지 않는다.
+
+**못 본 것·한계**:
+- 데스크톱 Chrome 의 실제 설치 앱에서 「새 창으로 열기」(헤드리스 흉내로만 봤다).
+- WebAPK 로 설치한 경우(Play 서비스로 민팅)와 실제 기기. 실제 기기에서 `persist()` 가 허락되는지 모른다.
+- 이 에뮬레이터의 설치 아이콘은 **설치할 때 열려 있던 주소**(`#/Notes%2Fnote3.md`)로 시작하는 것처럼 보였다(그 뒤 콜드 스타트는 마지막 주소 `/` 로 열렸다). 1회차에는 노트 주소면 동기화 화면을 열지 않아 첫 실행에 빈 노트가 보일 수 있었다 — 2회차에 노트 주소여도 열고 닫으면 그 노트로 돌아가게 고쳤다.
+- iOS 는 확인하지 않았다(홈 화면 웹 앱은 Safari 와 저장소가 갈린다고 알려져 있다 — 그렇다면 탭에서 연 `?local=0` 이 설치 앱에 닿지 않는다). 사용자 문서에는 iOS 를 약속하지 않았다.
+- 이번 변경 전에 `?local=0` 을 고른 사람은 기억이 지워져 있어 「고른 적 없음」 과 구별되지 않는다 — 설치 앱이면 다음 실행부터 로컬로 넘어간다. 되살릴 정보가 없어 CHANGELOG 에 다시 고르는 법을 적었다(리뷰 5).
+
+**남은 것 — 서버 모드에서 오프라인일 때 빈 결과처럼 보이는 다른 화면**(목록만, 고치지 않음):
+- 태그 패널: 「태그 0 · 노트에 쓴 #태그가 여기 모입니다」 (`Workspace.tsx` `api.tags` 가 `.catch(() => undefined)`).
+- 첨부 파일 패널: 「첨부 파일 0 · 파일을 끌어 놓거나 눌러 추가」.
+- 검색 필터의 태그 칩 목록: `.catch(() => setFilterTags([]))` 로 비어 보인다.
+- 오른쪽 패널의 출처(`api.sources` → `setRefs(null)`)·속성 통계(`api.properties` → 무시): 오류 없이 비어 보인다(화면으로는 확인하지 않음).
+- 변경 검토 모달: 「서버에 연결하지 못했습니다」 와 「검토할 제안 없음」 이 함께 보인다.
+- 그래프·자료 가져오기·정리 점검 모달과 백링크(멘션)는 「서버에 연결하지 못했습니다」 를 보인다 — 빈 결과로 보이지 않는다.
+- 오늘 노트는 이번에 눌러 보지 못했다.
