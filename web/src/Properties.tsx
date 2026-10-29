@@ -10,6 +10,7 @@ import {
   type PropertyType,
 } from "@keyring-notes/core";
 import { SmilePlus } from "lucide-react";
+import { removeProperty } from "./askFirst";
 import { fmtNumber, t } from "./i18n";
 import { errorText } from "./toast";
 import { tipProps } from "./Tooltip";
@@ -63,7 +64,7 @@ export function Properties({ content, onChange, stats, readOnly, onPickIcon }: P
   const typeOf = (key: string, value: unknown): PropertyType => propertyType(value) ?? chosen[key] ?? statOf.get(key)?.type ?? "text";
 
   const set = (key: string, value: unknown) => apply((c) => setFrontmatterField(c, key, value, { keepEmpty: true }));
-  const remove = (key: string) => apply((c) => setFrontmatterField(c, key, null));
+  const remove = (key: string) => removeProperty(key, apply);
   const rename = (from: string, to: string) => {
     const name = to.trim();
     if (!name || name === from) return;
@@ -165,7 +166,7 @@ export function Properties({ content, onChange, stats, readOnly, onPickIcon }: P
                         className="link-btn"
                         {...tipProps({ label: t("props.removeTip", { key }) })}
                         aria-label={t("props.removeTip", { key })}
-                        onClick={() => remove(key)}
+                        onClick={() => void remove(key)}
                       >
                         ×
                       </button>

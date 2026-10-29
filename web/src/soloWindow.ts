@@ -45,6 +45,9 @@ export async function openSolo(path: string, title: string, at?: { x: number; y:
     ...(at && { x: Math.round(at.x - 160), y: Math.round(at.y - 12) }),
     // 켜 두면 Tauri 가 끌기를 가로채 탭 끌기 같은 HTML 끌어 놓기가 동작하지 않는다(메인 창은 tauri.conf.json)
     dragDropEnabled: false,
+    // macOS 는 기본이 꺼짐이라 비활성 창을 누르면 그 클릭은 창을 앞으로 가져오기만 하고 페이지에 닿지 않는다. 켜면 그 첫 클릭이
+    // 곧바로 단추·입력란에 닿으므로, 한 번에 지우는 단추는 확인창을 거친다(메인 창은 tauri.conf.json)
+    acceptFirstMouse: true,
   });
   await new Promise<void>((resolve, reject) => {
     void w.once("tauri://created", () => resolve());

@@ -4,6 +4,7 @@
  * 막을지는 앱(app/src-tauri/src/close_guard.rs)이 정한다: 화면은 저장 안 한 변경이 생기고 없어질 때 「지킴」을 켜고 끄고(setCloseGuard),
  * 지킴이 켜진 창에 닫기 요청이 오면 앱이 막고 물음을 요청한다(close-ask). 화면이 답하지 않으면 앱이 OS 대화상자로 묻는다.
  * 업데이트 설치 뒤 다시 시작도 창마다 같은 물음을 거친다(restartAfterClosing).
+ * 새 버전이 있으면 Quit 은 차례에 앞서 새 버전을 찾은 창에 업데이트를 묻는다(quit-ask. web/src/update.tsx).
  * 앱(WKWebView)에서는 beforeunload 가 돌지 않으므로 이 물음이 유일한 안전장치다.
  * 「창 닫기」 명령은 웹에 두지 않는다: 브라우저가 Mod+Shift+W 를 먼저 가져가고, window.close() 도 스크립트로 연 창에만 먹는다.
  * 모바일 앱은 창이 하나다
@@ -208,6 +209,27 @@ const tauriRestart: RestartSteps = {
     await invoke("restart_after_closing");
   },
 };
+
+/** 앱이 Quit 앞에 업데이트를 물어 달라고 이 창에 보내는 요청(quit-ask)에 처리기를 건다. 떼어 낼 함수를 돌려준다 */
+export async function listenQuitAsks(handler: (id: number) => void): Promise<() => void> {
+  const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+  return getCurrentWebviewWindow().listen<number>("quit-ask", (e) => handler(e.payload));
+}
+
+/** Quit 물음 요청을 받았다고 앱에 답한다. 새로 물어야 하면 true(답이 늦으면 앱이 묻지 않고 Quit 차례로 간다) */
+export async function ackQuitAsk(id: number): Promise<boolean> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("quit_ask_ack", { id });
+}
+
+/** Quit 물음을 끝낸다. quit 이면 앱이 Quit 과 같은 차례로 창마다 물은 뒤 끈다 */
+export async function quitAskDone(quit: boolean): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("quit_ask_done", { quit });
+}
+
+/** Quit 차례로 끈다(창마다 닫기 물음을 거친다. 누가 취소하면 남은 창은 그대로 둔다) */
+export const quitAfterClosing = (): Promise<void> => quitAskDone(true);
 
 /** 지금 창에 닫기를 요청한다(창 닫기 단추와 같은 길: 지킴이 켜져 있으면 앱이 막고 묻게 한다. capabilities 의 core:window:allow-close) */
 export async function closeCurrentWindow(): Promise<void> {

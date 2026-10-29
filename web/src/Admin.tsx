@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Activity, Archive, Bot, Download, MonitorSmartphone, Shield, Workflow } from "lucide-react";
 import {
   admin,
   automation,
@@ -69,13 +70,13 @@ function withCode(text: string, codes: Record<string, string>): ReactNode {
 /** 설정 모달의 "서버" 묶음(소유자만, 로컬 모드에서는 숨김). keywords: 설정 검색이 이 묶음을 찾는 말 */
 /** 설정 모달의 "서버" 묶음(이름·검색 낱말은 메시지 키) */
 export const SERVER_SECTIONS = [
-  { id: "server-status", label: "server.section.status", keywords: "server.section.statusKeywords" },
-  { id: "server-agents", label: "server.section.agents", keywords: "server.section.agentsKeywords" },
-  { id: "server-devices", label: "server.section.devices", keywords: "server.section.devicesKeywords" },
-  { id: "server-backups", label: "server.section.backups", keywords: "server.section.backupsKeywords" },
-  { id: "server-automation", label: "server.section.automation", keywords: "server.section.automationKeywords" },
-  { id: "server-update", label: "server.section.update", keywords: "server.section.updateKeywords" },
-  { id: "server-security", label: "server.section.security", keywords: "server.section.securityKeywords" },
+  { id: "server-status", label: "server.section.status", icon: Activity, keywords: "server.section.statusKeywords" },
+  { id: "server-agents", label: "server.section.agents", icon: Bot, keywords: "server.section.agentsKeywords" },
+  { id: "server-devices", label: "server.section.devices", icon: MonitorSmartphone, keywords: "server.section.devicesKeywords" },
+  { id: "server-backups", label: "server.section.backups", icon: Archive, keywords: "server.section.backupsKeywords" },
+  { id: "server-automation", label: "server.section.automation", icon: Workflow, keywords: "server.section.automationKeywords" },
+  { id: "server-update", label: "server.section.update", icon: Download, keywords: "server.section.updateKeywords" },
+  { id: "server-security", label: "server.section.security", icon: Shield, keywords: "server.section.securityKeywords" },
 ] as const;
 export type ServerSection = (typeof SERVER_SECTIONS)[number]["id"];
 

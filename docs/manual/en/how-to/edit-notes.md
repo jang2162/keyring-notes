@@ -60,6 +60,7 @@ Write `- [ ] task`. Click a checkbox in the preview to tick it in the source, or
 The right panel's **Properties** tab shows frontmatter fields as inputs that match their type: text, number, checkbox, date, date and time, list. Open it from the properties button in the note header or the folded frontmatter line.
 
 - Rename, change type (values are converted), delete and add fields. Names and values are suggested from the ones used in the vault.
+- Deleting a field with its **×** button asks you to confirm first.
 - Edits go into the draft, so they apply when you save and can be undone. Other fields keep their order, comments and `[a, b]` style.
 - If the YAML is broken, you are asked to fix it in the source.
 

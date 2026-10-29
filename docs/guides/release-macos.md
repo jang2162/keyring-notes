@@ -118,7 +118,7 @@ git push origin v<버전>
   spctl --assess --type open --context context:primary-signature -v ~/Downloads/Keyring-Notes_<버전>_universal.dmg
   # … accepted  source=Notarized Developer ID
   ```
-- 옛 버전이 설치된 맥에서 앱을 실행하면 몇 초 뒤 「업데이트가 있습니다」 를 묻는다. 「업데이트하고 다시 시작」 → 새 버전으로 다시 뜬다. (앱 설정 → 이 기기·동기화 → 앱 업데이트 → 「업데이트 확인」 으로 바로 볼 수도 있다.)
+- 옛 버전이 설치된 맥에서 앱을 실행하면 몇 초 뒤 레일의 설정 단추와 설정 「정보」 에 빨간 점이 찍힌다. 설정 → 정보 → 「설치…」(또는 「업데이트 확인」) → 「업데이트하고 다시 시작」 → 새 버전으로 다시 뜬다. Cmd+Q 를 누르면 「설치하고 종료」·「그냥 종료」·「취소」 를 묻는다 — 「설치하고 종료」 뒤 다시 열면 새 버전이다.
 
 ## 비밀 없이 흐름만 시험하기
 

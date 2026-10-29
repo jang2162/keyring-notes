@@ -10,13 +10,14 @@ Click the gear at the bottom of the rail, press `Ctrl/Cmd+,`, or go to `#/:setti
 
 | Group | What it holds |
 | --- | --- |
-| **General** | Theme, show icons, labels on the side bar, reset, open source licenses |
+| **General** | Theme, show icons, labels on the side bar, reset |
 | **Language** | Display language, vault language, language packs. On a server also agent language and server language |
 | **Editor** | Autosave, Live Preview, font and size, readable width, line numbers, properties above the document |
 | **Files & links** | New link format, attachments in the tree, backlinks at the end of the document, daily display |
 | **Workspaces** | Workspaces and their daily, template and attachment folders |
 | **Shortcuts** | Keyboard shortcuts (desktop and web only) |
-| **This device & sync** | Sync and app updates (app only) |
+| **This device & sync** | Sync (app only) |
+| **About** | Version, app updates (desktop app only), open source licenses |
 | Server group | The admin console (server only, owner only), see [Manage the server](manage-the-server.md) |
 
 Search settings with the box at the top left, in the current language or in English. Server items such as "backup" and "token" are found too. Close Settings with X, Esc, a click on the backdrop or the browser's back button. The first Esc inside an input only leaves the field.

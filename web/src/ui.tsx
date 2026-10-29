@@ -17,6 +17,7 @@ export function IconButton({
   disabled,
   why,
   badge,
+  dot,
   className,
   size = 18,
   side,
@@ -31,6 +32,8 @@ export function IconButton({
   disabled?: boolean;
   why?: string;
   badge?: number | string;
+  /** 아이콘 귀퉁이의 빨간 점(새 버전이 있다 등). 무엇을 알리는지는 label 에 담는다 */
+  dot?: boolean;
   className?: string;
   size?: number;
   /** 툴팁을 띄울 쪽(레일은 오른쪽) */
@@ -59,6 +62,7 @@ export function IconButton({
       <Icon size={size} strokeWidth={1.75} aria-hidden />
       {showLabel && <span className="icon-btn-label">{shortLabel ?? label}</span>}
       {badge !== undefined && badge !== 0 && badge !== "" && <span className="icon-badge">{badge}</span>}
+      {dot && <span className="update-dot icon-dot" aria-hidden />}
     </button>
   );
 }
