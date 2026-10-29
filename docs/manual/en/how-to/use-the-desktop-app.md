@@ -18,7 +18,7 @@ The app works **without a server**. Notes are Markdown files in a folder on the 
 | Windows, macOS, Linux | `Documents/Keyring Notes` | Open another folder, an Obsidian vault for example, with ⇅ → **Open another folder**. Files changed in other editors are re-read when you return to the window |
 | iOS | The app's documents folder, visible in the Files app | |
 | Android | The app's data folder | |
-| Browser | This browser's IndexedDB, at `https://<server>/?local` (turn off with `?local=0`) | A server-less web app, for testing |
+| Browser | This browser's IndexedDB. The web app installed to the home screen uses it unless you chose otherwise; in a tab, open `https://<server>/?local` (turn off with `?local=0`) | Syncs with the server that served the page. See [Edit offline](edit-notes.md#edit-offline) |
 
 The app keeps its own metadata in `.keyring-app/` inside the vault. It is a dot folder, so the server and Obsidian ignore it.
 

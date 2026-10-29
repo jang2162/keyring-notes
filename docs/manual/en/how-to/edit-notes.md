@@ -72,7 +72,11 @@ Template variables are listed in [Reference](../reference.md#template-variables)
 
 ## Edit offline
 
-The web app can be installed to your home screen. Notes you opened once open without a connection, and saves made offline are kept on the device and sent when you reconnect. Notes changed on the server in the meantime are not overwritten; your version is kept as an offline conflict copy.
+The web app can be installed to your home screen. The installed app keeps the whole vault on the device and syncs it with the server, so every note opens and search works without a connection. On its first launch it opens **Settings** → **This device & sync** with the server address filled in; enter the server password to download the vault. The **Vault on this device** section says whether the browser keeps this storage. If it doesn't, the browser may delete the notes on this device when space runs low, including changes not yet synced.
+
+The installed app starts this way unless you chose a mode yourself: open it once with `?local=0` to keep it in the server mode below, or with `?local` to use the device vault in a browser tab too. If saves made offline in the server mode are still waiting, the installed app starts in the server mode once more so they are sent first.
+
+In the server mode (a browser tab, or after `?local=0`), notes you opened once open without a connection, and saves made offline are kept on the device and sent when you reconnect. Notes changed on the server in the meantime are not overwritten; your version is kept as an offline conflict copy. Search needs the server; without a connection the search panel says so.
 
 Math (KaTeX) and Mermaid diagrams load from the server only when a note uses them, never from a CDN. The installed web app downloads them in the background after the first open, so they render offline too.
 

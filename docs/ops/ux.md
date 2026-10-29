@@ -1079,3 +1079,39 @@ Oct 7, 2026 · 사용자 결정(26번 "정할 것" 모두 추천대로)
 **확인한 것**: 단위 시험 — 웹 `licenseNotices.test.ts`(23). 프로덕션 코드를 18군데 되돌려 새 시험이 모두 떨어지는 것을 봤다. 빌드 단에서 손 목록 어긋남 다섯 가지(설치 안 됨·자동 수집에도 잡힘·`via` 없음·`LICENSE_CHOICES` 의 id 가 식에 없음·표준 전문 없음)가 각각 이유를 적고 멈추는 것을 봤다. 서버 조각은 `pnpm licenses list --prod` 와, Docker 이미지 안의 `node_modules` 와 각각 패키지 이름·판이 같다. 시험 서버(빌드본, 임시 `KEYRING_DATA`, 18911)와 `?local` 에서 헤드리스 Chromium(Playwright)으로 — 설정 「일반」 → 열기 → React·KaTeX·Mermaid·emojibase-data·Unicode CLDR 이 든 고지, Esc 로 고지만 닫힘, 서비스 워커가 열기 전에 받아 둔 뒤 오프라인으로 새로 고쳐 열림(지연 목록에서 빼면 받아 두지 않는다). 데스크톱 앱(Tauri) 창과 앱 번들 안의 파일은 보지 못했다(앱 모드 웹 빌드의 `licenses.txt` 만 봤다).
 
 **리뷰 반영(2026-10-22)**: 묶여 실린 제3자 코드를 손 목록에 넣고(`kind: "bundled"`, 전문 `web/licenses/bundled/`) 빌드가 동봉 소스맵으로 빠진 것을 찾아 멈추게 했다. 고지를 묶음마다 그리고(`content-visibility: auto`), 본문에 포커스(`tabIndex`·`data-autofocus`·`role="region"` 과 이름)를 줬다. objc2 계열 저작권 줄(`LICENSE_CHOICES`·`HOLDERS`, 조각별). 단위 시험 — 웹 `licenseNotices.test.ts`(29, 6개 더함). 순수 함수를 12군데 되돌려 새 시험이 모두 떨어지는 것을 봤다. 빌드 단: 손 목록에서 langium·core-js·js-yaml 을 하나씩 빼면 각각 「(… 안에 묶여 있다) 가 고지에 없다」 로 멈추고, `unpdf` 항목의 조각을 web 으로 바꾸면 「싣고 오는 unpdf 가 [web] 에 없다」 로 멈춘다. 소스맵 없는 `hachure-fill` 을 빼면 멈추지 않는다(알려진 한계). objc2 칸을 걷으면 앱 빌드 로그의 「저작권자 없음」 이 7 → 8(objc2-foundation 이 다시 「Copyright holder not stated」)이 되고 7개의 「used under Apache-2.0」 이 빠진다. 시험 서버(빌드본, 임시 `KEYRING_DATA`, 18931)에서 헤드리스 Chromium(Playwright, 서비스 워커 막음)으로 — 앱판 크기(1,830,790자) 고지 열기 6,852ms → 24ms(250묶음, 중간으로 건너뛰기 13ms), 서버판(308,011자) 273ms → 22ms. 고치기 전에는 포커스가 모달 상자라 PageDown·↓·End 가 0, 고친 뒤 본문(「Open source licenses」 region)에 포커스가 있고 PageDown 640·↓ 680·End 끝까지·Home 0. 390px·어두운 테마·한국어(이름 「오픈 소스 라이선스」)에서 가로 넘침 0, 콘솔 오류 0. 데스크톱 앱(Tauri, WKWebView) 창의 시간·키보드, 스크린 리더는 보지 못했다.
+
+## 설치한 웹 앱의 오프라인 보기 (2026-10-29)
+
+### 설치한 PWA 는 로컬 모드로, 저장소 보존, 오프라인 검색 문구
+
+사용자는 PWA 와 안드로이드 앱 중 PWA 를 먼저 하기로 했다(「pwa 먼저 진행해줘」, 질문 없이 진행). 아래 값·동작은 **코디네이터·워커가 정한 기본값이고 사용자가 고른 값이 아니다.**
+
+**문제(코디네이터가 안드로이드 17 에뮬레이터 Chrome 에서 서버를 끄고 콜드 스타트로 잰 것)**: 서버 모드는 한 번 연 노트만 오프라인에서 열리고 안 연 노트는 「서버에 연결할 수 없습니다」, 검색은 연 노트의 낱말로도 「결과 없음」. `?local` 은 동기화로 볼트 전체가 내려와 안 연 노트도 열렸다. `navigator.storage.persisted()` 는 false 이고 `persist()` 를 부르는 곳이 없었다.
+
+**정함·구현**:
+- **모드 판정**(`web/src/local/mode.ts` `startsLocal`, 읽기는 `boot.ts` `wantsLocal`): 앱(Tauri)은 늘 로컬. 고른 것(주소 `?local`·`?local=0` > 기억 `keyring:mode`)이 설치 여부와 상관없이 이긴다. 고른 적 없고 `matchMedia("(display-mode: standalone)")` 가 맞으면 로컬. 단 서버 모드 대기열(`keyring-offline` 의 `outbox`)에 남은 것이 있으면(못 읽어도) 이번 실행은 서버 모드 — 로컬 볼트는 그 대기열을 보내지 않는다. 비면 다음 실행부터 로컬. 자동으로 정한 것은 기억하지 않는다(브라우저 탭으로 열면 그대로 서버 모드).
+- **「서버 모드 선택」 기억**: `?local=0` 은 기억을 지우던 것을 `keyring:mode=server` 로 남기게 바꿨다. 그래야 설치한 앱의 자동 로컬 시작이 그 선택을 덮지 않는다. 모르는 값은 고르지 않은 것으로 본다.
+- **동기화 연결을 바로 보이기**: 브라우저 로컬 볼트가 동기화 없이(`keyring:sync` 없음) 빈 주소(`""`·`#`)로 열리면, 렌더 전에 주소를 `#/:settings/device` 로 바꿔(`main.tsx`, 판정은 `mode.ts` `needsSyncSetup`) 기존의 「주소로 설정 열기」 길(`Workspace.tsx` `settingsFromLocation`)을 탄다. 새 모달·새 상태를 만들지 않았다. 서버 주소 칸은 `location.origin`, 기기 이름은 기본값(`defaultDeviceName`)으로 채운다 — 비밀번호만 넣으면 된다. 연결할 때까지 **실행마다** 연다(`?local` 로 직접 고른 사람도). 노트 하나만 띄운 창(`?solo`)과 노트·설정 주소로 연 것은 열지 않는다.
+- **저장소 보존**(`web/src/persist.ts`): 브라우저 로컬 모드 시작(`startLocal`)과 서버 모드 대기열에 넣을 때(`offline.queue`) `navigator.storage.persist()` 를 부른다. 페이지 로드마다 많아야 한 번, 이미 `persisted()` 면 부르지 않는다, API 가 없거나 실패하면 null 로 조용히 넘긴다. 설정 「이 기기·동기화」 의 「이 기기의 볼트」 아래에 보존되면 한 줄(`sync.persisted`), 아니면 경고 색 한 줄(`sync.notPersisted`). 모르면(API 없음) 보이지 않는다.
+- **서버 모드 오프라인 검색**: 검색이 `isNetworkError` 로 실패하면 결과 칸에 「결과 없음」 대신 `search.offline`(「서버에 연결되어 있지 않아 검색할 수 없습니다」) 을 보이고 오류 알림은 띄우지 않는다. 로컬 모드는 해당 없다.
+
+**확인한 것**:
+- 단위 시험 — 웹 `local/mode.test.ts`(10, 판정: 설치 여부 × 명시 선택 × 대기열 × Tauri, 선택 읽기, 동기화 화면 열기), `persist.test.ts`(4), `Search.test.tsx`(2, 한·영 문구). 프로덕션 코드를 14군데 되돌려 13군데에서 새 시험이 떨어졌다. 안 떨어진 1군데(API 유무 검사)는 `catch` 가 같은 일을 해 지웠다.
+- 안드로이드 에뮬레이터(Medium_Phone, Chrome 149) + 시험 서버(임시 `KEYRING_DATA`, 8917, `adb reverse`), Playwright(CDP):
+  - CDP `Emulation.setEmulatedMedia` 는 이 Chrome 에서 `display-mode` 를 바꾸지 못했다(`prefers-color-scheme` 은 됨). 그래서 판정 분기는 문서 시작 전에 `matchMedia` 를 덮는 init script 로 봤다: 고른 적 없음 → 동기화 화면(주소 `http://localhost:8917`·기기 `Android` 채워짐) → 비밀번호 → 「받음 3」 → 서버 끄고 Chrome 강제 종료 후 다시 열기 → 한 번도 안 연 노트가 열림. `?local=0` → `keyring:mode=server`, 주소 없이 다시 열어도 서버 모드. 서버 모드 대기열 1개 + 선택 지움 → 서버 모드(「1개 지금 보내기」), 다시 연결해 보낸 뒤 → 로컬(보낸 내용이 로컬 볼트에 있음). 오프라인 저장 두 번에 `persist()` 1회, 로컬 시작에 1회. 서버 모드 오프라인 검색 영어·한국어 문구.
+  - **실제 설치**: Chrome 메뉴 「홈 화면에 추가」 → 「앱 설치」 → 홈 화면 아이콘. 열면 `WebappActivity`(WebAPK 아님), `display-mode: standalone` 참, 로컬 모드. 사이트 데이터를 비우고 시작 주소 `/` 로 열면 동기화 화면(주소·기기 이름 채워짐) → 비밀번호 → 받음 3 → 서버 끄고 콜드 스타트 → 안 연 노트 열림, 로컬 검색 됨.
+  - `persisted()` 는 **브라우저 탭·설치한 앱 모두 false** 였다(`persist()` 를 불러도). 그래서 에뮬레이터에서는 동기화 화면에 늘 경고 줄이 보였다.
+
+**못 본 것·한계**:
+- WebAPK 로 설치한 경우(Play 서비스로 민팅)와 실제 기기. 실제 기기에서 `persist()` 가 허락되는지 모른다.
+- 이 에뮬레이터의 설치 아이콘은 **설치할 때 열려 있던 주소**(`#/Notes%2Fnote3.md`)로 시작하는 것처럼 보였다. 시작 주소가 노트를 가리키면 동기화 화면을 자동으로 열지 않으므로, 그런 설치에서는 첫 실행에 노트 주소의 빈 화면이 보일 수 있다(그 뒤 콜드 스타트는 마지막 주소 `/` 로 열렸다).
+- iOS Safari, 데스크톱 Chrome 의 설치 앱.
+
+**남은 것 — 서버 모드에서 오프라인일 때 빈 결과처럼 보이는 다른 화면**(목록만, 고치지 않음):
+- 태그 패널: 「태그 0 · 노트에 쓴 #태그가 여기 모입니다」 (`Workspace.tsx` `api.tags` 가 `.catch(() => undefined)`).
+- 첨부 파일 패널: 「첨부 파일 0 · 파일을 끌어 놓거나 눌러 추가」.
+- 검색 필터의 태그 칩 목록: `.catch(() => setFilterTags([]))` 로 비어 보인다.
+- 오른쪽 패널의 출처(`api.sources` → `setRefs(null)`)·속성 통계(`api.properties` → 무시): 오류 없이 비어 보인다(화면으로는 확인하지 않음).
+- 변경 검토 모달: 「서버에 연결하지 못했습니다」 와 「검토할 제안 없음」 이 함께 보인다.
+- 그래프·자료 가져오기·정리 점검 모달과 백링크(멘션)는 「서버에 연결하지 못했습니다」 를 보인다 — 빈 결과로 보이지 않는다.
+- 오늘 노트는 이번에 눌러 보지 못했다.
