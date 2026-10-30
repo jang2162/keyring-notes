@@ -559,6 +559,8 @@
   "error.proposal_missing": "제안이 없습니다: {id}",
   "error.put_batch_only": "put은 batch로만 쓸 수 있습니다",
   "error.query_required": "검색어가 필요합니다",
+  "error.rank_invalid": "순서 키가 잘못되었습니다: {rank}",
+  "error.rank_order": "순서 키의 앞뒤가 맞지 않습니다: {a} ≥ {b}",
   "error.raw_name_exhausted": "같은 이름의 원본이 너무 많습니다",
   "error.remote_backup_missing": "S3에 백업이 없습니다: {name}",
   "error.restore_data": "마크다운이 아닌 파일은 data로 되살립니다",

@@ -15,6 +15,7 @@ export * from "./paths.js";
 export * from "./settings.js";
 export * from "./settingsMerge.js";
 export * from "./pdfnotes.js";
+export * from "./rank.js";
 export * from "./search.js";
 export * from "./sync.js";
 export * from "./templates.js";

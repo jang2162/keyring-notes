@@ -570,6 +570,8 @@
   "error.proposal_missing": "No such proposal: {id}",
   "error.put_batch_only": "put can only be used in a batch",
   "error.query_required": "A search query is required",
+  "error.rank_invalid": "Invalid order key: {rank}",
+  "error.rank_order": "The order keys are out of order: {a} ≥ {b}",
   "error.raw_name_exhausted": "Too many sources with the same name",
   "error.remote_backup_missing": "No such backup in S3: {name}",
   "error.restore_data": "Non-Markdown files are restored with data",
