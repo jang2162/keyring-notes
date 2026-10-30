@@ -52,6 +52,40 @@ describe("rankBetween", () => {
     }
   });
 
+  it("맨 위·맨 아래에 2000번 연달아 넣어도 키가 12자를 넘지 않는다(열린 끝은 로그로만 길어진다)", () => {
+    let first: string | null = null;
+    let last: string | null = null;
+    const top: string[] = [];
+    for (let i = 0; i < 2000; i++) {
+      first = rankBetween(null, first);
+      top.unshift(first);
+      last = rankBetween(last, null);
+      expect(first.length).toBeLessThanOrEqual(12);
+      expect(last.length).toBeLessThanOrEqual(12);
+    }
+    expect(ascending(top)).toBe(true);
+  });
+
+  it("손으로 쓴 키·이미 저장된 키 앞뒤로도 열린 끝 삽입의 순서가 맞다", () => {
+    for (const k of ["a0", "0", "0001", "zzzz", "V", "1", "z", "00z", "Zz0"]) {
+      let first = k;
+      let last = k;
+      for (let i = 0; i < 300; i++) {
+        // "0" 은 값이 0 이라 앞에 넣을 자리가 없다(rankFits) — 뒤로만 넣는다
+        if (rankFits(null, first)) {
+          const f = rankBetween(null, first);
+          expect(f < first && !f.endsWith("0")).toBe(true);
+          first = f;
+        }
+        const l = rankBetween(last, null);
+        expect(l > last && !l.endsWith("0")).toBe(true);
+        last = l;
+      }
+      expect(first.length).toBeLessThanOrEqual(16);
+      expect(last.length).toBeLessThanOrEqual(16);
+    }
+  });
+
   it("같은 두 이웃 사이에 200번 연달아 넣어도 키가 40자를 넘지 않는다", () => {
     const a = rankBetween(null, null);
     let b = rankBetween(a, null);

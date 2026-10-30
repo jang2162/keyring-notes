@@ -29,7 +29,36 @@ export function rankBetween(a: string | null, b: string | null): string {
   for (const k of [a, b]) if (k !== null && !KEY_RE.test(k)) throw new PathError("rank_invalid", { rank: k });
   if (!rankFits(a, b)) throw new PathError("rank_order", { a: a ?? "", b: b ?? "" });
   // 끝의 0 을 떼고 고른다: 떼어 낸 b 보다 작으면 b 보다도 작고, 0 으로 끝나지 않는 키는 a 와 a0… 사이에 들 수 없다
-  return midpoint(trimZeros(a ?? ""), b === null ? null : trimZeros(b));
+  const lo = trimZeros(a ?? "");
+  const hi = b === null ? null : trimZeros(b);
+  // 열린 끝(맨 앞·맨 뒤)은 반으로 가르지 않는다 — 반씩 가르면 같은 쪽에 거듭 넣을 때 키가 넣은 횟수만큼 길어진다(맨 위에
+  // 2000번이면 300자 넘게). 끝까지의 거리 d 를 d − d² 로만 줄이면 거리가 1/k 꼴로 줄어 키는 로그로만 길어진다.
+  // 값은 그대로 62진 소수라 이미 저장된 키와 순서가 섞여도 맞다
+  if (a === null && hi !== null) {
+    const width = hi.length;
+    const B = toInt(hi);
+    return midpoint(toKey(B * 62n ** BigInt(width) - B * B, 2 * width), hi);
+  }
+  if (hi === null && lo !== "") {
+    const width = lo.length;
+    const scale = 62n ** BigInt(width);
+    const A = toInt(lo);
+    return midpoint(lo, toKey(A * scale + (scale - A) * (scale - A), 2 * width));
+  }
+  return midpoint(lo, hi);
+}
+
+/** 키 → 62진 정수(자릿수는 키 길이) */
+const toInt = (k: string) => [...k].reduce((n, c) => n * 62n + BigInt(DIGITS.indexOf(c)), 0n);
+
+/** 62진 정수 → width 자리 키(끝의 0 은 뗀다) */
+function toKey(n: bigint, width: number): string {
+  let out = "";
+  for (let i = 0; i < width; i++) {
+    out = DIGITS[Number(n % 62n)] + out;
+    n /= 62n;
+  }
+  return trimZeros(out);
 }
 
 /** a("" 은 0)와 b(null 은 1) 사이. 앞자리가 같으면 그 자리를 두고 뒤에서 고른다 */
