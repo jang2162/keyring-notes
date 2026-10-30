@@ -3,6 +3,7 @@ import { StateField, type EditorState, type Extension, type Range } from "@codem
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { liveBlocks, type LiveRenderContext } from "./liveBlocks";
 import { t } from "./i18n";
+import { isAppField } from "./childSortUi";
 
 /**
  * 편집 중 렌더링(Live Preview): 커서가 없는 줄에서는 마크업 기호를 숨기고 모양만 보인다.
@@ -252,10 +253,16 @@ function frontmatterEnd(state: EditorState): number | null {
   return null;
 }
 
-/** 프런트매터 맨 위 키 수(들여쓰지 않은 "키:" 줄) */
+/** 프런트매터 맨 위 키 수(들여쓰지 않은 "키:" 줄). 앱이 적는 정렬·순서·수정 시각(sort·rank·edited)은 세지 않는다 */
 function topKeys(state: EditorState, end: number): number {
   let n = 0;
-  for (let i = 2; i < end; i++) if (/^[^\s#-][^:]*:/.test(state.doc.line(i).text)) n++;
+  for (let i = 2; i < end; i++) {
+    const key = /^([^\s#-][^:]*):/
+      .exec(state.doc.line(i).text)?.[1]
+      .trim()
+      .replace(/^(["'])(.*)\1$/, "$2");
+    if (key !== undefined && !isAppField(key)) n++;
+  }
   return n;
 }
 

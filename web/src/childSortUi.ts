@@ -1,0 +1,61 @@
+import { EDITED_FIELD, RANK_FIELD, setFrontmatterField, SORT_FIELD, sortChildren, type ChildSort, type VaultNode } from "@keyring-notes/core";
+
+/** 앱이 적는 속성(정렬·순서·수정 시각). 속성 패널과 속성 개수에서 빼 사람이 고치는 속성만 보인다 */
+const APP_FIELDS = new Set([SORT_FIELD, RANK_FIELD, EDITED_FIELD]);
+export const isAppField = (key: string) => APP_FIELDS.has(key);
+
+/**
+ * 트리에 보일 하위 노드 순서. 부모의 정렬(sort)을 따르고, 정하지 않았을 때만 데일리 폴더의 이름 내림차순(prefs.dailySortDesc)을 쓴다.
+ * 처음 커스텀으로 바꿀 때 rank 를 이 순서대로 매기므로(seedRanks) 트리와 같은 함수를 쓴다
+ */
+export function shownChildren(
+  nodes: VaultNode[],
+  sort: ChildSort | null,
+  descending: boolean,
+  viewedAt: (notePath: string) => number | undefined,
+): VaultNode[] {
+  if (sort === null && descending) return [...nodes].sort((a, b) => b.name.localeCompare(a.name, "ko"));
+  return sortChildren(nodes, sort, viewedAt);
+}
+
+/** 지금 읽은 노트(없으면 null) */
+export type NoteState = { content: string; hash: string } | null;
+
+export interface NoteWrite {
+  path: string;
+  content: string;
+  baseHash: string | null;
+}
+
+/**
+ * 하위 노트 정렬을 적을 쓰기 목록. 부모 노트의 sort 를 바꾸고(이름순이면 지운다), 노트가 없으면 만든다(이름순이면 만들지 않는다).
+ * seeds: 처음 커스텀으로 바꿀 때 하위 노트에 적을 rank(seedRanks). 내용이 그대로인 노트는 넣지 않는다.
+ * 부모의 프런트매터가 깨졌으면 던진다(고를 수 없다고 알린다). 하위 노트의 프런트매터가 깨졌으면 그 노트만 건너뛴다 —
+ * rank 없는 노트로 남아 rank 있는 노트 뒤에 이름순으로 보인다
+ */
+export function childSortWrites(
+  parentNote: string,
+  parent: NoteState,
+  sort: ChildSort,
+  seeds: { note: string; rank: string }[],
+  read: (note: string) => NoteState,
+): NoteWrite[] {
+  const out: NoteWrite[] = [];
+  const value = sort === "name" ? null : sort;
+  if (parent || value !== null) {
+    const content = setFrontmatterField(parent?.content ?? "", SORT_FIELD, value);
+    if (!parent || content !== parent.content) out.push({ path: parentNote, content, baseHash: parent?.hash ?? null });
+  }
+  for (const s of seeds) {
+    const cur = read(s.note);
+    if (!cur) continue;
+    let content: string;
+    try {
+      content = setFrontmatterField(cur.content, RANK_FIELD, s.rank);
+    } catch {
+      continue;
+    }
+    if (content !== cur.content) out.push({ path: s.note, content, baseHash: cur.hash });
+  }
+  return out;
+}

@@ -28,6 +28,7 @@ import { invalidNameReason, stemOf } from "./Tree";
 import { IconButton, Segmented } from "./ui";
 import { Widget } from "./Widget";
 import { withoutWorkspaceBacklinks } from "./workspaceNote";
+import { isAppField } from "./childSortUi";
 
 export interface RevisionView {
   /** 이 과거 판의 문서. 칸이 다른 문서로 바뀌면 버린다 */
@@ -54,7 +55,11 @@ export interface PaneHandle {
 export function docMeta(draft: string): { fm: Record<string, unknown> | null; propCount: number; icon: string | null } {
   const block = /^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(draft)?.[0] ?? "";
   const fm = block ? parseFrontmatter(block).data : null;
-  return { fm, propCount: fm ? Object.keys(fm).length : 0, icon: typeof fm?.icon === "string" && fm.icon.trim() ? fm.icon.trim() : null };
+  return {
+    fm,
+    propCount: fm ? Object.keys(fm).filter((k) => !isAppField(k)).length : 0,
+    icon: typeof fm?.icon === "string" && fm.icon.trim() ? fm.icon.trim() : null,
+  };
 }
 
 /** Workspace 가 칸마다 똑같이 넘기는 값·동작 묶음 */

@@ -1,10 +1,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ChevronRight, File, FileImage, FileText, FileType, Paperclip, Plus } from "lucide-react";
+import { Check, ChevronRight, File, FileImage, FileText, FileType, Paperclip, Plus } from "lucide-react";
 import { tipProps } from "./Tooltip";
-import { stripMd, type VaultNode } from "@keyring-notes/core";
+import { stripMd, type ChildSort, type VaultNode } from "@keyring-notes/core";
 import type { Prefs } from "./prefs";
 import { Menu, type MenuEntry } from "./ui";
 import { t } from "./i18n";
+import { shownChildren } from "./childSortUi";
+import { useViewedVersion, viewedAt } from "./viewed";
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 
@@ -47,6 +49,24 @@ export interface TreeActions {
   /** 고정했는지·고정 바꾸기(워크스페이스 노드는 고정하지 않는다) */
   pinned: (node: string) => boolean;
   togglePin: (node: string) => void;
+  /** 하위 노트 정렬 고르기(node null 이면 지금 워크스페이스의 맨 위). 부모 노트의 sort 를 적고, 노트가 없으면 만든다 */
+  setChildSort: (node: VaultNode | null, sort: ChildSort) => void;
+}
+
+const SORT_LABELS: [ChildSort, string][] = [
+  ["name", "tree.sortName"],
+  ["modified", "tree.sortModified"],
+  ["viewed", "tree.sortViewed"],
+  ["custom", "tree.sortCustom"],
+];
+
+/**
+ * 하위 노트 정렬 네 항목(지금 값에 체크). 정하지 않은 노트는 이름순이라 이름순에 체크한다 — 단 정하지 않아 이름 내림차순으로 보이는
+ * 데일리 폴더(descending)는 넷 중 어느 것도 아니므로 체크하지 않는다
+ */
+export function childSortItems(sort: ChildSort | undefined | null, descending: boolean, pick: (sort: ChildSort) => void): MenuEntry[] {
+  const current = sort ?? (descending ? null : "name");
+  return SORT_LABELS.map(([s, key]) => ({ label: t(key), icon: current === s ? Check : undefined, run: () => pick(s) }));
 }
 
 /** 트리 표시를 바꾸는 것들(모두 선택) */
@@ -103,13 +123,19 @@ export const Tree = forwardRef<
     decor?: TreeDecor;
     /** 펼친 노드를 기억할 localStorage 키(워크스페이스마다) */
     storageKey: string;
+    /** 맨 위 목록의 정렬(워크스페이스 하나를 볼 때 그 워크스페이스 노트의 sort). 모든 워크스페이스 보기면 null */
+    rootSort?: ChildSort | null;
   }
->(function Tree({ nodes, root, current, prefs, actions, readOnly = () => false, decor = {}, storageKey }, ref) {
+>(function Tree({ nodes, root, current, prefs, actions, readOnly = () => false, decor = {}, storageKey, rootSort = null }, ref) {
   const currentNode = current ? stripMd(current) : null;
   const [open, setOpen] = useState(() => loadOpen(storageKey));
   const [focused, setFocused] = useState<string | null>(currentNode);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; row: Row | null } | null>(null);
+  /** 「하위 노트 정렬」 을 누르면 같은 자리에 띄우는 둘째 메뉴 */
+  const [sortMenu, setSortMenu] = useState<{ x: number; y: number; node: VaultNode } | null>(null);
+  // 조회순으로 정렬한 목록은 이 기기의 조회 기록이 바뀌면 다시 정렬한다
+  const viewedVersion = useViewedVersion();
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const dragging = useRef<{ path: string; kind: "node" | "file" } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -151,21 +177,23 @@ export const Tree = forwardRef<
 
   const rows = useMemo(() => {
     const out: Row[] = [];
-    const walk = (ns: VaultNode[], depth: number, parent: string) => {
-      const list = decor.descending?.(parent) ? [...ns].sort((a, b) => b.name.localeCompare(a.name, "ko")) : ns;
+    // 부모의 정렬은 바로 아래 하위에만 쓴다(물려받지 않는다)
+    const walk = (ns: VaultNode[], depth: number, parent: string, sort: ChildSort | null) => {
+      const list = shownChildren(ns, sort, !!decor.descending?.(parent), viewedAt);
       for (const n of list) {
         out.push({ kind: "node", node: n, depth });
         if (!open.has(n.path)) continue;
-        walk(n.children, depth + 1, n.path);
+        walk(n.children, depth + 1, n.path, n.sort ?? null);
         if (prefs.treeAttachments !== "hide" && n.attachments.length) {
           out.push({ kind: "attachments", node: n, depth: depth + 1 });
           if (open.has(`${n.path}/\u0000att`)) for (const a of n.attachments) out.push({ kind: "file", path: a, owner: n, depth: depth + 2 });
         }
       }
     };
-    walk(nodes, 0, root);
+    walk(nodes, 0, root, root ? rootSort : null);
     return out;
-  }, [nodes, open, prefs.treeAttachments, decor, root]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, open, prefs.treeAttachments, decor, root, rootSort, viewedVersion]);
 
   const scrollTo = (key: string) => {
     requestAnimationFrame(() => box.current?.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest" }));
@@ -249,6 +277,7 @@ export const Tree = forwardRef<
       { label: t("tree.moveTo"), disabled: ro || isWs, run: () => actions.moveTo(n.path, "node") },
       ...(n.note && !isWs ? [{ label: t("tree.duplicate"), run: () => actions.duplicate(n) }] : []),
       { label: t("tree.changeIcon"), disabled: ro, run: () => actions.pickIcon(n, menuAt()) },
+      { label: t("tree.childSort"), disabled: ro, run: () => setSortMenu({ ...menuAt(), node: n }) },
       ...(isWs ? [] : [{ label: actions.pinned(n.path) ? t("tree.unpin") : t("tree.pin"), run: () => actions.togglePin(n.path) }]),
       "-",
       { label: t("tree.copyPath"), run: () => actions.copyPath(n.note ?? n.path) },
@@ -581,6 +610,14 @@ export const Tree = forwardRef<
           <p className="meta tree-empty">{t("tree.emptyAll")}</p>
         ))}
       {menu && menuFor(menu.row).length > 0 && <Menu at={menu} items={menuFor(menu.row)} onClose={() => setMenu(null)} />}
+      {sortMenu && (
+        <Menu
+          at={sortMenu}
+          label={t("tree.childSort")}
+          items={childSortItems(sortMenu.node.sort, !!decor.descending?.(sortMenu.node.path), (s) => actions.setChildSort(sortMenu.node, s))}
+          onClose={() => setSortMenu(null)}
+        />
+      )}
     </div>
   );
 });

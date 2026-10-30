@@ -87,6 +87,7 @@ import {
   orderWorkspaces,
   parentNode,
   planDailyMigration,
+  seedRanks,
   setFrontmatterField,
   sha256Hex,
   shiftDays,
@@ -100,6 +101,7 @@ import {
   workspaceSettings,
   ymd,
   type DailyConfig,
+  type ChildSort,
   type DailyNote,
   type PropertyStat,
   type VaultNode,
@@ -114,7 +116,7 @@ import { DEFAULT_PREFS, setPrefs, usePrefs, type Prefs } from "./prefs";
 import { errorText, toast, toastError, Toasts } from "./toast";
 import { commandKey, formatCombo, keyCapture, matchCommand, type Command } from "./shortcuts";
 import { IconButton, Menu, Resizer, Segmented, type MenuEntry } from "./ui";
-import { invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
+import { childSortItems, invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
 import { SettingsModal, KeySettings, type SettingsSection, type WorkspaceOps } from "./Settings";
 import { attemptCloseTopModal, Modal } from "./Modal";
 import {
@@ -190,7 +192,8 @@ import {
 import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
-import { forgetViewed, markViewed, renameViewed } from "./viewed";
+import { forgetViewed, markViewed, renameViewed, viewedAt } from "./viewed";
+import { childSortWrites, shownChildren, type NoteState, type NoteWrite } from "./childSortUi";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import {
   ackCloseAsk,
@@ -2051,6 +2054,52 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  /**
+   * 여러 노트를 한 번에(한 커밋으로) 고쳐 쓴다 — 하위 노트 정렬·순서 바꾸기. 열린 노트는 먼저 저장하고(못 하면 알리고 그만둔다),
+   * 지금 내용을 읽어 make 로 쓰기 목록을 만든다. 쓴 뒤 열린 노트는 쓴 내용으로 다시 연다(남기면 다음 저장이 옛 해시로 충돌한다)
+   */
+  const writeNotes = async (paths: string[], make: (read: (p: string) => NoteState) => NoteWrite[]): Promise<boolean> => {
+    if (!(await flush(paths))) {
+      const dirtyPath = paths.find((p) => docsRef.current[p] && isDirty(docsRef.current[p]));
+      toast(t("doc.saveTabFirst", { name: stemOf(dirtyPath ?? paths[0]) }), { kind: "error" });
+      return false;
+    }
+    try {
+      const read = new Map<string, NoteState>();
+      for (const p of new Set(paths))
+        read.set(
+          p,
+          await api.read(p, { fresh: true }).catch((e) => {
+            if (e instanceof ApiError && e.status === 404) return null;
+            throw e;
+          }),
+        );
+      const writes = make((p) => read.get(p) ?? null);
+      if (!writes.length) return true;
+      const vt = vaultText(vaultLang()).commit;
+      const done = await api.writeMany(writes, writes.length === 1 ? vt.modify(writes[0].path) : vt.batch(writes.length));
+      const hashes = new Map(done.map((d) => [d.path, d.hash]));
+      for (const w of writes)
+        patchDoc(w.path, (d) => ({ ...d, saved: w.content, draft: w.content, hash: hashes.get(w.path) ?? d.hash, virtual: false, seq: d.seq + 1 }));
+      vaultChanged();
+      await refreshTree();
+      return true;
+    } catch (e) {
+      toastError(e);
+      return false;
+    }
+  };
+
+  /** 하위 노트 정렬: 부모 노트의 sort(node null 이면 지금 워크스페이스). 처음 커스텀이면 보이는 순서대로 rank 도 함께 적는다 */
+  const setChildSort = async (node: VaultNode | null, sort: ChildSort) => {
+    const parent = node ?? wsNode(ws);
+    if (!parent) return;
+    const parentNote = `${parent.path}.md`;
+    const shown = shownChildren(parent.children, parent.sort ?? null, !!treeDecor.descending?.(parent.path), viewedAt);
+    const seeds = sort === "custom" ? seedRanks(shown) : [];
+    await writeNotes([parentNote, ...seeds.map((x) => x.note)], (read) => childSortWrites(parentNote, read(parentNote), sort, seeds, read));
+  };
+
   const copyText = (text: string, what: "path" | "link") =>
     navigator.clipboard
       .writeText(text)
@@ -2579,6 +2628,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     pickIcon: (n, at) => setIconPick({ ...at, node: n.path }),
     pinned: (n) => pins.includes(n),
     togglePin,
+    setChildSort: (n, sort) => void setChildSort(n, sort),
   };
 
   const treeDecor = useMemo<TreeDecor>(() => {
@@ -2816,7 +2866,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             onClick={() => treeRef.current?.reveal()}
           />
           <IconButton size={16} icon={ChevronsDownUp} label={t("tree.collapseAll")} onClick={() => treeRef.current?.collapseAll()} />
-          <TreeOptions prefs={prefs} />
+          <TreeOptions
+            prefs={prefs}
+            rootSort={allWs || !wsNode(ws) ? undefined : { sort: wsNode(ws)!.sort, descending: !!treeDecor.descending?.(ws) }}
+            onRootSort={(sort) => void setChildSort(null, sort)}
+          />
         </span>
       )}
     </div>
@@ -2863,6 +2917,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             prefs={prefs}
             actions={treeActions}
             decor={treeDecor}
+            rootSort={allWs ? null : (wsNode(ws)?.sort ?? null)}
             storageKey={`keyring:tree-open:${scopeKey}`}
             readOnly={(p) => /\/wiki\/(index|log)\.md$/.test(p)}
           />
@@ -3864,11 +3919,25 @@ function KeysDialog({ commands, onClose, onEdit }: { commands: Command[]; onClos
   );
 }
 
-function TreeOptions({ prefs }: { prefs: Prefs }) {
+/**
+ * 파일 보기 「더 보기」 메뉴. rootSort: 워크스페이스 하나를 볼 때 그 바로 아래 노트들의 정렬(모든 워크스페이스 보기면 없음).
+ * 「노트 정렬」 은 트리 행의 「하위 노트 정렬」 처럼 같은 자리에 둘째 메뉴로 네 가지를 띄운다
+ */
+function TreeOptions({
+  prefs,
+  rootSort,
+  onRootSort,
+}: {
+  prefs: Prefs;
+  rootSort?: { sort: ChildSort | undefined; descending: boolean };
+  onRootSort: (sort: ChildSort) => void;
+}) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const [sortAt, setSortAt] = useState<{ x: number; y: number } | null>(null);
   const items: MenuEntry[] = [
     { label: t("tree.showAttachments"), icon: prefs.treeAttachments === "show" ? Check : undefined, run: () => setPrefs({ treeAttachments: "show" }) },
     { label: t("tree.hideAttachments"), icon: prefs.treeAttachments === "hide" ? Check : undefined, run: () => setPrefs({ treeAttachments: "hide" }) },
+    ...(rootSort ? (["-", { label: t("tree.childSortRoot"), run: () => setSortAt(at) }] satisfies MenuEntry[]) : []),
   ];
   return (
     <>
@@ -3882,6 +3951,14 @@ function TreeOptions({ prefs }: { prefs: Prefs }) {
         }}
       />
       {at && <Menu at={at} items={items} onClose={() => setAt(null)} />}
+      {sortAt && rootSort && (
+        <Menu
+          at={sortAt}
+          label={t("tree.childSortRoot")}
+          items={childSortItems(rootSort.sort, rootSort.descending, onRootSort)}
+          onClose={() => setSortAt(null)}
+        />
+      )}
     </>
   );
 }
