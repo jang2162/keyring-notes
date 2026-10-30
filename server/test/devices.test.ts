@@ -150,6 +150,8 @@ describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
     expect(r.pulled.sort()).toEqual(["업무/경제/SCHEMA.md", "업무/경제/raw/assets/표.png", "업무/경제/raw/기사.md"]);
     // 기기가 쓸 때 적은 수정 시각(edited)은 빼고 본문을 본다
     expect(withoutEdited((await owner.read("오프라인.md")).content)).toBe("비행기에서 씀");
+    // 기기 토큰의 쓰기에는 서버가 시각을 다시 적지 않는다 — 기기가 적은 내용 그대로
+    expect((await owner.read("오프라인.md")).content).toBe((await local.read("오프라인.md")).content);
     expect((await vault.history("오프라인.md"))[0].author).toBe("me (노트북)");
     // 위키 index는 기기가 따로 만든다
     expect((await local.read("업무/경제/wiki/index.md")).content).toContain("[[업무/경제/raw/기사|기사]]");

@@ -8,6 +8,7 @@ import {
   dailyLookup,
   parseVaultSettings,
   rewriteLinks,
+  stampEdited,
   vaultLanguage,
   vaultText,
   VAULT_SETTINGS_PATH,
@@ -376,7 +377,7 @@ export class Vault {
   async batch(
     ops: Op[],
     author: Author,
-    opts: { message?: string; guard?: Guard; dryRun?: boolean; links?: LinkUpdateOptions; coalesce?: boolean } = {},
+    opts: { message?: string; guard?: Guard; dryRun?: boolean; links?: LinkUpdateOptions; coalesce?: boolean; edited?: string } = {},
   ): Promise<BatchResult> {
     if (ops.length === 0) throw new PathError("ops_empty");
     if (ops.length > 500) throw new PathError("ops_too_many", { max: 500 });
@@ -527,6 +528,17 @@ export class Vault {
           set(await slot(rel), r.content);
           linksUpdated.push(rel);
           linkCount += r.count;
+        }
+      }
+
+      // 1-3) 수정 시각: 내용이 바뀌었거나 새 경로로 옮겨 온 노트마다 edited 를 적는다(링크를 고친 노트 포함).
+      // 부르는 쪽(ScopedVault)이 기기 토큰의 쓰기에는 넘기지 않는다 — 기기의 로컬 볼트가 이미 적은 내용이다
+      if (opts.edited) {
+        for (const [rel, s] of slots) {
+          if (s.content === null || s.bytes !== undefined || !isMarkdown(rel)) continue;
+          if (s.original !== null && hashContent(s.original) === s.hash) continue;
+          const stamped = stampEdited(rel, s.content, opts.edited);
+          if (stamped !== s.content) set(s, stamped);
         }
       }
 

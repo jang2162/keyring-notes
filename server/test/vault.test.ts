@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withoutEdited } from "@keyring-notes/core";
 import { ScopedVault } from "../src/scoped.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { hashContent, type Vault } from "../src/vault.js";
@@ -51,11 +52,11 @@ describe("Vault", () => {
     expect(history[1].rev).toBe(v1.rev);
 
     const old = await me.revision("노트/a.md", v1.rev!);
-    expect(old.content).toBe("첫 버전\n");
+    expect(withoutEdited(old.content!)).toBe("첫 버전\n");
 
     const rolled = await me.rollback("노트/a.md", v1.rev!, v2.hash);
-    expect(rolled.content).toBe("첫 버전\n");
-    expect((await me.read("노트/a.md")).content).toBe("첫 버전\n");
+    expect(withoutEdited(rolled.content)).toBe("첫 버전\n");
+    expect(withoutEdited((await me.read("노트/a.md")).content)).toBe("첫 버전\n");
     expect(await me.history("노트/a.md")).toHaveLength(3);
   });
 
@@ -65,11 +66,11 @@ describe("Vault", () => {
     await agent.write("a.md", "에이전트 수정", v1.hash);
 
     await expect(me.write("a.md", "사람 수정", v1.hash)).rejects.toMatchObject({
-      currentHash: hashContent("에이전트 수정"),
+      currentHash: (await vault.read("a.md")).hash,
     });
     // 새 문서로 만들려 했는데 이미 있으면 거부
     await expect(me.write("a.md", "새로", null)).rejects.toThrow();
-    expect((await me.read("a.md")).content).toBe("에이전트 수정");
+    expect(withoutEdited((await me.read("a.md")).content)).toBe("에이전트 수정");
   });
 
   it("이동과 삭제도 이력에 남고, 빈 폴더는 정리된다", async () => {
@@ -133,7 +134,7 @@ describe("일괄 쓰기", () => {
     const log = await vault.git.log();
     expect(log).toHaveLength(before + 1);
     expect(log[0]).toMatchObject({ author: "openclaw-work", message: "위키 갱신" });
-    expect((await me.read("wiki/log.md")).content).toBe("- 수집: 문서 A\n- 수집: 문서 B");
+    expect(withoutEdited((await me.read("wiki/log.md")).content)).toBe("- 수집: 문서 A\n- 수집: 문서 B");
   });
 
   it("앞 연산 결과 위에서 검사한다(만든 뒤 옮기기)", async () => {
@@ -142,7 +143,7 @@ describe("일괄 쓰기", () => {
       { op: "write", path: "x.md", content: "X", baseHash: null },
       { op: "move", from: "x.md", to: "y/x.md", baseHash: hashContent("X") },
     ]);
-    expect((await me.read("y/x.md")).content).toBe("X");
+    expect(withoutEdited((await me.read("y/x.md")).content)).toBe("X");
     await expect(me.read("x.md")).rejects.toThrow();
   });
 
@@ -157,7 +158,7 @@ describe("일괄 쓰기", () => {
         { op: "delete", path: "a.md", baseHash: a.hash }, // 앞에서 바뀌었으므로 충돌
       ]),
     ).rejects.toMatchObject({ code: "conflict_path" });
-    expect((await me.read("a.md")).content).toBe("A");
+    expect(withoutEdited((await me.read("a.md")).content)).toBe("A");
     await expect(me.read("new.md")).rejects.toThrow();
     expect(await vault.git.log()).toEqual(before);
   });
@@ -173,13 +174,13 @@ describe("일괄 쓰기", () => {
       ]),
     ).rejects.toThrow("디스크 가득");
     spy.mockRestore();
-    expect(await readFile(path.join(dir, "a.md"), "utf8")).toBe("A");
+    expect(withoutEdited(await readFile(path.join(dir, "a.md"), "utf8"))).toBe("A");
     await expect(me.read("n/new.md")).rejects.toThrow();
     // 스테이징도 비어 있어 다음 커밋에 섞이지 않는다
     const b = await me.write("b.md", "B", null);
     const log = await vault.git.log();
     expect(log[0].rev).toBe(b.rev);
-    expect(await vault.git.show(b.rev!, "a.md")).toBe("A");
+    expect(withoutEdited((await vault.git.show(b.rev!, "a.md"))!)).toBe("A");
   });
 });
 
@@ -193,7 +194,7 @@ describe("자동 저장 묶기", () => {
     expect(log).toHaveLength(1);
     expect(log[0].message).toBe("생성: a.md");
     expect(c.rev).toBe(log[0].rev);
-    expect(await vault.git.show(c.rev!, "a.md")).toBe("A3");
+    expect(withoutEdited((await vault.git.show(c.rev!, "a.md"))!)).toBe("A3");
   });
 
   it("다른 문서·다른 작성자·백업이 끼면 새 커밋으로 남긴다", async () => {

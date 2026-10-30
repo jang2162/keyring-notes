@@ -32,6 +32,10 @@ import {
   nodeFiles,
   moveNodePath,
   noteTreeMeta,
+  parentNode,
+  withoutRank,
+  editedStamp,
+  sameExceptEdited,
   inTrashScope,
   restoreTargets,
   trashHead,
@@ -587,13 +591,16 @@ export class ScopedVault {
       }
     };
     const links = this.linkOptions(opts.updateLinks !== false);
+    // 수정 시각: 동기화 기기(기기 토큰)의 쓰기는 기기의 로컬 볼트가 이미 적었으므로 다시 적지 않는다 — 다시 덮으면
+    // 기기와 서버의 해시가 계속 어긋나 동기화마다 같은 노트를 다시 올린다. 그 밖의 쓰기(웹·에이전트·MCP·REST)는 늘 적는다
+    const edited = this.principal.kind === "owner" && this.principal.device ? undefined : editedStamp(new Date());
     // 검토 대상 경로에 에이전트가 쓰면: 권한·충돌만 지금 검사하고, 적용은 사람이 승인할 때.
     if (this.principal.kind === "agent" && this.review) {
       const touched = ops.flatMap((op) => (op.op === "move" ? [op.from, op.to] : [op.path])).map((p) => normalizeVaultPath(p));
       const hasMove = ops.some((op) => op.op === "move");
       if (this.review.needsReview(touched) || (hasMove && this.review.enabled())) {
         // 이동이면 링크 갱신으로 바뀌는 문서까지 보고 검토 대상인지 정한다(그래서 이동은 늘 먼저 dry run)
-        const dry = await this.vault.batch(ops, this.author, { message, guard, dryRun: true, links });
+        const dry = await this.vault.batch(ops, this.author, { message, guard, dryRun: true, links, edited });
         if (this.review.needsReview([...touched, ...dry.files.map((f) => f.path)])) {
           if (!dry.preview || dry.preview.length === 0) return { rev: null, files: dry.files, linksUpdated: [], linkCount: 0 };
           const proposal = await this.review.create(this.author, ops, message, dry.preview, { enabled: links.enabled !== false, paths: dry.linksUpdated });
@@ -607,11 +614,11 @@ export class ScopedVault {
           };
         }
         // 검토 대상이 아니면 바로 적용하되, 링크 갱신은 방금 본 문서로만(그 사이 검토 대상 문서가 끼어들지 않게)
-        return this.vault.batch(ops, this.author, { message, guard, links: { ...links, only: new Set(dry.linksUpdated) } });
+        return this.vault.batch(ops, this.author, { message, guard, links: { ...links, only: new Set(dry.linksUpdated) }, edited });
       }
     }
     // 자동 저장 묶기는 사람(소유자)의 웹 편집에만: 에이전트 쓰기는 하나하나 이력에 남긴다
-    return this.vault.batch(ops, this.author, { message, guard, links, coalesce: opts.coalesce === true && this.principal.kind === "owner" });
+    return this.vault.batch(ops, this.author, { message, guard, links, coalesce: opts.coalesce === true && this.principal.kind === "owner", edited });
   }
 
   /** 에이전트가 자기 제안의 처리 결과를 확인할 때. */
@@ -700,9 +707,17 @@ export class ScopedVault {
     for (const f of files) {
       const { data } = await this.vault.readRaw(f);
       ops.push({ op: "move", from: f, to: moveNodePath(f, from, to), baseHash: hashContent(data) });
+      // 다른 부모 안으로 옮기면 노드 노트의 rank(옛 부모 안의 순서)를 같은 커밋에서 지운다 → 새 부모에서 rank 없는 노드로 맨 뒤.
+      // 고칠 권한이 없으면 rank 는 그대로 옮긴다(옮기기는 막지 않는다)
+      const note = `${from}.md`;
+      if (f === note && parentNode(from) !== parentNode(to) && atLeast(this.level(`${to}.md`), ACTION_LEVEL.modify)) {
+        const content = data.toString("utf8");
+        const next = withoutRank(content);
+        if (next !== content) ops.push({ op: "write", path: `${to}.md`, content: next, baseHash: hashContent(data) });
+      }
     }
     const res = await this.batch(ops, this.vault.text().commit.nodeMove(from, to), opts);
-    return { ...res, moved: ops.map((o) => (o.op === "move" ? [o.from, o.to] : [])) as [string, string][] };
+    return { ...res, moved: ops.flatMap((o) => (o.op === "move" ? [[o.from, o.to]] : [])) as [string, string][] };
   }
 
   /**
@@ -913,7 +928,8 @@ export class ScopedVault {
             () => null,
           )
         : null;
-      if (now !== content) contents.set(p, content);
+      // 되살리면 수정 시각이 새로 적히므로 그 줄은 빼고 견준다
+      if (now === null || !sameExceptEdited(now, content)) contents.set(p, content);
     }
     if (!found || !contents.size) throw new NotFoundError("trash_empty");
     const s3 = found.s3;

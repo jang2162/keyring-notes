@@ -76,6 +76,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     deleteNode: (path) => wrap(async () => ({ deleted: (await vault.deleteNode(path)).deleted.map((d) => d.path) })),
     restoreFiles: (files) => wrap(() => vault.restoreFiles(files)),
     moveFiles: (pairs, message) => wrap(() => vault.moveFiles(pairs, message)),
+    writeMany: (files, message) => wrap(() => vault.writeMany(files, message)),
     trash: (folder, cursor) => wrap(() => vault.trash({ folder, cursor })),
     trashPreview: (id, path) => wrap(() => vault.trashPreview(id, path)),
     restoreTrash: (id, paths) => wrap(() => vault.restoreTrash(id, paths)),

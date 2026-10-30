@@ -1,6 +1,6 @@
-import { propertyStats, setFrontmatterField, type PropertyStat } from "./frontmatter.js";
+import { propertyStats, type PropertyStat } from "./frontmatter.js";
 import { editedStamp, sameExceptEdited, stampEdited, withoutEdited } from "./edited.js";
-import { RANK_FIELD } from "./childSort.js";
+import { withoutRank } from "./childSort.js";
 import { mentionNames, unlinkedMentions, type Mention } from "./mentions.js";
 import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysis.js";
 import { rewriteLinks, type LinkRewriteContext } from "./links.js";
@@ -104,16 +104,6 @@ function newId(now: number): string {
   // 시각 순으로 정렬되는 id
   idSeq = (idSeq + 1) % 1296;
   return `${now.toString(36).padStart(9, "0")}${idSeq.toString(36).padStart(2, "0")}${Math.random().toString(36).slice(2, 6)}`;
-}
-
-/** rank 를 지운 내용. rank 가 없거나 YAML 이 깨졌으면 그대로(옮기기가 실패하면 안 된다) */
-function withoutRank(content: string): string {
-  if (parseFrontmatter(content).data?.[RANK_FIELD] === undefined) return content;
-  try {
-    return setFrontmatterField(content, RANK_FIELD, null);
-  } catch {
-    return content;
-  }
 }
 
 /** 줄 단위 검색 점수: 제목·경로에 있으면 크게, 본문은 나온 횟수(상한). */

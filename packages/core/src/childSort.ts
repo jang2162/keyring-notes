@@ -1,4 +1,6 @@
 import { PathError } from "./errors.js";
+import { setFrontmatterField } from "./frontmatter.js";
+import { parseFrontmatter } from "./markdown.js";
 import type { VaultNode } from "./nodes.js";
 import { rankBetween, rankFits } from "./rank.js";
 
@@ -12,6 +14,16 @@ export const SORT_FIELD = "sort";
 export const RANK_FIELD = "rank";
 
 const SORTS: readonly ChildSort[] = ["name", "modified", "viewed", "custom"];
+
+/** rank 를 지운 내용(다른 부모로 옮긴 노드의 노트). rank 가 없거나 YAML 이 깨졌으면 그대로 — 옮기기가 실패하면 안 된다 */
+export function withoutRank(content: string): string {
+  if (parseFrontmatter(content).data?.[RANK_FIELD] === undefined) return content;
+  try {
+    return setFrontmatterField(content, RANK_FIELD, null);
+  } catch {
+    return content;
+  }
+}
 
 /** 프런트매터 sort 값 → 정렬. 네 글자 값이 아니면(대소문자가 다른 것 포함) 정하지 않은 것(null) */
 export function parseChildSort(v: unknown): ChildSort | null {

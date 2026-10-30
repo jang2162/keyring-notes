@@ -36,9 +36,10 @@ describe("연결되지 않은 언급(서버)", () => {
     expect(r.names).toEqual(["policy rate", "기준금리"]);
     expect(r.docs.map((d) => d.path)).toEqual(["비밀/메모.md", "일기/오늘.md"]);
     const today = r.docs.find((d) => d.path === "일기/오늘.md")!;
+    // 저장할 때 적힌 수정 시각(프런트매터 세 줄)만큼 아래 줄이다
     expect(today.mentions.map((m) => [m.line, m.text])).toEqual([
-      [1, "기준금리"],
-      [1, "Policy rate"],
+      [4, "기준금리"],
+      [4, "Policy rate"],
     ]);
     expect(today.hash).toBe((await owner.read("일기/오늘.md")).hash);
   });

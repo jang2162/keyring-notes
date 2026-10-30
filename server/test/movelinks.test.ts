@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { withoutEdited } from "@keyring-notes/core";
 import { ConfigStore } from "../src/config.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { ReviewQueue } from "../src/review.js";
@@ -45,17 +46,18 @@ describe("이동 때 링크 자동 갱신(서버)", () => {
   it("이동과 링크 갱신이 한 커밋에 들어간다", async () => {
     const plan = await owner.read("업무/계획.md");
     const r = await owner.move("업무/계획.md", "보관/2026 계획.md", plan.hash);
-    expect(r.content).toBe("# 계획\n[회의](../업무/회의록.md)\n");
+    expect(withoutEdited(r.content)).toBe("# 계획\n[회의](../업무/회의록.md)\n");
     expect(r.linksUpdated.sort()).toEqual(["공개/읽기만.md", "보관/2026 계획.md", "비밀/숨은.md", "업무/회의록.md", "일기/오늘.md"]);
     expect(r.linkCount).toBe(7);
-    expect((await owner.read("업무/회의록.md")).content).toBe("# 회의록\n[[2026 계획]] 참고\n");
-    expect((await owner.read("일기/오늘.md")).content).toBe(
+    expect(withoutEdited((await owner.read("업무/회의록.md")).content)).toBe("# 회의록\n[[2026 계획]] 참고\n");
+    expect(withoutEdited((await owner.read("일기/오늘.md")).content)).toBe(
       "---\nsources: ['[[2026 계획]]']\n---\n[[보관/2026 계획#일정|일정]] [본문](../보관/2026%20계획.md)\n",
     );
     // 커밋 하나, 제목은 이동, 본문에 링크 갱신
     expect(git("log", "-1", "--format=%s")).toBe("이동: 업무/계획.md → 보관/2026 계획.md");
     expect(git("log", "-1", "--format=%b")).toContain("링크 갱신: 일기/오늘.md");
-    expect(git("show", "--name-only", "--format=", "HEAD").split("\n").sort()).toEqual(
+    // 이름 바꾸기 판정 없이 본다 — 수정 시각이 적혀 내용 비율이 달라지면 git 이 옛 경로를 이름 바꾸기로 접는다
+    expect(git("show", "--name-only", "--no-renames", "--format=", "HEAD").split("\n").sort()).toEqual(
       ["공개/읽기만.md", "보관/2026 계획.md", "비밀/숨은.md", "업무/계획.md", "업무/회의록.md", "일기/오늘.md"].sort(),
     );
     // 인덱스 백링크가 새 위치로
@@ -67,7 +69,7 @@ describe("이동 때 링크 자동 갱신(서버)", () => {
     const plan = await owner.read("업무/계획.md");
     const r = await owner.move("업무/계획.md", "보관/계획2.md", plan.hash, { updateLinks: false });
     expect(r.linksUpdated).toEqual([]);
-    expect((await owner.read("업무/회의록.md")).content).toBe("# 회의록\n[[계획]] 참고\n");
+    expect(withoutEdited((await owner.read("업무/회의록.md")).content)).toBe("# 회의록\n[[계획]] 참고\n");
     const b = await owner.batch([{ op: "move", from: "보관/계획2.md", to: "보관/계획3.md", baseHash: r.hash }], undefined, { updateLinks: false });
     expect(b.linksUpdated).toEqual([]);
   });
@@ -78,7 +80,7 @@ describe("이동 때 링크 자동 갱신(서버)", () => {
       { op: "move", from: "업무/계획.md", to: "임시/계획.md", baseHash: plan.hash },
       { op: "move", from: "임시/계획.md", to: "최종/새계획.md", baseHash: plan.hash },
     ]);
-    expect((await owner.read("업무/회의록.md")).content).toBe("# 회의록\n[[새계획]] 참고\n");
+    expect(withoutEdited((await owner.read("업무/회의록.md")).content)).toBe("# 회의록\n[[새계획]] 참고\n");
     expect(moved.files.map((f) => f.path)).not.toContain("임시/계획.md");
     expect(moved.files.map((f) => f.path)).toContain("업무/회의록.md");
   });
@@ -88,9 +90,9 @@ describe("이동 때 링크 자동 갱신(서버)", () => {
     const plan = await agent.read("업무/계획.md");
     const r = await agent.move("업무/계획.md", "보관/새계획.md", plan.hash);
     expect(r.linksUpdated.sort()).toEqual(["보관/새계획.md", "업무/회의록.md", "일기/오늘.md"]);
-    expect((await owner.read("업무/회의록.md")).content).toBe("# 회의록\n[[보관/새계획]] 참고\n");
-    expect((await owner.read("비밀/숨은.md")).content).toBe("[[계획]]\n");
-    expect((await owner.read("공개/읽기만.md")).content).toBe("[[계획]]\n");
+    expect(withoutEdited((await owner.read("업무/회의록.md")).content)).toBe("# 회의록\n[[보관/새계획]] 참고\n");
+    expect(withoutEdited((await owner.read("비밀/숨은.md")).content)).toBe("[[계획]]\n");
+    expect(withoutEdited((await owner.read("공개/읽기만.md")).content)).toBe("[[계획]]\n");
     // batch 응답에도 숨김·읽기 전용 경로가 없다
     const again = await agent.read("보관/새계획.md");
     const b = await agent.batch([{ op: "move", from: "보관/새계획.md", to: "보관/새계획2.md", baseHash: again.hash }]);
@@ -118,14 +120,14 @@ describe("이동 때 링크 자동 갱신(서버)", () => {
     expect(proposal.preview.find((p) => p.path === "일기/오늘.md")!.after).toContain("[[보관/새계획]]");
     // 아직 그대로
     expect((await owner.read("일기/오늘.md")).content).toContain("sources: ['[[계획]]']");
-    expect((await owner.read("업무/회의록.md")).content).toBe("# 회의록\n[[계획]] 참고\n");
+    expect(withoutEdited((await owner.read("업무/회의록.md")).content)).toBe("# 회의록\n[[계획]] 참고\n");
     // 승인 전 사람이 숨김 문서에 같은 이름 링크를 하나 더 만들어도 승인 때 끼어들지 않는다
     await owner.write("비밀/새로.md", "[[계획]]\n", null);
     await review.approve(proposal.id, "me");
     expect((await owner.read("일기/오늘.md")).content).toContain("[[보관/새계획]]");
-    expect((await owner.read("업무/회의록.md")).content).toBe("# 회의록\n[[보관/새계획]] 참고\n");
-    expect((await owner.read("비밀/새로.md")).content).toBe("[[계획]]\n");
-    expect((await owner.read("비밀/숨은.md")).content).toBe("[[계획]]\n");
+    expect(withoutEdited((await owner.read("업무/회의록.md")).content)).toBe("# 회의록\n[[보관/새계획]] 참고\n");
+    expect(withoutEdited((await owner.read("비밀/새로.md")).content)).toBe("[[계획]]\n");
+    expect(withoutEdited((await owner.read("비밀/숨은.md")).content)).toBe("[[계획]]\n");
   });
 });
 

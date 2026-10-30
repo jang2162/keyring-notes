@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withoutEdited } from "@keyring-notes/core";
 import { BlobStore } from "../src/blobs.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { S3Client } from "../src/s3.js";
@@ -51,18 +52,38 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
     expect(item).toMatchObject({ node: "W/a", notes: ["W/a.md"], attachments: [], lost: 0, author: "me" });
     expect(item.id).toMatch(/^[0-9a-f]{40}$/);
     expect(Date.parse(item.date)).toBeGreaterThan(0);
-    expect(await owner.trashPreview(item.id, "W/a.md")).toEqual({ path: "W/a.md", content: "지우기 직전" });
+    const preview = await owner.trashPreview(item.id, "W/a.md");
+    expect({ ...preview, content: withoutEdited(preview.content) }).toEqual({ path: "W/a.md", content: "지우기 직전" });
     const before = await commits();
     const r = await owner.restoreTrash(item.id);
     expect(r.restored).toEqual([["W/a.md", "W/a.md"]]);
     expect(await commits()).toBe(before + 1);
     expect((await vault.git.log(undefined, 1))[0].message).toBe(vault.text().commit.restoreDeleted("W/a"));
-    expect((await owner.read("W/a.md")).content).toBe("지우기 직전");
+    expect(withoutEdited((await owner.read("W/a.md")).content)).toBe("지우기 직전");
     expect((await owner.trash()).items).toEqual([]);
     await expect(owner.restoreTrash(item.id)).rejects.toThrow();
     // 낡은 목록으로 한 번 더 눌러도 같은 내용이 이미 있으면 사본을 만들지 않는다
     await expect(owner.restoreTrash(item.id, ["W/a.md"])).rejects.toThrow();
     expect((await owner.documents("W")).map((d) => d.path)).toEqual(["W/a.md"]);
+  });
+
+  it("되살린 노트가 이미 있으면 수정 시각이 달라도 같은 내용으로 보고 사본을 만들지 않는다", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-30T09:00:00Z"));
+      await make({ "W.md": "", "W/a.md": "처음" });
+      await owner.write("W/a.md", "지우기 직전", await hash("W/a.md"));
+      await owner.delete("W/a.md", await hash("W/a.md"));
+      const [item] = (await owner.trash()).items;
+      vi.setSystemTime(new Date("2026-10-30T09:05:00Z"));
+      await owner.restoreTrash(item.id);
+      // 낡은 목록으로 한 번 더 눌렀다 — 되살린 노트는 새 시각이 적혀 지운 때의 내용과 그 줄만 다르다
+      vi.setSystemTime(new Date("2026-10-30T09:10:00Z"));
+      await expect(owner.restoreTrash(item.id, ["W/a.md"])).rejects.toThrow();
+      expect((await owner.documents("W")).map((d) => d.path)).toEqual(["W/a.md"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("이동·이름 바꾸기로 사라진 옛 경로는 휴지통에 없다(빈 노트, 링크를 고친 이동, 노드 이동)", async () => {
@@ -86,15 +107,15 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
     // 내용 유사도로는 이동으로 못 짝짓는 경우들이다: 서버가 커밋에 남긴 이동(트레일러)으로 가른다
     await make({ "W.md": "", "W/P.md": "", "W/P/x.md": "[[W/P/y]]", "W/P/y.md": "[[W/P/x]]" });
     await owner.moveNode("W/P", "W/Q");
-    expect((await owner.read("W/Q/x.md")).content).toBe("[[W/Q/y]]");
+    expect(withoutEdited((await owner.read("W/Q/x.md")).content)).toBe("[[W/Q/y]]");
     expect((await owner.trash()).items).toEqual([]);
     await make({ "W/a.md": "[[W/b]]", "W/b.md": "see [[W/a]]", "W/c.md": "# C\n[[W/a]]\n" });
     await owner.moveNode("W", "V");
-    expect((await owner.read("V/b.md")).content).toBe("see [[V/a]]");
+    expect(withoutEdited((await owner.read("V/b.md")).content)).toBe("see [[V/a]]");
     expect((await owner.trash()).items).toEqual([]);
     await make({ "V/s.md": "[[V/s]]" });
     await owner.move("V/s.md", "V/t.md", await hash("V/s.md"));
-    expect((await owner.read("V/t.md")).content).toBe("[[V/t]]");
+    expect(withoutEdited((await owner.read("V/t.md")).content)).toBe("[[V/t]]");
     expect((await owner.trash()).items).toEqual([]);
   });
 
@@ -141,7 +162,7 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
     expect(r.restored.map(([, to]) => to).sort()).toEqual(["W/N.md", "W/N/c.md", "W/N/d/e.md", "W/N/img.png"]);
     expect(await commits()).toBe(before + 1);
     expect(new Uint8Array(await readFile(path.join(vault.root, "W/N/img.png")))).toEqual(png);
-    expect((await owner.read("W/N/d/e.md")).content).toBe("손자");
+    expect(withoutEdited((await owner.read("W/N/d/e.md")).content)).toBe("손자");
   });
 
   it('같은 경로에 지금 노트가 있으면 보이지 않고, 목록을 본 뒤 그 자리에 생긴 파일은 덮어쓰지 않고 " 2" 로 만든다(노드는 통째로)', async () => {
@@ -153,8 +174,8 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
     const id = (await owner.trash()).items[0].id;
     await owner.write("W/a.md", "그 사이 새 글", null);
     expect((await owner.restoreTrash(id, ["W/a.md"])).restored).toEqual([["W/a.md", "W/a 2.md"]]);
-    expect((await owner.read("W/a.md")).content).toBe("그 사이 새 글");
-    expect((await owner.read("W/a 2.md")).content).toBe("옛 글");
+    expect(withoutEdited((await owner.read("W/a.md")).content)).toBe("그 사이 새 글");
+    expect(withoutEdited((await owner.read("W/a 2.md")).content)).toBe("옛 글");
 
     await owner.deleteNode("W/N");
     const node = (await owner.trash()).items[0];
@@ -164,8 +185,8 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
       ["W/N.md", "W/N 2.md"],
       ["W/N/c.md", "W/N 2/c.md"],
     ]);
-    expect((await owner.read("W/N.md")).content).toBe("새 노드");
-    expect((await owner.read("W/N 2/c.md")).content).toBe("하위");
+    expect(withoutEdited((await owner.read("W/N.md")).content)).toBe("새 노드");
+    expect(withoutEdited((await owner.read("W/N 2/c.md")).content)).toBe("하위");
   });
 
   it("범위(워크스페이스)와 쪽 나누기: 최근 것부터, next 로 이어 읽고 지금 있는 것만 지운 커밋은 건너뛴다", async () => {
