@@ -46,6 +46,15 @@ describe("stampEdited", () => {
     expect(parseFrontmatter(out).data).toEqual({ edited: T, k: 1 });
   });
 
+  it("줄로 고칠 수 없는 모양(따옴표 친 키)이어도 YAML 이 깨지지 않고 새 시각이 읽힌다", () => {
+    const src = '---\n"edited": 2026-01-01T00:00:00Z\ntitle: 제목\ntags: [a]\n---\n본문';
+    const out = stampEdited("A.md", src, T);
+    const fm = parseFrontmatter(out);
+    expect(fm.error).toBeUndefined();
+    expect(fm.data).toEqual({ edited: T, title: "제목", tags: ["a"] });
+    expect(out.endsWith("---\n본문")).toBe(true);
+  });
+
   it("적은 값은 글자로 읽힌다", () => {
     expect(parseFrontmatter(stampEdited("A.md", "본문", T)).data).toEqual({ [EDITED_FIELD]: T });
   });
@@ -117,6 +126,13 @@ describe("alignEdited", () => {
     const crlf = (e: string, first: string, second: string) => doc(e, first, second).replace(/\n/g, "\r\n");
     const m = merge3(...alignEdited(crlf(T0, "첫 문단", "둘째 문단"), crlf(T1, "첫 문단 고침", "둘째 문단"), crlf(T2, "첫 문단", "둘째 문단 고침")));
     expect(m.ok && m.text).toBe(crlf(T2, "첫 문단 고침", "둘째 문단 고침"));
+  });
+
+  it("BOM 으로 시작하는 세 판도 맞춰 합친다(충돌 사본이 되지 않는다)", () => {
+    const bom = (e: string, first: string, second: string) => "\uFEFF" + doc(e, first, second);
+    const m = merge3(...alignEdited(bom(T0, "첫 문단", "둘째 문단"), bom(T1, "첫 문단 고침", "둘째 문단"), bom(T2, "첫 문단", "둘째 문단 고침")));
+    expect(m.ok).toBe(true);
+    expect(m.ok && m.text).toBe(bom(T2, "첫 문단 고침", "둘째 문단 고침"));
   });
 
   it("셋 다 시각이 없으면 그대로", () => {
