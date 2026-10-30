@@ -366,6 +366,16 @@ describe("서버의 수정 시각(edited)과 rank", () => {
     expect(await fm("개인/B/b.md")).toEqual({ rank: "k", edited: NOW });
   });
 
+  it("BOM 으로 시작하는 노트는 BOM 을 지키고 프런트매터를 하나로 둔다", async () => {
+    await owner.write("업무/bom.md", "\uFEFF---\ntitle: 제목\n---\n본문\n", null);
+    expect((await vault.read("업무/bom.md")).content).toBe(`\uFEFF---\ntitle: 제목\nedited: ${NOW}\n---\n본문\n`);
+  });
+
+  it("사용자의 프런트매터 모양(들여쓰지 않은 목록·[a,b]·CRLF)은 그대로 두고 edited 한 줄만 더한다", async () => {
+    await owner.write("업무/모양.md", "---\r\ntags:\r\n- a\r\ny: [a,b]\r\n---\r\n본문\r\n", null);
+    expect((await vault.read("업무/모양.md")).content).toBe(`---\r\ntags:\r\n- a\r\ny: [a,b]\r\nedited: ${NOW}\r\n---\r\n본문\r\n`);
+  });
+
   it("YAML 이 깨진 노트도 저장되고 내용은 그대로다", async () => {
     const broken = "---\na: [\n---\n본문";
     const r = await owner.write("업무/깨짐.md", broken, null);

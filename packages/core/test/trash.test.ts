@@ -203,6 +203,28 @@ describe("휴지통(로컬 볼트: 기록 기반)", () => {
     expect(v.trash().items.map((i) => i.notes)).toEqual([["W/새이름.md"]]);
   });
 
+  it("시각 없이 받은 노트(들여쓰지 않은 목록·[a,b]·CRLF)를 서버에서 이름 바꿔도 휴지통에 지운 노트로 보이지 않는다", async () => {
+    // 이 기능 전의 기록처럼 body 가 없는 기록: 짝짓기 열쇠는 원래 바이트의 해시다
+    const notes: Record<string, string> = {
+      "W/목록.md": "---\ntags:\n- a\n- b\n---\n본문\n",
+      "W/흐름.md": "---\ny: [a,b]\nx:   1   # 메모\n---\n본문\n",
+      "W/창.md": "---\r\ntitle: 창\r\n---\r\n본문\r\n",
+    };
+    const server = new FakeServer();
+    await server.put("W.md", "");
+    for (const [p, c] of Object.entries(notes)) await server.put(p, c);
+    const { v } = await vault();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    // 서버(웹)에서 이름을 바꾸면 새 경로의 노트에 시각이 적혀 온다
+    for (const [p, c] of Object.entries(notes)) {
+      server.files.delete(p);
+      await server.put(p.replace(".md", " 새.md"), stampEdited(p, c, "2026-10-30T10:00:00Z"));
+    }
+    await sync.run();
+    expect(v.trash().items).toEqual([]);
+  });
+
   it("되살린 노트가 이미 있으면 수정 시각이 달라도 같은 내용으로 보고 사본을 만들지 않는다", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-30T09:00:00Z"));

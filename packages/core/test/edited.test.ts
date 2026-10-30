@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alignEdited, EDITED_FIELD, editedOf, editedStamp, merge3, parseFrontmatter, stampEdited } from "../src/index.js";
+import { alignEdited, EDITED_FIELD, editedOf, editedStamp, merge3, parseFrontmatter, stampEdited, withoutEdited } from "../src/index.js";
 
 const T = "2026-10-30T09:12:33Z";
 
@@ -19,6 +19,33 @@ describe("stampEdited", () => {
     expect(stampEdited("A.md", src, T)).toBe(`---\nicon: 📁\ntags: [a, b]\nedited: ${T}\n---\n본문`);
   });
 
+  it("사용자의 YAML 모양(들여쓰지 않은 목록·[a,b]·주석 앞 공백·빈 줄)은 그대로 두고 edited 한 줄만 더한다", () => {
+    const src = "---\ntags:\n- a\n- b\nx:   1   # 메모\ny: [a,b]\n\nz: 2\n---\n본문\n";
+    expect(stampEdited("A.md", src, T)).toBe(`---\ntags:\n- a\n- b\nx:   1   # 메모\ny: [a,b]\n\nz: 2\nedited: ${T}\n---\n본문\n`);
+  });
+
+  it("edited 줄이 있으면 그 자리의 값만 바꾼다(뒤 주석은 남긴다)", () => {
+    const src = "---\na: [x,y]\nedited: 2026-01-01T00:00:00Z   # 앱이 적음\nb:  2\n---\n본문";
+    expect(stampEdited("A.md", src, T)).toBe(`---\na: [x,y]\nedited: ${T}   # 앱이 적음\nb:  2\n---\n본문`);
+  });
+
+  it("CRLF 노트는 CRLF 로 적는다", () => {
+    expect(stampEdited("A.md", "---\r\ntitle: a\r\n---\r\n본문\r\n", T)).toBe(`---\r\ntitle: a\r\nedited: ${T}\r\n---\r\n본문\r\n`);
+    expect(stampEdited("A.md", "# 제목\r\n본문\r\n", T)).toBe(`---\r\nedited: ${T}\r\n---\r\n# 제목\r\n본문\r\n`);
+    const crlf = `---\r\nedited: 2026-01-01T00:00:00Z\r\n---\r\n본문\r\n`;
+    expect(stampEdited("A.md", crlf, T)).toBe(`---\r\nedited: ${T}\r\n---\r\n본문\r\n`);
+  });
+
+  it("BOM 으로 시작하는 노트는 BOM 을 지키고 프런트매터를 하나로 둔다", () => {
+    expect(stampEdited("A.md", "\uFEFF---\ntitle: 제목\n---\n본문\n", T)).toBe(`\uFEFF---\ntitle: 제목\nedited: ${T}\n---\n본문\n`);
+    expect(stampEdited("A.md", "\uFEFF본문", T)).toBe(`\uFEFF---\nedited: ${T}\n---\n본문`);
+  });
+
+  it("여러 줄 값처럼 한 줄로 바꿀 수 없는 edited 도 시각으로 바꾼다", () => {
+    const out = stampEdited("A.md", "---\nedited:\n  - x\nk: 1\n---\n본문", T);
+    expect(parseFrontmatter(out).data).toEqual({ edited: T, k: 1 });
+  });
+
   it("적은 값은 글자로 읽힌다", () => {
     expect(parseFrontmatter(stampEdited("A.md", "본문", T)).data).toEqual({ [EDITED_FIELD]: T });
   });
@@ -31,6 +58,31 @@ describe("stampEdited", () => {
   it("공통 설정 파일과 첨부에는 적지 않는다", () => {
     expect(stampEdited("keyring-settings.md", "---\nlanguage: ko\n---\n", T)).toBe("---\nlanguage: ko\n---\n");
     expect(stampEdited("a.png", "bytes", T)).toBe("bytes");
+  });
+});
+
+describe("withoutEdited", () => {
+  const samples = [
+    "본문만",
+    "# 제목\r\n본문\r\n",
+    "---\ntags:\n- a\n---\n본문\n",
+    "---\ny: [a,b]\nx:   1   # c\n\nz: 2\n---\n",
+    "---\r\ntitle: a\r\n---\r\n본문\r\n",
+    "\uFEFF---\ntitle: 제목\n---\n본문\n",
+    "\uFEFF본문",
+    "",
+  ];
+  it("적은 시각을 빼면 글자 그대로 원래 내용이다", () => {
+    for (const x of samples) expect(withoutEdited(stampEdited("A.md", x, T))).toBe(x);
+  });
+
+  it("시각만 다른 두 판은 같은 내용이 된다", () => {
+    for (const x of samples) expect(withoutEdited(stampEdited("A.md", x, T))).toBe(withoutEdited(stampEdited("A.md", x, "2027-01-01T00:00:00Z")));
+  });
+
+  it("YAML 이 깨졌으면 그대로", () => {
+    const broken = "---\na: [\nedited: 1\n---\n본문";
+    expect(withoutEdited(broken)).toBe(broken);
   });
 });
 
@@ -59,6 +111,12 @@ describe("alignEdited", () => {
     const m = merge3(...alignEdited(base, a, b));
     expect(m.ok).toBe(true);
     expect(m.ok && m.text).toBe(doc(T2, "첫 문단 고침", "둘째 문단 고침"));
+  });
+
+  it("CRLF 로 쓴 세 판도 줄 끝을 지키며 맞춰 합친다", () => {
+    const crlf = (e: string, first: string, second: string) => doc(e, first, second).replace(/\n/g, "\r\n");
+    const m = merge3(...alignEdited(crlf(T0, "첫 문단", "둘째 문단"), crlf(T1, "첫 문단 고침", "둘째 문단"), crlf(T2, "첫 문단", "둘째 문단 고침")));
+    expect(m.ok && m.text).toBe(crlf(T2, "첫 문단 고침", "둘째 문단 고침"));
   });
 
   it("셋 다 시각이 없으면 그대로", () => {

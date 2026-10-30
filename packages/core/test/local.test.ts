@@ -405,6 +405,23 @@ describe("로컬 볼트의 수정 시각(edited)과 rank", () => {
     expect(editedIn(text(await store.read("A.md")))).toBe(NOW);
   });
 
+  it("BOM 으로 시작하는 노트도 프런트매터가 하나다", async () => {
+    const { v, store } = await vault();
+    await store.write("bom.md", utf8("\uFEFF---\ntitle: 제목\n---\n본문\n"));
+    await v.rescan();
+    const doc = await v.read("bom.md");
+    await v.write("bom.md", doc.content.replace("본문", "고친 본문"), doc.hash);
+    const disk = text(await store.read("bom.md")).replace(/^\uFEFF/, "");
+    expect(disk).toBe(`---\ntitle: 제목\nedited: ${NOW}\n---\n고친 본문\n`);
+    expect(parseFrontmatter(disk).data).toEqual({ title: "제목", edited: NOW });
+  });
+
+  it("사용자의 프런트매터 모양은 그대로 두고 edited 한 줄만 더한다", async () => {
+    const { v, store } = await vault({ "A.md": "---\ntags:\n- a\ny: [a,b]\n---\n처음" });
+    await v.write("A.md", "---\ntags:\n- a\ny: [a,b]\n---\n고침", (await v.read("A.md")).hash);
+    expect(text(await store.read("A.md"))).toBe(`---\ntags:\n- a\ny: [a,b]\nedited: ${NOW}\n---\n고침`);
+  });
+
   it("YAML 이 깨진 노트도 저장되고 내용은 그대로다", async () => {
     const { v, store } = await vault();
     const broken = "---\na: [\n---\n본문";
