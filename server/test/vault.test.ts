@@ -64,10 +64,10 @@ describe("Vault", () => {
     await vault.init();
     const v1 = await me.write("a.md", "원본", null);
     await agent.write("a.md", "에이전트 수정", v1.hash);
+    // 기대 해시는 쓰기를 시작하기 전에 구한다 — expect 인자 안에서 기다리면 그 사이 거부가 처리되지 않은 채 남는다
+    const current = (await vault.read("a.md")).hash;
 
-    await expect(me.write("a.md", "사람 수정", v1.hash)).rejects.toMatchObject({
-      currentHash: (await vault.read("a.md")).hash,
-    });
+    await expect(me.write("a.md", "사람 수정", v1.hash)).rejects.toMatchObject({ currentHash: current });
     // 새 문서로 만들려 했는데 이미 있으면 거부
     await expect(me.write("a.md", "새로", null)).rejects.toThrow();
     expect(withoutEdited((await me.read("a.md")).content)).toBe("에이전트 수정");
