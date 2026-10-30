@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseFrontmatter, seedRanks, type VaultNode } from "@keyring-notes/core";
-import { childSortWrites, fillBlankNote, shownChildren, type NoteState } from "./childSortUi";
+import { parseFrontmatter, planReorder, seedRanks, sortChildren, type VaultNode } from "@keyring-notes/core";
+import { childSortWrites, fillBlankNote, rankWrites, shownChildren, siblingTarget, type NoteState } from "./childSortUi";
 
 const node = (name: string, extra: Partial<VaultNode> = {}): VaultNode => ({
   name,
@@ -113,5 +113,44 @@ describe("막 만든 노트에 템플릿 넣기", () => {
     expect(fillBlankNote("---\nicon: 📁\nedited: 2026-10-30T09:12:33Z\n---\n", tpl)).toBeNull();
     expect(fillBlankNote("", tpl)).toBeNull();
     expect(fillBlankNote("---\na: [\n---\n", tpl)).toBeNull();
+  });
+});
+
+describe("커스텀 순서 바꾸기", () => {
+  const kids = [node("가", { rank: "J" }), node("나", { rank: "V" }), node("다", { rank: "d" }), node("라", { note: null }), node("마")];
+
+  it("옮긴 노트 하나의 rank 만 적고 다른 필드·본문은 그대로", () => {
+    const notes: Record<string, NoteState> = { "W/다.md": { content: "---\nicon: 🌱\nrank: d\n---\n다 본문", hash: "h" } };
+    const w = rankWrites(planReorder(kids, "W/다", "W/가"), (n) => notes[n] ?? null);
+    expect(w).toHaveLength(1);
+    expect(w[0]).toMatchObject({ path: "W/다.md", baseHash: "h" });
+    expect(fm(w[0].content)).toMatchObject({ icon: "🌱" });
+    expect((fm(w[0].content)!.rank as string) < "J").toBe(true);
+    expect(w[0].content.endsWith("다 본문")).toBe(true);
+  });
+
+  it("rank 없는 노드 사이로 옮기면 그 자리까지 함께 적고, 노트 없는 폴더 노드는 노트를 만든다", () => {
+    const plan = planReorder(kids, "W/가", null);
+    const w = rankWrites(plan, (n) => ({ content: "", hash: `h:${n}` }));
+    expect(w.map((x) => [x.path, x.baseHash])).toEqual([
+      ["W/라.md", null],
+      ["W/마.md", "h:W/마.md"],
+      ["W/가.md", "h:W/가.md"],
+    ]);
+    const ranked = kids.map((k) => ({ ...k, rank: plan.find((p) => p.node === k.path)?.rank ?? k.rank }));
+    expect(names(sortChildren(ranked, "custom", noView))).toEqual(["나", "다", "라", "마", "가"]);
+  });
+
+  it("프런트매터가 깨진 노트면 던진다(알리고 아무것도 쓰지 않는다)", () => {
+    expect(() => rankWrites(planReorder(kids, "W/다", "W/가"), () => ({ content: "---\na: [\n---\n", hash: "x" }))).toThrow();
+  });
+
+  it("한 칸 위·아래의 넣을 자리, 끝이면 못 옮긴다", () => {
+    const ns = [node("a"), node("b"), node("c")];
+    expect(siblingTarget(ns, "W/b", -1)).toBe("W/a");
+    expect(siblingTarget(ns, "W/b", 1)).toBeNull();
+    expect(siblingTarget(ns, "W/a", 1)).toBe("W/c");
+    expect(siblingTarget(ns, "W/a", -1)).toBeUndefined();
+    expect(siblingTarget(ns, "W/c", 1)).toBeUndefined();
   });
 });

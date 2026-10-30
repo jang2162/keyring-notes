@@ -87,6 +87,7 @@ import {
   orderWorkspaces,
   parentNode,
   planDailyMigration,
+  planReorder,
   seedRanks,
   setFrontmatterField,
   sha256Hex,
@@ -193,7 +194,7 @@ import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { forgetViewed, markViewed, renameViewed, viewedAt } from "./viewed";
-import { childSortWrites, fillBlankNote, shownChildren, type NoteState, type NoteWrite } from "./childSortUi";
+import { childSortWrites, fillBlankNote, rankWrites, shownChildren, siblingTarget, type NoteState, type NoteWrite } from "./childSortUi";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import {
   ackCloseAsk,
@@ -1811,8 +1812,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     try {
       let linkCount = 0;
       let others = 0;
-      if (files.length === 1 && files[0] === `${from}.md`) {
-        // 잎 노드: 문서 하나 이동
+      // 다른 부모로 옮기는 것은 잎 노드여도 노드 이동으로 — 옮긴 노트의 커스텀 순서(rank)는 노드 이동만 지운다
+      if (files.length === 1 && files[0] === `${from}.md` && parentOf(from) === parentOf(to)) {
+        // 잎 노드 이름 바꾸기: 문서 하나 이동
         const hash = await hashOf(files[0]);
         if (hash === null) return false;
         const d = await api.move(files[0], `${to}.md`, hash);
@@ -2107,6 +2109,33 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     await writeNotes([parentNote, ...seeds.map((x) => x.note)], (read) => childSortWrites(parentNote, read(parentNote), sort, seeds, read));
   };
 
+  /** 커스텀 순서 바꾸기: 같은 부모 안에서 path 를 beforePath 앞으로(null 이면 맨 뒤). 보통은 옮긴 노트 하나의 rank 만 바뀐다 */
+  const reorderNode = async (path: string, beforePath: string | null) => {
+    const parent = findNode(nodeTree, parentOf(path));
+    if (!parent || parent.sort !== "custom") return;
+    let plan: ReturnType<typeof planReorder>;
+    try {
+      plan = planReorder(shownChildren(parent.children, "custom", false, viewedAt), path, beforePath);
+    } catch (e) {
+      return toastError(e);
+    }
+    if (!plan.length) return;
+    await writeNotes(
+      plan.map((p) => p.note ?? `${p.node}.md`),
+      (read) => rankWrites(plan, read),
+    );
+  };
+
+  /** 「위로」·「아래로」 단축키: 트리에서 고른 노드(트리에 포커스가 없으면 지금 노트)를 한 칸 */
+  const moveSibling = (dir: -1 | 1) => {
+    const path = treeRef.current?.focusedNode() ?? (docRef.current ? stripMd(docRef.current.path) : null);
+    if (!path || !path.includes("/")) return;
+    const parent = findNode(nodeTree, parentOf(path));
+    if (parent?.sort !== "custom") return void toast(t("tree.reorderNeedsCustom"), { kind: "info" });
+    const before = siblingTarget(shownChildren(parent.children, "custom", false, viewedAt), path, dir);
+    if (before !== undefined) void reorderNode(path, before);
+  };
+
   const copyText = (text: string, what: "path" | "link") =>
     navigator.clipboard
       .writeText(text)
@@ -2339,6 +2368,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       .map((w, i) => ({ id: `ws-${i + 1}`, group: g.ws, label: t("cmd.switchWs", { name: w }), run: () => void switchScope({ workspace: w, all: false }) })),
     { id: "ws-all", group: g.ws, label: allWs ? t("cmd.wsOnlyOne") : t("cmd.wsAll"), run: () => void switchScope({ all: !allWs }) },
     { id: "new", group: g.doc, label: t("cmd.new"), keys: "Mod+N", webKeys: "Alt+N", run: () => void createDoc() },
+    { id: "note-up", group: g.doc, label: t("cmd.noteUp"), keys: "Alt+Shift+ArrowUp", inInputs: false, run: () => moveSibling(-1) },
+    { id: "note-down", group: g.doc, label: t("cmd.noteDown"), keys: "Alt+Shift+ArrowDown", inInputs: false, run: () => moveSibling(1) },
     ...(dailyCfg
       ? [
           { id: "daily", group: g.doc, label: t("cmd.daily"), keys: "Mod+Shift+D", run: () => void openDaily(0) },
@@ -2636,6 +2667,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     pinned: (n) => pins.includes(n),
     togglePin,
     setChildSort: (n, sort) => void setChildSort(n, sort),
+    reorder: (p, before) => void reorderNode(p, before),
   };
 
   const treeDecor = useMemo<TreeDecor>(() => {
@@ -2925,6 +2957,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             actions={treeActions}
             decor={treeDecor}
             rootSort={allWs ? null : (wsNode(ws)?.sort ?? null)}
+            moveKeys={{ up: keyOf("note-up"), down: keyOf("note-down") }}
             storageKey={`keyring:tree-open:${scopeKey}`}
             readOnly={(p) => /\/wiki\/(index|log)\.md$/.test(p)}
           />

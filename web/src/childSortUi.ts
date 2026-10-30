@@ -79,3 +79,22 @@ export function childSortWrites(
   }
   return out;
 }
+
+/**
+ * 커스텀 순서 바꾸기(planReorder 결과)를 적을 쓰기 목록. 보통은 옮긴 노트 하나다.
+ * 노트 없는 폴더 노드(note null)는 그 노드의 노트를 rank 만 든 새 노트로 만든다. 프런트매터가 깨진 노트가 있으면 던진다
+ */
+export function rankWrites(plan: { note: string | null; node: string; rank: string }[], read: (note: string) => NoteState): NoteWrite[] {
+  return plan.map((p) => {
+    const path = p.note ?? `${p.node}.md`;
+    const cur = p.note === null ? null : read(path);
+    return { path, content: setFrontmatterField(cur?.content ?? "", RANK_FIELD, p.rank), baseHash: cur?.hash ?? null };
+  });
+}
+
+/** 같은 부모 안에서 한 칸 위(-1)·아래(1)로 옮길 때 넣을 자리(그 앞에 둘 노드, null 이면 맨 뒤). 끝이라 못 옮기면 undefined */
+export function siblingTarget(siblings: VaultNode[], path: string, dir: -1 | 1): string | null | undefined {
+  const i = siblings.findIndex((n) => n.path === path);
+  if (i < 0 || i + dir < 0 || i + dir >= siblings.length) return undefined;
+  return dir < 0 ? siblings[i - 1].path : (siblings[i + 2]?.path ?? null);
+}
