@@ -1,5 +1,6 @@
 export * from "./analysis.js";
 export * from "./daily.js";
+export * from "./edited.js";
 export * from "./errors.js";
 export * from "./frontmatter.js";
 export * from "./hash.js";
