@@ -193,7 +193,7 @@ import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { forgetViewed, markViewed, renameViewed, viewedAt } from "./viewed";
-import { childSortWrites, shownChildren, type NoteState, type NoteWrite } from "./childSortUi";
+import { childSortWrites, fillBlankNote, shownChildren, type NoteState, type NoteWrite } from "./childSortUi";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import {
   ackCloseAsk,
@@ -1690,7 +1690,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const tpl = await readTemplate(path);
     if (tpl === null || !doc) return;
     const title = doc.path.split("/").pop()!.replace(/\.md$/i, "");
-    editorHandle.current?.insertText(applyTemplate(tpl, { title, date: new Date(), lang: vaultLang() }));
+    const text = applyTemplate(tpl, { title, date: new Date(), lang: vaultLang() });
+    // 막 만든 노트(앱이 적은 edited 만 있음)는 템플릿으로 채운다 — 커서 자리에 넣으면 템플릿 프런트매터가 본문 안의 둘째 블록이 된다
+    const filled = fillBlankNote(doc.draft, text);
+    if (filled === null) editorHandle.current?.insertText(text);
+    else {
+      editorHandle.current?.setContent(filled);
+      editorHandle.current?.focus();
+    }
   };
 
   /** 템플릿으로 새 노트: 템플릿이 제목을 쓰므로 제목만 묻는다(위치는 지금 노드의 형제) */

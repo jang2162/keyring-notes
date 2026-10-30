@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseFrontmatter, seedRanks, type VaultNode } from "@keyring-notes/core";
-import { childSortWrites, shownChildren, type NoteState } from "./childSortUi";
+import { childSortWrites, fillBlankNote, shownChildren, type NoteState } from "./childSortUi";
 
 const node = (name: string, extra: Partial<VaultNode> = {}): VaultNode => ({
   name,
@@ -91,5 +91,27 @@ describe("정렬을 적을 쓰기 목록", () => {
     );
     expect(w.map((x) => x.path)).toEqual(["W/P.md", "W/나.md"]);
     expect(() => childSortWrites("W/P.md", broken, "custom", [], none)).toThrow();
+  });
+});
+
+describe("막 만든 노트에 템플릿 넣기", () => {
+  const tpl = "---\ntags: [tpl]\n---\n템플릿 본문\n";
+
+  it("앱이 적은 edited 만 있는 빈 노트는 템플릿으로 채운다(edited 는 버린다)", () => {
+    expect(fillBlankNote("---\nedited: 2026-10-30T09:12:33Z\n---\n", tpl)).toBe(tpl);
+    expect(fillBlankNote("---\nedited: 2026-10-30T09:12:33Z\n---\n\n  \n", tpl)).toBe(tpl);
+  });
+
+  it("정렬·순서는 템플릿 프런트매터로 옮겨 남긴다", () => {
+    const out = fillBlankNote("---\nsort: custom\nrank: V\nedited: 2026-10-30T09:12:33Z\n---\n", tpl)!;
+    expect(fm(out)).toEqual({ tags: ["tpl"], sort: "custom", rank: "V" });
+    expect(out.endsWith("템플릿 본문\n")).toBe(true);
+  });
+
+  it("본문이 있거나 사람이 쓴 속성이 있거나 프런트매터가 없거나 깨졌으면 채우지 않는다(null)", () => {
+    expect(fillBlankNote("---\nedited: 2026-10-30T09:12:33Z\n---\n글", tpl)).toBeNull();
+    expect(fillBlankNote("---\nicon: 📁\nedited: 2026-10-30T09:12:33Z\n---\n", tpl)).toBeNull();
+    expect(fillBlankNote("", tpl)).toBeNull();
+    expect(fillBlankNote("---\na: [\n---\n", tpl)).toBeNull();
   });
 });

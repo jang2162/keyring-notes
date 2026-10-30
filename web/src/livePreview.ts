@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
+import { EditorState, StateField, Transaction, type Extension, type Range, type TransactionSpec } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { liveBlocks, type LiveRenderContext } from "./liveBlocks";
 import { t } from "./i18n";
@@ -266,6 +266,41 @@ function topKeys(state: EditorState, end: number): number {
   return n;
 }
 
+/**
+ * 맨 앞 프런트매터 바로 뒤(본문이 시작하는 자리). 프런트매터가 없으면 null.
+ * 닫는 줄이 문서 끝이면 그 줄 끝에 줄바꿈을 붙여 넣어야 하므로 prefix 로 알린다
+ */
+export function bodyStart(state: EditorState): { at: number; prefix: string } | null {
+  const end = frontmatterEnd(state);
+  if (end === null) return null;
+  return end < state.doc.lines ? { at: state.doc.line(end + 1).from, prefix: "" } : { at: state.doc.length, prefix: "\n" };
+}
+
+/**
+ * 커서가 맨 앞(0)일 때 넣는 글을 프런트매터 뒤로 옮긴다. 막 연 문서의 커서는 0 이고 그동안 프런트매터는 한 줄 표시로 접혀 있어,
+ * 키보드로 편집기에 들어가 바로 치거나 붙여 넣으면 보이지 않는 `---` 앞에 들어가 프런트매터가 깨진다.
+ * 앱으로 만든 노트는 처음부터 프런트매터(edited)가 있으므로 새 노트에서 늘 일어난다
+ */
+const keepFrontmatter = EditorState.transactionFilter.of((tr): Transaction | TransactionSpec => {
+  if (!tr.docChanged || !tr.isUserEvent("input")) return tr;
+  const sel = tr.startState.selection.main;
+  if (!sel.empty || sel.head !== 0) return tr;
+  const body = bodyStart(tr.startState);
+  if (!body) return tr;
+  let insert: string | null = null;
+  tr.changes.iterChanges((fromA, toA, _fromB, _toB, text) => {
+    insert = insert === null && fromA === 0 && toA === 0 ? text.toString() : "\u0000";
+  });
+  if (insert === null || insert === "\u0000") return tr;
+  const text = body.prefix + (insert as string);
+  return {
+    changes: { from: body.at, insert: text },
+    selection: { anchor: body.at + text.length },
+    scrollIntoView: true,
+    annotations: Transaction.userEvent.of(tr.annotation(Transaction.userEvent) ?? "input"),
+  };
+});
+
 function buildFold(state: EditorState): DecorationSet {
   const end = frontmatterEnd(state);
   if (end === null) return Decoration.none;
@@ -301,5 +336,5 @@ export function frontmatterFold(onProps: () => void): Extension {
       return true;
     },
   });
-  return [foldField, foldTheme, click];
+  return [foldField, foldTheme, click, keepFrontmatter];
 }

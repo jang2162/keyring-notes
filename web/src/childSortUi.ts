@@ -1,8 +1,28 @@
-import { EDITED_FIELD, RANK_FIELD, setFrontmatterField, SORT_FIELD, sortChildren, type ChildSort, type VaultNode } from "@keyring-notes/core";
+import { EDITED_FIELD, parseFrontmatter, RANK_FIELD, setFrontmatterField, SORT_FIELD, sortChildren, type ChildSort, type VaultNode } from "@keyring-notes/core";
 
 /** 앱이 적는 속성(정렬·순서·수정 시각). 속성 패널과 속성 개수에서 빼 사람이 고치는 속성만 보인다 */
 const APP_FIELDS = new Set([SORT_FIELD, RANK_FIELD, EDITED_FIELD]);
 export const isAppField = (key: string) => APP_FIELDS.has(key);
+
+/**
+ * 앱이 적는 속성만 있고 본문이 빈 노트(앱으로 막 만든 노트는 `edited` 프런트매터가 있다)를 템플릿으로 채운 내용.
+ * 그런 노트가 아니면 null — 부르는 쪽은 커서 자리에 넣는다. 정렬·순서(sort·rank)는 템플릿 프런트매터에 옮겨 남기고,
+ * 수정 시각은 저장할 때 쓰기 계층이 다시 적으므로 버린다. 예전에는 새 노트가 빈 내용이라 템플릿 프런트매터가 곧 노트의 것이었다
+ */
+export function fillBlankNote(current: string, text: string): string | null {
+  const fm = parseFrontmatter(current);
+  if (!fm.data || Object.keys(fm.data).some((k) => !isAppField(k))) return null;
+  if (current.split("\n").slice(fm.lines).join("\n").trim()) return null;
+  let out = text;
+  for (const key of [SORT_FIELD, RANK_FIELD])
+    if (fm.data[key] !== undefined)
+      try {
+        out = setFrontmatterField(out, key, fm.data[key]);
+      } catch {
+        return null;
+      }
+  return out;
+}
 
 /**
  * 트리에 보일 하위 노드 순서. 부모의 정렬(sort)을 따르고, 정하지 않았을 때만 데일리 폴더의 이름 내림차순(prefs.dailySortDesc)을 쓴다.
