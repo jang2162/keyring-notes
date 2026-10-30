@@ -60,7 +60,9 @@ describe("변경 검토 대기열", () => {
     expect(r.pending?.proposal).toMatch(/^[0-9a-f]{16}$/);
     expect(r.rev).toBeNull();
     expect(r.content).toContain("에이전트가 고친"); // 승인 뒤 모습
-    expect(withoutEdited((await owner.read("업무/경제/wiki/금리.md")).content)).toBe("# 금리\n원래 설명\n");
+    // 아직 그대로(수정 시각 줄까지 글자 그대로)
+    expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe(cur.content);
+    expect(withoutEdited(cur.content)).toBe("# 금리\n원래 설명\n");
     expect(git("rev-parse", "HEAD")).toBe(before);
 
     const list = await review.list({ status: "pending" });
@@ -97,13 +99,15 @@ describe("변경 검토 대기열", () => {
   it("그 사이 문서가 바뀌면 stale로 표시되고, 승인은 충돌로 거부된다", async () => {
     const cur = await owner.read("업무/경제/wiki/금리.md");
     const res = await agent.write("업무/경제/wiki/금리.md", "# 금리\n에이전트\n", cur.hash);
-    await owner.write("업무/경제/wiki/금리.md", "# 금리\n사람이 먼저 고침\n", cur.hash);
+    const human = await owner.write("업무/경제/wiki/금리.md", "# 금리\n사람이 먼저 고침\n", cur.hash);
     expect((await review.list())[0].stale).toBe(true);
     await expect(review.approve(res.pending!.proposal, "me")).rejects.toThrow(/먼저 수정/);
     expect((await review.get(res.pending!.proposal)).status).toBe("pending");
     const rejected = await review.reject(res.pending!.proposal, "me", "사람 수정과 충돌");
     expect(rejected).toMatchObject({ status: "rejected", reason: "사람 수정과 충돌" });
-    expect(withoutEdited((await owner.read("업무/경제/wiki/금리.md")).content)).toBe("# 금리\n사람이 먼저 고침\n");
+    // 거절해도 사람의 내용 그대로(수정 시각 줄까지 글자 그대로)
+    expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe(human.content);
+    expect(withoutEdited(human.content)).toBe("# 금리\n사람이 먼저 고침\n");
   });
 
   it("권한·충돌은 제안을 만들 때 이미 검사한다", async () => {
