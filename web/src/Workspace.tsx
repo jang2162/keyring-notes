@@ -190,6 +190,7 @@ import {
 import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
+import { forgetViewed, markViewed, renameViewed } from "./viewed";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import {
   ackCloseAsk,
@@ -802,7 +803,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       .catch(() => setFilterTags([]));
   }, [searchPanelShown, searchFilter.folder, scope, vaultVersion]);
 
-  const remember = (path: string) => setRecent((r) => [path, ...r.filter((p) => p !== path)].slice(0, 30));
+  const remember = (path: string) => {
+    setRecent((r) => [path, ...r.filter((p) => p !== path)].slice(0, 30));
+    markViewed(path);
+  };
 
   /** 문서를 읽는다(저장소에는 넣지 않는다). 노트 없는 노드면 빈 노드로. 못 읽으면 알리고 null */
   const fetchDoc = useCallback(async (path: string): Promise<Omit<OpenDoc, "seq"> | null> => {
@@ -1725,6 +1729,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     moveFolds(from, to);
     setAllLayouts((l) => renamePath(l, from, to));
     setRecent((r) => r.map((p) => (p === from ? to : p)));
+    renameViewed(from, to, false);
     updatePins((p) => movePins(p, stripMd(from), stripMd(to), false));
     nav.current.list = nav.current.list.map((p) => (p === from ? to : p));
     const opened = !!docsRef.current[from];
@@ -1869,6 +1874,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       return out;
     });
     setRecent((r) => r.filter((p) => !gone(p)));
+    forgetViewed(gone);
   };
 
   /**
