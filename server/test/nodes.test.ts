@@ -319,6 +319,25 @@ describe("서버의 수정 시각(edited)과 rank", () => {
     expect(r.hash).toBe(hashContent(disk));
   });
 
+  it("내용이 그대로인 노트에는 다시 적지 않는다 — 시각만 바뀐 커밋이 생기지 않는다", async () => {
+    const first = await owner.write("업무/같음.md", "# 같음\n", null);
+    await owner.write("업무/옆.md", "# 옆\n", null);
+    const before = (await vault.git.log()).length;
+    vi.setSystemTime(new Date("2026-10-30T09:20:00Z"));
+    // 같은 내용을 다시 쓴다(웹 저장·REST write)
+    const again = await owner.write("업무/같음.md", first.content, first.hash);
+    expect(again.hash).toBe(first.hash);
+    expect((await vault.git.log()).length).toBe(before);
+    // 일괄 쓰기에서 안 바뀐 파일은 그대로, 바뀐 파일만 새 시각
+    const side = await vault.read("업무/옆.md");
+    await owner.batch([
+      { op: "write", path: "업무/같음.md", content: first.content, baseHash: first.hash },
+      { op: "write", path: "업무/옆.md", content: side.content.replace("# 옆", "# 옆 고침"), baseHash: side.hash },
+    ]);
+    expect((await vault.read("업무/같음.md")).content).toBe(first.content);
+    expect(await fm("업무/옆.md")).toEqual({ edited: "2026-10-30T09:20:00Z" });
+  });
+
   it("기기 토큰(동기화)의 쓰기는 보낸 내용 그대로 둔다", async () => {
     const device = new ScopedVault(vault, devicePrincipal, index, wiki);
     const sent = "---\nedited: 2026-01-01T00:00:00Z\n---\n기기에서 쓴 글\n";
