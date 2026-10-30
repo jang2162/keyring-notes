@@ -6,4 +6,4 @@
 | --- | --- |
 | lefthook 훅이 부르는 명령을 쓰거나 고칠 때 | `docs/guideline/lefthook/00-toolchain.md` |
 | lefthook 의 pre-commit·pre-push 검사 범위를 정하거나 고칠 때 | `docs/guideline/lefthook/01-pre-push.md` |
-| lefthook 의 post-checkout 훅을 쓰거나 고칠 때 | `docs/guideline/lefthook/02-post-checkout.md` |
+| lefthook 의 post-checkout·post-merge·post-rewrite 훅을 쓰거나 고칠 때 | `docs/guideline/lefthook/02-post-checkout.md` |
