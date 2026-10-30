@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { LocalVault, MemoryStore, NotFoundError, restoreTargets, SyncEngine, trashHead, type FileEntry } from "../src/index.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { LocalVault, MemoryStore, NotFoundError, restoreTargets, stampEdited, SyncEngine, trashHead, withoutEdited, type FileEntry } from "../src/index.js";
 import { FakeServer } from "./fakeServer.js";
 
 async function vault(files: Record<string, string> = {}) {
@@ -10,7 +10,8 @@ async function vault(files: Record<string, string> = {}) {
   return { store, v };
 }
 
-const text = async (v: LocalVault, p: string) => (await v.read(p)).content;
+/** 노트 내용. 쓰기·되살리기가 적은 수정 시각(edited)은 빼고 본다 — 이 시험들은 시각이 아닌 휴지통 동작을 본다 */
+const text = async (v: LocalVault, p: string) => withoutEdited((await v.read(p)).content);
 const decode = (d: Uint8Array | null) => (d ? new TextDecoder().decode(d) : null);
 
 /**
@@ -66,6 +67,10 @@ describe("휴지통 판정(core)", () => {
 });
 
 describe("휴지통(로컬 볼트: 기록 기반)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("지운 노트가 보이고, 미리보기는 지우기 직전 내용, 되살리면 원래 자리에 한 기록으로 생기고 목록에서 빠진다", async () => {
     const { v } = await vault({ "W.md": "", "W/a.md": "처음" });
     const a = await v.read("W/a.md");
@@ -76,7 +81,7 @@ describe("휴지통(로컬 볼트: 기록 기반)", () => {
     expect(page.items).toHaveLength(1);
     const item = page.items[0];
     expect(item).toMatchObject({ node: "W/a", notes: ["W/a.md"], attachments: [], lost: 0, author: "노트북" });
-    expect(await v.trashPreview(item.id, "W/a.md")).toBe("지우기 직전");
+    expect(withoutEdited(await v.trashPreview(item.id, "W/a.md"))).toBe("지우기 직전");
     const before = v.entries().length;
     expect(await v.restoreTrash(item.id)).toEqual({ restored: [["W/a.md", "W/a.md"]], lost: 0 });
     expect(await text(v, "W/a.md")).toBe("지우기 직전");
@@ -130,7 +135,7 @@ describe("휴지통(로컬 볼트: 기록 기반)", () => {
     expect(v.trash().items).toHaveLength(1);
     expect(await v.restoreTrash(id, ["W/a.md"])).toEqual({ restored: [["W/a.md", "W/a 2.md"]], lost: 0 });
     expect(await text(v, "W/a 2.md")).toBe("옛 글");
-    expect(new TextDecoder().decode((await v.store.read("W/A.md"))!)).toBe("다른 창의 새 글");
+    expect(withoutEdited(new TextDecoder().decode((await v.store.read("W/A.md"))!))).toBe("다른 창의 새 글");
     // 정확히 같은 경로가 생겨도 덮어쓰지 않는다
     const id2 = v.trash().items.find((i) => i.notes[0] === "W/a.md")?.id;
     expect(id2).toBeUndefined();
@@ -178,6 +183,46 @@ describe("휴지통(로컬 볼트: 기록 기반)", () => {
     expect(v.trash().items.map((i) => i.notes[0])).toEqual(["W/n6.md", "W/n5.md", "W/n4.md", "W/n2.md", "W/n0.md"]);
   });
 
+  it("다른 기기·웹의 이름 바꾸기가 새 수정 시각과 함께 들어와도 휴지통에 지운 노트로 보이지 않는다", async () => {
+    const server = new FakeServer();
+    await server.put("W.md", "");
+    await server.put("W/옛이름.md", stampEdited("W/옛이름.md", "본문", "2026-10-30T09:00:00Z"));
+    const { v } = await vault();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    // 서버는 이동한 노트에 새 시각을 적는다(기기 토큰이 아닌 쓰기)
+    server.files.delete("W/옛이름.md");
+    await server.put("W/새이름.md", stampEdited("W/새이름.md", "본문", "2026-10-30T10:00:00Z"));
+    await sync.run();
+    expect(await text(v, "W/새이름.md")).toBe("본문");
+    expect(v.trash().items).toEqual([]);
+    // 내용이 정말 바뀐 것은 짝짓지 않는다
+    server.files.delete("W/새이름.md");
+    await server.put("W/다른.md", stampEdited("W/다른.md", "다른 본문", "2026-10-30T11:00:00Z"));
+    await sync.run();
+    expect(v.trash().items.map((i) => i.notes)).toEqual([["W/새이름.md"]]);
+  });
+
+  it("되살린 노트가 이미 있으면 수정 시각이 달라도 같은 내용으로 보고 사본을 만들지 않는다", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T09:00:00Z"));
+    const { v } = await vault({ "W.md": "", "W/a.md": "처음" });
+    await v.write("W/a.md", "지우기 직전", (await v.read("W/a.md")).hash);
+    await v.remove("W/a.md", (await v.read("W/a.md")).hash);
+    const [item] = v.trash().items;
+    vi.setSystemTime(new Date("2026-10-30T09:05:00Z"));
+    await v.restoreTrash(item.id);
+    // 낡은 목록(다른 창)으로 한 번 더 눌렀다 — 되살린 노트는 새 시각이 적혀 지운 때의 내용과 그 줄만 다르다
+    vi.setSystemTime(new Date("2026-10-30T09:10:00Z"));
+    await expect(v.restoreTrash(item.id, ["W/a.md"])).rejects.toBeInstanceOf(NotFoundError);
+    expect(
+      v
+        .tree()
+        .find((n) => n.name === "W")
+        ?.children?.map((n) => n.name),
+    ).toEqual(["a.md"]);
+  });
+
   it("동기화로 받은 이름 바꾸기는 휴지통에 없다(한 기록 안의 지우기와 같은 내용의 만들기)", async () => {
     const server = new FakeServer();
     await server.put("W.md", "");
@@ -207,18 +252,28 @@ describe("휴지통(로컬 볼트: 기록 기반)", () => {
   });
 
   it("앱 밖 이름 바꾸기는 휴지통에 없고, 빈 노트는 짝짓지 않으며, 같은 내용은 하나씩만 짝짓는다", async () => {
+    // 같은 내용(x·y)이 같은 수정 시각으로 적히게 시계를 멈춘다
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T09:00:00Z"));
     const { v, store } = await vault({ "W.md": "" });
     // 휴지통은 기록에 남은 노트만 다룬다(앱으로 만든 것)
-    for (const [p, c] of Object.entries({ "W/a.md": "같은 글", "W/빈.md": "", "W/x.md": "겹침", "W/y.md": "겹침" })) await v.write(p, c, null);
+    for (const [p, c] of Object.entries({ "W/a.md": "같은 글", "W/빈.md": "임시", "W/x.md": "겹침", "W/y.md": "겹침" })) await v.write(p, c, null);
+    // 앱으로 쓴 노트에는 수정 시각이 적히므로 빈 노트는 앱 밖에서 비운다
+    store.touch("W/빈.md", "");
+    await v.rescan();
+    const disk = (p: string) => decode(store.files.get(p)!.data)!;
+    // 앱 밖 이름 바꾸기는 내용(적힌 수정 시각 포함)을 그대로 둔다
+    const a = disk("W/a.md");
+    const x = disk("W/x.md");
     await store.remove("W/a.md");
-    store.touch("W/b.md", "같은 글");
+    store.touch("W/b.md", a);
     // 빈 노트를 지우고 다른 빈 노트를 만들었다: 지운 빈 노트는 휴지통에 보여야 한다
     await store.remove("W/빈.md");
     store.touch("W/새 빈.md", "");
     // 같은 내용 둘을 지우고 하나를 만들었다: 경로 순으로 앞의 것(x)만 이동으로 보고 y 는 지운 것
     await store.remove("W/x.md");
     await store.remove("W/y.md");
-    store.touch("W/z.md", "겹침");
+    store.touch("W/z.md", x);
     await v.rescan();
     // 새 파일 중 사라진 노트와 같은 내용인 것(b·z)만 기록에 남는다(빈 새 노트는 남지 않는다)
     expect(

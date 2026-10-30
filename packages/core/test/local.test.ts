@@ -1,7 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { ConflictError, ForbiddenError, LocalVault, MemoryStore, NotFoundError, sha256Hex, sha256Sync, utf8 } from "../src/index.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  ConflictError,
+  ForbiddenError,
+  LocalVault,
+  MemoryStore,
+  NotFoundError,
+  parseFrontmatter,
+  sha256Hex,
+  sha256Sync,
+  SyncEngine,
+  utf8,
+} from "../src/index.js";
+import { FakeServer } from "./fakeServer.js";
 
 const KO_SETTINGS = "---\nkeyring: settings\nvault:\n  language: ko\n---\n";
+
+/** 쓰기 계층이 적은 수정 시각(edited) 줄을 뗀 내용 — 시각이 아닌 다른 동작을 보는 시험에서 내용을 비교할 때 */
+const unstamped = (s: string | null | undefined) =>
+  (s ?? "").replace(/^---\n((?:.*\n)*?)edited: [^\n]*\n((?:.*\n)*?)---\n/, (_m, a: string, b: string) => (a + b ? `---\n${a}${b}---\n` : ""));
 
 /** 볼트 언어는 한국어(커밋 메시지·위키 목차가 한국어) */
 async function vault(files: Record<string, string> = {}) {
@@ -26,7 +42,8 @@ describe("로컬 볼트", () => {
   it("서버 없이 쓰기·읽기·검색·백링크·태그·위젯", async () => {
     const { v, store } = await vault({ "일기/첫날.md": "# 첫날\n\n#일상 오늘 [[계획]]을 세웠다.\n\n- [ ] 운동\n" });
     const plan = await v.write("계획.md", "---\nstatus: 진행\n---\n# 계획\n\n금리 공부\n", null);
-    expect(plan.hash).toBe(await sha256Hex("---\nstatus: 진행\n---\n# 계획\n\n금리 공부\n"));
+    expect(plan.hash).toBe(await sha256Hex(plan.content));
+    expect(unstamped(plan.content)).toBe("---\nstatus: 진행\n---\n# 계획\n\n금리 공부\n");
     expect(new TextDecoder().decode((await store.read("계획.md"))!)).toContain("금리 공부");
     expect(v.search("금리").map((h) => h.path)).toEqual(["계획.md"]);
     // 1~2글자 한글 단어도 찾는다
@@ -48,7 +65,7 @@ describe("로컬 볼트", () => {
     await expect(v.write("a.md", "셋", a.hash)).rejects.toBeInstanceOf(ConflictError);
     await expect(v.write("a.md", "새로", null)).rejects.toBeInstanceOf(ConflictError);
     await expect(v.read("없음.md")).rejects.toBeInstanceOf(NotFoundError);
-    expect((await v.read("a.md")).content).toBe("둘");
+    expect(unstamped((await v.read("a.md")).content)).toBe("둘");
   });
 
   it("같은 폴더를 연 다른 창이 먼저 저장했으면 낡은 해시로 덮어쓰지 않는다", async () => {
@@ -59,10 +76,10 @@ describe("로컬 볼트", () => {
     const base = (await b.read("a.md")).hash;
     await a.write("a.md", "A 창", (await a.read("a.md")).hash);
     await expect(b.write("a.md", "B 창", base)).rejects.toBeInstanceOf(ConflictError);
-    expect(new TextDecoder().decode((await store.read("a.md"))!)).toBe("A 창");
+    expect(unstamped(new TextDecoder().decode((await store.read("a.md"))!))).toBe("A 창");
     // 충돌을 받은 뒤 다시 읽으면 다른 창의 내용이 보이고, 그 해시로는 쓸 수 있다
     const fresh = await b.read("a.md");
-    expect(fresh.content).toBe("A 창");
+    expect(unstamped(fresh.content)).toBe("A 창");
     await b.write("a.md", "B 창", fresh.hash);
     // 지우기도 같다
     await expect(a.remove("a.md", (await a.read("a.md")).hash)).rejects.toBeInstanceOf(ConflictError);
@@ -76,9 +93,9 @@ describe("로컬 볼트", () => {
     const hist = v.history("a.md");
     expect(hist.map((h) => h.message)).toEqual(["수정: a.md", "수정: a.md", "기존 내용"]);
     expect(await v.revision("a.md", hist[2].rev)).toBe("원래");
-    expect(await v.revision("a.md", hist[1].rev)).toBe("고침1");
+    expect(unstamped(await v.revision("a.md", hist[1].rev))).toBe("고침1");
     const r = await v.rollback("a.md", hist[2].rev, c.hash);
-    expect(r.content).toBe("원래");
+    expect(unstamped(r.content)).toBe("원래");
     await v.remove("a.md", r.hash);
     expect(await v.revision("a.md", v.history("a.md")[0].rev)).toBeNull();
   });
@@ -89,7 +106,7 @@ describe("로컬 볼트", () => {
     const r = await v.move("a.md", "폴더/a2.md", a.hash, { updateLinks: false });
     expect(r.linksUpdated).toEqual([]);
     await expect(v.read("a.md")).rejects.toBeInstanceOf(NotFoundError);
-    expect((await v.read("폴더/a2.md")).content).toBe("내용");
+    expect(unstamped((await v.read("폴더/a2.md")).content)).toBe("내용");
     expect(v.history("폴더/a2.md")[0].message).toContain("이동");
     expect(v.lint().issues.map((i) => i.kind)).toContain("broken_link");
   });
@@ -105,8 +122,10 @@ describe("로컬 볼트", () => {
     const r = await v.move("업무/계획.md", "보관/2026 계획.md", a.hash);
     expect(r.linksUpdated.sort()).toEqual(["노트.md", "보관/2026 계획.md"]);
     expect(r.linkCount).toBe(4);
-    expect(r.content).toBe("# 계획\n[회의](../업무/회의록.md)");
-    expect((await v.read("노트.md")).content).toBe("---\nsources: ['[[2026 계획]]']\n---\n[[2026 계획#일정|일정]] 그리고 [본문](보관/2026%20계획.md)");
+    expect(unstamped(r.content)).toBe("# 계획\n[회의](../업무/회의록.md)");
+    expect(unstamped((await v.read("노트.md")).content)).toBe(
+      "---\nsources: ['[[2026 계획]]']\n---\n[[2026 계획#일정|일정]] 그리고 [본문](보관/2026%20계획.md)",
+    );
     expect(v.lint().issues.filter((i) => i.kind === "broken_link")).toEqual([]);
     // 한 기록으로 남는다
     const entry = v.entries().at(-1)!;
@@ -153,7 +172,7 @@ describe("로컬 볼트", () => {
     const { v } = await vault({ "t.md": "- [ ] 하나\n- [ ] 둘\n" });
     const d = await v.read("t.md");
     const r = await v.setTask("t.md", 2, true, d.hash);
-    expect(r.content).toBe("- [ ] 하나\n- [x] 둘\n");
+    expect(unstamped(r.content)).toBe("- [ ] 하나\n- [x] 둘\n");
   });
 });
 
@@ -205,10 +224,10 @@ describe("공통 설정·노드 이동", () => {
       "보관/2026 프로젝트/도식.png",
       "보관/2026 프로젝트/참고.md",
     ]);
-    expect((await v.read("업무/밖.md")).content).toBe(
+    expect(unstamped((await v.read("업무/밖.md")).content)).toBe(
       "[[2026 프로젝트]] [[보관/2026 프로젝트/참고]] ![[보관/2026 프로젝트/도식.png]] [x](../보관/2026%20프로젝트/도식.png)",
     );
-    expect((await v.read("보관/2026 프로젝트/계획.md")).content).toBe("![[도식.png]] ![](도식.png) [[참고]]");
+    expect(unstamped((await v.read("보관/2026 프로젝트/계획.md")).content)).toBe("![[도식.png]] ![](도식.png) [[참고]]");
     expect(new TextDecoder().decode(await v.readBytes("보관/2026 프로젝트/도식.png"))).toBe("PNG");
     await expect(v.readBytes("업무/프로젝트/도식.png")).rejects.toBeInstanceOf(NotFoundError);
     await expect(v.moveNode("보관", "보관/안")).rejects.toMatchObject({ code: "node_into_self" });
@@ -225,7 +244,7 @@ describe("공통 설정·노드 이동", () => {
     expect(v.entries().at(-1)!.message).toBe("노드 삭제: 개인/여행");
     expect(v.tree().find((n) => n.name === "개인")).toBeUndefined();
     await v.restoreFiles(deleted);
-    expect((await v.read("개인/여행/제주/일정.md")).content).toBe("일정");
+    expect(unstamped((await v.read("개인/여행/제주/일정.md")).content)).toBe("일정");
     expect(new TextDecoder().decode(await v.readBytes("개인/여행/사진.png"))).toBe("IMG");
   });
 });
@@ -251,9 +270,9 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     const base = (await b.read("a.md")).hash;
     await a.write("a.md", "A 가 고친 글", (await a.read("a.md")).hash);
     await expect(b.move("a.md", "b.md", base)).rejects.toBeInstanceOf(ConflictError);
-    expect(dec(await store.read("a.md"))).toBe("A 가 고친 글");
+    expect(unstamped(dec(await store.read("a.md")))).toBe("A 가 고친 글");
     await b.move("a.md", "b.md", (await b.read("a.md")).hash);
-    expect(dec(await store.read("b.md"))).toBe("A 가 고친 글");
+    expect(unstamped(dec(await store.read("b.md")))).toBe("A 가 고친 글");
   });
 
   it("move 의 링크 고치기: 링크를 가진 다른 문서는 디스크의 내용으로 고친다", async () => {
@@ -261,14 +280,14 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     const base = (await b.read("a.md")).hash;
     await a.write("c.md", "[[a]] A 가 고친 글", (await a.read("c.md")).hash);
     await b.move("a.md", "b.md", base);
-    expect(dec(await store.read("c.md"))).toBe("[[b]] A 가 고친 글");
+    expect(unstamped(dec(await store.read("c.md")))).toBe("[[b]] A 가 고친 글");
   });
 
   it("moveNode: 하위 문서는 디스크의 내용으로 옮긴다", async () => {
     const { store, a, b } = await two({ "N.md": "노드", "N/x.md": "원래" });
     await a.write("N/x.md", "A 가 고친 글", (await a.read("N/x.md")).hash);
     await b.moveNode("N", "M");
-    expect(dec(await store.read("M/x.md"))).toBe("A 가 고친 글");
+    expect(unstamped(dec(await store.read("M/x.md")))).toBe("A 가 고친 글");
     expect(await store.read("N/x.md")).toBeNull();
   });
 
@@ -276,7 +295,7 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     const { store, a, b } = await two({ "N.md": "노드", "N/x.md": "원래" });
     await a.write("N/x.md", "A 가 고친 글", (await a.read("N/x.md")).hash);
     const r = await b.deleteNode("N");
-    expect(r.deleted.find((d) => d.path === "N/x.md")?.content).toBe("A 가 고친 글");
+    expect(unstamped(r.deleted.find((d) => d.path === "N/x.md")?.content)).toBe("A 가 고친 글");
     expect(await store.read("N/x.md")).toBeNull();
   });
 
@@ -284,7 +303,7 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     const { store, a, b } = await two({});
     await a.write("r.md", "A 가 만든 글", null);
     await expect(b.restoreFiles([{ path: "r.md", content: "B 되살림" }])).rejects.toBeInstanceOf(ConflictError);
-    expect(dec(await store.read("r.md"))).toBe("A 가 만든 글");
+    expect(unstamped(dec(await store.read("r.md")))).toBe("A 가 만든 글");
   });
 
   it("putFile: 다른 창이 먼저 올린 같은 이름 첨부는 덮지 않고 충돌", async () => {
@@ -308,8 +327,8 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     const base = (await b.read("a.md")).hash;
     await a.write("a.md", "AAAA", (await a.read("a.md")).hash);
     await expect(b.write("a.md", "BBBB", base)).rejects.toBeInstanceOf(ConflictError);
-    expect(dec(await store.read("a.md"))).toBe("AAAA");
-    expect((await b.read("a.md")).content).toBe("AAAA");
+    expect(unstamped(dec(await store.read("a.md")))).toBe("AAAA");
+    expect(unstamped((await b.read("a.md")).content)).toBe("AAAA");
   });
 
   it("applySync: 동기화 스냅샷 뒤 다른 창이 저장했으면 서버 내용으로 덮지 않고 건너뛴다", async () => {
@@ -319,7 +338,7 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     await solo.write("a.md", "새 창에서 고친 글", (await solo.read("a.md")).hash);
     const applied = await main.applySync([{ path: "a.md", data: new TextEncoder().encode("서버 글"), expect: expectHash }], "pull");
     expect(applied).toEqual([]);
-    expect(dec(await store.read("a.md"))).toBe("새 창에서 고친 글");
+    expect(unstamped(dec(await store.read("a.md")))).toBe("새 창에서 고친 글");
     // 다음 동기화의 스냅샷은 새 창의 저장을 본다(그때 기존 규칙으로 합치거나 충돌 사본을 만든다)
     expect((await main.snapshot()).get("a.md")!.hash).not.toBe(expectHash);
   });
@@ -329,7 +348,7 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     await main.snapshot();
     await solo.write("n.md", "새 창 새 글", null);
     expect(await main.applySync([{ path: "n.md", data: new TextEncoder().encode("서버 새 글"), expect: null }], "pull")).toEqual([]);
-    expect(dec(await store.read("n.md"))).toBe("새 창 새 글");
+    expect(unstamped(dec(await store.read("n.md")))).toBe("새 창 새 글");
   });
 });
 
@@ -352,5 +371,128 @@ describe("트리에 정렬·순서·수정 시각", () => {
     expect(na.rank).toBeUndefined();
     expect(na.edited).toBe(store.files.get("업무/나.md")!.mtime);
     expect(tree.find((n) => n.path === "업무")!.edited).toBeUndefined();
+  });
+});
+
+describe("로컬 볼트의 수정 시각(edited)과 rank", () => {
+  const NOW = "2026-10-30T09:12:33Z";
+  const text = (d: Uint8Array | null) => new TextDecoder().decode(d!);
+  const editedIn = (content: string) => parseFrontmatter(content).data?.edited;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T09:12:33.789Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("write 한 노트에 지금 시각이 적히고, 돌려준 내용·해시가 디스크의 것이다", async () => {
+    const { v, store } = await vault();
+    const doc = await v.write("A.md", "# A\n본문", null);
+    const disk = text(await store.read("A.md"));
+    expect(disk).toBe(`---\nedited: ${NOW}\n---\n# A\n본문`);
+    expect(doc.content).toBe(disk);
+    expect(doc.hash).toBe(await sha256Hex(disk));
+    expect((await v.read("A.md")).hash).toBe(doc.hash);
+    expect(v.entries().at(-1)!.files[0].hash).toBe(doc.hash);
+  });
+
+  it("옛 edited 가 든 초안을 쓰면 새 시각으로 적힌다", async () => {
+    const { v, store } = await vault({ "A.md": "---\nedited: 2026-01-01T00:00:00Z\n---\n처음" });
+    const base = (await v.read("A.md")).hash;
+    await v.write("A.md", "---\nedited: 2026-01-01T00:00:00Z\n---\n고침", base);
+    expect(editedIn(text(await store.read("A.md")))).toBe(NOW);
+  });
+
+  it("YAML 이 깨진 노트도 저장되고 내용은 그대로다", async () => {
+    const { v, store } = await vault();
+    const broken = "---\na: [\n---\n본문";
+    const doc = await v.write("B.md", broken, null);
+    expect(text(await store.read("B.md"))).toBe(broken);
+    expect(doc.hash).toBe(await sha256Hex(broken));
+  });
+
+  it("이름을 바꾸면 옮긴 노트와 링크를 고친 다른 노트 모두 edited 가 지금", async () => {
+    const { v, store } = await vault({ "A.md": "에이", "B.md": "[[A]] 를 본다" });
+    const r = await v.move("A.md", "C.md", (await v.read("A.md")).hash);
+    expect(r.linksUpdated).toContain("B.md");
+    expect(editedIn(r.content)).toBe(NOW);
+    expect(editedIn(text(await store.read("C.md")))).toBe(NOW);
+    expect(text(await store.read("B.md"))).toBe(`---\nedited: ${NOW}\n---\n[[C]] 를 본다`);
+  });
+
+  it("동기화로 받은 노트와 공통 설정 파일에는 edited 를 적지 않는다", async () => {
+    const { v, store } = await vault();
+    const server = new FakeServer();
+    await server.put("서버.md", "서버에서 쓴 글");
+    const report = await new SyncEngine(v, server).run();
+    expect(report.pulled).toContain("서버.md");
+    expect(text(await store.read("서버.md"))).toBe("서버에서 쓴 글");
+    const s = await v.read("keyring-settings.md");
+    const next = s.content + "\n메모\n";
+    await v.write("keyring-settings.md", next, s.hash);
+    expect(text(await store.read("keyring-settings.md"))).toBe(next);
+  });
+
+  it("다른 부모로 옮긴 노드는 노트의 rank 를 지우고, 같은 부모 안 이름 바꾸기는 남긴다", async () => {
+    const { v, store } = await vault({
+      "업무/A.md": "---\nrank: V\nicon: 📁\n---\n에이",
+      "업무/A/b.md": "---\nrank: k\n---\n비",
+      "개인.md": "개인",
+    });
+    await v.moveNode("업무/A", "업무/B");
+    expect(parseFrontmatter(text(await store.read("업무/B.md"))).data).toEqual({ rank: "V", icon: "📁", edited: NOW });
+    const before = v.entries().length;
+    await v.moveNode("업무/B", "개인/B");
+    expect(v.entries().length).toBe(before + 1);
+    expect(parseFrontmatter(text(await store.read("개인/B.md"))).data).toEqual({ icon: "📁", edited: NOW });
+    // 함께 옮긴 하위 노트의 rank 는 새 부모(B) 안의 순서라 그대로다
+    expect(parseFrontmatter(text(await store.read("개인/B/b.md"))).data).toEqual({ rank: "k", edited: NOW });
+  });
+
+  it("writeMany 는 여러 파일을 한 기록으로 쓰고, baseHash 하나라도 틀리면 아무것도 바꾸지 않는다", async () => {
+    const { v, store } = await vault({ "a.md": "에이", "b.md": "비" });
+    const a = await v.read("a.md");
+    const b = await v.read("b.md");
+    const before = v.entries().length;
+    const out = await v.writeMany(
+      [
+        { path: "a.md", content: "에이 2", baseHash: a.hash },
+        { path: "c.md", content: "씨", baseHash: null },
+      ],
+      "순서",
+    );
+    // 처음 고치는 a.md 의 「기존 내용」 기록 뒤에 두 파일이 든 기록 하나
+    expect(
+      v
+        .entries()
+        .slice(before)
+        .filter((e) => e.message === "순서"),
+    ).toHaveLength(1);
+    expect(v.entries().at(-1)!.message).toBe("순서");
+    expect(
+      v
+        .entries()
+        .at(-1)!
+        .files.map((f) => f.path),
+    ).toEqual(["a.md", "c.md"]);
+    expect(out).toEqual([
+      { path: "a.md", hash: await sha256Hex(text(await store.read("a.md"))) },
+      { path: "c.md", hash: await sha256Hex(text(await store.read("c.md"))) },
+    ]);
+    expect(editedIn(text(await store.read("c.md")))).toBe(NOW);
+    const now = v.entries().length;
+    await expect(
+      v.writeMany(
+        [
+          { path: "b.md", content: "비 2", baseHash: b.hash },
+          { path: "a.md", content: "에이 3", baseHash: a.hash },
+        ],
+        "틀림",
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+    expect(v.entries().length).toBe(now);
+    expect(text(await store.read("b.md"))).toBe("비");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConflictError, LocalVault, MemoryStore, NotFoundError, SyncEngine } from "../src/index.js";
+import { ConflictError, LocalVault, MemoryStore, NotFoundError, SyncEngine, withoutEdited } from "../src/index.js";
 import { FakeServer } from "./fakeServer.js";
 
 async function device(name = "폰") {
@@ -9,9 +9,13 @@ async function device(name = "폰") {
   return { store, v };
 }
 
+/** 노트 내용. 기기가 쓸 때 적은 수정 시각(edited)은 빼고 본다 — 시각을 보는 시험은 아래 「수정 시각」 묶음에 따로 있다 */
 async function content(v: LocalVault, p: string) {
-  return (await v.read(p)).content;
+  return withoutEdited((await v.read(p)).content);
 }
+
+/** 서버의 노트 내용(수정 시각은 빼고) */
+const body = (text: string | undefined) => (text === undefined ? undefined : withoutEdited(text));
 
 describe("동기화", () => {
   it("처음 연결: 서버 문서는 받고 기기 문서는 보낸다", async () => {
@@ -25,7 +29,7 @@ describe("동기화", () => {
     expect(r.pushed).toEqual(["기기.md"]);
     expect(await content(v, "서버.md")).toBe("서버에서 쓴 글");
     expect([...(await store.read("그림.png"))!]).toEqual([1, 2, 3]);
-    expect(server.text("기기.md")).toBe("오프라인에서 쓴 글");
+    expect(body(server.text("기기.md"))).toBe("오프라인에서 쓴 글");
     // 다시 돌리면 할 일이 없다
     const again = await new SyncEngine(v, server).run();
     expect([again.pulled, again.pushed, again.conflicts, again.errors].flat()).toEqual([]);
@@ -68,8 +72,8 @@ describe("동기화", () => {
     expect(copy).toMatch(/^메모 \(sync conflict copy \d{8}-\d{4}\)\.md$/);
     expect(await content(v, "메모.md")).toBe("서버에서 고침");
     expect(await content(v, copy)).toBe("기기에서 고침");
-    expect(server.text(copy)).toBe("기기에서 고침");
-    expect(server.text("메모.md")).toBe("서버에서 고침");
+    expect(body(server.text(copy))).toBe("기기에서 고침");
+    expect(body(server.text("메모.md"))).toBe("서버에서 고침");
     const again = await sync.run();
     expect([again.pulled, again.pushed, again.conflicts].flat()).toEqual([]);
   });
@@ -88,7 +92,7 @@ describe("동기화", () => {
     expect(r.merged).toEqual(["메모.md"]);
     const merged = doc.replace("운동", "운동 30분").replace("독서", "독서 1시간");
     expect(await content(v, "메모.md")).toBe(merged);
-    expect(server.text("메모.md")).toBe(merged);
+    expect(body(server.text("메모.md"))).toBe(merged);
     expect(v.history("메모.md")[0].message).toContain("merged automatically");
     // 그 뒤로는 같다
     const again = await sync.run();
@@ -135,7 +139,7 @@ describe("동기화", () => {
     server.files.delete("y.md");
     const r = await sync.run();
     expect(await content(v, "x.md")).toBe("x 서버 수정");
-    expect(server.text("y.md")).toBe("y 기기 수정");
+    expect(body(server.text("y.md"))).toBe("y 기기 수정");
     expect(r.conflicts).toEqual([]);
   });
 
@@ -155,7 +159,7 @@ describe("동기화", () => {
     };
     const r = await sync.run();
     expect(r.conflicts.map((c) => c.path)).toEqual(["a.md"]);
-    expect(server.text("a.md")).toBe("다른 기기");
+    expect(body(server.text("a.md"))).toBe("다른 기기");
     expect(await content(v, r.conflicts[0].copy)).toBe("기기");
   });
 
@@ -223,7 +227,7 @@ describe("동기화", () => {
     const s = await sync.run();
     expect(s.deletedRemote.sort()).toEqual(["노트/그림.png", "노트/글.md"]);
     expect([...server.files.keys()].sort()).toEqual(["보관/노트/그림.png", "보관/노트/글.md"]);
-    expect(server.text("보관/노트/글.md")).toBe("![[그림.png]] [링크](그림.png)");
+    expect(body(server.text("보관/노트/글.md"))).toBe("![[그림.png]] [링크](그림.png)");
     const again = await sync.run();
     expect([again.pushed, again.pulled, again.deletedLocal, again.deletedRemote, again.skipped].flat()).toEqual([]);
   });

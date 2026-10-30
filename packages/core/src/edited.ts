@@ -30,6 +30,21 @@ function setEdited(content: string, stamp: string): string {
   }
 }
 
+/** edited 를 뺀 내용(edited 가 없거나 YAML 이 깨졌으면 그대로). 같은 노트를 다른 때 적은 두 판을 견줄 때 */
+export function withoutEdited(content: string): string {
+  if (parseFrontmatter(content).data?.[EDITED_FIELD] === undefined) return content;
+  try {
+    return setFrontmatterField(content, EDITED_FIELD, null);
+  } catch {
+    return content;
+  }
+}
+
+/** edited 줄만 다르거나 같은 두 내용인지 */
+export function sameExceptEdited(a: string, b: string): boolean {
+  return a === b || withoutEdited(a) === withoutEdited(b);
+}
+
 /** 노트에 수정 시각을 적는다. 마크다운이 아니거나 공통 설정 파일(트리의 노트가 아니다)이면 그대로 */
 export function stampEdited(path: string, content: string, stamp: string): string {
   if (!isMarkdown(path) || isVaultSettingsPath(path)) return content;

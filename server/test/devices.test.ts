@@ -1,6 +1,6 @@
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { HttpRemote, LocalVault, MemoryStore, pairDevice, SyncEngine } from "@keyring-notes/core";
+import { HttpRemote, LocalVault, MemoryStore, pairDevice, SyncEngine, withoutEdited } from "@keyring-notes/core";
 import { createApp } from "../src/app.js";
 import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
@@ -148,7 +148,8 @@ describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
     expect(r.errors).toEqual([]);
     expect(r.pushed).toEqual(["오프라인.md"]);
     expect(r.pulled.sort()).toEqual(["업무/경제/SCHEMA.md", "업무/경제/raw/assets/표.png", "업무/경제/raw/기사.md"]);
-    expect((await owner.read("오프라인.md")).content).toBe("비행기에서 씀");
+    // 기기가 쓸 때 적은 수정 시각(edited)은 빼고 본문을 본다
+    expect(withoutEdited((await owner.read("오프라인.md")).content)).toBe("비행기에서 씀");
     expect((await vault.history("오프라인.md"))[0].author).toBe("me (노트북)");
     // 위키 index는 기기가 따로 만든다
     expect((await local.read("업무/경제/wiki/index.md")).content).toContain("[[업무/경제/raw/기사|기사]]");
@@ -180,8 +181,8 @@ describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
     r = await sync.run();
     expect(r.merged).toEqual(["할일.md"]);
     const both = doc.replace("- 운동", "- 운동 30분").replace("- 장보기", "- 장보기(우유)");
-    expect((await owner.read("할일.md")).content).toBe(both);
-    expect((await local.read("할일.md")).content).toBe(both);
+    expect(withoutEdited((await owner.read("할일.md")).content)).toBe(both);
+    expect((await local.read("할일.md")).content).toBe((await owner.read("할일.md")).content);
     expect((await vault.history("할일.md"))[0].author).toBe("me (노트북)");
   });
 });
