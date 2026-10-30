@@ -14,7 +14,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ### Changed
 
-- Desktop app: a new version found at startup no longer opens a dialog. A red dot on the Settings gear and on **Settings** → **About** shows it instead, until the update is installed. Update settings moved from **This device & sync** to **About**.
+- Desktop app: a new version found at startup no longer opens a dialog. An orange dot on the Settings gear and on **Settings** → **About** shows it instead, until the update is installed. Update settings moved from **This device & sync** to **About**.
 - The web app installed to the home screen now keeps the whole vault on the device and syncs it with the server, so notes you never opened also open offline. While the device vault is empty and not connected, it opens sync settings with the server address filled in. A mode you chose with `?local` or `?local=0` still wins, and saves still waiting from the server mode are sent first.
 - To keep using the server mode in the installed web app, open `https://<server>/?local=0` once in a tab of the same browser. Choosing `?local=0` before this release was not remembered.
 - On a device vault in the browser, and when saving offline in the server mode, the app asks the browser to keep its storage. **This device & sync** says whether it does.

@@ -38,7 +38,7 @@ On macOS, quitting from the Dock, logging out or shutting down does not ask yet.
 
 ## Update the desktop app
 
-A few seconds after start, the app asks GitHub Releases whether a new version is out. If there is one, the app doesn't interrupt you. Instead, a red dot appears on the gear at the bottom of the rail and on **About** in Settings. The dot stays until the update is installed.
+A few seconds after start, the app asks GitHub Releases whether a new version is out. If there is one, the app doesn't interrupt you. Instead, an orange dot appears on the gear at the bottom of the rail and on **About** in Settings. The dot stays until the update is installed.
 
 Settings → **About** shows the new version. Choose **Install…** to see what's new. Only after you choose **Update and restart** does the app download the update, verify its signature, install it and restart. Before restarting, it asks in each window with unsaved changes, as `Cmd+Q` does. If you cancel, the app doesn't restart; the update is already installed and is used the next time you open the app.
 
@@ -52,7 +52,7 @@ While a new version is waiting, `Cmd+Q` asks about it first: **Install and quit*
 
 Quitting from the Dock, logging out, or closing the last window with its close button doesn't ask about the update.
 
-To turn the startup check off, go to Settings → **About** → **Check for updates automatically**. With the check off, no request is sent at startup, so no red dot appears. **Check for updates** in the same place checks on demand and shows a new version right away.
+To turn the startup check off, go to Settings → **About** → **Check for updates automatically**. With the check off, no request is sent at startup, so no orange dot appears. **Check for updates** in the same place checks on demand and shows a new version right away.
 
 ## Sync with a server
 
