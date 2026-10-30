@@ -16,7 +16,8 @@ A note `A` is the file `A.md`, and its children live in the sibling folder `A/`.
 
 The top-level nodes of the vault are workspaces, for example `Work` and `Personal`. Notes cannot be created at the top of the vault.
 
-- Switch workspaces with the button at the top of the rail. The tree, quick open, search, tags, graph, home and today's note then cover that workspace only. Choose **All workspaces** to widen them again.
+- Switch workspaces with the switcher at the top of the left panel. When the left panel is collapsed, the switcher sits at the start of the path above the note. The tree, quick open, search, tags, graph, home and today's note then cover that workspace only. Choose **All workspaces** to widen them again.
+- The path above a note starts below the workspace, because the switcher already shows it. In **All workspaces** the path starts with the workspace.
 - Open tabs, tree expansion and the last note are remembered per workspace.
 - Opening a note in another workspace switches to that workspace.
 - A link `[[name]]` looks in the same workspace first, and searches the whole vault only if nothing is found there.

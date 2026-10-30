@@ -50,6 +50,7 @@ import {
   Trash2,
   Waypoints,
   ChevronsDownUp,
+  ChevronsUpDown,
   X,
 } from "lucide-react";
 import { api, ApiError, appMode, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
@@ -207,6 +208,8 @@ import {
   type SaveHold,
 } from "./closeWindow";
 import { tearOutAt } from "./tearOut";
+import { DockTitle, DRAG_REGION } from "./DockTitle";
+import { switcherSpot } from "./topbar";
 import { useAvailableUpdate } from "./update";
 import { SearchFilters, SearchResults } from "./Search";
 import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, SEARCH_LINES_FETCH, searchKey, type SearchFilter } from "./searchFilter";
@@ -414,6 +417,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /** 끌고 있는 탭이 올라간 칸과 놓을 자리 */
   const [dropAt, setDropAt] = useState<{ pane: string; zone: DropZone } | null>(null);
   const [wsMenu, setWsMenu] = useState<{ x: number; y: number } | null>(null);
+  /** 사이드바를 접었을 때 첫 줄 왼쪽 칸이 맨 위 왼쪽 탭 줄 위에 걸친 폭(DockTitle) */
+  const [titleOver, setTitleOver] = useState(0);
   /** 칸(id)마다 커서 줄·칸 */
   const [cursors, setCursors] = useState<Record<string, { line: number; col: number }>>({});
   /** 제목 칸에 커서를 둘 문서(새 문서·F2). 문서가 열린 뒤 에디터보다 늦게 잡는다 */
@@ -2584,30 +2589,39 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   // ── 화면 조각
   const wsIcon = (name: string) => (prefs.showIcons ? (iconMap.get(`${name}.md`) ?? null) : null);
-  const wsSwitcher = (
+  /**
+   * 워크스페이스 전환기 — 트리의 루트 표시를 겸한다. 사이드바 둘째 줄에서는 남는 폭을 다 채우고,
+   * 사이드바를 접으면 브레드크럼 첫 칸에 작게(compact) 놓인다(switcherSpot). 둘 다 같은 목록(wsMenuItems)을 연다
+   */
+  const wsName = allWs ? t("ws.all") : ws || t("ws.none");
+  const wsSwitcher = (compact: boolean) => (
     <button
       type="button"
-      className={`ws-switch${rl ? " with-label" : ""}`}
+      className={`ws-switch${compact ? " compact" : ""}`}
       aria-haspopup="menu"
-      aria-label={t("ws.switch", { name: allWs ? t("ws.all") : ws })}
-      {...tipProps({ label: allWs ? t("ws.all") : ws || t("ws.none"), side: railSide })}
+      aria-expanded={!!wsMenu}
+      aria-label={t("ws.switch", { name: wsName })}
+      {...tipProps({ label: wsName, side: "bottom" })}
       onClick={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
-        setWsMenu({ x: r.right + 4, y: r.top });
+        setWsMenu({ x: r.left, y: r.bottom + 4 });
       }}
     >
       {allWs ? (
-        <Layers size={18} strokeWidth={1.75} aria-hidden />
+        <span className="ws-mark" aria-hidden>
+          <Layers size={compact ? 14 : 16} strokeWidth={1.75} />
+        </span>
       ) : wsIcon(ws) ? (
-        <span className="ws-emoji" aria-hidden>
+        <span className="ws-mark ws-emoji" aria-hidden>
           {wsIcon(ws)}
         </span>
       ) : (
-        <span className="ws-letter" aria-hidden>
+        <span className="ws-mark ws-letter" aria-hidden>
           {[...(ws || "?")][0]}
         </span>
       )}
-      {rl && <span className="icon-btn-label">{allWs ? t("ws.allShort") : ws}</span>}
+      <span className="ws-switch-name">{wsName}</span>
+      <ChevronsUpDown className="ws-switch-caret" size={compact ? 12 : 14} strokeWidth={1.75} aria-hidden />
     </button>
   );
   // 워크스페이스마다 같은 폭의 앞자리(아이콘 또는 첫 글자)를 두어 이름이 왼쪽으로 맞고, 고른 것은 강조 모양으로
@@ -2631,8 +2645,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const rail = (
     <nav className={`rail${rl ? " with-labels" : ""}`} aria-label={t("rail.label")}>
       <div className="rail-top">
-        {wsSwitcher}
-        <span className="rail-sep" />
         <IconButton
           icon={Files}
           label={t("rail.files")}
@@ -2764,41 +2776,39 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const canInsert = !!doc && !doc.generated && !revision && !doc.virtual;
   // 고정: 지금 있는 노드 중 지금 워크스페이스의 것(지운 것·다른 기기에서 옮겨 간 것은 숨는다)
   const pinnedShown = shownPins(pins, (n) => pinExists(n, resolver.paths), inScope);
+  /** 사이드바 둘째 줄: 전환기 + 지금 보기의 단추(파일 보기면 트리 단추). 편집 칸의 문서 머리와 높이를 맞춘다(--head-h) */
+  const dockHead = (
+    <div className="dock-head">
+      {wsSwitcher(false)}
+      {prefs.leftView === "files" && (
+        <span className="panel-tools">
+          <IconButton
+            size={16}
+            icon={FilePlus}
+            label={t("tree.newNote")}
+            keys={keyOf("new")}
+            disabled={!ws}
+            why={t("ws.needOne")}
+            onClick={() => void createDoc()}
+          />
+          <IconButton
+            size={16}
+            icon={LocateFixed}
+            label={t("tree.reveal")}
+            disabled={!doc}
+            why={t("tree.revealWhy")}
+            onClick={() => treeRef.current?.reveal()}
+          />
+          <IconButton size={16} icon={ChevronsDownUp} label={t("tree.collapseAll")} onClick={() => treeRef.current?.collapseAll()} />
+          <TreeOptions prefs={prefs} />
+        </span>
+      )}
+    </div>
+  );
   const leftPanel = (
     <aside className="left-panel" aria-label={leftLabel}>
       {prefs.leftView === "files" && (
         <>
-          <div className="panel-head">
-            {allWs ? (
-              <strong>{t("ws.all")}</strong>
-            ) : (
-              <button type="button" className="panel-title-btn" {...tipProps({ label: t("ws.openNote") })} onClick={() => void openNode(ws)}>
-                {wsIcon(ws) && <DocIcon icon={wsIcon(ws)} />}
-                <strong>{ws}</strong>
-              </button>
-            )}
-            <span className="panel-tools">
-              <IconButton
-                size={16}
-                icon={FilePlus}
-                label={t("tree.newNote")}
-                keys={keyOf("new")}
-                disabled={!ws}
-                why={t("ws.needOne")}
-                onClick={() => void createDoc()}
-              />
-              <IconButton
-                size={16}
-                icon={LocateFixed}
-                label={t("tree.reveal")}
-                disabled={!doc}
-                why={t("tree.revealWhy")}
-                onClick={() => treeRef.current?.reveal()}
-              />
-              <IconButton size={16} icon={ChevronsDownUp} label={t("tree.collapseAll")} onClick={() => treeRef.current?.collapseAll()} />
-              <TreeOptions prefs={prefs} />
-            </span>
-          </div>
           {pinnedShown.length > 0 && (
             <div className="pins">
               <button type="button" className="pins-head" aria-expanded={prefs.pinsOpen} onClick={() => setPrefs({ pinsOpen: !prefs.pinsOpen })}>
@@ -2846,7 +2856,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         <>
           <div className="panel-head">
             <strong>{t("rail.search")}</strong>
-            {!allWs && <span className="meta panel-scope">{ws}</span>}
           </div>
           <div className="search-box">
             <input
@@ -2900,7 +2909,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         <>
           <div className="panel-head">
             <strong>{t("attach.title", { count: attachmentPaths.length })}</strong>
-            {!allWs && <span className="meta panel-scope">{ws}</span>}
           </div>
           <AttachmentList
             paths={attachmentPaths}
@@ -2915,7 +2923,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         <>
           <div className="panel-head">
             <strong>{t("tags.title", { count: tags.length })}</strong>
-            {!allWs && <span className="meta panel-scope">{ws}</span>}
           </div>
           <div className="tag-cloud">
             {tags.map((tg) => (
@@ -3192,9 +3199,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /** 탭을 끌어 옮길 때 dataTransfer 에 싣는 형식(트리의 끌기와 섞이지 않게 따로) */
   const TAB_DRAG = "application/x-keyring-tab";
-  /** 칸 하나의 탭 바(칸이 없으면 빈 탭 바). 탭을 끌어 다른 칸(가운데·가장자리)에 놓아 옮기거나 나눈다 — 놓을 자리는 renderDropZone */
-  const renderTabBar = (pane: Pane | null, withNav: boolean) => (
-    <nav className="tabbar" aria-label={t("tab.label")}>
+  /**
+   * 칸 하나의 탭 바(칸이 없으면 빈 탭 바). 탭을 끌어 다른 칸(가운데·가장자리)에 놓아 옮기거나 나눈다 — 놓을 자리는 renderDropZone.
+   * 맨 위 줄(top)의 탭 바는 창의 첫 줄이라 빈 자리가 창 끌기 영역이다(macOS 앱)
+   */
+  const renderTabBar = (pane: Pane | null, withNav: boolean, top: boolean) => (
+    <nav className="tabbar" aria-label={t("tab.label")} {...(top ? DRAG_REGION : {})}>
       {withNav && (
         <IconButton
           className="nav-toggle"
@@ -3279,6 +3289,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     lang,
     local,
     narrow: isNarrow,
+    allWorkspaces: allWs,
+    wsSwitcher: switcherSpot(isNarrow, prefs.leftOpen) === "crumbs" ? wsSwitcher(true) : null,
     resolver,
     resolverRef,
     daily,
@@ -3418,7 +3430,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         onFocusCapture={() => !focused && setLayout((l) => focusPane(l, p.id))}
         onMouseDownCapture={() => !focused && setLayout((l) => focusPane(l, p.id))}
       >
-        {renderTabBar(p, isNarrow || n === 1)}
+        {renderTabBar(p, isNarrow || n === 1, !edges.includes("edge-t"))}
         {e ? (
           <DocPane
             pane={p.id}
@@ -3467,7 +3479,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </div>
   ) : (
     <>
-      {renderTabBar(null, true)}
+      {renderTabBar(null, true, true)}
       {home}
     </>
   );
@@ -3479,12 +3491,17 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     !!doc &&
     rightPanelFloats(viewportWidth, { rail: rl ? 64 : 44, left: prefs.leftOpen ? prefs.leftWidth : 0, right: prefs.rightWidth });
   const sheetPane = isNarrow && tabSheet !== null ? paneOf(layout, tabSheet) : undefined;
+  const leftShown = (prefs.leftOpen && !isNarrow) || drawer === "left";
 
   return (
     <IconLookup.Provider value={iconOf}>
       <div
-        className={`shell${prefs.leftOpen ? " left-open" : ""}${rightOpen && doc && !isNarrow ? " right-open" : ""}${rightFloat ? " right-float" : ""}${drawer ? ` drawer-${drawer}` : ""}${rl ? " rail-labels" : ""}`}
-        style={{ ["--left-w" as string]: `${prefs.leftWidth}px`, ["--right-w" as string]: `${prefs.rightWidth}px` }}
+        className={`shell${prefs.leftOpen ? " left-open" : " left-closed"}${rightOpen && doc && !isNarrow ? " right-open" : ""}${rightFloat ? " right-float" : ""}${drawer ? ` drawer-${drawer}` : ""}${rl ? " rail-labels" : ""}`}
+        style={{
+          ["--left-w" as string]: `${prefs.leftWidth}px`,
+          ["--right-w" as string]: `${prefs.rightWidth}px`,
+          ["--title-over" as string]: `${isNarrow ? 0 : titleOver}px`,
+        }}
       >
         {drawer && <div className="nav-backdrop" onClick={() => setDrawer(null)} />}
         {rightFloat && <div className="panel-backdrop" onClick={() => setPrefs({ rightOpen: false })} />}
@@ -3503,8 +3520,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           />
         )}
         <div className="left-dock">
-          {rail}
-          {((prefs.leftOpen && !isNarrow) || drawer === "left") && leftPanel}
+          {!isNarrow && <DockTitle open={prefs.leftOpen} label={t("cmd.left")} keys={keyOf("left")} onToggle={toggleLeft} onOverhang={setTitleOver} />}
+          {leftShown && dockHead}
+          <div className="dock-body">
+            {rail}
+            {leftShown && leftPanel}
+          </div>
         </div>
         {prefs.leftOpen && !isNarrow && (
           <Resizer

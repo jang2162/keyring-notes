@@ -19,7 +19,10 @@
         "minWidth": 360,
         "minHeight": 480,
         "dragDropEnabled": false,
-        "acceptFirstMouse": true
+        "acceptFirstMouse": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 14, "y": 20 }
       }
     ],
     "security": {

@@ -23,6 +23,7 @@ import type { Prefs } from "./prefs";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
 import { formatCombo } from "./shortcuts";
 import { tipProps } from "./Tooltip";
+import { crumbNodes } from "./topbar";
 import { invalidNameReason, stemOf } from "./Tree";
 import { IconButton, Segmented } from "./ui";
 import { Widget } from "./Widget";
@@ -62,6 +63,10 @@ export interface PaneContext {
   local: boolean;
   /** 좁은 화면(800px 이하) */
   narrow: boolean;
+  /** 모든 워크스페이스 모드: 브레드크럼에 워크스페이스 칸을 남긴다(crumbNodes) */
+  allWorkspaces: boolean;
+  /** 사이드바를 접어 브레드크럼 첫 칸에 둘 워크스페이스 전환기(아니면 null — switcherSpot) */
+  wsSwitcher: ReactNode;
   resolver: LinkResolver;
   resolverRef: { current: LinkResolver };
   daily: DailyLookup;
@@ -414,16 +419,19 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   }, [rendered.html, mode]);
 
   /** 빵부스러기: 상위 노드들(누르면 그 노드를 연다) */
-  const crumbs = docNode
-    .split("/")
-    .slice(0, -1)
-    .map((_, i, all) => all.slice(0, i + 1).join("/"));
+  const crumbs = crumbNodes(docNode, ctx.allWorkspaces);
   const toggleKey = formatCombo(ctx.keyOf("toggle-mode"));
 
   return (
     <>
       <header className="doc-head">
         <nav className="crumbs" aria-label={t("doc.crumbs")}>
+          {ctx.wsSwitcher && (
+            <span className="crumb">
+              {ctx.wsSwitcher}
+              <ChevronRight size={12} aria-hidden />
+            </span>
+          )}
           {crumbs.map((c) => (
             <span key={c} className="crumb">
               <button className="crumb-btn" onClick={() => ctx.openNode(c)}>

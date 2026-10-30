@@ -1351,7 +1351,6 @@
   "window.unsaved": "Unsaved changes in {names}. Save them before closing this window?",
   "window.unsavedMore": "{count} notes have unsaved changes ({names}, …). Save them before closing this window?",
   "ws.all": "All workspaces",
-  "ws.allShort": "All",
   "ws.create": "New workspace",
   "ws.createPrompt": "New workspace name",
   "ws.currentShort": "current",
