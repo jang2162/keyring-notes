@@ -12,6 +12,7 @@ import {
   vaultText,
   VAULT_SETTINGS_PATH,
   workspaceOf,
+  type ChildSort,
   type DailyLookup,
   type VaultLang,
   type VaultSettings,
@@ -25,6 +26,12 @@ export interface TreeNode {
   path: string;
   type: "dir" | "file";
   children?: TreeNode[];
+  /** 아래는 ScopedVault.tree 가 색인에서 붙인다(core noteTreeMeta) */
+  icon?: string;
+  sort?: ChildSort;
+  rank?: string;
+  /** 수정 시각(ms): 프런트매터 edited, 없으면 색인의 파일 시각 */
+  edited?: number;
 }
 
 export interface Doc {

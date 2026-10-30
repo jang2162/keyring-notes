@@ -165,6 +165,13 @@ describe("planReorder", () => {
     expect(names(sortChildren(applied(list, plan), "custom", none))).toEqual(["A", "D", "B", "C"]);
   });
 
+  it("손으로 쓴 a 와 a0 사이처럼 키를 만들 수 없으면 뒤쪽 노드도 다시 매긴다", () => {
+    const list = [node("A", { rank: "a" }), node("B", { rank: "a0" }), node("C", { rank: "b" })];
+    const plan = planReorder(list, "ws/C", "ws/B");
+    expect(plan.map((p) => p.node).sort()).toEqual(["ws/B", "ws/C"]);
+    expect(names(sortChildren(applied(list, plan), "custom", none))).toEqual(["A", "C", "B"]);
+  });
+
   it("자리가 그대로면 아무것도 적지 않는다", () => {
     const list = [node("A", { rank: "a" }), node("B", { rank: "b" }), node("x")];
     expect(planReorder(list, "ws/A", "ws/B")).toEqual([]);
@@ -172,7 +179,16 @@ describe("planReorder", () => {
   });
 
   it("어떤 순서에서 어디로 옮겨도 결과가 그 순서가 된다", () => {
-    const base = [node("A", { rank: "V" }), node("B", { rank: "V" }), node("C", { rank: "k" }), node("d"), node("e"), node("폴더", { folder: true })];
+    const base = [
+      node("A", { rank: "V" }),
+      node("B", { rank: "V" }),
+      node("C", { rank: "k" }),
+      node("D", { rank: "k0" }),
+      node("E", { rank: "0" }),
+      node("f"),
+      node("g"),
+      node("폴더", { folder: true }),
+    ];
     let list = sortChildren(base, "custom", none);
     let seed = 3;
     for (let i = 0; i < 200; i++) {

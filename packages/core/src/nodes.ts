@@ -1,5 +1,7 @@
 import { isVaultSettingsPath } from "./settings.js";
-import type { ChildSort } from "./childSort.js";
+import { parseChildSort, type ChildSort } from "./childSort.js";
+import { editedOf } from "./edited.js";
+import { parseRank } from "./rank.js";
 import type { TreeNode } from "./types.js";
 
 /**
@@ -37,6 +39,23 @@ export interface VaultNode {
 }
 
 export const stripMd = (p: string) => p.replace(/\.md$/i, "");
+
+/**
+ * 트리 응답의 노트 파일 노드에 붙이는 속성: 아이콘·하위 정렬·커스텀 순서 키(이상한 값은 뺀다)와 수정 시각
+ * (edited, 없으면 파일 시각 mtime — 모르면 null).
+ */
+export function noteTreeMeta(frontmatter: Record<string, unknown> | null, mtime: number | null): Pick<TreeNode, "icon" | "sort" | "rank" | "edited"> {
+  const icon = frontmatter?.icon;
+  const sort = parseChildSort(frontmatter?.sort);
+  const rank = parseRank(frontmatter?.rank);
+  const edited = editedOf(frontmatter) ?? mtime;
+  return {
+    ...(typeof icon === "string" && icon.trim() ? { icon: icon.trim() } : {}),
+    ...(sort ? { sort } : {}),
+    ...(rank ? { rank } : {}),
+    ...(edited !== null ? { edited } : {}),
+  };
+}
 
 /** 경로(문서 `A/B.md` 또는 폴더 `A/B`)의 노드 경로 */
 export function nodePathOf(path: string): string {
@@ -115,6 +134,12 @@ export function buildNodeTree(tree: TreeNode[], opts: NodeTreeOptions = {}): Vau
         const n = get(stripMd(t.name), stripMd(t.path));
         n.note = t.path;
         if (t.icon) n.icon = t.icon;
+        // 트리 응답은 서버·앱이 만들지만 한 번 더 거른다(이상한 정렬 값은 정하지 않은 것 = 이름순)
+        const sort = parseChildSort(t.sort);
+        const rank = parseRank(t.rank);
+        if (sort) n.sort = sort;
+        if (rank) n.rank = rank;
+        if (typeof t.edited === "number" && Number.isFinite(t.edited)) n.edited = t.edited;
       } else if (parent) {
         parent.attachments.push(t.path);
       }

@@ -332,3 +332,25 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     expect(dec(await store.read("n.md"))).toBe("새 창 새 글");
   });
 });
+
+describe("트리에 정렬·순서·수정 시각", () => {
+  it("edited 가 있으면 그 시각, 없으면 파일 시각. sort·rank 는 맞는 값만", async () => {
+    const T = "2026-10-30T09:12:33Z";
+    const { v, store } = await vault({
+      "업무.md": `---\nsort: custom\nedited: ${T}\n---\n업무`,
+      "업무/가.md": "---\nrank: a0\n---\n가",
+      "업무/나.md": "---\nsort: Custom\nrank: 3\n---\n나",
+    });
+    const tree = v.tree();
+    const ws = tree.find((n) => n.path === "업무.md")!;
+    expect(ws).toMatchObject({ sort: "custom", edited: Date.parse(T) });
+    expect(ws.rank).toBeUndefined();
+    const kids = tree.find((n) => n.path === "업무")!.children!;
+    expect(kids.find((n) => n.path === "업무/가.md")).toMatchObject({ rank: "a0", edited: store.files.get("업무/가.md")!.mtime });
+    const na = kids.find((n) => n.path === "업무/나.md")!;
+    expect(na.sort).toBeUndefined();
+    expect(na.rank).toBeUndefined();
+    expect(na.edited).toBe(store.files.get("업무/나.md")!.mtime);
+    expect(tree.find((n) => n.path === "업무")!.edited).toBeUndefined();
+  });
+});

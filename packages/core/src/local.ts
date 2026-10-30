@@ -12,7 +12,7 @@ import { parseWidget, runWidget, type WidgetResult } from "./widget.js";
 import { generatedKind, generatedPaths, isTopicName, renderWikiIndex, renderWikiLog, schemaTemplate, schemaTopic, topicCandidate } from "./wiki.js";
 import { dailyLookup, isVaultSettingsPath, parseVaultSettings, vaultLanguage, VAULT_SETTINGS_PATH, type VaultSettings } from "./settings.js";
 import type { DailyLookup } from "./daily.js";
-import { moveNodePath, nodeFiles, workspaceOf } from "./nodes.js";
+import { moveNodePath, nodeFiles, noteTreeMeta, workspaceOf } from "./nodes.js";
 import { vaultText, type VaultText } from "./vaultText.js";
 import { inTrashScope, restoreTargets, trashHead, trashKey, trashOrder, TRASH_PAGE, type TrashItem, type TrashPage } from "./trash.js";
 
@@ -386,12 +386,13 @@ export class LocalVault {
     const paths = [...this.files.keys(), ...[...this.topicSet].flatMap(generatedPaths)];
     for (const p of paths) {
       const i = p.lastIndexOf("/");
-      const icon = this.files.get(p)?.meta?.frontmatter?.icon;
+      const meta = this.files.get(p)?.meta;
       dirOf(i < 0 ? "" : p.slice(0, i)).push({
         name: p.slice(i + 1),
         path: p,
         type: "file",
-        ...(typeof icon === "string" && icon.trim() ? { icon: icon.trim() } : {}),
+        // 저장소 시각을 모르는 파일(refreshFiles 가 -1 로 둔 것)은 시각을 싣지 않는다
+        ...(meta ? noteTreeMeta(meta.frontmatter, meta.mtime >= 0 ? meta.mtime : null) : {}),
       });
     }
     const sort = (nodes: TreeNode[]) => {

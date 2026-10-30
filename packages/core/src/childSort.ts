@@ -1,6 +1,6 @@
 import { PathError } from "./errors.js";
 import type { VaultNode } from "./nodes.js";
-import { rankBetween } from "./rank.js";
+import { rankBetween, rankFits } from "./rank.js";
 
 /**
  * 하위 노트 정렬. 정렬 방식은 부모 노트 프런트매터 `sort`, 커스텀 순서는 하위 노트마다 `rank`(rank.ts)다.
@@ -92,9 +92,9 @@ export function planReorder(siblings: VaultNode[], moving: string, beforePath: s
     // rank 없는 노드들 사이·뒤: 그 자리까지의 rank 없는 노드를 앞에서부터 함께 매긴다
     run = [...rest.slice(ranked, at), siblings[from]];
   } else {
-    // 뒤 이웃의 rank 가 앞 이웃보다 크지 않으면(같은 rank) 그 노드들을 넘어설 때까지 함께 매긴다
+    // 앞 이웃과 뒤 이웃 사이에 키를 만들 수 없으면(같은 rank, "a" 와 "a0") 그 노드들을 넘어설 때까지 함께 매긴다
     let end = at;
-    while (lo !== null && end < ranked && rest[end].rank! <= lo) end++;
+    while (end < ranked && !rankFits(lo, rest[end].rank!)) end++;
     if (end < ranked) hi = rest[end].rank!;
     run = [siblings[from], ...rest.slice(at, end)];
   }

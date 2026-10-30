@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRank, PathError, rankBetween } from "../src/index.js";
+import { parseRank, PathError, rankBetween, rankFits } from "../src/index.js";
 
 /** 시험이 매번 같은 수열을 쓰게 하는 작은 난수 */
 function rng(seed: number) {
@@ -62,14 +62,17 @@ describe("rankBetween", () => {
     }
   });
 
-  it("순서가 거꾸로이거나 같으면 rank_order", () => {
+  it("순서가 거꾸로이거나 같거나 사이에 글자가 없으면 rank_order", () => {
     for (const [a, b] of [
       ["b", "a"],
       ["a", "a"],
+      ["a", "a0"],
+      ["a", "a00"],
+      [null, "00"],
     ]) {
       let err: unknown;
       try {
-        rankBetween(a, b);
+        rankBetween(a as string | null, b);
       } catch (e) {
         err = e;
       }
@@ -78,16 +81,46 @@ describe("rankBetween", () => {
     }
   });
 
+  it("0 으로 끝나는 손으로 쓴 키도 이웃으로 받는다", () => {
+    for (const [a, b] of [
+      ["a0", "a1"],
+      ["a1", "b0"],
+      [null, "b0"],
+      ["a00", null],
+      ["a0", "a01"],
+    ] as [string | null, string | null][]) {
+      const r = rankBetween(a, b);
+      expect(r).not.toMatch(/0$/);
+      if (a !== null) expect(a < r).toBe(true);
+      if (b !== null) expect(r < b).toBe(true);
+    }
+    expect(rankFits("a", "a0")).toBe(false);
+    expect(rankFits("a", "a01")).toBe(true);
+    expect(rankFits(null, "0")).toBe(false);
+    expect(rankFits("a", null)).toBe(true);
+  });
+
   it("키 모양이 아닌 값은 rank_invalid", () => {
-    expect(() => rankBetween("a0", null)).toThrow(PathError);
-    expect(() => rankBetween(null, "가")).toThrow(PathError);
+    for (const [a, b] of [
+      ["a-", null],
+      [null, "가"],
+      ["", null],
+    ]) {
+      let err: unknown;
+      try {
+        rankBetween(a, b);
+      } catch (e) {
+        err = e;
+      }
+      expect((err as PathError).code).toBe("rank_invalid");
+    }
   });
 });
 
 describe("parseRank", () => {
   it("키 모양의 글자만 받는다", () => {
     expect(parseRank("a1")).toBe("a1");
-    expect(parseRank("a0")).toBeNull();
+    expect(parseRank("a0")).toBe("a0");
     expect(parseRank("")).toBeNull();
     expect(parseRank(3)).toBeNull();
     expect(parseRank(["a"])).toBeNull();

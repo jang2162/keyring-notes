@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AccessPolicy } from "../src/access.js";
@@ -266,5 +267,31 @@ describe("REST·MCP: 노드 API와 에이전트 언어", () => {
     expect((await client.listTools()).tools.find((t) => t.name === "whoami")!.description).toBe("이 토큰의 에이전트 이름과 경로별 권한 표");
     expect((await call("lint")).issues[0].detail).toBe("링크 [[없는것]]의 대상이 없거나 볼 수 없음");
     await client.close();
+  });
+});
+
+describe("트리 응답에 정렬·순서·수정 시각", () => {
+  it("edited 가 있으면 그 시각, 없으면 서버 색인의 파일 시각. sort·rank 는 맞는 값만", async () => {
+    const T = "2026-10-30T09:12:33Z";
+    const files: Record<string, string> = {
+      "업무.md": `---\nsort: custom\nedited: ${T}\n---\n업무`,
+      "업무/가.md": "---\nrank: a0\n---\n가",
+      "업무/나.md": "---\nsort: Custom\nrank: [a]\n---\n나",
+    };
+    // 쓰기 계층을 거치지 않고(앱 밖 변경처럼) 디스크에 두고 색인만 맞춘다
+    await vault.batch([{ op: "write", path: "업무/빈.md", content: "", baseHash: null }], ownerPrincipal);
+    for (const [rel, content] of Object.entries(files)) await writeFile(path.join(vault.root, rel), content);
+    await index.refresh(vault.root, Object.keys(files));
+    const tree = await owner.tree();
+    const ws = tree.find((n) => n.path === "업무.md")!;
+    expect(ws).toMatchObject({ sort: "custom", edited: Date.parse(T) });
+    expect(ws.rank).toBeUndefined();
+    const kids = tree.find((n) => n.path === "업무")!.children!;
+    expect(kids.find((n) => n.path === "업무/가.md")).toMatchObject({ rank: "a0", edited: (await stat(path.join(vault.root, "업무/가.md"))).mtimeMs });
+    const na = kids.find((n) => n.path === "업무/나.md")!;
+    expect(na.sort).toBeUndefined();
+    expect(na.rank).toBeUndefined();
+    expect(na.edited).toBe((await stat(path.join(vault.root, "업무/나.md"))).mtimeMs);
+    expect(tree.find((n) => n.path === "업무")!.edited).toBeUndefined();
   });
 });

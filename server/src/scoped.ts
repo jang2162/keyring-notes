@@ -31,6 +31,7 @@ import {
   translate,
   nodeFiles,
   moveNodePath,
+  noteTreeMeta,
   inTrashScope,
   restoreTargets,
   trashHead,
@@ -163,9 +164,9 @@ export class ScopedVault {
     return out;
   }
 
-  /** 파일 트리(볼 수 있는 것만). 문서에는 아이콘(프런트매터 icon)을 붙인다 */
+  /** 파일 트리(볼 수 있는 것만). 문서에는 아이콘·하위 정렬·커스텀 순서 키·수정 시각을 붙인다(withMeta) */
   async tree(folder?: string): Promise<TreeNode[]> {
-    let nodes = this.withIcons(this.filterTree(await this.vault.tree()));
+    let nodes = this.withMeta(this.filterTree(await this.vault.tree()));
     if (folder && normalizeFolder(folder)) {
       const f = normalizeFolder(folder);
       const find = (ns: TreeNode[]): TreeNode[] | null => {
@@ -183,15 +184,13 @@ export class ScopedVault {
     return nodes;
   }
 
-  private withIcons(nodes: TreeNode[]): TreeNode[] {
-    const icons = new Map<string, string>();
-    for (const d of this.index.docs()) {
-      const icon = d.frontmatter?.icon;
-      if (typeof icon === "string" && icon.trim()) icons.set(d.path, icon.trim());
-    }
+  /** 문서 노드에 색인의 프런트매터(icon·sort·rank·edited)와 파일 시각을 붙인다. edited 가 없으면 색인의 파일 시각 */
+  private withMeta(nodes: TreeNode[]): TreeNode[] {
+    const metas = new Map<string, Pick<TreeNode, "icon" | "sort" | "rank" | "edited">>();
+    for (const d of this.index.docs()) metas.set(d.path, noteTreeMeta(d.frontmatter, d.mtime));
     const walk = (ns: TreeNode[]): TreeNode[] =>
-      ns.map((n) => (n.type === "dir" ? { ...n, children: walk(n.children ?? []) } : icons.has(n.path) ? { ...n, icon: icons.get(n.path) } : n));
-    return icons.size ? walk(nodes) : nodes;
+      ns.map((n) => (n.type === "dir" ? { ...n, children: walk(n.children ?? []) } : metas.has(n.path) ? { ...n, ...metas.get(n.path) } : n));
+    return metas.size ? walk(nodes) : nodes;
   }
 
   /** 읽을 수 있는 문서 목록(평면). */

@@ -5,9 +5,15 @@ export interface TreeNode {
   children?: TreeNode[];
   /** 문서 아이콘(프런트매터 icon) */
   icon?: string;
+  /** 노트의 하위 정렬(프런트매터 sort) */
+  sort?: ChildSort;
+  /** 커스텀 순서 키(프런트매터 rank) */
+  rank?: string;
+  /** 수정 시각(ms): 프런트매터 edited, 없으면 파일 시각 */
+  edited?: number;
 }
 
-import type { Mention, PropertyStat, TrashPage } from "@keyring-notes/core";
+import type { ChildSort, Mention, PropertyStat, TrashPage } from "@keyring-notes/core";
 import { isNetworkError, offline } from "./offline";
 
 export interface Doc {

@@ -145,3 +145,24 @@ describe("설정 파일 키 단위 합치기", () => {
     expect(m.conflicts).toEqual([{ key: ["ui", "theme"], local: "dark", server: "light" }]);
   });
 });
+
+describe("노드에 정렬·순서·수정 시각", () => {
+  it("노트 파일 노드의 sort·rank·edited 를 노드로 옮긴다", () => {
+    const t: TreeNode[] = [
+      { name: "A", path: "A", type: "dir", children: [{ name: "b.md", path: "A/b.md", type: "file", rank: "a0", edited: 7 }] },
+      { name: "A.md", path: "A.md", type: "file", sort: "custom", rank: "a0", edited: 5 },
+    ];
+    const [a] = buildNodeTree(t);
+    expect(a).toMatchObject({ sort: "custom", rank: "a0", edited: 5 });
+    expect(a.children[0]).toMatchObject({ rank: "a0", edited: 7 });
+    expect(a.children[0].sort).toBeUndefined();
+  });
+
+  it("이상한 sort·rank 값은 싣지 않는다", () => {
+    const t = [{ name: "A.md", path: "A.md", type: "file", sort: "Custom", rank: 3, edited: 5 }] as unknown as TreeNode[];
+    const [a] = buildNodeTree(t);
+    expect(a.sort).toBeUndefined();
+    expect(a.rank).toBeUndefined();
+    expect(a.edited).toBe(5);
+  });
+});

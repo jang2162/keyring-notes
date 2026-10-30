@@ -89,7 +89,10 @@ describe("모든 기기 공통 설정 파일", () => {
 
   it("트리 문서에 아이콘", async () => {
     const tree = await owner.tree("개인/데일리 노트/2026/W53");
-    expect(tree).toEqual([{ name: "2027-01-01 새해 계획.md", path: "개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md", type: "file", icon: "🎍" }]);
+    // 문서 노드에는 수정 시각(edited)도 함께 실린다
+    expect(tree).toEqual([
+      { name: "2027-01-01 새해 계획.md", path: "개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md", type: "file", icon: "🎍", edited: expect.any(Number) },
+    ]);
   });
 
   it("데일리 노트를 데일리 폴더 밖으로 옮기면 [[날짜]] 링크를 고친다", async () => {

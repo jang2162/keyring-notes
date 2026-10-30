@@ -1,3 +1,5 @@
+import type { ChildSort } from "./childSort.js";
+
 /** 색인된 문서 하나의 정보(검색·위젯·위키 목차가 쓴다). */
 export interface DocMeta {
   path: string;
@@ -25,6 +27,12 @@ export interface TreeNode {
   children?: TreeNode[];
   /** 문서 아이콘(프런트매터 icon) */
   icon?: string;
+  /** 노트의 하위 정렬(프런트매터 sort, 맞는 값만) */
+  sort?: ChildSort;
+  /** 커스텀 순서 키(프런트매터 rank, 키 모양인 것만) */
+  rank?: string;
+  /** 수정 시각(ms): 프런트매터 edited, 없으면 파일 시각 */
+  edited?: number;
 }
 
 /** 문서 사이 링크 한 줄. kind: 본문 위키링크(link) 또는 프런트매터 출처(source). */
