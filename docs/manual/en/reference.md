@@ -300,7 +300,7 @@ The search index and the wiki index and log are not included, because the server
 
 | Path | Contents |
 | --- | --- |
-| `vault/**.md` | The source of truth: plain Markdown with YAML frontmatter. Top-level folders and notes are workspaces. Node `A` is the note `A.md` plus the folder `A/`, for example `Work.md`, `Work/Project.md`, `Work/Project/Meeting.md`, `Work/_attachments/diagram.png` |
+| `vault/**.md` | The source of truth: plain Markdown with YAML frontmatter. Top-level folders and notes are workspaces. Node `A` is the note `A.md` plus the folder `A/`, for example `Work.md`, `Work/Project.md`, `Work/Project/Meeting.md`, `Work/_attachments/diagram.png`. The app doesn't open a workspace's own note (`Work.md`); it marks the workspace and holds its icon |
 | `vault/keyring-settings.md` | Settings shared by all devices (see [Shared settings file](#shared-settings-file)) |
 | `vault/.history/` | The Git repository (`--git-dir`). The work tree is the vault itself, so no `.git` shows up in other editors |
 | `vault/.keyring/index.db` | SQLite index: body full-text search (FTS5 trigram), tags, links, tasks, frontmatter. Not tracked by Git |

@@ -1364,7 +1364,7 @@
   "ws.manage": "Manage workspaces…",
   "ws.needOne": "Create a workspace first.",
   "ws.none": "No workspace",
-  "ws.openNote": "Open note",
+  "ws.noteBlocked": "Workspaces can't be opened as notes.",
   "ws.renamePrompt": "New name for workspace \"{name}\" (links are updated)",
   "ws.settingsOf": "Settings for \"{name}\"",
   "ws.switch": "Switch workspace (now: {name})",

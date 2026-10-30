@@ -434,10 +434,18 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
           )}
           {crumbs.map((c) => (
             <span key={c} className="crumb">
-              <button className="crumb-btn" onClick={() => ctx.openNode(c)}>
-                {ctx.iconOf(`${c}.md`) && <DocIcon icon={ctx.iconOf(`${c}.md`)} />}
-                {stemOf(c)}
-              </button>
+              {/* 워크스페이스 칸(모든 워크스페이스 모드)은 그 노트를 열지 않으므로(workspaceNote.ts) 글자만 */}
+              {c.includes("/") ? (
+                <button className="crumb-btn" onClick={() => ctx.openNode(c)}>
+                  {ctx.iconOf(`${c}.md`) && <DocIcon icon={ctx.iconOf(`${c}.md`)} />}
+                  {stemOf(c)}
+                </button>
+              ) : (
+                <span className="crumb-text">
+                  {ctx.iconOf(`${c}.md`) && <DocIcon icon={ctx.iconOf(`${c}.md`)} />}
+                  {c}
+                </span>
+              )}
               <ChevronRight size={12} aria-hidden />
             </span>
           ))}

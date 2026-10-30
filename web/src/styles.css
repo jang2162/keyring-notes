@@ -763,6 +763,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .crumb { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
 .crumb-btn { border: none; background: transparent; padding: 2px 4px; color: var(--muted); font-size: var(--fs-md); border-radius: var(--radius-sm); overflow: hidden; text-overflow: ellipsis; }
 .crumb-btn:hover { color: var(--fg); background: var(--hover); border: none !important; }
+.crumb-text { padding: 2px 4px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .crumb.current { color: var(--fg); overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
 .doc-tools { display: flex; align-items: center; gap: 2px; }
 .segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--bg-soft); border: 1px solid var(--border); }
@@ -1226,8 +1227,6 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .ws-switch.compact .ws-letter { font-size: 10px; }
 .ws-letter { font-size: var(--fs-md); text-transform: uppercase; }
 .ws-emoji { font-size: 16px; line-height: 1; }
-.home-ws { border: none; background: transparent; padding: 0; font: inherit; color: inherit; display: inline-flex; align-items: center; gap: 8px; }
-.home-ws:hover { color: var(--accent); }
 .home-empty { padding: var(--sp-3); border: 1px dashed var(--border); border-radius: var(--radius-lg); }
 
 .tree-row.attachments-row { color: var(--muted); font-size: var(--fs-sm); }

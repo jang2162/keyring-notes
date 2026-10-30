@@ -210,6 +210,7 @@ import {
 import { tearOutAt } from "./tearOut";
 import { DockTitle, DRAG_REGION } from "./DockTitle";
 import { switcherSpot } from "./topbar";
+import { isWorkspaceNote } from "./workspaceNote";
 import { useAvailableUpdate } from "./update";
 import { SearchFilters, SearchResults } from "./Search";
 import { folderChoices, folderInScope, hasSearchTerms, NO_FILTER, SEARCH_LINES_FETCH, searchKey, type SearchFilter } from "./searchFilter";
@@ -484,6 +485,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   }, []);
   /** 늘 최신 배치(docsRef 와 같은 이유) */
   const layoutsRef = useRef(layoutByScope);
+  // 워크스페이스 루트 노트를 열 수 있던 때 기억한 탭은 닫는다(workspaceNote.ts)
+  useEffect(() => {
+    setAllLayouts((l) => removePaths(l, isWorkspaceNote));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const setLayouts = (fn: (m: Record<string, Layout>) => Record<string, Layout>) => {
     const next = fn(layoutsRef.current);
     if (next === layoutsRef.current) return;
@@ -611,7 +617,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const wsNode = (name: string) => findNode(nodeTree, name);
 
   const linkCandidates = useMemo<LinkCandidate[]>(() => {
-    const paths = resolver.paths.filter((p) => !isVaultSettingsPath(p));
+    const paths = resolver.paths.filter((p) => !isVaultSettingsPath(p) && !isWorkspaceNote(p));
     const nameCount = new Map<string, number>();
     for (const p of paths) {
       const n = p.split("/").pop()!.replace(/\.md$/i, "").toLowerCase();
@@ -765,7 +771,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         )
           .then((hs) => {
             setSearchOffline(false);
-            setHits(hs);
+            setHits(hs.filter((h) => !isWorkspaceNote(h.path)));
           })
           .catch((e) => {
             setHits([]);
@@ -1001,6 +1007,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    */
   const open = useCallback(
     async (path: string, opts: { newTab?: boolean; noHistory?: boolean; pane?: string } = {}) => {
+      // 화면의 모든 열기(트리·빠른 열기·검색·링크·주소·뒤로 가기)가 여기를 지난다 — 워크스페이스 루트 노트는 열지 않는다(workspaceNote.ts)
+      if (isWorkspaceNote(path)) return void toast(t("ws.noteBlocked"));
       if (/\.pdf$/i.test(path)) return setPdfView({ path });
       if (!/\.md$/i.test(path)) return setFileView(path);
       if (settingsFromLocation()) closeSettings(false);
@@ -1049,6 +1057,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
   /** 다른 칸에 새 탭으로 연다. 칸이 하나면 오른쪽으로 나누고, 나눌 수 없으면 같은 칸의 새 탭으로 */
   const openOther = async (path: string) => {
+    if (isWorkspaceNote(path)) return void toast(t("ws.noteBlocked"));
     const l = curLayout();
     const other = otherPaneOf(l, l.focused);
     if (other) return open(path, { pane: other, newTab: true });
@@ -2223,9 +2232,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     pickIcon(name, at) {
       setIconPick({ ...at, node: name });
     },
-    open(name) {
-      void openNode(name);
-    },
   };
 
   // ── 명령: 팔레트·단축키·설정의 단축키 목록이 같이 쓴다
@@ -2478,7 +2484,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   // 빠른 전환: 지금 워크스페이스의 문서(열린 탭, 최근 문서가 먼저)
   const fileItems = useMemo<PaletteItem[]>(() => {
-    const docs = resolver.paths.filter((p) => /\.md$/i.test(p) && !isVaultSettingsPath(p) && (!scope || inWorkspace(p, scope)));
+    const docs = resolver.paths.filter((p) => /\.md$/i.test(p) && !isWorkspaceNote(p) && !isVaultSettingsPath(p) && (!scope || inWorkspace(p, scope)));
     const order = (p: string) => (allTabs.includes(p) ? 0 : recent.includes(p) ? 1 + recent.indexOf(p) / 100 : 2);
     return docs
       .sort((a, b) => order(a) - order(b) || a.localeCompare(b, "ko"))
@@ -3351,12 +3357,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     <Home
       workspace={allWs ? null : ws}
       wsIcon={allWs ? null : wsIcon(ws)}
-      recent={recent.filter((p) => resolver.paths.includes(p) && inScope(p))}
+      recent={recent.filter((p) => resolver.paths.includes(p) && inScope(p) && !isWorkspaceNote(p))}
       pinned={pinnedShown}
       onOpenNode={(n) => void openNode(n)}
       tabs={allTabs}
       onOpen={(p) => void open(p)}
-      onOpenWorkspace={() => void openNode(ws)}
       onNew={() => void createDoc()}
       onDaily={dailyCfg ? () => void openDaily(0) : null}
       onQuick={() => setPalette("files")}
@@ -3949,7 +3954,6 @@ function Home({
   onOpenNode,
   tabs,
   onOpen,
-  onOpenWorkspace,
   onNew,
   onDaily,
   onQuick,
@@ -3971,7 +3975,6 @@ function Home({
   onOpenNode: (node: string) => void;
   tabs: string[];
   onOpen: (p: string) => void;
-  onOpenWorkspace: () => void;
   onNew: () => void;
   onDaily: (() => void) | null;
   onQuick: () => void;
@@ -3994,7 +3997,7 @@ function Home({
       <div className="home-inner">
         <h1>
           {workspace ? (
-            <button type="button" className="home-ws" onClick={onOpenWorkspace} {...tipProps({ label: t("ws.openNote") })}>
+            <>
               {wsIcon ? (
                 <span className="doc-icon" aria-hidden>
                   {wsIcon}
@@ -4003,7 +4006,7 @@ function Home({
                 <House size={22} aria-hidden />
               )}{" "}
               {workspace}
-            </button>
+            </>
           ) : (
             <>
               <House size={22} aria-hidden /> Keyring Notes

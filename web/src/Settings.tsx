@@ -258,7 +258,6 @@ export interface WorkspaceOps {
   /** 확인을 받고 지운다(취소하면 아무것도 하지 않는다) */
   remove: (name: string) => Promise<void>;
   pickIcon: (name: string, at: { x: number; y: number }) => void;
-  open: (name: string) => void;
 }
 
 export function SettingsModal({
@@ -752,9 +751,6 @@ function WorkspaceSettings({
                   onClick={() => i < ops.names.length - 1 && move(i, 1)}
                 >
                   <ArrowDown size={14} aria-hidden />
-                </button>
-                <button type="button" onClick={() => ops.open(name)}>
-                  {t("ws.openNote")}
                 </button>
                 <button
                   type="button"

@@ -201,10 +201,14 @@ export const Tree = forwardRef<
 
   const expandable = (n: VaultNode) => n.children.length > 0 || (prefs.treeAttachments !== "hide" && n.attachments.length > 0);
 
-  /** 노트는 새 탭에 연다(이미 열린 노트면 Workspace 가 그 탭으로 간다) */
+  /**
+   * 노트는 새 탭에 연다(이미 열린 노트면 Workspace 가 그 탭으로 간다). 워크스페이스 행(모든 워크스페이스 보기의 맨 위)은
+   * 그 노트를 열지 않으므로(workspaceNote.ts) 펴고 접기만 한다
+   */
   const activate = (r: Row) => {
     setFocused(rowKey(r));
-    if (r.kind === "node") actions.open(r.node, { newTab: true });
+    if (r.kind === "node" && !r.node.path.includes("/")) toggle(r.node.path);
+    else if (r.kind === "node") actions.open(r.node, { newTab: true });
     else if (r.kind === "attachments") toggle(rowKey(r));
     else actions.openAttachment(r.path);
   };
@@ -231,15 +235,19 @@ export const Tree = forwardRef<
     const ro = n.note !== null && readOnly(n.note);
     const isWs = !n.path.includes("/");
     return [
-      { label: t("tree.openHere"), run: () => actions.open(n) },
-      { label: t("tree.openNewTab"), keys: "Mod+Enter", run: () => actions.open(n, { newTab: true }) },
-      ...(n.note ? [{ label: t("doc.openOther"), run: () => actions.openOther(n.note!) }] : []),
-      "-",
+      ...(isWs
+        ? []
+        : ([
+            { label: t("tree.openHere"), run: () => actions.open(n) },
+            { label: t("tree.openNewTab"), keys: "Mod+Enter", run: () => actions.open(n, { newTab: true }) },
+            ...(n.note ? [{ label: t("doc.openOther"), run: () => actions.openOther(n.note!) }] : []),
+            "-",
+          ] satisfies MenuEntry[])),
       { label: t("tree.newChild"), run: () => actions.newChild(n.path) },
       "-",
       { label: t("common.rename"), keys: "F2", disabled: ro || isWs, run: () => setRenaming(n.path) },
       { label: t("tree.moveTo"), disabled: ro || isWs, run: () => actions.moveTo(n.path, "node") },
-      ...(n.note ? [{ label: t("tree.duplicate"), run: () => actions.duplicate(n) }] : []),
+      ...(n.note && !isWs ? [{ label: t("tree.duplicate"), run: () => actions.duplicate(n) }] : []),
       { label: t("tree.changeIcon"), disabled: ro, run: () => actions.pickIcon(n, menuAt()) },
       ...(isWs ? [] : [{ label: actions.pinned(n.path) ? t("tree.unpin") : t("tree.pin"), run: () => actions.togglePin(n.path) }]),
       "-",
@@ -508,7 +516,7 @@ export const Tree = forwardRef<
             onAuxClick={(e) => {
               if (e.button !== 1) return;
               e.preventDefault();
-              actions.open(n, { newTab: true });
+              if (n.path.includes("/")) actions.open(n, { newTab: true });
             }}
             onContextMenu={(e) => {
               e.preventDefault();

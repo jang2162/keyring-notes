@@ -20,6 +20,7 @@ The top-level nodes of the vault are workspaces, for example `Work` and `Persona
 - The path above a note starts below the workspace, because the switcher already shows it. In **All workspaces** the path starts with the workspace.
 - Open tabs, tree expansion and the last note are remembered per workspace.
 - Opening a note in another workspace switches to that workspace.
+- The app doesn't open a workspace's own note, such as `Work.md`. The file marks that the workspace exists and holds its icon. Change the icon in Settings → **Workspaces**. A link or address that points to the file shows a notice instead.
 - A link `[[name]]` looks in the same workspace first, and searches the whole vault only if nothing is found there.
 
 Manage workspaces in Settings → **Workspaces**: create, rename, set icons and order, and choose each workspace's daily, template and attachment folders. These settings are shared by all devices. Deleting a workspace removes its notes and attachments, its settings and its place in the order. The notice right after offers **Undo**.
