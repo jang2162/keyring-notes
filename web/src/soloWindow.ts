@@ -34,7 +34,7 @@ export async function openSolo(path: string, title: string, at?: { x: number; y:
     window.open(soloUrl(path), "_blank", "popup,width=960,height=720");
     return;
   }
-  const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+  const [{ WebviewWindow }, { LogicalPosition }] = await Promise.all([import("@tauri-apps/api/webviewWindow"), import("@tauri-apps/api/dpi")]);
   const w = new WebviewWindow(`solo-${Date.now()}`, {
     url: `index.html?solo=1#/${encodeURIComponent(path)}`,
     title,
@@ -48,6 +48,11 @@ export async function openSolo(path: string, title: string, at?: { x: number; y:
     // macOS 는 기본이 꺼짐이라 비활성 창을 누르면 그 클릭은 창을 앞으로 가져오기만 하고 페이지에 닿지 않는다. 켜면 그 첫 클릭이
     // 곧바로 단추·입력란에 닿으므로, 한 번에 지우는 단추는 확인창을 거친다(메인 창은 tauri.conf.json)
     acceptFirstMouse: true,
+    // macOS 는 제목 표시줄을 없애고 신호등을 화면 첫 줄 위에 얹는다(DockTitle). 메인 창(tauri.conf.json)과 같은 값이어야 신호등이 같은 자리에 온다.
+    // 다른 OS 는 이 값들을 무시하고 제목 표시줄을 그대로 둔다
+    titleBarStyle: "overlay",
+    hiddenTitle: true,
+    trafficLightPosition: new LogicalPosition(14, 20),
   });
   await new Promise<void>((resolve, reject) => {
     void w.once("tauri://created", () => resolve());

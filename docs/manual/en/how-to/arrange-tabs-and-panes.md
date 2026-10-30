@@ -6,11 +6,13 @@ It is for everyone who works with several notes at once.
 
 ## The screen
 
-- **Rail** on the left: the workspace switcher at the top, then Files, Search, Tags, Attachments, Today's note, Graph, Import, Review and Structure check. At the bottom are Sync (app), Shortcuts, Settings and Log out (server). Settings → **General** can show names next to the icons.
-- **Left panel**, **tabs and the note** in the middle, and the **right panel** with Outline, Links, Properties and History.
+- **Top row**: the app name and the left panel button (`Ctrl/Cmd+Shift+E`) on the left, then the tabs. In the macOS app the window buttons sit at the start of this row, and you drag the row's empty space to move the window.
+- **Rail** on the left: Files, Search, Tags, Attachments, Today's note, Graph, Import, Review and Structure check. At the bottom are Sync (app), Shortcuts, Settings and Log out (server). Settings → **General** can show names next to the icons.
+- **Left panel** next to the rail. At the top of the left panel are the workspace switcher and the tree buttons.
+- **Tabs and the note** in the middle, and the **right panel** with Outline, Links, Properties and History.
 - **Status bar** at the bottom: save state, offline, changes waiting to be sent, waiting reviews and character count.
 
-Icon-only buttons show their name and shortcut on hover, or the reason when they are unavailable. Drag a panel's edge to resize it (double-click for the default width), or collapse it. On narrow screens both panels become drawers. If docking both panels would leave the middle narrower than 440px, the right panel floats over the note instead and closes when you click outside it.
+Icon-only buttons show their name and shortcut on hover, or the reason when they are unavailable. Drag a panel's edge to resize it (double-click for the default width), or collapse it. Collapsing the left panel keeps the rail, and the workspace switcher moves to the start of the path above the note. On narrow screens both panels become drawers. If docking both panels would leave the middle narrower than 440px, the right panel floats over the note instead and closes when you click outside it.
 
 ## Open notes quickly
 

@@ -58,6 +58,8 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | --- | --- |
 | rail | 레일 |
 | left panel / right panel | 왼쪽 패널 / 오른쪽 패널 |
+| top row | 맨 위 줄 |
+| workspace switcher | 워크스페이스 전환기 |
 | status bar | 상태 표시줄 |
 | tab | 탭 |
 | pane | 칸 |
