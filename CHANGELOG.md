@@ -2,7 +2,7 @@
 
 All notable user-facing changes to Keyring Notes are listed here. The server and the desktop app share one version.
 
-## [Unreleased]
+## [0.10.0] - 2026-10-31
 
 ### Added
 

@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/organize-notes.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/organize-notes.md @ v0.10.0 -->
 # 노트 정리하기
 
 노트·폴더·워크스페이스가 어떻게 맞물리는지 설명하고, 노트를 만들고 옮기고 이름을 바꾸고 지우는 방법을 보입니다.

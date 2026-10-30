@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/getting-started.md @ v0.9.0 -->
+<!-- source: docs/manual/en/getting-started.md @ v0.10.0 -->
 # 시작하기
 
 빈 컴퓨터에서 Keyring Notes 의 첫 노트를 쓰기까지 안내하고, 에이전트를 들이는 방법까지 보입니다.

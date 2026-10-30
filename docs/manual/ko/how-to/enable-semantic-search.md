@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/enable-semantic-search.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/enable-semantic-search.md @ v0.10.0 -->
 # 의미 검색 켜기
 
 단어가 달라도 뜻이 가까운 노트를 찾는 의미 검색을 켭니다.

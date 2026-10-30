@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/deploy-with-komodo.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/deploy-with-komodo.md @ v0.10.0 -->
 # Komodo 로 배포하기
 
 [Docker 로 배포하기](deploy-with-docker.md)의 구성 A(리버스 프록시 뒤)를 Komodo 의 **Git Repo Stack** 으로 올립니다.

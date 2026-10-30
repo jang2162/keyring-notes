@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/find-notes.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/find-notes.md @ v0.10.0 -->
 # 노트 찾기
 
 검색, 태그, 개요, 백링크, 연결되지 않은 언급, 그래프를 다룹니다.

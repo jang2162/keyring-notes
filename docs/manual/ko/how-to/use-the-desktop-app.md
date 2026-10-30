@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/use-the-desktop-app.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/use-the-desktop-app.md @ v0.10.0 -->
 # 데스크톱·모바일 앱 쓰기
 
 앱을 설치하고, 앱이 노트를 어디에 두는지 설명하고, 서버와 연결해 동기화합니다.

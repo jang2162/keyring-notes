@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/reference.md @ v0.9.0 -->
+<!-- source: docs/manual/en/reference.md @ v0.10.0 -->
 # 참조
 
 Keyring Notes 의 명령, API, 파일 형식을 정확히 모았습니다.

@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/use-widgets.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/use-widgets.md @ v0.10.0 -->
 # 위젯 쓰기
 
 위젯 블록으로 노트를 살아 있는 목록, 표, 보드, 차트로 바꿉니다.

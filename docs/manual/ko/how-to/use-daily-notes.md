@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/use-daily-notes.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/use-daily-notes.md @ v0.10.0 -->
 # 데일리 노트 쓰기
 
 워크스페이스에 데일리 노트를 설정하고, Keyring Notes 가 데일리 노트를 어떻게 알아보고 이름 짓고 태그하는지 설명합니다.

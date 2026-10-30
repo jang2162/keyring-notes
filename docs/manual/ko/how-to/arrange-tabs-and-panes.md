@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/arrange-tabs-and-panes.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/arrange-tabs-and-panes.md @ v0.10.0 -->
 # 탭과 칸 배치하기
 
 화면 배치, 탭, 화면 분할, 노트를 따로 창에 여는 방법을 설명합니다.

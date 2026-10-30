@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/build-an-llm-wiki.md @ v0.9.0 -->
+<!-- source: docs/manual/en/how-to/build-an-llm-wiki.md @ v0.10.0 -->
 # LLM Wiki 만들기
 
 모아 둔 원본으로 에이전트가 관리하는 위키 토픽을 만들고, 인용하고 점검하는 방법을 보입니다.
