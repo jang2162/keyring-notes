@@ -1313,6 +1313,7 @@
   "tree.pin": "Pin",
   "tree.pinned": "Pinned",
   "tree.reorderNeedsCustom": "To reorder, choose Custom in the parent's Sort sub-notes.",
+  "tree.reorderNeedsCustomRoot": "To reorder, choose Custom in Sort notes under the tree's display options (⋯).",
   "tree.reveal": "Reveal current note",
   "tree.revealWhy": "Open a note first",
   "tree.showAttachments": "Show \"N attachments\" rows",

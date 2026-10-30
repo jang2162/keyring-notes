@@ -87,8 +87,6 @@ import {
   orderWorkspaces,
   parentNode,
   planDailyMigration,
-  planReorder,
-  seedRanks,
   setFrontmatterField,
   sha256Hex,
   shiftDays,
@@ -193,8 +191,21 @@ import {
 import { TabCountButton, TabSwitcher } from "./TabSwitcher";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
-import { forgetViewed, markViewed, renameViewed, viewedAt } from "./viewed";
-import { childSortWrites, fillBlankNote, rankWrites, shownChildren, siblingTarget, type NoteState, type NoteWrite } from "./childSortUi";
+import { forgetViewed, markViewed, renameViewed, viewedSnapshot } from "./viewed";
+import {
+  childSortWrites,
+  fillBlankNote,
+  isGeneratedNote,
+  planWritable,
+  rankWrites,
+  reorderHintKey,
+  seedWritable,
+  shownChildren,
+  siblingTarget,
+  writableSiblings,
+  type NoteState,
+  type NoteWrite,
+} from "./childSortUi";
 import { canOpenSolo, canTearOut, openSolo, SOLO } from "./soloWindow";
 import {
   ackCloseAsk,
@@ -2104,8 +2115,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const parent = node ?? wsNode(ws);
     if (!parent) return;
     const parentNote = `${parent.path}.md`;
-    const shown = shownChildren(parent.children, parent.sort ?? null, !!treeDecor.descending?.(parent.path), viewedAt);
-    const seeds = sort === "custom" ? seedRanks(shown) : [];
+    const shown = shownChildren(parent.children, parent.sort ?? null, !!treeDecor.descending?.(parent.path), viewedSnapshot());
+    // 자동 생성 노트(위키 index·log)에는 rank 를 적지 않는다 — 쓰면 일괄 쓰기 전체가 거부된다
+    const seeds = sort === "custom" ? seedWritable(shown, isGeneratedNote) : [];
     await writeNotes([parentNote, ...seeds.map((x) => x.note)], (read) => childSortWrites(parentNote, read(parentNote), sort, seeds, read));
   };
 
@@ -2113,9 +2125,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const reorderNode = async (path: string, beforePath: string | null) => {
     const parent = findNode(nodeTree, parentOf(path));
     if (!parent || parent.sort !== "custom") return;
-    let plan: ReturnType<typeof planReorder>;
+    let plan: ReturnType<typeof planWritable>;
     try {
-      plan = planReorder(shownChildren(parent.children, "custom", false, viewedAt), path, beforePath);
+      plan = planWritable(shownChildren(parent.children, "custom", false, viewedSnapshot()), isGeneratedNote, path, beforePath);
     } catch (e) {
       return toastError(e);
     }
@@ -2126,13 +2138,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     );
   };
 
-  /** 「위로」·「아래로」 단축키: 트리에서 고른 노드(트리에 포커스가 없으면 지금 노트)를 한 칸 */
-  const moveSibling = (dir: -1 | 1) => {
-    const path = treeRef.current?.focusedNode() ?? (docRef.current ? stripMd(docRef.current.path) : null);
-    if (!path || !path.includes("/")) return;
+  /**
+   * 「위로」·「아래로」(메뉴·단축키): 노드를 한 칸. 단축키는 트리에서 고른 노드(트리에 포커스가 없으면 지금 노트).
+   * 한 칸은 rank 를 적을 수 있는 형제 사이에서 센다 — 자동 생성 노트는 늘 rank 없는 노트로 뒤에 있어 그 너머로 옮길 수 없다
+   */
+  const moveSibling = (dir: -1 | 1, node?: string) => {
+    const path = node ?? treeRef.current?.focusedNode() ?? (docRef.current ? stripMd(docRef.current.path) : null);
+    if (!path || !path.includes("/") || isGeneratedNote(`${path}.md`)) return;
     const parent = findNode(nodeTree, parentOf(path));
-    if (parent?.sort !== "custom") return void toast(t("tree.reorderNeedsCustom"), { kind: "info" });
-    const before = siblingTarget(shownChildren(parent.children, "custom", false, viewedAt), path, dir);
+    if (parent?.sort !== "custom") return void toast(t(reorderHintKey(parentOf(path))), { kind: "info" });
+    const before = siblingTarget(writableSiblings(shownChildren(parent.children, "custom", false, viewedSnapshot()), isGeneratedNote), path, dir);
     if (before !== undefined) void reorderNode(path, before);
   };
 
@@ -2668,6 +2683,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     togglePin,
     setChildSort: (n, sort) => void setChildSort(n, sort),
     reorder: (p, before) => void reorderNode(p, before),
+    moveSibling: (p, dir) => moveSibling(dir, p),
   };
 
   const treeDecor = useMemo<TreeDecor>(() => {
@@ -2959,7 +2975,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             rootSort={allWs ? null : (wsNode(ws)?.sort ?? null)}
             moveKeys={{ up: keyOf("note-up"), down: keyOf("note-down") }}
             storageKey={`keyring:tree-open:${scopeKey}`}
-            readOnly={(p) => /\/wiki\/(index|log)\.md$/.test(p)}
+            readOnly={isGeneratedNote}
           />
         </>
       )}

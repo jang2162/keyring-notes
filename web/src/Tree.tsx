@@ -5,8 +5,8 @@ import { stripMd, type ChildSort, type VaultNode } from "@keyring-notes/core";
 import type { Prefs } from "./prefs";
 import { Menu, type MenuEntry } from "./ui";
 import { t } from "./i18n";
-import { shownChildren } from "./childSortUi";
-import { useViewedVersion, viewedAt } from "./viewed";
+import { edgeDrop, shownChildren } from "./childSortUi";
+import { useViewedVersion, viewedSnapshot } from "./viewed";
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 
@@ -53,6 +53,8 @@ export interface TreeActions {
   setChildSort: (node: VaultNode | null, sort: ChildSort) => void;
   /** 커스텀 순서 바꾸기: 같은 부모 안에서 path 를 beforePath 앞으로(null 이면 맨 뒤) */
   reorder: (path: string, beforePath: string | null) => void;
+  /** 「위로」·「아래로」: 같은 부모 안에서 한 칸(rank 를 적을 수 있는 형제 사이에서 센다) */
+  moveSibling: (path: string, dir: -1 | 1) => void;
 }
 
 const SORT_LABELS: [ChildSort, string][] = [
@@ -92,9 +94,12 @@ export interface TreeHandle {
   focusedNode: () => string | null;
 }
 
-/** 노드 행. custom: 부모가 커스텀 정렬이라 순서를 바꿀 수 있다. prev·next: 보이는 순서의 앞·뒤 형제(없으면 null) */
+/**
+ * 노드 행. custom: 부모가 커스텀 정렬이라 순서를 바꿀 수 있다. prev·next: 보이는 순서의 앞·뒤 형제(없으면 null).
+ * canUp·canDown: 「위로」·「아래로」 를 켤지 — 읽기 전용(자동 생성) 노트는 rank 를 못 적어 세지 않는다
+ */
 type Row =
-  | { kind: "node"; node: VaultNode; depth: number; custom: boolean; prev: string | null; next: string | null }
+  | { kind: "node"; node: VaultNode; depth: number; custom: boolean; prev: string | null; next: string | null; canUp: boolean; canDown: boolean }
   | { kind: "attachments"; node: VaultNode; depth: number }
   | { kind: "file"; path: string; owner: VaultNode; depth: number };
 
@@ -186,11 +191,23 @@ export const Tree = forwardRef<
 
   const rows = useMemo(() => {
     const out: Row[] = [];
-    // 부모의 정렬은 바로 아래 하위에만 쓴다(물려받지 않는다)
+    // 부모의 정렬은 바로 아래 하위에만 쓴다(물려받지 않는다). 조회 기록은 그릴 때 한 번 읽는다
+    const viewedAt = viewedSnapshot();
     const walk = (ns: VaultNode[], depth: number, parent: string, sort: ChildSort | null) => {
       const list = shownChildren(ns, sort, !!decor.descending?.(parent), viewedAt);
+      const movable = list.filter((n) => n.note === null || !readOnly(n.note));
       list.forEach((n, i) => {
-        out.push({ kind: "node", node: n, depth, custom: sort === "custom", prev: list[i - 1]?.path ?? null, next: list[i + 1]?.path ?? null });
+        const at = movable.indexOf(n);
+        out.push({
+          kind: "node",
+          node: n,
+          depth,
+          custom: sort === "custom",
+          prev: list[i - 1]?.path ?? null,
+          next: list[i + 1]?.path ?? null,
+          canUp: at > 0,
+          canDown: at >= 0 && at < movable.length - 1,
+        });
         if (!open.has(n.path)) return;
         walk(n.children, depth + 1, n.path, n.sort ?? null);
         if (prefs.treeAttachments !== "hide" && n.attachments.length) {
@@ -295,8 +312,8 @@ export const Tree = forwardRef<
       ...(isWs
         ? []
         : ([
-            { label: t("tree.moveUp"), keys: moveKeys.up, disabled: ro || !r.custom || r.prev === null, run: () => actions.reorder(n.path, r.prev) },
-            { label: t("tree.moveDown"), keys: moveKeys.down, disabled: ro || !r.custom || r.next === null, run: () => moveDown(r) },
+            { label: t("tree.moveUp"), keys: moveKeys.up, disabled: ro || !r.custom || !r.canUp, run: () => actions.moveSibling(n.path, -1) },
+            { label: t("tree.moveDown"), keys: moveKeys.down, disabled: ro || !r.custom || !r.canDown, run: () => actions.moveSibling(n.path, 1) },
           ] satisfies MenuEntry[])),
       ...(isWs ? [] : [{ label: actions.pinned(n.path) ? t("tree.unpin") : t("tree.pin"), run: () => actions.togglePin(n.path) }]),
       "-",
@@ -386,13 +403,6 @@ export const Tree = forwardRef<
     }
   };
 
-  /** 한 칸 아래: 다음 형제의 다음 형제 앞(없으면 맨 뒤) */
-  const moveDown = (r: Row & { kind: "node" }) => {
-    if (r.next === null) return;
-    const after = rows.find((x) => x.kind === "node" && x.node.path === r.next) as (Row & { kind: "node" }) | undefined;
-    actions.reorder(r.node.path, after?.next ?? null);
-  };
-
   // ── 끌어 옮기기: 노드를 다른 노드 위에 놓으면 그 노드의 하위가 된다(빈 곳 = 맨 위)
   const parentOfKey = (p: string, kind: "node" | "file") => (kind === "node" ? parentOf(p) : parentOf(p));
   const canDrop = (target: string) => {
@@ -404,68 +414,77 @@ export const Tree = forwardRef<
     if (target === "") return false;
     return true;
   };
-  /**
-   * 커스텀 부모 아래 노드 행의 위·아래 가장자리(행 높이의 30%씩)면 그 행 앞·뒤. 가운데거나 부모가 커스텀이 아니면 null —
-   * 지금처럼 그 노드 안으로 옮긴다. 같은 부모의 노드면 순서만 바꾸고, 다른 부모의 노드면 그 부모 안으로 옮긴다
-   */
-  const edgeOf = (e: DragEvent, r: Row & { kind: "node" }): "before" | "after" | null => {
+  /** 커스텀 부모 아래 노드 행 위에서의 놓기 판정(edgeDrop). 노드를 끌 때만, 자기 자신 위에서는 하지 않는다 */
+  const edgeOf = (e: DragEvent, r: Row & { kind: "node" }) => {
     const d = dragging.current;
-    if (!d || d.kind !== "node" || !r.custom || d.path === r.node.path) return null;
-    if (parentOf(d.path) !== parentOf(r.node.path) && !canDrop(parentOf(r.node.path))) return null;
+    if (!d || d.kind !== "node" || d.path === r.node.path) return null;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const y = (e.clientY - rect.top) / rect.height;
-    return y < 0.3 ? "before" : y > 0.7 ? "after" : null;
+    const parent = parentOf(r.node.path);
+    return edgeDrop((e.clientY - rect.top) / rect.height, {
+      custom: r.custom,
+      sameParent: parentOf(d.path) === parent,
+      parentOk: canDrop(parent),
+      expanded: open.has(r.node.path) && expandable(r.node),
+    });
   };
   const dragOverRow = (e: DragEvent, r: Row & { kind: "node" }) => {
-    const side = edgeOf(e, r);
-    if (!side) {
-      if (dropLine) setDropLine(null);
-      return dragOver(e, r.node.path, r.node);
-    }
+    const edge = edgeOf(e, r);
+    // 다른 부모의 행 가장자리: 그 부모 안으로 옮긴다 — 가운데 놓기처럼 부모(맨 위면 트리 전체)를 강조한다
+    if (edge?.kind !== "line") return dragOver(e, edge ? parentOf(r.node.path) : r.node.path, edge ? undefined : r.node);
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    if (dropTarget !== null) setDropTarget(null);
-    if (dropLine?.path !== r.node.path || dropLine.side !== side) setDropLine({ path: r.node.path, side });
+    showTarget(null);
+    showLine({ path: r.node.path, side: edge.side });
   };
   const dropRow = (e: DragEvent, r: Row & { kind: "node" }) => {
-    const side = edgeOf(e, r);
+    const edge = edgeOf(e, r);
     const d = dragging.current;
-    if (!side || !d) return drop(e, r.node.path);
+    if (!edge || !d) return drop(e, r.node.path);
+    if (edge.kind === "parent") return drop(e, parentOf(r.node.path));
     e.preventDefault();
     e.stopPropagation();
     dragEnd();
-    if (parentOf(d.path) !== parentOf(r.node.path)) return actions.move(d.path, "node", parentOf(r.node.path));
-    const before = side === "before" ? r.node.path : r.next;
+    const before = edge.side === "before" ? r.node.path : r.next;
     // 제자리(바로 앞·뒤 행의 맞닿은 가장자리)면 아무것도 하지 않는다
-    if (before === d.path || (side === "before" ? r.prev : r.node.path) === d.path) return;
+    if (before === d.path || (edge.side === "before" ? r.prev : r.node.path) === d.path) return;
     actions.reorder(d.path, before);
   };
+  /**
+   * 끄는 중의 강조(놓을 노드)·삽입선. 바뀌었는지는 상태값이 아니라 ref 로 본다 — dragover 는 렌더보다 자주 와서
+   * 처리기가 든 상태값이 낡아, 그것으로 견주면 지나온 행의 강조가 남거나 새 강조가 안 켜진다
+   */
+  const hoverTarget = useRef<string | null>(null);
+  const showTarget = (target: string | null, node?: VaultNode) => {
+    setDropTarget(target);
+    if (hoverTarget.current === target) return;
+    hoverTarget.current = target;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    // 닫힌 노드 위에 잠시 머무르면 편다
+    if (node && expandable(node) && !open.has(node.path)) hoverTimer.current = setTimeout(() => toggle(node.path, true), 650);
+  };
+  const showLine = (line: { path: string; side: "before" | "after" } | null) =>
+    setDropLine((p) => (p?.path === line?.path && p?.side === line?.side ? p : line));
   const dragOver = (e: DragEvent, target: string, node?: VaultNode) => {
-    if (!dragging.current || !canDrop(target)) return;
+    if (!dragging.current) return;
+    showLine(null);
+    if (!canDrop(target)) return showTarget(null);
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
-    if (dropLine) setDropLine(null);
-    if (dropTarget !== target) {
-      setDropTarget(target);
-      if (hoverTimer.current) clearTimeout(hoverTimer.current);
-      // 닫힌 노드 위에 잠시 머무르면 편다
-      if (node && expandable(node) && !open.has(node.path)) hoverTimer.current = setTimeout(() => toggle(node.path, true), 650);
-    }
+    showTarget(target, node);
   };
   const drop = (e: DragEvent, target: string) => {
     const d = dragging.current;
     if (!d || !canDrop(target)) return;
     e.preventDefault();
     e.stopPropagation();
-    setDropTarget(null);
-    dragging.current = null;
+    dragEnd();
     actions.move(d.path, d.kind, target);
   };
   const dragEnd = () => {
     dragging.current = null;
+    hoverTarget.current = null;
     setDropTarget(null);
     setDropLine(null);
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
@@ -490,8 +509,8 @@ export const Tree = forwardRef<
       onDragOver={(e) => dragOver(e, root)}
       onDragLeave={(e) => {
         if (e.target !== e.currentTarget) return;
-        setDropTarget(null);
-        setDropLine(null);
+        showTarget(null);
+        showLine(null);
       }}
       onDrop={(e) => drop(e, root)}
     >

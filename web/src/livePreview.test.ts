@@ -38,6 +38,18 @@ describe("맨 앞 커서의 입력이 프런트매터를 깨지 않는다", () =
     expect(type(selected, "X").doc.toString()).toBe("X" + NOTE.slice(3));
   });
 
+  it("맨 앞과 다른 자리를 함께 바꾸는 입력은 그대로 둔다(다른 변경을 잃지 않는다)", () => {
+    const s = state(NOTE + "본문");
+    const next = s.update({
+      changes: [
+        { from: 0, insert: "X" },
+        { from: s.doc.length, insert: "Y" },
+      ],
+      userEvent: "input.type",
+    }).state;
+    expect(next.doc.toString()).toBe("X" + NOTE + "본문Y");
+  });
+
   it("본문 시작 자리", () => {
     expect(bodyStart(state(NOTE + "글"))).toEqual({ at: NOTE.length, prefix: "" });
     expect(bodyStart(state("---\na: 1\n---"))).toEqual({ at: 12, prefix: "\n" });

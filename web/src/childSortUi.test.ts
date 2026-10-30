@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { parseFrontmatter, planReorder, seedRanks, sortChildren, type VaultNode } from "@keyring-notes/core";
-import { childSortWrites, fillBlankNote, rankWrites, shownChildren, siblingTarget, type NoteState } from "./childSortUi";
+import {
+  childSortWrites,
+  edgeDrop,
+  fillBlankNote,
+  isGeneratedNote,
+  planWritable,
+  rankWrites,
+  reorderHintKey,
+  seedWritable,
+  shownChildren,
+  siblingTarget,
+  writableSiblings,
+  type NoteState,
+} from "./childSortUi";
 
 const node = (name: string, extra: Partial<VaultNode> = {}): VaultNode => ({
   name,
@@ -152,5 +165,105 @@ describe("커스텀 순서 바꾸기", () => {
     expect(siblingTarget(ns, "W/a", 1)).toBe("W/c");
     expect(siblingTarget(ns, "W/a", -1)).toBeUndefined();
     expect(siblingTarget(ns, "W/c", 1)).toBeUndefined();
+  });
+
+  it("목록에 없는 경로는 위·아래 모두 못 옮긴다", () => {
+    const ns = [node("a"), node("b"), node("c")];
+    expect(siblingTarget(ns, "W/없음", 1)).toBeUndefined();
+    expect(siblingTarget(ns, "W/없음", -1)).toBeUndefined();
+  });
+});
+
+describe("위키 주제의 자동 생성 노트(index·log)는 rank 를 적지 않는다", () => {
+  const wiki = (name: string, extra: Partial<VaultNode> = {}): VaultNode => ({
+    ...node(name, extra),
+    path: `업무/경제/wiki/${name}`,
+    note: extra.note === null ? null : `업무/경제/wiki/${name}.md`,
+  });
+  const kids = [wiki("금리"), wiki("index"), wiki("log"), wiki("환율")];
+  const generated = (n: string) => n.endsWith("/index.md") || n.endsWith("/log.md");
+
+  it("자동 생성 노트 판정", () => {
+    expect(isGeneratedNote("업무/경제/wiki/index.md")).toBe(true);
+    expect(isGeneratedNote("업무/경제/wiki/log.md")).toBe(true);
+    expect(isGeneratedNote("업무/경제/wiki/금리.md")).toBe(false);
+    expect(isGeneratedNote("업무/index.md")).toBe(false);
+  });
+
+  it("처음 커스텀: 쓸 수 있는 노트에만 rank 를 매긴다(노트 없는 노드는 그대로 남긴다)", () => {
+    expect(writableSiblings([...kids, wiki("폴더", { note: null })], generated).map((n) => n.name)).toEqual(["금리", "환율", "폴더"]);
+    expect(seedWritable(kids, generated).map((s) => s.note)).toEqual(["업무/경제/wiki/금리.md", "업무/경제/wiki/환율.md"]);
+  });
+
+  const apply = (ns: VaultNode[], plan: { node: string; rank: string }[]) =>
+    names(
+      sortChildren(
+        ns.map((k) => ({ ...k, rank: plan.find((p) => p.node === k.path)?.rank ?? k.rank })),
+        "custom",
+        noView,
+      ),
+    );
+
+  it("자동 생성 노트를 지나가는 순서 바꾸기도 쓸 수 있는 노트만 적는다", () => {
+    const ranked = [wiki("금리", { rank: "V" }), wiki("환율", { rank: "k" }), wiki("index"), wiki("log"), wiki("물가")];
+    const shown = sortChildren(ranked, "custom", noView);
+    // rank 없는 노트(물가)를 맨 앞으로: 자동 생성 노트를 지나간다
+    const up = planWritable(shown, generated, "업무/경제/wiki/물가", "업무/경제/wiki/금리");
+    expect(up.map((p) => p.node)).toEqual(["업무/경제/wiki/물가"]);
+    expect(apply(ranked, up).slice(0, 3)).toEqual(["물가", "금리", "환율"]);
+    // 맨 뒤로: rank 없는 쓸 수 있는 노트(물가)까지 함께, 자동 생성 노트는 빼고
+    const end = planWritable(shown, generated, "업무/경제/wiki/금리", null);
+    expect(end.every((p) => !generated(`${p.node}.md`))).toBe(true);
+    expect(apply(ranked, end).slice(0, 3)).toEqual(["환율", "물가", "금리"]);
+  });
+
+  it("자동 생성 노트 앞에 놓으면 그 뒤의 첫 쓸 수 있는 노트 앞으로 친다(없으면 맨 뒤)", () => {
+    const ranked = [wiki("금리", { rank: "V" }), wiki("환율", { rank: "k" }), wiki("index"), wiki("log"), wiki("물가")];
+    const shown = sortChildren(ranked, "custom", noView);
+    const at = shown.findIndex((n) => n.name === "index");
+    const after = shown.slice(at + 1).find((n) => !generated(n.note!));
+    const plan = planWritable(shown, generated, "업무/경제/wiki/금리", "업무/경제/wiki/index");
+    expect(plan.every((p) => !generated(`${p.node}.md`))).toBe(true);
+    const order = apply(ranked, plan).filter((n) => n !== "index" && n !== "log");
+    expect(order.indexOf("금리")).toBe(after ? order.indexOf(after.name) - 1 : order.length - 1);
+  });
+
+  it("목록에 없는 자리면 던진다", () => {
+    expect(() => planWritable(kids, generated, "업무/경제/wiki/금리", "업무/경제/wiki/없음")).toThrow();
+  });
+});
+
+describe("커스텀 부모 아래 행에 끌어 놓기 판정", () => {
+  const base = { custom: true, sameParent: true, parentOk: true, expanded: false };
+
+  it("같은 부모: 위·아래 가장자리는 삽입선, 가운데는 그 노드 안으로(null)", () => {
+    expect(edgeDrop(0.1, base)).toEqual({ kind: "line", side: "before" });
+    expect(edgeDrop(0.9, base)).toEqual({ kind: "line", side: "after" });
+    expect(edgeDrop(0.5, base)).toBeNull();
+  });
+
+  it("부모가 커스텀이 아니면 판정하지 않는다", () => {
+    expect(edgeDrop(0.1, { ...base, custom: false })).toBeNull();
+    expect(edgeDrop(0.9, { ...base, custom: false })).toBeNull();
+  });
+
+  it("다른 부모의 노드면 가장자리에서 삽입선 대신 그 부모 안으로", () => {
+    expect(edgeDrop(0.1, { ...base, sameParent: false })).toEqual({ kind: "parent" });
+    expect(edgeDrop(0.9, { ...base, sameParent: false })).toEqual({ kind: "parent" });
+    expect(edgeDrop(0.5, { ...base, sameParent: false })).toBeNull();
+    expect(edgeDrop(0.1, { ...base, sameParent: false, parentOk: false })).toBeNull();
+  });
+
+  it("펼친 노드의 아래 가장자리는 가운데로 친다(위 가장자리는 그대로)", () => {
+    expect(edgeDrop(0.9, { ...base, expanded: true })).toBeNull();
+    expect(edgeDrop(0.1, { ...base, expanded: true })).toEqual({ kind: "line", side: "before" });
+    expect(edgeDrop(0.9, { ...base, expanded: true, sameParent: false })).toBeNull();
+  });
+});
+
+describe("순서를 못 바꿀 때의 안내", () => {
+  it("워크스페이스 맨 위 노트는 「노트 정렬」, 그 아래는 부모의 「하위 노트 정렬」 을 가리킨다", () => {
+    expect(reorderHintKey("W")).toBe("tree.reorderNeedsCustomRoot");
+    expect(reorderHintKey("W/P")).toBe("tree.reorderNeedsCustom");
   });
 });

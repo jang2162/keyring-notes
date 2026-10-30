@@ -1275,6 +1275,7 @@
   "tree.pin": "고정",
   "tree.pinned": "고정",
   "tree.reorderNeedsCustom": "순서를 바꾸려면 부모 노트의 「하위 노트 정렬」 에서 커스텀을 고르세요.",
+  "tree.reorderNeedsCustomRoot": "순서를 바꾸려면 트리 표시 옵션(⋯)의 「노트 정렬」 에서 커스텀을 고르세요.",
   "tree.reveal": "지금 노트 찾기",
   "tree.revealWhy": "노트를 먼저 여세요",
   "tree.showAttachments": "\"첨부 N\" 줄 보이기",

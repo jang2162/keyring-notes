@@ -50,6 +50,15 @@ export function viewedAt(notePath: string): number | undefined {
   return load()[notePath];
 }
 
+/**
+ * 지금 기록을 한 번 읽어 둔 조회 함수. 조회순 정렬은 비교마다 시각을 찾으므로 정렬 한 번에 이것 하나를 넘긴다 —
+ * viewedAt 을 넘기면 비교마다 localStorage 에서 기록 전체(개수 제한 없음)를 다시 받는다
+ */
+export function viewedSnapshot(): (notePath: string) => number | undefined {
+  const v = load();
+  return (notePath) => v[notePath];
+}
+
 export function markViewed(notePath: string, at: number = Date.now()): void {
   update((v) => ((v[notePath] = at), v));
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { forgetViewed, markViewed, renameViewed, VIEWED_KEY, viewedAt } from "./viewed";
+import { forgetViewed, markViewed, renameViewed, VIEWED_KEY, viewedAt, viewedSnapshot } from "./viewed";
 
 let store: Map<string, string>;
 beforeEach(() => {
@@ -95,6 +95,20 @@ describe("조회 기록(keyring:viewed)", () => {
     expect(() => renameViewed("W/a.md", "W/b.md")).not.toThrow();
     expect(() => forgetViewed(() => true)).not.toThrow();
     expect(viewedAt("W/a.md")).toBeUndefined();
+  });
+
+  it("정렬에 넘기는 조회 함수는 기록을 한 번만 읽는다", () => {
+    markViewed("W/a.md", 1);
+    markViewed("W/b.md", 2);
+    const ls = (globalThis as { localStorage: { getItem: (k: string) => string | null } }).localStorage;
+    const get = ls.getItem;
+    let reads = 0;
+    ls.getItem = (k: string) => (reads++, get(k));
+    const at = viewedSnapshot();
+    const got = Array.from({ length: 50 }, (_, i) => at(i % 2 ? "W/a.md" : "W/b.md"));
+    expect(reads).toBe(1);
+    expect(got.slice(0, 2)).toEqual([2, 1]);
+    expect(at("W/c.md")).toBeUndefined();
   });
 
   it("localStorage 가 아예 없어도 오류가 없다", () => {
