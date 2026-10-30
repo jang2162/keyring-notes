@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { ConflictError, LocalVault, MemoryStore, NotFoundError, SyncEngine, withoutEdited } from "../src/index.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ConflictError, LocalVault, MemoryStore, NotFoundError, parseFrontmatter, SyncEngine, withoutEdited } from "../src/index.js";
 import { FakeServer } from "./fakeServer.js";
 
 async function device(name = "폰") {
@@ -279,5 +279,78 @@ describe("동기화", () => {
     expect(r.conflicts).toEqual([]);
     expect(r.settingsConflicts).toEqual([{ key: ["ui", "theme"], local: "light", server: "dark" }]);
     expect(server.text("keyring-settings.md")).toBe("---\nkeyring: settings\nui:\n  theme: dark\n  live: false\n---\n");
+  });
+});
+
+describe("동기화와 수정 시각(edited)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const at = (iso: string) => vi.setSystemTime(new Date(iso));
+  const doc = (first: string, second: string) => `# 메모\n\n${first}\n\n가운데 문단\n\n${second}\n`;
+
+  it("두 기기가 같은 노트의 다른 문단을 각자 다른 시각에 고쳐도 충돌 사본 없이 합치고, 더 늦은 시각이 남는다", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at("2026-10-30T09:00:00Z");
+    const server = new FakeServer();
+    await server.put("메모.md", doc("첫 문단", "둘째 문단"));
+    const a = await device("노트북");
+    const b = await device("폰");
+    const syncA = new SyncEngine(a.v, server);
+    const syncB = new SyncEngine(b.v, server);
+    await syncA.run();
+    await syncB.run();
+
+    at("2026-10-30T09:20:00Z");
+    await b.v.write("메모.md", doc("첫 문단", "둘째 문단 폰에서"), (await b.v.read("메모.md")).hash);
+    at("2026-10-30T09:10:00Z");
+    await a.v.write("메모.md", doc("첫 문단 노트북에서", "둘째 문단"), (await a.v.read("메모.md")).hash);
+    at("2026-10-30T09:30:00Z");
+    expect((await syncA.run()).pushed).toEqual(["메모.md"]);
+    const r = await syncB.run();
+    expect(r.conflicts).toEqual([]);
+    expect(r.merged).toEqual(["메모.md"]);
+    const merged = server.text("메모.md")!;
+    expect(withoutEdited(merged)).toBe(doc("첫 문단 노트북에서", "둘째 문단 폰에서"));
+    expect(parseFrontmatter(merged).data).toEqual({ edited: "2026-10-30T09:20:00Z" });
+    expect(await b.v.read("메모.md").then((d) => d.content)).toBe(merged);
+    // 노트북이 받아 오면 세 쪽이 같다
+    await syncA.run();
+    expect((await a.v.read("메모.md")).content).toBe(merged);
+  });
+
+  it("서버 쪽 시각이 더 늦어도 그 시각이 남는다", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at("2026-10-30T09:00:00Z");
+    const server = new FakeServer();
+    await server.put("메모.md", doc("첫 문단", "둘째 문단"));
+    const a = await device("노트북");
+    const b = await device("폰");
+    const syncA = new SyncEngine(a.v, server);
+    const syncB = new SyncEngine(b.v, server);
+    await syncA.run();
+    await syncB.run();
+    at("2026-10-30T09:10:00Z");
+    await b.v.write("메모.md", doc("첫 문단", "둘째 문단 폰에서"), (await b.v.read("메모.md")).hash);
+    at("2026-10-30T09:40:00Z");
+    await a.v.write("메모.md", doc("첫 문단 노트북에서", "둘째 문단"), (await a.v.read("메모.md")).hash);
+    await syncA.run();
+    const r = await syncB.run();
+    expect(r.conflicts).toEqual([]);
+    expect(parseFrontmatter(server.text("메모.md")!).data).toEqual({ edited: "2026-10-30T09:40:00Z" });
+  });
+
+  it("고친 노트를 올린 뒤 다시 동기화하면 아무것도 다시 올리지 않는다", async () => {
+    const server = new FakeServer();
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await v.write("a.md", "글", null);
+    expect((await sync.run()).pushed).toEqual(["a.md"]);
+    await v.write("a.md", "고친 글", (await v.read("a.md")).hash);
+    expect((await sync.run()).pushed).toEqual(["a.md"]);
+    // 서버는 기기의 쓰기에 시각을 다시 적지 않으므로 서버 내용 = 기기 내용
+    expect(server.text("a.md")).toBe((await v.read("a.md")).content);
+    const again = await sync.run();
+    expect([again.pushed, again.pulled, again.merged, again.conflicts].flat()).toEqual([]);
   });
 });
