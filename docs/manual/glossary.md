@@ -29,6 +29,8 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | structure check | 정리 점검 | The check for broken links, orphan pages and missing sources |
 | trash | 휴지통 | Deleted notes, listed from history so they can be restored |
 | pin | 고정 | Keep a note at the top of the left panel and the home screen, on this device |
+| sort sub-notes | 하위 노트 정렬 | How a note orders the notes directly under it: name, last modified, last opened or custom |
+| custom order | 커스텀 순서 | The order of child notes set by hand, kept in each note's `rank` |
 | agent | 에이전트 | An AI client that reaches the vault with a token |
 | token | 토큰 | The secret an agent or device sends as `Authorization: Bearer` |
 | permission level | 권한 | `hidden`, `read`, `append`, `write`, `delete` |

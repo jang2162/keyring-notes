@@ -251,6 +251,7 @@ Press `Ctrl/Cmd+/` to see the full list, and change shortcuts in Settings → **
 | Today's note | `Ctrl/Cmd+Shift+D` |
 | Settings | `Ctrl/Cmd+,` |
 | Rename | F2 |
+| Move note up / down (custom order) | `Alt+Shift+↑` / `Alt+Shift+↓` |
 | Split right / down | `Ctrl/Cmd+\` / `Ctrl/Cmd+Shift+\` |
 | Focus neighbouring pane / next pane | `Ctrl/Cmd+Alt+Shift+arrow` / `Ctrl/Cmd+Shift+,` |
 | Move tab to neighbouring pane / next pane | `Cmd+Ctrl+arrow` (macOS) / `Ctrl/Cmd+Shift+.` |

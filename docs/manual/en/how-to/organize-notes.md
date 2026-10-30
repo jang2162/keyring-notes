@@ -36,12 +36,49 @@ The big title field at the top of a note is the file name. Edit it and press Ent
 - Click a note to open it in a new tab, or go to its tab if it is already open.
 - Drag and drop to move. Hovering over a collapsed node expands it.
 - Keyboard: ↑↓ move, ←→ collapse and expand, Enter open, F2 rename, Delete delete.
-- The right-click menu has **New child note**, rename, move to another note, duplicate, open in a new tab or the other pane, copy path or link, change icon, pin, and delete (with children).
-- The toolbar above the tree has **New note**, **Reveal current note**, **Collapse all** and display options (show or hide the "N attachments" rows).
+- The right-click menu has **New child note**, rename, move to another note, duplicate, open in a new tab or the other pane, copy path or link, change icon, **Sort sub-notes**, **Move up** and **Move down**, pin, and delete (with children).
+- The toolbar above the tree has **New note**, **Reveal current note**, **Collapse all** and display options (show or hide the "N attachments" rows, **Sort notes**).
 - The workspace's attachment folder is hidden from the tree.
-- Notes sort by name. Inside the daily folder, the newest comes first (configurable).
+- Notes sort by name unless you choose another order (see [Sort child notes](#sort-child-notes)). Inside the daily folder, the newest comes first (configurable) until you choose an order for it.
 
 Renaming, moving or deleting a node handles `A.md` and everything in `A/` in one go: one commit on the server, one journal entry in the app.
+
+## Sort child notes
+
+Each note chooses the order of the notes directly under it. Right-click a note in the tree, choose **Sort sub-notes**, and pick one:
+
+- **Name**: alphabetical order. This is the default.
+- **Last modified**: the most recently changed note comes first. Editing, renaming, moving and changing properties such as the icon all count as changes.
+- **Last opened**: the note you opened most recently on this device comes first. Notes you never opened follow, by name.
+- **Custom**: the order you set by hand.
+
+To sort the notes at the top of a workspace, click the display options (⋯) above the tree and choose **Sort notes**. With **All workspaces** on, a workspace row's menu has **Sort sub-notes** too.
+
+The order applies only to the notes directly under that note. Their own child notes keep their own order. Choosing an order on a folder without a note creates the note.
+
+The choice is saved in the note, so every device that uses the vault shows the same order. **Last opened** is the exception. Each device remembers what you opened on it, and opening a note never changes the vault.
+
+### Set a custom order
+
+When a note uses **Custom**, change the order of its child notes in one of these ways:
+
+- Drag a note to the top or bottom edge of another child note. A line shows where it goes. Dropping it on the middle of a note still moves it into that note.
+- Right-click a note and choose **Move up** or **Move down**.
+- Select a note in the tree and press `Alt+Shift+↑` or `Alt+Shift+↓`. Outside the tree, these keys move the current note.
+
+The first time you choose **Custom**, the order you see is kept. If you switch to another order later, the custom order is kept and returns when you choose **Custom** again. A note moved into another note goes to the end of that note's custom order.
+
+Usually only the moved note changes, so two devices can reorder different notes at the same time without conflicts.
+
+### Fields the app writes
+
+The app keeps the sort in these frontmatter fields. The Properties tab hides them.
+
+- `edited`: when the note last changed through Keyring Notes, in UTC. The app writes it when it saves, renames or moves a note, and when an agent writes through MCP or the REST API. Changes made in another editor don't update it.
+- `sort`: how the note sorts its child notes: `modified`, `viewed` or `custom`. Choosing **Name** removes the field.
+- `rank`: the note's place in its parent's custom order.
+
+A note without `edited` sorts by its file time. In the desktop and mobile app, that time can differ between devices until the note changes in the app.
 
 ## Pin notes
 

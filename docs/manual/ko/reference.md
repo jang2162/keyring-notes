@@ -252,6 +252,7 @@ Keyring Notes 는 Obsidian 과 같은 문법을 읽습니다.
 | 오늘 노트 | `Ctrl/Cmd+Shift+D` |
 | 설정 | `Ctrl/Cmd+,` |
 | 이름 바꾸기 | F2 |
+| 노트 위로 / 아래로(커스텀 순서) | `Alt+Shift+↑` / `Alt+Shift+↓` |
 | 오른쪽 / 아래로 나누기 | `Ctrl/Cmd+\` / `Ctrl/Cmd+Shift+\` |
 | 이웃 칸 / 다음 칸으로 포커스 | `Ctrl/Cmd+Alt+Shift+방향키` / `Ctrl/Cmd+Shift+,` |
 | 탭을 이웃 칸 / 다음 칸으로 | `Cmd+Ctrl+방향키`(macOS) / `Ctrl/Cmd+Shift+.` |
