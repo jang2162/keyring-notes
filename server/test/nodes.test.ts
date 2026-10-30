@@ -1,7 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseFrontmatter } from "@keyring-notes/core";
 import { AccessPolicy } from "../src/access.js";
 import { createApp } from "../src/app.js";
 import { BackupService } from "../src/backup.js";
@@ -9,7 +11,7 @@ import { ConfigStore } from "../src/config.js";
 import type { Ingestor } from "../src/ingest.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { ScopedVault } from "../src/scoped.js";
-import type { Vault } from "../src/vault.js";
+import { hashContent, type Vault } from "../src/vault.js";
 import type { Wiki } from "../src/wiki.js";
 import { agentPrincipal, openVault, ownerPrincipal, tempDir } from "./helpers.js";
 
@@ -266,5 +268,154 @@ describe("REST·MCP: 노드 API와 에이전트 언어", () => {
     expect((await client.listTools()).tools.find((t) => t.name === "whoami")!.description).toBe("이 토큰의 에이전트 이름과 경로별 권한 표");
     expect((await call("lint")).issues[0].detail).toBe("링크 [[없는것]]의 대상이 없거나 볼 수 없음");
     await client.close();
+  });
+});
+
+describe("트리 응답에 정렬·순서·수정 시각", () => {
+  it("BOM 으로 시작하는 노트도 sort·icon·rank·edited 를 싣는다", async () => {
+    const T = "2026-10-30T09:12:33Z";
+    await vault.batch(
+      [{ op: "write", path: "업무/bom.md", content: `\uFEFF---\nsort: custom\nicon: 🎍\nrank: k\nedited: ${T}\n---\n본문\n`, baseHash: null }],
+      ownerPrincipal,
+    );
+    const kids = (await owner.tree()).find((n) => n.path === "업무")!.children!;
+    expect(kids.find((n) => n.path === "업무/bom.md")).toMatchObject({ sort: "custom", icon: "🎍", rank: "k", edited: Date.parse(T) });
+  });
+
+  it("edited 가 있으면 그 시각, 없으면 서버 색인의 파일 시각. sort·rank 는 맞는 값만", async () => {
+    const T = "2026-10-30T09:12:33Z";
+    const files: Record<string, string> = {
+      "업무.md": `---\nsort: custom\nedited: ${T}\n---\n업무`,
+      "업무/가.md": "---\nrank: a0\n---\n가",
+      "업무/나.md": "---\nsort: Custom\nrank: [a]\n---\n나",
+    };
+    // 쓰기 계층을 거치지 않고(앱 밖 변경처럼) 디스크에 두고 색인만 맞춘다
+    await vault.batch([{ op: "write", path: "업무/빈.md", content: "", baseHash: null }], ownerPrincipal);
+    for (const [rel, content] of Object.entries(files)) await writeFile(path.join(vault.root, rel), content);
+    await index.refresh(vault.root, Object.keys(files));
+    const tree = await owner.tree();
+    const ws = tree.find((n) => n.path === "업무.md")!;
+    expect(ws).toMatchObject({ sort: "custom", edited: Date.parse(T) });
+    expect(ws.rank).toBeUndefined();
+    const kids = tree.find((n) => n.path === "업무")!.children!;
+    expect(kids.find((n) => n.path === "업무/가.md")).toMatchObject({ rank: "a0", edited: (await stat(path.join(vault.root, "업무/가.md"))).mtimeMs });
+    const na = kids.find((n) => n.path === "업무/나.md")!;
+    expect(na.sort).toBeUndefined();
+    expect(na.rank).toBeUndefined();
+    expect(na.edited).toBe((await stat(path.join(vault.root, "업무/나.md"))).mtimeMs);
+    expect(tree.find((n) => n.path === "업무")!.edited).toBeUndefined();
+  });
+});
+
+describe("서버의 수정 시각(edited)과 rank", () => {
+  /** 앱(기기 토큰)으로 들어온 소유자 — 동기화가 올리는 쓰기 */
+  const devicePrincipal = { kind: "owner" as const, name: "me", email: "me@test", device: "노트북" };
+  const NOW = "2026-10-30T09:12:33Z";
+  const fm = async (rel: string) => parseFrontmatter((await vault.read(rel)).content).data;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T09:12:33.500Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("소유자의 쓰기에는 지금 시각을 적고, 돌려준 내용·해시가 저장된 것이다", async () => {
+    const r = await owner.write("업무/A.md", "# A\n", null);
+    const disk = (await vault.read("업무/A.md")).content;
+    expect(disk).toBe(`---\nedited: ${NOW}\n---\n# A\n`);
+    expect(r.content).toBe(disk);
+    expect(r.hash).toBe(hashContent(disk));
+  });
+
+  it("내용이 그대로인 노트에는 다시 적지 않는다 — 시각만 바뀐 커밋이 생기지 않는다", async () => {
+    const first = await owner.write("업무/같음.md", "# 같음\n", null);
+    await owner.write("업무/옆.md", "# 옆\n", null);
+    const before = (await vault.git.log()).length;
+    vi.setSystemTime(new Date("2026-10-30T09:20:00Z"));
+    // 같은 내용을 다시 쓴다(웹 저장·REST write)
+    const again = await owner.write("업무/같음.md", first.content, first.hash);
+    expect(again.hash).toBe(first.hash);
+    expect((await vault.git.log()).length).toBe(before);
+    // 일괄 쓰기에서 안 바뀐 파일은 그대로, 바뀐 파일만 새 시각
+    const side = await vault.read("업무/옆.md");
+    await owner.batch([
+      { op: "write", path: "업무/같음.md", content: first.content, baseHash: first.hash },
+      { op: "write", path: "업무/옆.md", content: side.content.replace("# 옆", "# 옆 고침"), baseHash: side.hash },
+    ]);
+    expect((await vault.read("업무/같음.md")).content).toBe(first.content);
+    expect(await fm("업무/옆.md")).toEqual({ edited: "2026-10-30T09:20:00Z" });
+  });
+
+  it("기기 토큰(동기화)의 쓰기는 보낸 내용 그대로 둔다", async () => {
+    const device = new ScopedVault(vault, devicePrincipal, index, wiki);
+    const sent = "---\nedited: 2026-01-01T00:00:00Z\n---\n기기에서 쓴 글\n";
+    const r = await device.write("업무/B.md", sent, null);
+    expect((await vault.read("업무/B.md")).content).toBe(sent);
+    expect(r.hash).toBe(hashContent(sent));
+    const plain = await device.write("업무/C.md", "시각 없는 글", null);
+    expect(plain.content).toBe("시각 없는 글");
+  });
+
+  it("에이전트의 쓰기에도 적는다", async () => {
+    const agent = new ScopedVault(vault, agentPrincipal("bot", { 업무: "delete" }), index, wiki);
+    await agent.write("업무/D.md", "에이전트 글", null);
+    expect(await fm("업무/D.md")).toEqual({ edited: NOW });
+  });
+
+  it("이동으로 링크를 고친 노트들에도 적는다", async () => {
+    const device = new ScopedVault(vault, devicePrincipal, index, wiki);
+    await device.batch([
+      { op: "write", path: "업무/옛.md", content: "옛", baseHash: null },
+      { op: "write", path: "업무/참조.md", content: "[[옛]] 을 본다", baseHash: null },
+    ]);
+    const old = await vault.read("업무/옛.md");
+    const r = await owner.move("업무/옛.md", "업무/새.md", old.hash);
+    expect(r.linksUpdated).toContain("업무/참조.md");
+    expect(await fm("업무/새.md")).toEqual({ edited: NOW });
+    expect((await vault.read("업무/참조.md")).content).toBe(`---\nedited: ${NOW}\n---\n[[새]] 을 본다`);
+  });
+
+  it("다른 부모로 옮긴 노드는 노트의 rank 를 지우고, 같은 부모 안 이름 바꾸기는 남긴다 — 한 커밋으로", async () => {
+    const device = new ScopedVault(vault, devicePrincipal, index, wiki);
+    await device.batch([
+      { op: "write", path: "업무/A.md", content: "---\nrank: V\nicon: 📁\n---\n에이", baseHash: null },
+      { op: "write", path: "업무/A/b.md", content: "---\nrank: k\n---\n비", baseHash: null },
+      { op: "write", path: "개인.md", content: "개인", baseHash: null },
+    ]);
+    await owner.moveNode("업무/A", "업무/B");
+    expect(await fm("업무/B.md")).toEqual({ rank: "V", icon: "📁", edited: NOW });
+    const before = (await vault.git.log()).length;
+    const r = await owner.moveNode("업무/B", "개인/B");
+    expect((await vault.git.log()).length).toBe(before + 1);
+    expect(r.moved.map(([, t]) => t).sort()).toEqual(["개인/B.md", "개인/B/b.md"]);
+    expect(await fm("개인/B.md")).toEqual({ icon: "📁", edited: NOW });
+    // 함께 옮긴 하위 노트의 rank 는 새 부모(B) 안의 순서라 그대로다
+    expect(await fm("개인/B/b.md")).toEqual({ rank: "k", edited: NOW });
+  });
+
+  it("BOM 으로 시작하는 노트는 BOM 을 지키고 프런트매터를 하나로 둔다", async () => {
+    await owner.write("업무/bom.md", "\uFEFF---\ntitle: 제목\n---\n본문\n", null);
+    expect((await vault.read("업무/bom.md")).content).toBe(`\uFEFF---\ntitle: 제목\nedited: ${NOW}\n---\n본문\n`);
+  });
+
+  it("사용자의 프런트매터 모양(들여쓰지 않은 목록·[a,b]·CRLF)은 그대로 두고 edited 한 줄만 더한다", async () => {
+    await owner.write("업무/모양.md", "---\r\ntags:\r\n- a\r\ny: [a,b]\r\n---\r\n본문\r\n", null);
+    expect((await vault.read("업무/모양.md")).content).toBe(`---\r\ntags:\r\n- a\r\ny: [a,b]\r\nedited: ${NOW}\r\n---\r\n본문\r\n`);
+  });
+
+  it("YAML 이 깨진 노트도 저장되고 내용은 그대로다", async () => {
+    const broken = "---\na: [\n---\n본문";
+    const r = await owner.write("업무/깨짐.md", broken, null);
+    expect((await vault.read("업무/깨짐.md")).content).toBe(broken);
+    expect(r.hash).toBe(hashContent(broken));
+  });
+
+  it("공통 설정 파일에는 적지 않는다", async () => {
+    const s = await owner.read("keyring-settings.md").catch(() => null);
+    const next = "---\nkeyring: settings\n---\n메모\n";
+    await owner.write("keyring-settings.md", next, s?.hash ?? null);
+    expect((await vault.read("keyring-settings.md")).content).toBe(next);
   });
 });

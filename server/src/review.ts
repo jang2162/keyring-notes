@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { editedStamp } from "@keyring-notes/core";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AccessPolicy, atLeast } from "./access.js";
@@ -204,7 +205,8 @@ export class ReviewQueue {
     const res = await this.vault.batch(
       ops,
       { name: p.agent, email: p.agentEmail },
-      { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, links },
+      // 승인해 적용하는 것도 에이전트의 쓰기다 — 승인한 때의 시각을 적는다
+      { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, links, edited: editedStamp(new Date()) },
     );
     p.status = "approved";
     p.decidedAt = new Date().toISOString();

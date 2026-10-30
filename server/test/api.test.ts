@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { withoutEdited } from "@keyring-notes/core";
 import { createApp } from "../src/app.js";
 import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
@@ -308,7 +309,8 @@ describe("검색 API", () => {
     params.append("tag", "y");
     const hits = await get(params, { cookie });
     expect(hits.map((h) => h.path)).toEqual(["업무/a.md"]);
-    expect(hits[0].matches?.map((m) => m.line)).toEqual([2, 3]);
+    // 저장할 때 적힌 수정 시각(프런트매터 세 줄)만큼 아래 줄이다
+    expect(hits[0].matches?.map((m) => m.line)).toEqual([5, 6]);
     expect(hits[0].matchCount).toBe(2);
   });
 
@@ -361,7 +363,7 @@ describe("휴지통 API", () => {
     expect(list.next).toBeNull();
     const id = list.items[0].id;
     const pv = await (await app.request(`/api/trash/preview?id=${id}&path=${encodeURIComponent("개인/일기.md")}`, { headers: { cookie } })).json();
-    expect(pv.content).toBe("# 일기\n금리 걱정\n");
+    expect(withoutEdited(pv.content)).toBe("# 일기\n금리 걱정\n");
     const agent = await app.request("/api/trash", { headers: { authorization: `Bearer ${workToken}` } });
     expect(agent.status).toBe(403);
     const r = await app.request("/api/trash/restore", { method: "POST", headers: { ...json, cookie }, body: JSON.stringify({ id, paths: ["개인/일기.md"] }) });

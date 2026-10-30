@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { withoutEdited } from "@keyring-notes/core";
 import { BackupService } from "../src/backup.js";
 import { BLOB_INDEX, BlobStore } from "../src/blobs.js";
 import { ConfigStore } from "../src/config.js";
@@ -135,7 +136,7 @@ describe("S3 원격 백업", () => {
     const a = await owner.read("a.md");
     await owner.write("a.md", "# A\n나중\n", a.hash);
     await backups.restore(fetched.name);
-    expect((await vault.read("a.md")).content).toBe("# A\n처음\n");
+    expect(withoutEdited((await vault.read("a.md")).content)).toBe("# A\n처음\n");
 
     // 끄면 올리지 않는다
     config.update((c) => {
@@ -230,7 +231,7 @@ describe("S3 첨부 보관", () => {
     expect(tracked).not.toContain("자료/작은그림.png");
     expect(tracked).not.toContain("보관/자료/큰그림.png");
     expect((await vault.readRaw("보관/자료/큰그림.png")).data.length).toBe(500);
-    expect((await owner.read("보관/자료/글.md")).content).toBe("![[큰그림.png]] ![](작은그림.png)");
+    expect(withoutEdited((await owner.read("보관/자료/글.md")).content)).toBe("![[큰그림.png]] ![](작은그림.png)");
     expect(git(vault.root, "status", "--porcelain")).toBe("");
   });
 
@@ -292,7 +293,7 @@ describe("S3 올리기 전 암호화", () => {
     expect(fetched.head).toBe(b.head);
     await owner.write("a.md", "바뀜", (await owner.read("a.md")).hash);
     await backups.restore(fetched.name);
-    expect((await vault.read("a.md")).content).toBe("# A\n비밀 메모\n");
+    expect(withoutEdited((await vault.read("a.md")).content)).toBe("# A\n비밀 메모\n");
 
     // 키 없이는 받지 못하고, 다른 키로는 시작하지 않는다
     backups.crypto = null;

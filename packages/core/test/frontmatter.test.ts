@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { convertProperty, parseFieldInput, parseFrontmatter, propertyStats, propertyType, renameFrontmatterField, setFrontmatterField } from "../src/index.js";
+import {
+  analyze,
+  convertProperty,
+  parseFieldInput,
+  parseFrontmatter,
+  propertyStats,
+  propertyType,
+  renameFrontmatterField,
+  setFrontmatterField,
+} from "../src/index.js";
 
 describe("프런트매터 필드 고치기", () => {
   it("한 필드만 바꾸고 주석·순서·본문은 그대로", () => {
@@ -85,5 +94,28 @@ describe("속성 고칠 때 원래 모양 잇기", () => {
     out = setFrontmatterField(out, "code", "008");
     expect(out).toBe("---\ntags: [a, b, c]\nstatus: 완료 # 상태\ncode: '008'\n---\n");
     expect(setFrontmatterField(out, "status", 3)).toContain("status: 3 # 상태");
+  });
+});
+
+describe("BOM 으로 시작하는 노트의 프런트매터", () => {
+  const src = "\uFEFF---\ntitle: 제목\ntags: [가]\n---\n# 머리\n본문\n";
+
+  it("읽는다(제목·태그·속성)", () => {
+    expect(parseFrontmatter(src).data).toEqual({ title: "제목", tags: ["가"] });
+    const a = analyze("W/b.md", src);
+    expect(a.frontmatter).toEqual({ title: "제목", tags: ["가"] });
+    expect(a.title).toBe("제목");
+    expect(a.tags).toContain("가");
+  });
+
+  it("필드를 두 번 고쳐도 BOM 하나·프런트매터 하나로 기존 블록을 고친다", () => {
+    const once = setFrontmatterField(src, "sort", "custom");
+    const twice = setFrontmatterField(once, "rank", "V");
+    expect(twice).toBe("\uFEFF---\ntitle: 제목\ntags: [가]\nsort: custom\nrank: V\n---\n# 머리\n본문\n");
+    expect(renameFrontmatterField(twice, "rank", "order")).toBe("\uFEFF---\ntitle: 제목\ntags: [가]\nsort: custom\norder: V\n---\n# 머리\n본문\n");
+  });
+
+  it("마지막 필드를 지우면 BOM 과 본문만 남는다", () => {
+    expect(setFrontmatterField("\uFEFF---\nsort: custom\n---\n본문", "sort", null)).toBe("\uFEFF본문");
   });
 });

@@ -5,9 +5,15 @@ export interface TreeNode {
   children?: TreeNode[];
   /** 문서 아이콘(프런트매터 icon) */
   icon?: string;
+  /** 노트의 하위 정렬(프런트매터 sort) */
+  sort?: ChildSort;
+  /** 커스텀 순서 키(프런트매터 rank) */
+  rank?: string;
+  /** 수정 시각(ms): 프런트매터 edited, 없으면 파일 시각 */
+  edited?: number;
 }
 
-import type { Mention, PropertyStat, TrashPage } from "@keyring-notes/core";
+import { sha256Hex, type ChildSort, type Mention, type PropertyStat, type TrashPage } from "@keyring-notes/core";
 import { isNetworkError, offline } from "./offline";
 
 export interface Doc {
@@ -487,6 +493,14 @@ const remoteApi = {
         : { op: "put", path: f.path, data: toBase64(f.data ?? new Uint8Array()) },
     );
     await request("POST", "/api/batch", { operations });
+  },
+  /** 여러 문서를 한 커밋으로 쓴다(하위 노트 정렬·순서 바꾸기). baseHash 하나라도 틀리면 아무것도 바뀌지 않는다(409) */
+  async writeMany(files: { path: string; content: string; baseHash: string | null }[], message: string): Promise<{ path: string; hash: string }[]> {
+    const operations = files.map((f) => ({ op: "write", path: f.path, content: f.content, baseHash: f.baseHash }));
+    const res = await request<{ files: { path: string; hash: string | null }[] }>("POST", "/api/batch", { operations, message });
+    // 내용이 그대로인 파일은 서버 결과에 없다 — 보낸 내용의 해시가 지금 해시다
+    const hashes = new Map(res.files.map((f) => [f.path, f.hash]));
+    return Promise.all(files.map(async (f) => ({ path: f.path, hash: hashes.get(f.path) ?? (await sha256Hex(f.content)) })));
   },
   /** 여러 문서를 한 커밋으로 옮긴다(링크 자동 갱신). 데일리 노트 형식 옮기기 */
   async moveFiles(pairs: [string, string][], message: string): Promise<{ linksUpdated: string[]; linkCount: number }> {

@@ -1,4 +1,6 @@
 import { propertyStats, type PropertyStat } from "./frontmatter.js";
+import { editedStamp, sameExceptEdited, stampEdited, withoutEdited } from "./edited.js";
+import { withoutRank } from "./childSort.js";
 import { mentionNames, unlinkedMentions, type Mention } from "./mentions.js";
 import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysis.js";
 import { rewriteLinks, type LinkRewriteContext } from "./links.js";
@@ -12,7 +14,7 @@ import { parseWidget, runWidget, type WidgetResult } from "./widget.js";
 import { generatedKind, generatedPaths, isTopicName, renderWikiIndex, renderWikiLog, schemaTemplate, schemaTopic, topicCandidate } from "./wiki.js";
 import { dailyLookup, isVaultSettingsPath, parseVaultSettings, vaultLanguage, VAULT_SETTINGS_PATH, type VaultSettings } from "./settings.js";
 import type { DailyLookup } from "./daily.js";
-import { moveNodePath, nodeFiles, workspaceOf } from "./nodes.js";
+import { moveNodePath, nodeFiles, noteTreeMeta, parentNode, workspaceOf } from "./nodes.js";
 import { vaultText, type VaultText } from "./vaultText.js";
 import { inTrashScope, restoreTargets, trashHead, trashKey, trashOrder, TRASH_PAGE, type TrashItem, type TrashPage } from "./trash.js";
 
@@ -20,7 +22,7 @@ export interface FileEntry {
   /** 볼트 상대 경로("/" 구분) */
   path: string;
   size: number;
-  /** 수정 시각(ms) */
+  /** 수정 시각(ms). 저장소가 모르면 -1(트리에 시각을 싣지 않는다) */
   mtime: number;
 }
 
@@ -57,6 +59,11 @@ export interface JournalFile {
   from?: string;
   /** 이 변경 뒤 내용의 해시(삭제면 null). 내용은 objects/<해시>에 있다. */
   hash: string | null;
+  /**
+   * 수정 시각(edited) 줄을 뺀 내용의 해시 — 내용에 edited 가 있을 때만. 휴지통이 지우기와 만들기를 이동으로 짝지을 때
+   * 쓴다(다른 기기·서버의 이름 바꾸기는 새 시각이 적혀 와서 내용 해시가 다르다). 없는 옛 기록은 hash 로 짝짓는다
+   */
+  body?: string;
 }
 
 /** 이 기기의 변경 기록 한 건(서버의 커밋에 해당). */
@@ -199,7 +206,13 @@ export class LocalVault {
 
   private async record(author: string, message: string, files: JournalFile[], contents: Map<string, string>, date = Date.now(), attachments?: string[]) {
     if (files.length === 0) return;
-    for (const f of files) if (f.hash) await this.saveObject(f.hash, contents.get(f.hash)!);
+    for (const f of files) {
+      if (!f.hash) continue;
+      const content = contents.get(f.hash)!;
+      await this.saveObject(f.hash, content);
+      const body = withoutEdited(content);
+      if (body !== content) f.body = await sha256Hex(body);
+    }
     const e: JournalEntry = { id: newId(date), date: new Date(date).toISOString(), author, message, files, ...(attachments?.length ? { attachments } : {}) };
     await this.store.appendMeta(JOURNAL, JSON.stringify(e) + "\n");
     this.remember(e);
@@ -386,12 +399,13 @@ export class LocalVault {
     const paths = [...this.files.keys(), ...[...this.topicSet].flatMap(generatedPaths)];
     for (const p of paths) {
       const i = p.lastIndexOf("/");
-      const icon = this.files.get(p)?.meta?.frontmatter?.icon;
+      const meta = this.files.get(p)?.meta;
       dirOf(i < 0 ? "" : p.slice(0, i)).push({
         name: p.slice(i + 1),
         path: p,
         type: "file",
-        ...(typeof icon === "string" && icon.trim() ? { icon: icon.trim() } : {}),
+        // 저장소 시각을 모르는 파일(refreshFiles 가 -1 로 둔 것)은 시각을 싣지 않는다
+        ...(meta ? noteTreeMeta(meta.frontmatter, meta.mtime >= 0 ? meta.mtime : null) : {}),
       });
     }
     const sort = (nodes: TreeNode[]) => {
@@ -684,14 +698,18 @@ export class LocalVault {
   /**
    * 변경을 파일에 쓰고 색인·기록을 갱신한다. 처음 기록되는 기존 문서는 바뀌기 전 내용을
    * "기존 내용" 기록으로 먼저 남겨 이력에서 되돌릴 수 있게 한다.
+   * 이 기기에서 난 변경(local)이면 바뀐 노트마다 수정 시각(edited)을 같은 값으로 적는다 — 저장·이동·링크 고쳐 쓰기·
+   * 할 일·되돌리기·되살리기가 모두 여기를 지난다. 동기화로 받은 것(sync)·앱 밖 변경(external)에는 적지 않는다.
    */
   private async apply(
-    changes: { path: string; content: string | null; from?: string }[],
+    input: { path: string; content: string | null; from?: string }[],
     author: string,
     message: string,
     source: ChangeSource,
     attachments?: string[],
   ) {
+    const stamp = editedStamp(new Date());
+    const changes = source === "local" ? input.map((c) => (c.content === null ? c : { ...c, content: stampEdited(c.path, c.content, stamp) })) : input;
     const files: JournalFile[] = [];
     const baseline: JournalFile[] = [];
     const contents = new Map<string, string>();
@@ -705,7 +723,9 @@ export class LocalVault {
       }
     }
     if (baseline.length) {
-      const oldest = Math.min(...baseline.map((b) => this.files.get(b.path)!.mtime));
+      // 시각을 모르는 파일(-1)은 빼고 가장 오래된 파일 시각으로 남긴다
+      const known = baseline.map((b) => this.files.get(b.path)!.mtime).filter((m) => m > 0);
+      const oldest = known.length ? Math.min(...known) : Date.now() - 1;
       await this.record(this.author, this.text().commit.appBaseline, baseline, contents, Math.min(oldest, Date.now() - 1));
     }
     for (const c of changes) {
@@ -746,7 +766,21 @@ export class LocalVault {
       const cur = this.files.get(rel);
       if (cur && cur.content === content) return { path: rel, content, hash: cur.hash! };
       await this.apply([{ path: rel, content }], this.author, message ?? (cur ? this.text().commit.modify(rel) : this.text().commit.create(rel)), "local");
-      return { path: rel, content, hash: this.files.get(rel)!.hash! };
+      // 돌려주는 것은 시각을 적은 뒤의 내용·해시
+      const e = this.files.get(rel)!;
+      return { path: rel, content: e.content!, hash: e.hash! };
+    });
+  }
+
+  /** 여러 노트를 한 기록으로 쓴다(정렬·순서 바꾸기). 모든 baseHash 를 먼저 확인하고, 하나라도 틀리면 아무것도 쓰지 않는다 */
+  writeMany(files: { path: string; content: string; baseHash: string | null }[], message: string): Promise<{ path: string; hash: string }[]> {
+    return this.exclusive(async () => {
+      const list = files.map((f) => ({ ...f, path: this.requireWritable(f.path) }));
+      await this.refreshFiles(list.map((f) => f.path));
+      for (const f of list) this.check(f.path, f.baseHash);
+      const changes = list.filter((f) => this.files.get(f.path)?.content !== f.content).map((f) => ({ path: f.path, content: f.content }));
+      if (changes.length) await this.apply(changes, this.author, message, "local");
+      return list.map((f) => ({ path: f.path, hash: this.files.get(f.path)!.hash! }));
     });
   }
 
@@ -795,7 +829,9 @@ export class LocalVault {
     const files = nodeFiles(from, this.files.keys());
     if (files.length === 0) throw new NotFoundError("node_missing", { path: from });
     const pairs: [string, string, null][] = files.map((p) => [p, moveNodePath(p, from, to), null]);
-    return this.moveMany(pairs, opts, this.text().commit.nodeMove(from, to));
+    // 다른 부모 안으로 옮기면 노드 노트의 rank(옛 부모 안의 순서)를 같은 기록에서 지운다 → 새 부모에서 rank 없는 노드로 맨 뒤
+    const dropRank = parentNode(from) !== parentNode(to) ? `${from}.md` : null;
+    return this.moveMany(pairs, opts, this.text().commit.nodeMove(from, to), dropRank);
   }
 
   /**
@@ -869,10 +905,12 @@ export class LocalVault {
     );
   }
 
+  /** dropRank: 이 노트(옮기기 전 경로)의 rank 를 함께 지운다(다른 부모로 옮긴 노드의 노트) */
   private moveMany(
     pairs: [string, string, string | null][],
     opts: { updateLinks?: boolean },
     message: string | null,
+    dropRank: string | null = null,
   ): Promise<{ moved: [string, string][]; linksUpdated: string[]; linkCount: number }> {
     return this.exclusive(async () => {
       // 링크를 고칠 다른 문서는 아래에서 다시 댄다. 여기서는 새로 생긴 파일·링크를 보고(scan) 옮길 파일을 내용으로 대 본다
@@ -917,6 +955,7 @@ export class LocalVault {
           linkCount += r.count;
         }
       }
+      if (dropRank !== null && contents.has(dropRank)) contents.set(dropRank, withoutRank(contents.get(dropRank)!));
       // 첨부는 바이트를 옮긴다(기록에는 남지 않는다)
       const attachments: string[] = [];
       for (const [from, to] of pairs) {
@@ -990,27 +1029,37 @@ export class LocalVault {
   private deletions() {
     if (this.deletionCache?.length === this.journal.length) return this.deletionCache.list;
     const last = new Map<string, string | null>();
+    /** 경로별 마지막 짝짓기 열쇠(edited 줄을 뺀 내용의 해시, 없으면 내용 해시) */
+    const lastKey = new Map<string, string | null>();
     const list: { entry: JournalEntry; deleted: Map<string, string> }[] = [];
     for (const e of this.journal) {
       const deleted = new Map<string, string>();
-      const added: JournalFile[] = [];
+      const deletedKey = new Map<string, string>();
+      const added: { path: string; key: string }[] = [];
       for (const f of e.files) {
         // 앱 안의 이동(R)은 지운 것이 아니다. 지우기 직전 내용을 모르는 삭제(기록 전에 사라진 파일)는 되살릴 수 없어 뺀다
         const before = last.get(f.path);
-        if (f.status === "D" && before) deleted.set(f.path, before);
-        if (f.status === "A" && f.hash) added.push(f);
-        if (f.from) last.set(f.from, null);
+        if (f.status === "D" && before) {
+          deleted.set(f.path, before);
+          deletedKey.set(f.path, lastKey.get(f.path) ?? before);
+        }
+        if (f.status === "A" && f.hash) added.push({ path: f.path, key: f.body ?? f.hash });
+        if (f.from) {
+          last.set(f.from, null);
+          lastKey.set(f.from, null);
+        }
         last.set(f.path, f.hash);
+        lastKey.set(f.path, f.hash && (f.body ?? f.hash));
       }
       // 동기화로 받은 이름 바꾸기·앱 밖(Finder 등) 이름 바꾸기는 한 기록 안의 지우기(D)와 같은 내용의 만들기(A)로 남는다.
       // 해시마다 지운 것과 만든 것을 경로 순으로 하나씩 짝지어 짝이 난 지우기는 이동으로 본다(남는 것은 지운 것).
-      // 빈 노트는 서로 구별되지 않으므로 짝짓지 않는다(지운 빈 노트가 숨으면 안 된다)
+      // 빈 노트는 서로 구별되지 않으므로 짝짓지 않는다(지운 빈 노트가 숨으면 안 된다). 견주는 것은 edited 줄을 뺀 내용이다
       const pending = new Map<string, string[]>();
       for (const f of [...added].sort((a, b) => a.path.localeCompare(b.path))) {
-        if (f.hash !== EMPTY_HASH) pending.set(f.hash!, [...(pending.get(f.hash!) ?? []), f.path]);
+        if (f.key !== EMPTY_HASH) pending.set(f.key, [...(pending.get(f.key) ?? []), f.path]);
       }
       for (const p of [...deleted.keys()].sort((a, b) => a.localeCompare(b))) {
-        const to = pending.get(deleted.get(p)!);
+        const to = pending.get(deletedKey.get(p)!);
         if (to?.length) {
           to.shift();
           deleted.delete(p);
@@ -1104,7 +1153,9 @@ export class LocalVault {
       for (const p of found?.notes ?? []) {
         const content = await this.store.readMeta(objectName(d.deleted.get(p)!));
         if (content === null) throw new NotFoundError("rev_content_gone");
-        if (this.files.get(p)?.content !== content) contents.set(p, content);
+        // 되살리면 수정 시각이 새로 적히므로 그 줄은 빼고 견준다
+        const cur = this.files.get(p)?.content;
+        if (cur === undefined || !sameExceptEdited(cur, content)) contents.set(p, content);
       }
       if (!found || !contents.size) throw new NotFoundError("trash_empty");
       const item = { ...found, notes: found.notes.filter((p) => contents.has(p)) };

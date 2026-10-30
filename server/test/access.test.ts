@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { withoutEdited } from "@keyring-notes/core";
 import { AccessPolicy } from "../src/access.js";
 import { ScopedVault } from "../src/scoped.js";
 import type { NoteIndex } from "../src/noteindex.js";
@@ -143,7 +144,7 @@ describe("추가 전용", () => {
   it("새 원본 문서를 만들고 끝에 덧붙일 수 있다", async () => {
     await wiki.write("업무/경제/raw/새 기사.md", "# 새 기사\n", null);
     const d = await wiki.append(raw, "추가 메모\n");
-    expect(d.content).toBe("# 기사\n원문 내용 금리\n추가 메모\n");
+    expect(withoutEdited(d.content)).toBe("# 기사\n원문 내용 금리\n추가 메모\n");
     // 전체 쓰기라도 기존 내용 뒤에 붙이기만 하면 허용
     await wiki.write(raw, d.content + "또 추가\n", d.hash);
   });
@@ -156,7 +157,7 @@ describe("추가 전용", () => {
     // 위키 쪽에서 원본 폴더로 옮겨와 덮어쓰기도 불가(이미 있는 이름이면 충돌)
     const w = await wiki.write("업무/경제/wiki/임시.md", "x", null);
     await expect(wiki.move("업무/경제/wiki/임시.md", raw, w.hash)).rejects.toThrow();
-    expect((await owner.read(raw)).content).toBe("# 기사\n원문 내용 금리\n");
+    expect(withoutEdited((await owner.read(raw)).content)).toBe("# 기사\n원문 내용 금리\n");
   });
 
   it("일괄 쓰기 안에서도 같은 규칙이 적용되고, 위반 시 전체가 취소된다", async () => {

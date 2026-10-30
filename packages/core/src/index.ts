@@ -1,5 +1,7 @@
 export * from "./analysis.js";
+export * from "./childSort.js";
 export * from "./daily.js";
+export * from "./edited.js";
 export * from "./errors.js";
 export * from "./frontmatter.js";
 export * from "./hash.js";
@@ -15,6 +17,7 @@ export * from "./paths.js";
 export * from "./settings.js";
 export * from "./settingsMerge.js";
 export * from "./pdfnotes.js";
+export * from "./rank.js";
 export * from "./search.js";
 export * from "./sync.js";
 export * from "./templates.js";

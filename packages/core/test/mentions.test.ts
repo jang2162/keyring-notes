@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkMentions, LocalVault, MemoryStore, mentionNames, unlinkedMentions } from "../src/index.js";
+import { linkMentions, LocalVault, MemoryStore, mentionNames, unlinkedMentions, withoutEdited } from "../src/index.js";
 
 describe("연결되지 않은 언급", () => {
   it("이름(파일·title·aliases)을 찾되 링크·코드·주석·프런트매터 안은 뺀다", () => {
@@ -44,7 +44,8 @@ describe("연결되지 않은 언급(로컬 볼트)", () => {
     const r = await v.mentions("경제/기준금리.md");
     expect(r.docs.map((d) => [d.path, d.mentions.length])).toEqual([["일기/오늘.md", 1]]);
     await v.write("일기/오늘.md", linkMentions(note.content, r.docs[0].mentions, "기준금리"), r.docs[0].hash);
-    expect((await v.read("일기/오늘.md")).content).toBe("[[기준금리]] 동결\n");
+    // 저장하면 수정 시각(edited)이 함께 적힌다 — 본문만 본다
+    expect(withoutEdited((await v.read("일기/오늘.md")).content)).toBe("[[기준금리]] 동결\n");
     expect((await v.mentions("경제/기준금리.md")).docs).toEqual([]);
   });
 });

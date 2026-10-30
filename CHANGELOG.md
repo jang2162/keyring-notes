@@ -6,6 +6,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ### Added
 
+- Choose how each note sorts the notes directly under it: **Name**, **Last modified**, **Last opened** or **Custom**. Right-click a note and choose **Sort sub-notes**, or choose **Sort notes** in the tree's display options for the top of a workspace. With **Custom**, drag a note to the edge of another row, use **Move up** / **Move down**, or press `Alt+Shift+↑` / `Alt+Shift+↓`. The order is saved in the notes and shared by every device, except **Last opened**, which each device keeps on its own. Notes changed through Keyring Notes now get an `edited` time in their frontmatter.
 - With line numbers on, clicking a line number selects that line without its line break. Dragging over line numbers selects whole lines, Shift-click extends the selection to a line, and clicking a folded line selects everything folded under it.
 - Desktop app: `Ctrl/Cmd+Shift+W` closes the current window, like its close button. On macOS the **Close Window** menu item now uses the same shortcut, so `Cmd+W` always closes the tab.
 - Desktop app: while a new version is waiting, `Cmd+Q` asks first: **Install and quit** installs it and quits without restarting, so the next start runs the new version. **Just quit** and **Cancel** are there too.

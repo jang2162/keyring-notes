@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { withoutEdited } from "@keyring-notes/core";
 import { createApp } from "../src/app.js";
 import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
@@ -59,14 +60,19 @@ describe("변경 검토 대기열", () => {
     expect(r.pending?.proposal).toMatch(/^[0-9a-f]{16}$/);
     expect(r.rev).toBeNull();
     expect(r.content).toContain("에이전트가 고친"); // 승인 뒤 모습
-    expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe("# 금리\n원래 설명\n");
+    // 아직 그대로(수정 시각 줄까지 글자 그대로)
+    expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe(cur.content);
+    expect(withoutEdited(cur.content)).toBe("# 금리\n원래 설명\n");
     expect(git("rev-parse", "HEAD")).toBe(before);
 
     const list = await review.list({ status: "pending" });
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ agent: "wiki-work", stale: false, files: [{ path: "업무/경제/wiki/금리.md", change: "modify", binary: false }] });
     const full = await review.get(list[0].id);
-    expect(full.preview[0]).toMatchObject({ before: "# 금리\n원래 설명\n", after: "# 금리\n에이전트가 고친 설명\n" });
+    // 미리보기는 적용될 내용 그대로다 — 쓰기 계층이 적을 수정 시각(edited)도 들어 있다
+    expect(withoutEdited(full.preview[0].before!)).toBe("# 금리\n원래 설명\n");
+    expect(full.preview[0].after).toContain("edited: ");
+    expect(withoutEdited(full.preview[0].after!)).toBe("# 금리\n에이전트가 고친 설명\n");
   });
 
   it("승인하면 에이전트 이름으로 커밋하고 승인자를 남긴다", async () => {
@@ -82,7 +88,9 @@ describe("변경 검토 대기열", () => {
     expect(p.status).toBe("approved");
     expect(git("log", "-1", "--format=%an|%s")).toBe("wiki-work|수집: 기사");
     expect(git("log", "-1", "--format=%b")).toContain(`승인: me (제안 ${p.id})`);
-    expect((await owner.read("업무/경제/wiki/환율.md")).content).toBe("# 환율\n");
+    expect(withoutEdited((await owner.read("업무/경제/wiki/환율.md")).content)).toBe("# 환율\n");
+    // 승인해 적용한 쓰기에도 수정 시각을 적는다
+    expect((await owner.read("업무/경제/wiki/환율.md")).content).toMatch(/^---\nedited: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n---\n/);
     expect((await owner.search("고침")).map((h) => h.path)).toContain("업무/경제/wiki/금리.md"); // 인덱스도 갱신
     expect((await agent.myProposals()).map((x) => x.status)).toEqual(["approved"]);
     await expect(review.approve(p.id, "me")).rejects.toThrow(/이미 처리/);
@@ -91,13 +99,15 @@ describe("변경 검토 대기열", () => {
   it("그 사이 문서가 바뀌면 stale로 표시되고, 승인은 충돌로 거부된다", async () => {
     const cur = await owner.read("업무/경제/wiki/금리.md");
     const res = await agent.write("업무/경제/wiki/금리.md", "# 금리\n에이전트\n", cur.hash);
-    await owner.write("업무/경제/wiki/금리.md", "# 금리\n사람이 먼저 고침\n", cur.hash);
+    const human = await owner.write("업무/경제/wiki/금리.md", "# 금리\n사람이 먼저 고침\n", cur.hash);
     expect((await review.list())[0].stale).toBe(true);
     await expect(review.approve(res.pending!.proposal, "me")).rejects.toThrow(/먼저 수정/);
     expect((await review.get(res.pending!.proposal)).status).toBe("pending");
     const rejected = await review.reject(res.pending!.proposal, "me", "사람 수정과 충돌");
     expect(rejected).toMatchObject({ status: "rejected", reason: "사람 수정과 충돌" });
-    expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe("# 금리\n사람이 먼저 고침\n");
+    // 거절해도 사람의 내용 그대로(수정 시각 줄까지 글자 그대로)
+    expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe(human.content);
+    expect(withoutEdited(human.content)).toBe("# 금리\n사람이 먼저 고침\n");
   });
 
   it("권한·충돌은 제안을 만들 때 이미 검사한다", async () => {
@@ -161,7 +171,7 @@ describe("변경 검토 대기열", () => {
     const list = await (await app.request("/api/review?status=pending", { headers: { cookie } })).json();
     expect(list.proposals).toHaveLength(1);
     const detail = await (await app.request(`/api/review/${body.pending.proposal}`, { headers: { cookie } })).json();
-    expect(detail.preview[0].after).toBe("# 금리\nREST\n");
+    expect(withoutEdited(detail.preview[0].after)).toBe("# 금리\nREST\n");
     const ok = await app.request(`/api/review/${body.pending.proposal}/approve`, { method: "POST", headers: { ...json, cookie }, body: "{}" });
     expect((await ok.json()).status).toBe("approved");
     const s = await app.request("/api/review/settings", { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify({ reviewPaths: ["/"] }) });

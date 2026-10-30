@@ -14,6 +14,7 @@ import { removeProperty } from "./askFirst";
 import { fmtNumber, t } from "./i18n";
 import { errorText } from "./toast";
 import { tipProps } from "./Tooltip";
+import { isAppField } from "./childSortUi";
 
 /**
  * 속성(프런트매터) 입력 화면. 원문 YAML을 고치지 않고도 필드를 종류에 맞는 입력칸으로 고친다.
@@ -60,7 +61,8 @@ export function Properties({ content, onChange, stats, readOnly, onPickIcon }: P
         <p className="prop-error">{t("props.yamlError", { error: fm.error })}</p>
       </div>
     );
-  const entries = Object.entries(fm.data ?? {});
+  // 앱이 적는 정렬·순서·수정 시각(sort·rank·edited)은 보이지 않는다 — 트리 메뉴와 끌어 놓기로 바꾼다
+  const entries = Object.entries(fm.data ?? {}).filter(([key]) => !isAppField(key));
   const typeOf = (key: string, value: unknown): PropertyType => propertyType(value) ?? chosen[key] ?? statOf.get(key)?.type ?? "text";
 
   const set = (key: string, value: unknown) => apply((c) => setFrontmatterField(c, key, value, { keepEmpty: true }));
@@ -200,7 +202,7 @@ export function Properties({ content, onChange, stats, readOnly, onPickIcon }: P
           </button>
           <datalist id="prop-keys">
             {stats
-              .filter((s) => !(fm.data && s.key in fm.data))
+              .filter((s) => !(fm.data && s.key in fm.data) && !isAppField(s.key))
               .slice(0, 100)
               .map((s) => (
                 <option key={s.key} value={s.key}>

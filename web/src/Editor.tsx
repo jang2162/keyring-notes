@@ -26,7 +26,7 @@ import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEf
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { findBar, findKeymap } from "./findBar";
-import { codeFont, frontmatterFold, livePreview } from "./livePreview";
+import { bodyStart, codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 import { t } from "./i18n";
@@ -431,7 +431,14 @@ export function Editor({
           view.dispatch({ changes: { from: at, to: at + 1, insert: done ? "x" : " " } });
         },
         insertText(text, opts) {
-          const r = view.state.selection.main;
+          let r = view.state.selection.main;
+          // 커서가 맨 앞(막 연 문서)이면 프런트매터 뒤에 넣는다 — `---` 앞에 넣으면 프런트매터가 깨진다
+          const body = r.empty && r.head === 0 ? bodyStart(view.state) : null;
+          if (body) {
+            if (body.prefix) view.dispatch({ changes: { from: body.at, insert: body.prefix } });
+            view.dispatch({ selection: { anchor: body.at + body.prefix.length } });
+            r = view.state.selection.main;
+          }
           const from = opts?.keepSelection ? r.to : r.from;
           // ownLine: 앞뒤 글과 붙지 않게 자기 줄에(그림 embed는 줄 하나를 차지해야 그려진다)
           const before = from > 0 && view.state.sliceDoc(from - 1, from) !== "\n" ? "\n" : "";

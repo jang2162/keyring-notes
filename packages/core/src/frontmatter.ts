@@ -59,8 +59,13 @@ function checkKey(key: string) {
   if (!/^[^\s:#][^:#]*$/.test(key) || key !== key.trim()) throw new PathError(`필드 이름이 잘못되었습니다: ${key}`);
 }
 
-/** 프런트매터 YAML을 문서 객체로 고친다. emptyKey: 값이 빈 그 필드는 `key: null` 대신 `key:`로 쓴다 */
-function editFrontmatter(content: string, edit: (doc: ReturnType<typeof parseDocument>) => void, emptyKey: string | null): string {
+/**
+ * 프런트매터 YAML을 문서 객체로 고친다. emptyKey: 값이 빈 그 필드는 `key: null` 대신 `key:`로 쓴다.
+ * 맨 앞 BOM 은 떼어 두었다가 그대로 붙인다 — 떼지 않으면 BOM 뒤의 프런트매터를 못 찾아 블록을 하나 더 만든다
+ */
+function editFrontmatter(withBom: string, edit: (doc: ReturnType<typeof parseDocument>) => void, emptyKey: string | null): string {
+  const bom = withBom.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const content = withBom.slice(bom.length);
   const m = FM_RE.exec(content) ?? EMPTY_FM_RE.exec(content);
   const yamlText = m && m[1] !== undefined ? m[1] : "";
   const body = m ? content.slice(m[0].length) : content;
@@ -76,8 +81,8 @@ function editFrontmatter(content: string, edit: (doc: ReturnType<typeof parseDoc
       .split("\n")
       .map((l) => (l === `${emptyKey}: null` ? `${emptyKey}:` : l))
       .join("\n");
-  if (!out || out === "{}") return body;
-  return `---\n${out}\n---\n${body}`;
+  if (!out || out === "{}") return bom + body;
+  return `${bom}---\n${out}\n---\n${body}`;
 }
 
 /** 속성 입력 화면의 값 종류 */

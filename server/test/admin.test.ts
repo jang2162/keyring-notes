@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { withoutEdited } from "@keyring-notes/core";
 import { createApp } from "../src/app.js";
 import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
@@ -80,7 +81,7 @@ describe("백업", () => {
     expect(r.restoredHead).toBe(b.head);
     expect(r.previousHead).toBe(changedHead);
     expect(git(vault, "rev-parse", "HEAD")).toBe(b.head);
-    expect((await owner.read("노트/a.md")).content).toBe("# A\n원래 내용\n");
+    expect(withoutEdited((await owner.read("노트/a.md")).content)).toBe("# A\n원래 내용\n");
     await expect(owner.read("노트/새 문서.md")).rejects.toThrow(/없습니다/);
     expect(await readFile(path.join(vault.root, "노트/첨부.png"))).toEqual(Buffer.from([1, 2, 3]));
     expect(git(vault, "status", "--porcelain")).toBe("");
@@ -91,7 +92,7 @@ describe("백업", () => {
     expect(git(vault, "rev-parse", r.previousRef!)).toBe(changedHead);
     expect(r.preRestoreBackup).toMatch(/pre-restore/);
     await backups.restore(r.preRestoreBackup!);
-    expect((await owner.read("노트/a.md")).content).toBe("# A\n바뀐 내용 zebra\n");
+    expect(withoutEdited((await owner.read("노트/a.md")).content)).toBe("# A\n바뀐 내용 zebra\n");
     expect((await owner.read("업무/경제/wiki/index.md")).content).toContain("[[업무/경제/wiki/페이지");
   });
 
@@ -113,7 +114,7 @@ describe("백업", () => {
       expect(r.preRestoreBackup).toBeNull(); // 빈 서버라 복원 전 백업은 없음
       expect(git(other.vault, "rev-parse", "HEAD")).toBe(b.head);
       expect(git(other.vault, "log", "--format=%an %s")).toBe(git(vault, "log", "--format=%an %s"));
-      expect((await other.owner.read("노트/a.md")).content).toBe("# A\n원래 내용\n");
+      expect(withoutEdited((await other.owner.read("노트/a.md")).content)).toBe("# A\n원래 내용\n");
       expect((await other.owner.search("원래 내용")).map((h) => h.path)).toEqual(["노트/a.md"]);
       expect([...other.wiki.topics]).toEqual(["업무/경제"]);
       expect(other.config.checkPassword("correct horse")).toBe(true);
@@ -272,7 +273,7 @@ describe("관리 API·설치·보안", () => {
     await owner.write("노트/a.md", "바뀜", a.hash);
     const r = await app.request(`/api/admin/backups/${made.name}/restore`, { method: "POST", headers: { ...json, cookie }, body: "{}" });
     expect(r.status).toBe(200);
-    expect((await owner.read("노트/a.md")).content).toBe("# A\n원래 내용\n");
+    expect(withoutEdited((await owner.read("노트/a.md")).content)).toBe("# A\n원래 내용\n");
     const settings = await app.request("/api/admin/backups/settings", { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify({ keep: 0 }) });
     expect(settings.status).toBe(400);
   });

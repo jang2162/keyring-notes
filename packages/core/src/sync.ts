@@ -15,6 +15,7 @@ function remoteError(status: number, data: RemoteErrorBody): { code: string; par
 }
 import { sha256Hex, utf8 } from "./hash.js";
 import type { LocalVault } from "./local.js";
+import { alignEdited } from "./edited.js";
 import { merge3 } from "./merge.js";
 import { isMarkdown } from "./paths.js";
 import { isVaultSettingsPath, replaceSettingsObject, settingsObject, vaultLanguage, parseVaultSettings } from "./settings.js";
@@ -202,7 +203,9 @@ export class SyncEngine {
       // 기준점 내용이 있으면 3방향 병합을 먼저 해 본다
       const baseText = B ? await this.vault.contentByHash(B) : null;
       if (baseText !== null) {
-        const m = merge3(baseText, mine.content, theirs.content);
+        // 양쪽이 각자 수정 시각(edited) 줄을 바꿨으면 더 늦은 시각으로 맞춘 뒤 합친다 — 그 줄 때문에 다른 문단을 고친
+        // 동시 편집까지 충돌 사본이 되지 않게
+        const m = merge3(...alignEdited(baseText, mine.content, theirs.content));
         if (m.ok) {
           try {
             const res = m.text === theirs.content ? { hash: theirs.hash } : await this.remote.write(path, m.text, theirs.hash);

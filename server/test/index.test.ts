@@ -84,7 +84,8 @@ describe("검색", () => {
   it("여러 단어는 모두 포함, 첫 일치 줄과 문서 기준 줄 번호", async () => {
     const hits = await owner.search("금리 이야기");
     expect(hits.map((x) => x.path)).toEqual(["업무/프로젝트A/회의록.md"]);
-    expect(hits[0]).toMatchObject({ title: "회의록", line: 7, snippet: expect.stringContaining("금리 이야기") });
+    // 저장할 때 프런트매터에 수정 시각(edited) 한 줄이 더해진다
+    expect(hits[0]).toMatchObject({ title: "회의록", line: 8, snippet: expect.stringContaining("금리 이야기") });
   });
 
   it("#태그 검색(하위 태그 포함)과 폴더 범위", async () => {
@@ -118,15 +119,16 @@ describe("검색", () => {
   it("lines: 결과마다 일치 줄들과 전체 개수, 주지 않으면 예전 모양", async () => {
     await owner.write("업무/줄.md", "# 줄\n금리 1\n없음\n기준금리 2\n금리 3\n금리 4", null);
     const [hit] = await owner.search("금리", { folder: "업무/줄", lines: 3 });
+    // 저장할 때 적힌 수정 시각(프런트매터 세 줄)만큼 아래 줄이다
     expect(hit).toEqual({
       path: "업무/줄.md",
       title: "줄",
-      line: 2,
+      line: 5,
       snippet: "금리 1",
       matches: [
-        { line: 2, snippet: "금리 1" },
-        { line: 4, snippet: "기준금리 2" },
-        { line: 5, snippet: "금리 3" },
+        { line: 5, snippet: "금리 1" },
+        { line: 7, snippet: "기준금리 2" },
+        { line: 8, snippet: "금리 3" },
       ],
       matchCount: 4,
     });
@@ -281,10 +283,11 @@ describe("위젯", () => {
 describe("할 일 체크", () => {
   it("줄 번호로 체크하고, 버전이 다르면 충돌", async () => {
     const p = "업무/프로젝트A/계획.md";
-    const d = await owner.setTask(p, 10, true, h[p]);
+    // 저장할 때 프런트매터에 수정 시각(edited) 한 줄이 더해져 할 일 줄이 하나씩 아래다
+    const d = await owner.setTask(p, 11, true, h[p]);
     expect(d.content).toContain("- [x] 일정 확정");
-    await expect(owner.setTask(p, 11, false, h[p])).rejects.toMatchObject({ code: "conflict_path" });
-    await expect(owner.setTask(p, 9, true, d.hash)).rejects.toThrow(/할 일이 아닙니다/);
+    await expect(owner.setTask(p, 12, false, h[p])).rejects.toMatchObject({ code: "conflict_path" });
+    await expect(owner.setTask(p, 10, true, d.hash)).rejects.toThrow(/할 일이 아닙니다/);
     const r = await owner.widget("type: tasks\nfrom: 업무/프로젝트A");
     if (r.type !== "tasks") throw new Error();
     expect(r.groups.flatMap((g) => g.tasks.map((t) => t.text))).toEqual(["회의록 정리"]);
@@ -292,6 +295,6 @@ describe("할 일 체크", () => {
 
   it("읽기 전용 에이전트는 체크할 수 없다", async () => {
     const ro = new ScopedVault(vault, agentPrincipal("ro", { 업무: "read" }), index);
-    await expect(ro.setTask("업무/프로젝트A/계획.md", 10, true, h["업무/프로젝트A/계획.md"])).rejects.toThrow(/권한/);
+    await expect(ro.setTask("업무/프로젝트A/계획.md", 11, true, h["업무/프로젝트A/계획.md"])).rejects.toThrow(/권한/);
   });
 });

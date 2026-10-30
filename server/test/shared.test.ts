@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { setVaultSetting, VAULT_SETTINGS_PATH } from "@keyring-notes/core";
+import { setVaultSetting, VAULT_SETTINGS_PATH, withoutEdited } from "@keyring-notes/core";
 import type { NoteIndex } from "../src/noteindex.js";
 import { ScopedVault } from "../src/scoped.js";
 import { ForbiddenError, hashContent, type Vault } from "../src/vault.js";
@@ -89,14 +89,17 @@ describe("모든 기기 공통 설정 파일", () => {
 
   it("트리 문서에 아이콘", async () => {
     const tree = await owner.tree("개인/데일리 노트/2026/W53");
-    expect(tree).toEqual([{ name: "2027-01-01 새해 계획.md", path: "개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md", type: "file", icon: "🎍" }]);
+    // 문서 노드에는 수정 시각(edited)도 함께 실린다
+    expect(tree).toEqual([
+      { name: "2027-01-01 새해 계획.md", path: "개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md", type: "file", icon: "🎍", edited: expect.any(Number) },
+    ]);
   });
 
   it("데일리 노트를 데일리 폴더 밖으로 옮기면 [[날짜]] 링크를 고친다", async () => {
     const d = await owner.read("개인/데일리 노트/2026/W53/2027-01-01 새해 계획.md");
     const r = await owner.move(d.path, "개인/보관/2027-01-01 새해 계획.md", d.hash);
     expect(r.linksUpdated).toContain("개인/공개/메모.md");
-    expect((await owner.read("개인/공개/메모.md")).content).toBe("[[2027-01-01 새해 계획]] [[2026-10-07]] 계획");
+    expect(withoutEdited((await owner.read("개인/공개/메모.md")).content)).toBe("[[2027-01-01 새해 계획]] [[2026-10-07]] 계획");
   });
 });
 
@@ -123,10 +126,10 @@ describe("노드 이동·삭제", () => {
       "업무/보관/2026 프로젝트/하위/참고.md",
     ]);
     // 경로를 쓴 링크는 전체 경로로 고친다
-    expect((await owner.read("업무/밖.md")).content).toBe(
+    expect(withoutEdited((await owner.read("업무/밖.md")).content)).toBe(
       "[[2026 프로젝트]] [[업무/보관/2026 프로젝트/계획]] ![[업무/보관/2026 프로젝트/도식.png]] [x](보관/2026%20프로젝트/도식.png)",
     );
-    expect((await owner.read("업무/보관/2026 프로젝트/계획.md")).content).toBe("![[도식.png]] ![](도식.png) [[참고]]");
+    expect(withoutEdited((await owner.read("업무/보관/2026 프로젝트/계획.md")).content)).toBe("![[도식.png]] ![](도식.png) [[참고]]");
     expect([...(await vault.readRaw("업무/보관/2026 프로젝트/도식.png")).data]).toEqual([1, 2, 3]);
     await expect(vault.readRaw("업무/프로젝트/도식.png")).rejects.toThrow(/파일이 없습니다/);
     expect(git("status", "--porcelain")).toBe("");
@@ -137,7 +140,7 @@ describe("노드 이동·삭제", () => {
   it("노트 없는 폴더 노드도 옮긴다(.md를 붙여 불러도 같다)", async () => {
     const r = await owner.moveNode("업무/프로젝트/하위.md", "업무/하위");
     expect(r.moved).toEqual([["업무/프로젝트/하위/참고.md", "업무/하위/참고.md"]]);
-    expect((await owner.read("업무/하위/참고.md")).content).toBe("[위로](../프로젝트/계획.md)");
+    expect(withoutEdited((await owner.read("업무/하위/참고.md")).content)).toBe("[위로](../프로젝트/계획.md)");
   });
 
   it("중간에 실패하면 아무것도 옮기지 않는다", async () => {
@@ -151,7 +154,7 @@ describe("노드 이동·삭제", () => {
     const hash = hashContent(Buffer.from([1, 2, 3]));
     const r = await owner.move("업무/프로젝트/도식.png", "업무/_첨부/도식.png", hash);
     expect(r.path).toBe("업무/_첨부/도식.png");
-    expect((await owner.read("업무/프로젝트/계획.md")).content).toBe("![[도식.png]] ![](../_첨부/도식.png) [[참고]]");
+    expect(withoutEdited((await owner.read("업무/프로젝트/계획.md")).content)).toBe("![[도식.png]] ![](../_첨부/도식.png) [[참고]]");
     await expect(owner.move("업무/_첨부/도식.png", "업무/_첨부/도식.md", hash)).rejects.toThrow(/문서와 첨부/);
     await owner.delete("업무/_첨부/도식.png", hash);
     await expect(vault.readRaw("업무/_첨부/도식.png")).rejects.toThrow(/파일이 없습니다/);

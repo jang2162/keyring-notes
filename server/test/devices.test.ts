@@ -1,6 +1,6 @@
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { HttpRemote, LocalVault, MemoryStore, pairDevice, SyncEngine } from "@keyring-notes/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpRemote, LocalVault, MemoryStore, pairDevice, SyncEngine, withoutEdited } from "@keyring-notes/core";
 import { createApp } from "../src/app.js";
 import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
@@ -148,7 +148,10 @@ describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
     expect(r.errors).toEqual([]);
     expect(r.pushed).toEqual(["오프라인.md"]);
     expect(r.pulled.sort()).toEqual(["업무/경제/SCHEMA.md", "업무/경제/raw/assets/표.png", "업무/경제/raw/기사.md"]);
-    expect((await owner.read("오프라인.md")).content).toBe("비행기에서 씀");
+    // 기기가 쓸 때 적은 수정 시각(edited)은 빼고 본문을 본다
+    expect(withoutEdited((await owner.read("오프라인.md")).content)).toBe("비행기에서 씀");
+    // 기기 토큰의 쓰기에는 서버가 시각을 다시 적지 않는다 — 기기가 적은 내용 그대로
+    expect((await owner.read("오프라인.md")).content).toBe((await local.read("오프라인.md")).content);
     expect((await vault.history("오프라인.md"))[0].author).toBe("me (노트북)");
     // 위키 index는 기기가 따로 만든다
     expect((await local.read("업무/경제/wiki/index.md")).content).toContain("[[업무/경제/raw/기사|기사]]");
@@ -180,8 +183,51 @@ describe("앱 ↔ 서버 동기화(실제 서버 API)", () => {
     r = await sync.run();
     expect(r.merged).toEqual(["할일.md"]);
     const both = doc.replace("- 운동", "- 운동 30분").replace("- 장보기", "- 장보기(우유)");
-    expect((await owner.read("할일.md")).content).toBe(both);
-    expect((await local.read("할일.md")).content).toBe(both);
+    expect(withoutEdited((await owner.read("할일.md")).content)).toBe(both);
+    expect((await local.read("할일.md")).content).toBe((await owner.read("할일.md")).content);
     expect((await vault.history("할일.md"))[0].author).toBe("me (노트북)");
+  });
+});
+
+describe("동기화와 수정 시각(실제 서버)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("기기와 서버 시각이 다른 초여도 동기화가 같은 노트를 다시 올리지 않는다", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    let now = Date.UTC(2026, 9, 30, 9, 0, 0);
+    const tick = (s: number) => vi.setSystemTime((now += s * 1000));
+    tick(0);
+    const { owner, fetchFn, vault } = env;
+    const paired = await pairDevice("http://localhost/", "correct horse", "노트북", fetchFn);
+    const local = new LocalVault(new MemoryStore(), { author: "노트북" });
+    await local.open();
+    const sync = new SyncEngine(local, new HttpRemote(paired.server, paired.token, fetchFn));
+    await local.write("a.md", "# A\n\n첫 문단\n\n둘째 문단\n", null);
+    // 기기가 적은 시각과 서버가 받는 시각이 다른 초 — 서버가 다시 적으면 내용이 달라진다
+    tick(7);
+    let r = await sync.run();
+    expect(r.pushed).toEqual(["a.md"]);
+    const revs = (await vault.history("a.md")).length;
+    tick(7);
+    r = await sync.run();
+    expect([r.pulled, r.pushed, r.merged, r.conflicts, r.errors].flat()).toEqual([]);
+    expect((await vault.history("a.md")).length).toBe(revs);
+    // 양쪽이 다른 문단을 다른 초에 고친다 → 합쳐지고 다음 동기화는 조용하다
+    tick(5);
+    const s = await owner.read("a.md");
+    await owner.write("a.md", withoutEdited(s.content).replace("첫 문단", "첫 문단(서버)"), s.hash);
+    tick(5);
+    const l = await local.read("a.md");
+    await local.write("a.md", l.content.replace("둘째 문단", "둘째 문단(기기)"), l.hash);
+    tick(5);
+    r = await sync.run();
+    expect(r.conflicts).toEqual([]);
+    expect(r.merged).toEqual(["a.md"]);
+    expect((await local.read("a.md")).content).toBe((await owner.read("a.md")).content);
+    tick(5);
+    r = await sync.run();
+    expect([r.pulled, r.pushed, r.merged, r.conflicts, r.errors].flat()).toEqual([]);
   });
 });
