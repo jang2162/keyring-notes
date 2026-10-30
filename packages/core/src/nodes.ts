@@ -1,4 +1,5 @@
 import { isVaultSettingsPath } from "./settings.js";
+import type { ChildSort } from "./childSort.js";
 import type { TreeNode } from "./types.js";
 
 /**
@@ -27,6 +28,12 @@ export interface VaultNode {
   attachments: string[];
   /** 노트의 icon 속성(트리 응답에 붙은 것) */
   icon?: string;
+  /** 노트의 sort 속성: 바로 아래 하위의 정렬(childSort.ts) */
+  sort?: ChildSort;
+  /** 노트의 rank 속성: 부모가 커스텀일 때의 순서 키 */
+  rank?: string;
+  /** 수정 시각(ms). 노트의 edited 속성, 없으면 파일 시각 */
+  edited?: number;
 }
 
 export const stripMd = (p: string) => p.replace(/\.md$/i, "");

@@ -1,4 +1,5 @@
 export * from "./analysis.js";
+export * from "./childSort.js";
 export * from "./daily.js";
 export * from "./edited.js";
 export * from "./errors.js";
