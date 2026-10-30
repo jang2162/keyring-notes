@@ -62,11 +62,15 @@ The choice is saved in the note, so every device that uses the vault shows the s
 
 When a note uses **Custom**, change the order of its child notes in one of these ways:
 
-- Drag a note to the top or bottom edge of another child note. A line shows where it goes. Dropping it on the middle of a note still moves it into that note.
+- Drag a note to the top or bottom edge of another child note. A line shows where it goes. Dropping it on the middle of a note still moves it into that note. On an expanded note, the bottom edge counts as the middle.
 - Right-click a note and choose **Move up** or **Move down**.
-- Select a note in the tree and press `Alt+Shift+↑` or `Alt+Shift+↓`. Outside the tree, these keys move the current note.
+- Select a note in the tree and press `Alt+Shift+↑` or `Alt+Shift+↓`. When the tree doesn't have focus, these keys move the current note. They don't work while the cursor is in the editor or a text field.
 
-The first time you choose **Custom**, the order you see is kept. If you switch to another order later, the custom order is kept and returns when you choose **Custom** again. A note moved into another note goes to the end of that note's custom order.
+The first time you choose **Custom**, the order you see is kept. If you switch to another order later, the custom order is kept and returns when you choose **Custom** again.
+
+When you move a note into another note in the app, it goes to the end of that note's custom order. Dragging a note from another parent to the edge of a row works the same way: the parent is highlighted instead of a line. A note moved by an agent or through the REST API keeps its old position key, so it can land anywhere in the new order.
+
+The index and log notes of a wiki topic are generated, so they can't be reordered. They stay after the notes you ordered.
 
 Usually only the moved note changes, so two devices can reorder different notes at the same time without conflicts.
 
