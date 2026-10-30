@@ -8,7 +8,7 @@ It is for everyone who works with several notes at once.
 
 - **Top row**: the app name and the left panel button (`Ctrl/Cmd+Shift+E`) on the left, then the tabs. In the macOS app the window buttons sit at the start of this row, and you drag the row's empty space to move the window.
 - **Rail** on the left: Files, Search, Tags, Attachments, Today's note, Graph, Import, Review and Structure check. At the bottom are Sync (app), Shortcuts, Settings and Log out (server). Settings → **General** can show names next to the icons.
-- **Left panel** next to the rail. Its top row holds the workspace switcher and the tree buttons.
+- **Left panel** next to the rail. At the top of the left panel are the workspace switcher and the tree buttons.
 - **Tabs and the note** in the middle, and the **right panel** with Outline, Links, Properties and History.
 - **Status bar** at the bottom: save state, offline, changes waiting to be sent, waiting reviews and character count.
 

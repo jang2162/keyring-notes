@@ -27,6 +27,7 @@ import { crumbNodes } from "./topbar";
 import { invalidNameReason, stemOf } from "./Tree";
 import { IconButton, Segmented } from "./ui";
 import { Widget } from "./Widget";
+import { withoutWorkspaceBacklinks } from "./workspaceNote";
 
 export interface RevisionView {
   /** 이 과거 판의 문서. 칸이 다른 문서로 바뀌면 버린다 */
@@ -65,8 +66,8 @@ export interface PaneContext {
   narrow: boolean;
   /** 모든 워크스페이스 모드: 브레드크럼에 워크스페이스 칸을 남긴다(crumbNodes) */
   allWorkspaces: boolean;
-  /** 사이드바를 접어 브레드크럼 첫 칸에 둘 워크스페이스 전환기(아니면 null — switcherSpot) */
-  wsSwitcher: ReactNode;
+  /** 사이드바를 접어 브레드크럼 첫 칸에 둘 워크스페이스 전환기(칸 id 를 받는다. 아니면 null — switcherSpot) */
+  wsSwitcher: ((pane: string) => ReactNode) | null;
   resolver: LinkResolver;
   resolverRef: { current: LinkResolver };
   daily: DailyLookup;
@@ -304,7 +305,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     let alive = true;
     api
       .sources(doc.path)
-      .then((r) => alive && setRefs(r))
+      .then((r) => alive && setRefs(withoutWorkspaceBacklinks(r)))
       .catch(() => alive && setRefs(null));
     return () => {
       alive = false;
@@ -428,7 +429,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
         <nav className="crumbs" aria-label={t("doc.crumbs")}>
           {ctx.wsSwitcher && (
             <span className="crumb">
-              {ctx.wsSwitcher}
+              {ctx.wsSwitcher(pane)}
               <ChevronRight size={12} aria-hidden />
             </span>
           )}
