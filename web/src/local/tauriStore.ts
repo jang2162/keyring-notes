@@ -39,7 +39,8 @@ export class TauriStore implements FileStore {
         if (e.isDirectory) await walk(child);
         else if (e.isFile) {
           const st = await stat(this.abs(child));
-          out.push({ path: child, size: st.size, mtime: st.mtime ? st.mtime.getTime() : 0 });
+          // 시각을 못 받으면 -1(「시각 없음」) — 0 이면 수정순에서 1970년으로 정렬된다
+          out.push({ path: child, size: st.size, mtime: st.mtime ? st.mtime.getTime() : -1 });
         }
       }
     };

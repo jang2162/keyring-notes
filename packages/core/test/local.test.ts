@@ -353,6 +353,27 @@ describe("다른 창이 먼저 바꾼 파일", () => {
 });
 
 describe("트리에 정렬·순서·수정 시각", () => {
+  it("저장소가 파일 시각을 모르면(-1) 트리에 시각을 싣지 않고, 기록 날짜도 1970년 전이 되지 않는다", async () => {
+    /** 시각을 주지 않는 저장소(앱 저장소가 stat 에서 시각을 못 받은 경우) */
+    class NoTime extends MemoryStore {
+      override async list() {
+        return (await super.list()).map((e) => ({ ...e, mtime: -1 }));
+      }
+      override async write(path: string, data: Uint8Array) {
+        return { ...(await super.write(path, data)), mtime: -1 };
+      }
+    }
+    const store = new NoTime();
+    store.touch("keyring-settings.md", KO_SETTINGS);
+    store.touch("W/a.md", "에이");
+    const v = new LocalVault(store, { author: "노트북" });
+    await v.open();
+    expect(v.tree().find((n) => n.path === "W")!.children![0].edited).toBeUndefined();
+    await v.write("W/a.md", "에이 2", (await v.read("W/a.md")).hash);
+    // 처음 고칠 때 남기는 「기존 내용」 기록의 날짜
+    for (const e of v.entries()) expect(Date.parse(e.date)).toBeGreaterThan(Date.parse("2000-01-01T00:00:00Z"));
+  });
+
   it("edited 가 있으면 그 시각, 없으면 파일 시각. sort·rank 는 맞는 값만", async () => {
     const T = "2026-10-30T09:12:33Z";
     const { v, store } = await vault({

@@ -22,7 +22,7 @@ export interface FileEntry {
   /** 볼트 상대 경로("/" 구분) */
   path: string;
   size: number;
-  /** 수정 시각(ms) */
+  /** 수정 시각(ms). 저장소가 모르면 -1(트리에 시각을 싣지 않는다) */
   mtime: number;
 }
 
@@ -723,7 +723,9 @@ export class LocalVault {
       }
     }
     if (baseline.length) {
-      const oldest = Math.min(...baseline.map((b) => this.files.get(b.path)!.mtime));
+      // 시각을 모르는 파일(-1)은 빼고 가장 오래된 파일 시각으로 남긴다
+      const known = baseline.map((b) => this.files.get(b.path)!.mtime).filter((m) => m > 0);
+      const oldest = known.length ? Math.min(...known) : Date.now() - 1;
       await this.record(this.author, this.text().commit.appBaseline, baseline, contents, Math.min(oldest, Date.now() - 1));
     }
     for (const c of changes) {
