@@ -114,7 +114,7 @@ describe("업데이트 설치하고 끄기(Quit 앞의 물음)", () => {
   });
 });
 
-describe("「새 버전이 있다」 상태(레드닷)", () => {
+describe("「새 버전이 있다」 상태(알림 점)", () => {
   const upd = (version: string) => ({ version, close: vi.fn(async () => {}) });
 
   it("있고 없음이 바뀔 때만 앱에 알리고, 듣는 쪽에 넘긴다", () => {

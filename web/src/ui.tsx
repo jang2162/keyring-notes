@@ -32,7 +32,7 @@ export function IconButton({
   disabled?: boolean;
   why?: string;
   badge?: number | string;
-  /** 아이콘 귀퉁이의 빨간 점(새 버전이 있다 등). 무엇을 알리는지는 label 에 담는다 */
+  /** 아이콘 귀퉁이의 알림 점(주황, --notice)(새 버전이 있다 등). 무엇을 알리는지는 label 에 담는다 */
   dot?: boolean;
   className?: string;
   size?: number;

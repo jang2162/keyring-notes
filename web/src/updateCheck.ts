@@ -113,7 +113,7 @@ export function quitAskHandler<U>(s: {
   };
 }
 
-/** 「새 버전이 있다」 상태(레드닷, Quit 앞의 물음) */
+/** 「새 버전이 있다」 상태(알림 점, Quit 앞의 물음) */
 export interface Available<U> {
   get: () => U | null;
   /** 새 버전을 찾았다(u), 설치했거나 다시 확인해 없었다(null) */

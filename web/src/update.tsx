@@ -12,7 +12,7 @@ import { SOLO } from "./soloWindow";
 /**
  * 데스크톱 앱 업데이트. 새 버전 정보는 GitHub 릴리스의 latest.json(app/src-tauri/tauri.conf.json 의 plugins.updater)에서 읽고,
  * 받기·설치는 사람이 대화상자에서 고른 뒤에만 한다. 실행 때 찾으면 대화상자를 띄우지 않고 「새 버전이 있다」 상태만 둔다 —
- * 레일의 설정 단추와 설정의 「정보」에 빨간 점을 찍고, 메뉴의 Quit 이 끄기 전에 묻는다(QuitUpdateDialog). 모바일은 업데이터가 없고(스토어), 웹·서버는 서버 관리 화면이 따로 본다.
+ * 레일의 설정 단추와 설정의 「정보」에 주황 점을 찍고, 메뉴의 Quit 이 끄기 전에 묻는다(QuitUpdateDialog). 모바일은 업데이터가 없고(스토어), 웹·서버는 서버 관리 화면이 따로 본다.
  * 릴리스 쪽 절차: docs/guides/release-macos.md
  * 노트 하나만 띄운 새 창(SOLO)은 확인하지 않는다 — 원래 창이 확인하고, 새 창에는 업데이터 권한도 없다(capabilities 의 desktop)
  */
@@ -38,7 +38,7 @@ async function reportPending(pending: boolean) {
   await invoke("set_update_pending", { pending });
 }
 
-/** 새 버전이 있다(레드닷·Quit 앞의 물음). 대화상자가 쥔 업데이트는 대화상자가 닫힐 때 놓는다 */
+/** 새 버전이 있다(알림 점·Quit 앞의 물음). 대화상자가 쥔 업데이트는 대화상자가 닫힐 때 놓는다 */
 export const available = availableUpdate<Update>({
   report: (p) => void reportPending(p).catch(() => undefined),
   inUse: (u) => u === found,
@@ -140,7 +140,7 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: () => void
   };
   const close = () => {
     if (busy) return;
-    // 「나중에」여도 새 버전이 있다는 상태(레드닷)는 남긴다 — 그 업데이트는 상태가 쥔다
+    // 「나중에」여도 새 버전이 있다는 상태(알림 점)는 남긴다 — 그 업데이트는 상태가 쥔다
     if (update !== available.get()) void update.close().catch(() => undefined);
     onClose();
   };

@@ -20,6 +20,8 @@
   /* 상태 색 */
   --danger: #c0392b;
   --danger-bg: #fdeceb;
+  /* 알림 점(새 버전 등): 오류(--danger)가 아니라 「볼 것이 있다」 라 주황 */
+  --notice: #e8590c;
   --success: #1d7438;
   --success-bg: #eaf6ed;
   --hover: rgb(0 0 0 / 0.05);
@@ -69,6 +71,7 @@
     --axis: #3a3f46;
     --danger: #ff8a80;
     --danger-bg: #3a1c1a;
+    --notice: #ff9f43;
     --success: #84d39f;
     --success-bg: #16281c;
     --hover: rgb(255 255 255 / 0.06);
@@ -100,6 +103,7 @@
     --axis: #3a3f46;
     --danger: #ff8a80;
     --danger-bg: #3a1c1a;
+    --notice: #ff9f43;
     --success: #84d39f;
     --success-bg: #16281c;
     --hover: rgb(255 255 255 / 0.06);
@@ -575,7 +579,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--fg); border: none; }
 .icon-btn.active { color: var(--accent); background: var(--active); }
 .icon-btn:disabled { opacity: 0.35; }
-.update-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex-shrink: 0; }
+.update-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--notice); flex-shrink: 0; }
 .icon-dot { position: absolute; top: 4px; right: 4px; box-shadow: 0 0 0 2px var(--bg); }
 .icon-badge { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; line-height: 15px; font-weight: 600; }
 

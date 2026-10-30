@@ -600,7 +600,7 @@ function AboutSettings({ query }: { query: string }) {
   const prefs = usePrefs();
   const update = useAvailableUpdate();
   const [busy, setBusy] = useState(false);
-  // 사람이 누른 확인은 찾으면 바로 대화상자를 띄우고, 새 버전이 있다는 상태(레드닷)도 함께 바꾼다
+  // 사람이 누른 확인은 찾으면 바로 대화상자를 띄우고, 새 버전이 있다는 상태(알림 점)도 함께 바꾼다
   const checkNow = async () => {
     setBusy(true);
     try {
