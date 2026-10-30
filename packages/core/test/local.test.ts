@@ -353,6 +353,16 @@ describe("다른 창이 먼저 바꾼 파일", () => {
 });
 
 describe("트리에 정렬·순서·수정 시각", () => {
+  it("BOM 으로 시작하는 노트도 sort·icon·rank·edited 를 싣는다", async () => {
+    const T = "2026-10-30T09:12:33Z";
+    const store = new MemoryStore();
+    store.touch("keyring-settings.md", KO_SETTINGS);
+    store.files.set("W/b.md", { data: utf8(`\uFEFF---\nsort: custom\nicon: 🎍\nrank: k\nedited: ${T}\n---\n본문\n`), mtime: 5000 });
+    const v = new LocalVault(store, { author: "노트북" });
+    await v.open();
+    expect(v.tree().find((n) => n.path === "W")!.children![0]).toMatchObject({ sort: "custom", icon: "🎍", rank: "k", edited: Date.parse(T) });
+  });
+
   it("저장소가 파일 시각을 모르면(-1) 트리에 시각을 싣지 않고, 기록 날짜도 1970년 전이 되지 않는다", async () => {
     /** 시각을 주지 않는 저장소(앱 저장소가 stat 에서 시각을 못 받은 경우) */
     class NoTime extends MemoryStore {

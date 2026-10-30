@@ -72,14 +72,13 @@ function setEdited(content: string, stamp: string): string {
     out = bom + [...lines.slice(0, edited), `${m[1]}${stamp}${m[3] ?? ""}${m[4] ?? ""}`, ...lines.slice(edited + 1)].join("");
   } else return yamlEdit(content, stamp);
   // 줄로 고친 결과가 그 시각으로 읽히지 않으면(따옴표 키 등 드문 모양) YAML 로 고친다
-  return parseFrontmatter(out.slice(bom.length)).data?.[EDITED_FIELD] === stamp ? out : yamlEdit(content, stamp);
+  return parseFrontmatter(out).data?.[EDITED_FIELD] === stamp ? out : yamlEdit(content, stamp);
 }
 
 /** 줄로 고칠 수 없는 드문 모양: YAML 을 다시 써서 고친다(value null 이면 지운다). 못 고치면 그대로 */
 function yamlEdit(content: string, value: string | null): string {
-  const bom = content.startsWith(BOM) ? BOM : "";
   try {
-    return bom + setFrontmatterField(content.slice(bom.length), EDITED_FIELD, value);
+    return setFrontmatterField(content, EDITED_FIELD, value);
   } catch {
     return content;
   }
@@ -112,7 +111,7 @@ export function stampEdited(path: string, content: string, stamp: string): strin
  * 것이 되어 다른 문단을 고친 동시 편집까지 충돌 사본이 되기 때문이다. 이미 그 값인 판은 글자 그대로 둔다.
  */
 export function alignEdited(base: string, a: string, b: string): [string, string, string] {
-  const raw = (content: string) => parseFrontmatter(content.replace(/^\uFEFF/, "")).data?.[EDITED_FIELD];
+  const raw = (content: string) => parseFrontmatter(content).data?.[EDITED_FIELD];
   let latest: { ms: number; value: string } | null = null;
   for (const v of [base, a, b]) {
     const value = raw(v);

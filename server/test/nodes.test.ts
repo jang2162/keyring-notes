@@ -272,6 +272,16 @@ describe("REST·MCP: 노드 API와 에이전트 언어", () => {
 });
 
 describe("트리 응답에 정렬·순서·수정 시각", () => {
+  it("BOM 으로 시작하는 노트도 sort·icon·rank·edited 를 싣는다", async () => {
+    const T = "2026-10-30T09:12:33Z";
+    await vault.batch(
+      [{ op: "write", path: "업무/bom.md", content: `\uFEFF---\nsort: custom\nicon: 🎍\nrank: k\nedited: ${T}\n---\n본문\n`, baseHash: null }],
+      ownerPrincipal,
+    );
+    const kids = (await owner.tree()).find((n) => n.path === "업무")!.children!;
+    expect(kids.find((n) => n.path === "업무/bom.md")).toMatchObject({ sort: "custom", icon: "🎍", rank: "k", edited: Date.parse(T) });
+  });
+
   it("edited 가 있으면 그 시각, 없으면 서버 색인의 파일 시각. sort·rank 는 맞는 값만", async () => {
     const T = "2026-10-30T09:12:33Z";
     const files: Record<string, string> = {

@@ -21,7 +21,8 @@ export interface Frontmatter {
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
 
 export function parseFrontmatter(content: string): Frontmatter {
-  const m = FM_RE.exec(content);
+  // 맨 앞 BOM(Windows 편집기에서 온 파일)은 건너뛴다 — 줄 수는 그대로다
+  const m = FM_RE.exec(content.startsWith("\uFEFF") ? content.slice(1) : content);
   if (!m) return { data: null, lines: 0 };
   const lines = m[0].replace(/\r?\n$/, "").split("\n").length;
   try {
