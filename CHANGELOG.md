@@ -17,6 +17,9 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - The web app installed to the home screen now keeps the whole vault on the device and syncs it with the server, so notes you never opened also open offline. While the device vault is empty and not connected, it opens sync settings with the server address filled in. A mode you chose with `?local` or `?local=0` still wins, and saves still waiting from the server mode are sent first.
 - To keep using the server mode in the installed web app, open `https://<server>/?local=0` once in a tab of the same browser. Choosing `?local=0` before this release was not remembered.
 - On a device vault in the browser, and when saving offline in the server mode, the app asks the browser to keep its storage. **This device & sync** says whether it does.
+- The tabs now share the top row with the window buttons. In the macOS desktop app the separate title bar is gone, and the left part of that row holds the app name and the left panel button.
+- The workspace switcher moved to the top of the left panel, where it fills the space beside the tree buttons. The workspace name no longer repeats at the top of the rail, in the tree header and at the start of the path above the note. With the left panel closed, a small switcher appears at the start of that path instead. With **All workspaces** on, the path still starts with the workspace.
+- Workspace notes (`<workspace>.md` at the vault root) no longer open in the app. Links and addresses show a notice instead, and Quick open, search results and backlinks no longer list them. The file stays in the vault and still holds the workspace icon.
 
 ### Fixed
 
