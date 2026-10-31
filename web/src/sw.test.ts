@@ -98,4 +98,17 @@ describe("sw.js", () => {
     expect(w.deleted).toEqual([]);
     expect(w.self.skipWaiting).toHaveBeenCalled();
   });
+  it("/assets 요청에 HTML 이 오면(SPA 대체 응답 — 다른 프록시·옛 서버) 캐시하지 않는다", async () => {
+    const w = loadWorker("b0005", [], { fetch: async () => new Response("<!doctype html>", { headers: { "content-type": "text/html; charset=UTF-8" } }) });
+    await w.fire("fetch", { request: new Request("http://localhost/assets/gone-chunk-zz9.js") });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(w.puts).toEqual([]);
+  });
+
+  it("/assets 요청에 JS 가 오면 그 빌드 캐시에 넣는다", async () => {
+    const w = loadWorker("b0005", [], { fetch: async () => new Response("export {};", { headers: { "content-type": "text/javascript" } }) });
+    await w.fire("fetch", { request: new Request("http://localhost/assets/index-a.js") });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(w.puts).toEqual([["keyring-shell-b0005", "http://localhost/assets/index-a.js"]]);
+  });
 });
