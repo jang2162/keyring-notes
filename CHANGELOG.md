@@ -2,6 +2,18 @@
 
 All notable user-facing changes to Keyring Notes are listed here. The server and the desktop app share one version.
 
+## [Unreleased]
+
+### Added
+
+- On narrow screens such as a phone, a bottom bar holds **Files**, **Search**, **New note**, **Tabs** and **More**. Press and hold **New note** to open today's note. **More** lists the rest of the rail, and shows a number or a dot when something needs your attention, such as being offline or changes waiting to be sent.
+- When the server is updated while the web app is open, a notice offers **Reload**. Unsaved notes are saved first, and with autosave off you are asked whether to save. Until you reload, parts of the app you haven't opened yet still load.
+
+### Changed
+
+- The installed web app colors the system status bar and bottom area with the app's background color instead of blue, following the light or dark theme.
+- On narrow screens the row of tabs, the tab count button, the note list button (☰) and the status bar are gone. Their jobs moved to the bottom bar, and the rail no longer appears in the left drawer.
+
 ## [0.10.0] - 2026-10-31
 
 ### Added
