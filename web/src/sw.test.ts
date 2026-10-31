@@ -3,31 +3,44 @@ import swSource from "../public/sw.js?raw";
 
 type Handler = (e: unknown) => void;
 
+interface WorkerOptions {
+  /** 네트워크 가짜(기본: 빈 200 응답) */
+  fetch?: (req: unknown) => Promise<Response>;
+}
+
 /** sw.js 를 가짜 self·caches 와 함께 돌린다. 빌드 id 자리는 build 로 채운다(빌드 때 vite.config.ts 가 하는 일) */
-function loadWorker(build: string, cacheKeys: string[]) {
+function loadWorker(build: string, cacheKeys: string[], opts: WorkerOptions = {}) {
   const handlers = new Map<string, Handler>();
   const deleted: string[] = [];
+  /** 캐시에 넣은 것: [캐시 이름, 요청 주소] */
+  const puts: [string, string][] = [];
   const self = {
     addEventListener: (type: string, fn: Handler) => handlers.set(type, fn),
     clients: { claim: vi.fn(async () => undefined) },
     navigator: {},
     skipWaiting: vi.fn(async () => undefined),
   };
+  const url = (req: unknown) => (typeof req === "string" ? req : (req as Request).url);
   const caches = {
     keys: async () => [...cacheKeys],
     delete: async (key: string) => (deleted.push(key), true),
-    open: async () => ({ match: async () => undefined, put: async () => undefined, addAll: async () => undefined }),
+    open: async (name: string) => ({
+      match: async () => undefined,
+      put: async (req: unknown) => void puts.push([name, url(req)]),
+      addAll: async () => undefined,
+    }),
     match: async () => undefined,
   };
-  const fetch = vi.fn(async () => new Response(""));
-  new Function("self", "caches", "fetch", swSource.replace("__KEYRING_BUILD__", build))(self, caches, fetch);
-  /** 처리기를 부르고 waitUntil 로 넘긴 일이 끝날 때까지 기다린다 */
+  const fetch = opts.fetch ?? (async () => new Response(""));
+  const location = { origin: "http://localhost" };
+  new Function("self", "caches", "fetch", "location", swSource.replace("__KEYRING_BUILD__", build))(self, caches, fetch, location);
+  /** 처리기를 부르고 waitUntil·respondWith 로 넘긴 일이 끝날 때까지 기다린다 */
   async function fire(type: string, event: Record<string, unknown> = {}) {
     const waits: Promise<unknown>[] = [];
-    handlers.get(type)?.({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p) });
+    handlers.get(type)?.({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p), respondWith: (p: Promise<unknown>) => waits.push(p) });
     await Promise.all(waits);
   }
-  return { fire, deleted, self };
+  return { fire, deleted, puts, self };
 }
 
 describe("sw.js", () => {
@@ -71,5 +84,18 @@ describe("sw.js", () => {
     await expect(w.fire("message", { data: { type: "build" }, ports: [] })).resolves.toBeUndefined();
     await expect(w.fire("message", { data: null })).resolves.toBeUndefined();
     expect(port.postMessage).not.toHaveBeenCalled();
+  });
+  it("precache 가 실패하면(설치 중 오프라인 등) 그 빌드 캐시를 지운다 — 반쪽 캐시가 「바로 앞 빌드」 로 남지 않게", async () => {
+    const w = loadWorker("b0005", [], { fetch: async () => Promise.reject(new TypeError("Failed to fetch")) });
+    await expect(w.fire("install")).rejects.toThrow("Failed to fetch");
+    expect(w.deleted).toEqual(["keyring-shell-b0005"]);
+    expect(w.self.skipWaiting).not.toHaveBeenCalled();
+  });
+
+  it("precache 가 성공하면 캐시를 지우지 않고 바로 자리를 잡는다", async () => {
+    const w = loadWorker("b0005", [], { fetch: async () => new Response('<script src="/assets/index-a.js"></script>') });
+    await w.fire("install");
+    expect(w.deleted).toEqual([]);
+    expect(w.self.skipWaiting).toHaveBeenCalled();
   });
 });

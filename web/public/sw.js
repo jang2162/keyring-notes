@@ -19,7 +19,17 @@ async function precache() {
 }
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(precache().then(() => self.skipWaiting()));
+  // 실패하면(설치 중 오프라인·서버 재시작 경합) 반쪽 캐시를 지운다 — 남으면 다음 빌드의 activate 가 그것을 「바로 앞 빌드」 로 남기고
+  // 열려 있는 화면이 쓰는 진짜 바로 앞 캐시를 지운다(staleCaches)
+  e.waitUntil(
+    precache().then(
+      () => self.skipWaiting(),
+      async (err) => {
+        await caches.delete(CACHE);
+        throw err;
+      },
+    ),
+  );
 });
 
 /**
