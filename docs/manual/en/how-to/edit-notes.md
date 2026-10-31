@@ -79,6 +79,8 @@ The installed app starts this way unless you chose a mode yourself. To keep it i
 
 In the server mode (a browser tab, or after `?local=0`), notes you opened once open without a connection, and saves made offline are kept on the device and sent when you reconnect. Notes changed on the server in the meantime are not overwritten; your version is kept as an offline conflict copy. Search needs the server; without a connection the search panel says so.
 
+When the server is updated while the web app is open, a notice says **A new version is available.** Press **Reload** to switch to it. Unsaved notes are saved first, and if a save fails the app does not reload. With autosave off, the app asks whether to save before it reloads. The app checks for a new version when you come back to it, if 30 minutes have passed since the last check.
+
 Math (KaTeX) and Mermaid diagrams load from the server only when a note uses them, never from a CDN. The installed web app downloads them in the background after the first open, so they render offline too.
 
 ## Next steps

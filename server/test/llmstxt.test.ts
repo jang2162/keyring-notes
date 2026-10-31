@@ -1,8 +1,11 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
+import { mountWebApp } from "../src/webApp.js";
 import { openVault, tempDir } from "./helpers.js";
 
 let cleanup: () => Promise<void>;
@@ -73,5 +76,44 @@ describe("GET /llms.txt", () => {
     const res = await app.request("/llms.txt");
     expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
     expect(await res.text()).toContain("# Keyring Notes");
+  });
+});
+
+describe("앱 화면(web dist) 응답", () => {
+  let web: { dir: string; cleanup: () => Promise<void> };
+  beforeEach(async () => {
+    web = await tempDir("keyring-webdist-");
+    await mkdir(path.join(web.dir, "assets"));
+    await writeFile(path.join(web.dir, "index.html"), "<!doctype html>app");
+    await writeFile(path.join(web.dir, "assets", "index-a.js"), "export {};");
+  });
+  afterEach(() => web.cleanup());
+
+  it("없는 /assets 파일은 index.html 이 아니라 404 — 서비스 워커가 HTML 을 조각으로 캐시하지 않게", async () => {
+    const app = new Hono();
+    mountWebApp(app, web.dir);
+    const res = await app.request("/assets/gone-chunk-zz9.js");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("content-type") ?? "").not.toContain("text/html");
+  });
+
+  it("있는 /assets 파일은 그대로, 화면 경로는 여전히 index.html, /api 는 404", async () => {
+    const app = new Hono();
+    mountWebApp(app, web.dir);
+    const asset = await app.request("/assets/index-a.js");
+    expect(asset.status).toBe(200);
+    expect(await asset.text()).toBe("export {};");
+    for (const p of ["/", "/settings", "/Hello/Note"]) {
+      const res = await app.request(p);
+      expect(res.status, p).toBe(200);
+      expect(await res.text(), p).toBe("<!doctype html>app");
+    }
+    expect((await app.request("/api/nope")).status).toBe(404);
+  });
+
+  it("dist 가 없으면 아무것도 달지 않는다", async () => {
+    const app = new Hono();
+    expect(mountWebApp(app, path.join(web.dir, "missing"))).toBe(false);
+    expect((await app.request("/")).status).toBe(404);
   });
 });

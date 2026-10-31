@@ -1,7 +1,5 @@
 import { serve } from "@hono/node-server";
 import { serverText, setServerLanguage } from "./lang.js";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +18,7 @@ import { BlobStore } from "./blobs.js";
 import { S3Client, s3ConfigFromEnv } from "./s3.js";
 import { encryptionSecretFromEnv, S3Crypto } from "./s3crypto.js";
 import { Vault } from "./vault.js";
+import { mountWebApp } from "./webApp.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /** 빈 값(docker compose가 설정 안 된 변수를 ""로 넘김)은 설정하지 않은 것으로 본다. */
@@ -147,12 +146,7 @@ const app = createApp({
   setupCode: () => (config.get().owner.passwordHash === null ? setupCode : null),
 });
 
-if (existsSync(path.join(webDist, "index.html"))) {
-  const root = path.relative(process.cwd(), webDist);
-  app.use("/*", serveStatic({ root }));
-  const indexHtml = readFileSync(path.join(webDist, "index.html"), "utf8");
-  app.get("*", (c) => (c.req.path.startsWith("/api/") ? c.notFound() : c.html(indexHtml)));
-}
+mountWebApp(app, webDist);
 
 const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`keyring-notes: http://${info.address}:${info.port}  (vault: ${vaultDir}, config: ${configFile})`);

@@ -35,7 +35,6 @@ import {
   ListChecks,
   LocateFixed,
   LogOut,
-  Menu as MenuIcon,
   Pencil,
   Pin,
   PinOff,
@@ -53,6 +52,7 @@ import {
   ChevronsUpDown,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { api, ApiError, appMode, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
 import type { EditorHandle, LinkCandidate } from "./Editor";
 import { LintPanel, ReviewPanel } from "./Curation";
@@ -188,7 +188,10 @@ import {
   type Side,
   type ViewMode,
 } from "./panes";
-import { TabCountButton, TabSwitcher } from "./TabSwitcher";
+import { TabSwitcher } from "./TabSwitcher";
+import { BottomBar, MoreSheet, type MoreEntry, type MoreStatusLine } from "./BottomBar";
+import { keyboardState, moreBadge, type KeyboardState } from "./bottomBarState";
+import { moreEntrySpecs, moreStatusLines, moreStatusOf, saveAttention, type MoreEntryId, type MoreInput, type MoreStatusId } from "./moreMenu";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { forgetViewed, markViewed, renameViewed, viewedSnapshot } from "./viewed";
@@ -218,11 +221,13 @@ import {
   dropAutosaves,
   listenCloseAsks,
   listenRestartCancelled,
+  reloadAfterSaving,
   savesHeld,
   setCloseGuard,
   unsavedSummary,
   type SaveHold,
 } from "./closeWindow";
+import { onNewVersion } from "./pwaUpdate";
 import { tearOutAt } from "./tearOut";
 import { DockTitle, DRAG_REGION } from "./DockTitle";
 import { switcherSpot } from "./topbar";
@@ -314,6 +319,20 @@ function nodeExists(node: string, paths: string[]): boolean {
   });
 }
 
+/** 「더 보기」 항목의 아이콘(레일과 같은 것) */
+const MORE_ICONS: Record<MoreEntryId, LucideIcon> = {
+  daily: CalendarDays,
+  tags: Tag,
+  attachments: Paperclip,
+  graph: Waypoints,
+  ingest: Inbox,
+  review: ListChecks,
+  lint: BrushCleaning,
+  sync: RefreshCw,
+  settings: SettingsIcon,
+  logout: LogOut,
+};
+
 /** 탭·마지막 문서를 기억하는 범위 이름: 워크스페이스, 모든 워크스페이스면 "*" */
 const scopeKeyOf = (all: boolean, ws: string) => (all ? "*" : ws);
 
@@ -338,6 +357,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [isNarrow, setIsNarrow] = useState(narrow);
   /** 좁은 화면의 열린 탭 목록을 보고 있는 칸 */
   const [tabSheet, setTabSheet] = useState<string | null>(null);
+  /** 좁은 화면 하단 바의 「더 보기」 시트 */
+  const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia?.("(max-width: 800px)");
     if (!mq) return;
@@ -345,9 +366,41 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       setIsNarrow(mq.matches);
       setDrawer(null);
       setTabSheet(null);
+      setMoreOpen(false);
     };
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
+  }, []);
+  /**
+   * 좁은 화면: 화면 키보드가 올라와 있으면 하단 바를 숨긴다(.shell.kb-up). 보이는 높이를 지금까지 본 가장 큰 높이와 견준다 —
+   * 안드로이드는 키보드가 창 높이(innerHeight)까지 줄인다. 확대(핀치)는 높이에 scale 을 곱해 키보드로 보지 않는다.
+   * 키보드가 올라온 채 회전하는 경우는 bottomBarState.keyboardState 가 맡는다
+   */
+  const [kbUp, setKbUp] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let kb: KeyboardState | null = null;
+    const editing = () => {
+      const a = document.activeElement;
+      return a instanceof HTMLElement && (a.matches("input, textarea, select") || a.isContentEditable);
+    };
+    const check = () => {
+      const height = vv.height * vv.scale;
+      kb = keyboardState(kb, { width: window.innerWidth, height, editing: editing() });
+      setKbUp(kb.up);
+    };
+    // focusout 동안에는 activeElement 가 아직 정해지지 않았다 — 다음 틱에 본다
+    const later = () => setTimeout(check, 0);
+    check();
+    vv.addEventListener("resize", check);
+    document.addEventListener("focusin", later);
+    document.addEventListener("focusout", later);
+    return () => {
+      vv.removeEventListener("resize", check);
+      document.removeEventListener("focusin", later);
+      document.removeEventListener("focusout", later);
+    };
   }, []);
   /** 창 폭: 오른쪽 패널을 붙일 자리가 있는지(rightPanelFloats) */
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -1300,6 +1353,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 닫기로 정했으면 아래 beforeunload 경고도 다시 묻지 않는다
    */
   const guarded = canCloseWindow() && dirtyPaths(docs).length > 0;
+  /** 저장 안 한 문서를 자동 저장 설정과 상관없이 모두 저장한다. 자동 저장이 저장하던 문서는 끝나기를 기다렸다가 다시 저장한다(창 닫기·PWA 새로 고침) */
+  const saveAllDirty = async () => {
+    for (const p of dirtyPaths(docsRef.current)) {
+      while (savingRef.current.has(p)) await new Promise((r) => setTimeout(r, 50));
+      await saveRef.current(p);
+    }
+  };
   useEffect(() => {
     if (!canCloseWindow()) return;
     const text = guarded ? { message: t("window.notResponding"), discard: t("window.closeDiscard"), cancel: t("common.cancel") } : null;
@@ -1317,13 +1377,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           { value: "discard", label: t("window.closeDiscard") },
         ]);
       },
-      // 자동 저장 설정과 상관없이 모두 저장한다. 자동 저장이 저장하던 문서는 끝나기를 기다렸다가 다시 저장한다
-      save: async () => {
-        for (const p of dirtyPaths(docsRef.current)) {
-          while (savingRef.current.has(p)) await new Promise((r) => setTimeout(r, 50));
-          await saveRef.current(p);
-        }
-      },
+      save: saveAllDirty,
       unsaved: (paths) => toast(t("window.saveFailed", { names: unsavedSummary(paths, stemOf).names }), { kind: "error" }),
       close: destroyCurrentWindow,
       hold: closeHold.current,
@@ -1339,6 +1393,30 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       unlisten?.();
     };
   }, []);
+
+  /** PWA 새 버전(pwaUpdate.ts) 알림의 「새로 고침」: 창 닫기와 같은 흐름으로 저장을 거친다(판단은 closeWindow.ts 의 reloadAfterSaving) */
+  const reloadSafely = () =>
+    reloadAfterSaving({
+      autosave: () => prefsRef.current.autosave,
+      dirty: () => dirtyPaths(docsRef.current),
+      ask: async (paths) => {
+        const { names, count, more } = unsavedSummary(paths, stemOf);
+        return chooseDialog(t(more ? "pwa.unsavedMore" : "pwa.unsaved", { names, count }), { value: "save", label: t("pwa.reloadSave") }, [
+          { value: "discard", label: t("pwa.reloadDiscard") },
+        ]);
+      },
+      save: saveAllDirty,
+      unsaved: (paths) => toast(t("pwa.saveFailed", { names: unsavedSummary(paths, stemOf).names }), { kind: "error" }),
+      close: async () => location.reload(),
+      hold: closeHold.current,
+      dropPending: () => dropAutosaves(autosaveTimers.current, autosaveArmed.current),
+      renotify: () => showNewVersion(),
+      failed: toastError,
+    });
+  const showNewVersion = () => toast(t("pwa.newVersion"), { duration: 0, action: { label: t("pwa.reload"), run: () => void reloadSafelyRef.current() } });
+  const reloadSafelyRef = useRef(reloadSafely);
+  reloadSafelyRef.current = reloadSafely;
+  useEffect(() => onNewVersion(() => showNewVersion()), []);
 
   // 업데이트 뒤 다시 시작을 누가 취소했으면 새 창(SOLO)에도 알린다. 업데이트 대화상자는 원래 창에만 있고, 그 창은 먼저 닫혔을 수 있다
   useEffect(() => {
@@ -2763,6 +2841,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { label: t("ws.manage"), icon: SettingsIcon, run: () => openSettings("workspaces") },
   ];
 
+  /** 로그아웃(서버 모드): 레일과 좁은 화면의 「더 보기」 가 같이 쓴다 */
+  const logout = async () => {
+    await flush();
+    const d = docRef.current;
+    if (!d || d.draft === d.saved || (await confirmDialog(t("rail.logoutUnsaved"), t("rail.logout")))) onLogout();
+  };
+
   const rail = (
     <nav className={`rail${rl ? " with-labels" : ""}`} aria-label={t("rail.label")}>
       <div className="rail-top">
@@ -2874,19 +2959,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           dot={!!newVersion}
           onClick={() => (settings ? closeSettings() : openSettings())}
         />
-        {!local && (
-          <IconButton
-            icon={LogOut}
-            label={t("rail.logout")}
-            side={railSide}
-            showLabel={rl}
-            onClick={async () => {
-              await flush();
-              const d = docRef.current;
-              if (!d || d.draft === d.saved || (await confirmDialog(t("rail.logoutUnsaved"), t("rail.logout")))) onLogout();
-            }}
-          />
-        )}
+        {!local && <IconButton icon={LogOut} label={t("rail.logout")} side={railSide} showLabel={rl} onClick={() => void logout()} />}
       </div>
     </nav>
   );
@@ -3330,17 +3403,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 칸 하나의 탭 바(칸이 없으면 빈 탭 바). 탭을 끌어 다른 칸(가운데·가장자리)에 놓아 옮기거나 나눈다 — 놓을 자리는 renderDropZone.
    * 맨 위 줄(top)의 탭 바는 창의 첫 줄이라 빈 자리가 창 끌기 영역이다(macOS 앱)
    */
-  const renderTabBar = (pane: Pane | null, withNav: boolean, top: boolean) => (
+  const renderTabBar = (pane: Pane | null, top: boolean) => (
     <nav className="tabbar" aria-label={t("tab.label")} {...(top ? DRAG_REGION : {})}>
-      {withNav && (
-        <IconButton
-          className="nav-toggle"
-          icon={MenuIcon}
-          label={t("tab.docList")}
-          onClick={() => setDrawer((d) => (d === "left" ? null : "left"))}
-          size={18}
-        />
-      )}
       <div className="tab-list" role="tablist">
         {(pane?.tabs ?? []).map((tp) => {
           const cached = docs[tp]?.doc;
@@ -3405,8 +3469,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         onClick={() => void createDoc()}
         size={16}
       />
-      {/* 좁은 화면은 탭 줄 대신 탭 개수 단추로 열린 탭 목록을 연다(넓은 화면에서는 CSS 가 숨긴다) */}
-      <TabCountButton count={pane?.tabs.length ?? 0} onClick={() => pane && setTabSheet(pane.id)} />
     </nav>
   );
 
@@ -3487,7 +3549,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       onDaily={dailyCfg ? () => void openDaily(0) : null}
       onQuick={() => setPalette("files")}
       onSearch={() => showLeft("search")}
-      onMenu={() => setDrawer("left")}
       onManage={() => openSettings("workspaces")}
       hasWorkspace={wsNames.length > 0}
       pendingCount={pendingCount}
@@ -3556,7 +3617,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         onFocusCapture={() => !focused && setLayout((l) => focusPane(l, p.id))}
         onMouseDownCapture={() => !focused && setLayout((l) => focusPane(l, p.id))}
       >
-        {renderTabBar(p, isNarrow || n === 1, !edges.includes("edge-t"))}
+        {/* 좁은 화면에는 위쪽 탭 줄이 없다 — 탭·새 노트·서랍은 하단 바가 맡는다 */}
+        {!isNarrow && renderTabBar(p, !edges.includes("edge-t"))}
         {e ? (
           <DocPane
             pane={p.id}
@@ -3605,7 +3667,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </div>
   ) : (
     <>
-      {renderTabBar(null, true, true)}
+      {!isNarrow && renderTabBar(null, true)}
       {home}
     </>
   );
@@ -3616,13 +3678,74 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     rightOpen &&
     !!doc &&
     rightPanelFloats(viewportWidth, { rail: rl ? 64 : 44, left: prefs.leftOpen ? prefs.leftWidth : 0, right: prefs.rightWidth });
+  // ── 좁은 화면 하단 바와 「더 보기」: 상태 표시줄·레일이 없으므로 알아야 할 상태와 레일 항목을 여기에 모은다
+  const moreInput: MoreInput = {
+    local,
+    online,
+    outboxCount,
+    pendingCount,
+    save: saveAttention({
+      hasDoc: !!doc && !doc.generated,
+      conflict: !!conflict || saveState.kind === "conflict",
+      saving: saveState.kind === "saving",
+      failed: saveState.kind === "error",
+      dirty,
+      autosave: prefs.autosave,
+    }),
+    syncError: !!syncStatus?.lastError,
+    syncServer: syncStatus?.settings?.server ?? null,
+    dailyOn: !!dailyCfg,
+    update: !!newVersion,
+  };
+  // 누르면 할 일과 아이콘은 id 로 꽂는다(줄·항목의 조건과 글은 moreMenu.ts)
+  const statusRun: Partial<Record<MoreStatusId, () => void>> = {
+    save: () => void save(),
+    outbox: () => void flushOutbox(),
+    sync: () => openSettings("device"),
+    "review-waiting": () => setReviewOpen(true),
+  };
+  const moreStatus: MoreStatusLine[] = moreStatusLines(moreInput).map((l) => ({ ...l, run: statusRun[l.id] }));
+  const entryRun: Record<MoreEntryId, () => void> = {
+    daily: () => void openDaily(0),
+    tags: () => showLeft("tags"),
+    attachments: () => showLeft("attachments"),
+    graph: () => setGraphOpen(true),
+    ingest: () => setIngestOpen(true),
+    review: () => setReviewOpen(true),
+    lint: () => setLintOpen(true),
+    sync: () => openSettings("device"),
+    settings: () => openSettings(),
+    logout: () => void logout(),
+  };
+  const moreEntries: MoreEntry[] = moreEntrySpecs(moreInput).map((e) => ({ ...e, icon: MORE_ICONS[e.id], run: entryRun[e.id] }));
+  const leftDrawerView = drawer === "left" && (prefs.leftView === "files" || prefs.leftView === "search") ? prefs.leftView : null;
+  const bottomBar = (
+    <BottomBar
+      active={leftDrawerView}
+      tabCount={focusedPane?.tabs.length ?? 0}
+      canNew={!!ws || wsNames.length > 0}
+      badge={moreBadge(moreStatusOf(moreInput))}
+      onFiles={() => showLeft("files")}
+      onSearch={() => showLeft("search")}
+      onNew={() => void createDoc()}
+      onNewHold={dailyCfg ? () => void openDaily(0) : null}
+      onTabs={() => {
+        setDrawer(null);
+        if (focusedPane) setTabSheet(focusedPane.id);
+      }}
+      onMore={() => {
+        setDrawer(null);
+        setMoreOpen(true);
+      }}
+    />
+  );
   const sheetPane = isNarrow && tabSheet !== null ? paneOf(layout, tabSheet) : undefined;
   const leftShown = (prefs.leftOpen && !isNarrow) || drawer === "left";
 
   return (
     <IconLookup.Provider value={iconOf}>
       <div
-        className={`shell${prefs.leftOpen ? " left-open" : " left-closed"}${rightOpen && doc && !isNarrow ? " right-open" : ""}${rightFloat ? " right-float" : ""}${drawer ? ` drawer-${drawer}` : ""}${rl ? " rail-labels" : ""}`}
+        className={`shell${prefs.leftOpen ? " left-open" : " left-closed"}${rightOpen && doc && !isNarrow ? " right-open" : ""}${rightFloat ? " right-float" : ""}${drawer ? ` drawer-${drawer}` : ""}${rl ? " rail-labels" : ""}${isNarrow && kbUp ? " kb-up" : ""}`}
         style={{
           ["--left-w" as string]: `${prefs.leftWidth}px`,
           ["--right-w" as string]: `${prefs.rightWidth}px`,
@@ -3649,7 +3772,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           {!isNarrow && <DockTitle open={prefs.leftOpen} label={t("cmd.left")} keys={keyOf("left")} onToggle={toggleLeft} onOverhang={setTitleOver} />}
           {leftShown && dockHead}
           <div className="dock-body">
-            {rail}
+            {/* 좁은 화면의 서랍에는 패널만 — 레일 항목은 하단 바와 「더 보기」 가 맡는다 */}
+            {!isNarrow && rail}
             {leftShown && leftPanel}
           </div>
         </div>
@@ -3683,7 +3807,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             {rightPanel}
           </>
         )}
-        {statusBar}
+        {!isNarrow && statusBar}
+        {isNarrow && bottomBar}
+        {isNarrow && moreOpen && <MoreSheet status={moreStatus} entries={moreEntries} onClose={() => setMoreOpen(false)} />}
 
         {docMenu && <Menu at={docMenu} items={docMenuItems} onClose={() => setDocMenu(null)} />}
         {tabMenu && (
@@ -4101,7 +4227,6 @@ function Home({
   onDaily,
   onQuick,
   onSearch,
-  onMenu,
   onManage,
   hasWorkspace,
   pendingCount,
@@ -4122,7 +4247,6 @@ function Home({
   onDaily: (() => void) | null;
   onQuick: () => void;
   onSearch: () => void;
-  onMenu: () => void;
   onManage: () => void;
   hasWorkspace: boolean;
   pendingCount: number;
@@ -4134,9 +4258,6 @@ function Home({
   const k = (id: string) => (keyOf(id) ? <kbd>{formatCombo(keyOf(id))}</kbd> : null);
   return (
     <div className="home">
-      <button className="nav-toggle home-nav" aria-label={t("tab.docList")} onClick={onMenu}>
-        <MenuIcon size={18} aria-hidden /> {t("tab.docList")}
-      </button>
       <div className="home-inner">
         <h1>
           {workspace ? (

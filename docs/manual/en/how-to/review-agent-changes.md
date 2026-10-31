@@ -18,7 +18,7 @@ From then on, changes that **agents** write under those folders are not applied 
 
 Permission and conflict checks run when the agent submits. If the note changed in the meantime, the proposal is marked as changed since, and approval is rejected as a conflict.
 
-The status bar shows how many reviews are waiting.
+The status bar shows how many reviews are waiting. On narrow screens the number appears on **More** in the bottom bar.
 
 ## What the agent sees
 

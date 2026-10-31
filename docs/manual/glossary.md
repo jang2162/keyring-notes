@@ -63,6 +63,7 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | top row | 맨 위 줄 |
 | workspace switcher | 워크스페이스 전환기 |
 | status bar | 상태 표시줄 |
+| bottom bar · More | 하단 바 · 더 보기 |
 | tab | 탭 |
 | pane | 칸 |
 | tree | 트리 |

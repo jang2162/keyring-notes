@@ -6,6 +6,7 @@ import {
   closeWindowSafely,
   dropAutosaves,
   guardPage,
+  reloadAfterSaving,
   restartAfterClosing,
   savesHeld,
   setCloseGuard,
@@ -238,6 +239,77 @@ describe("closeAskHandler", () => {
     await on(1);
     expect(s.cancelled).toHaveBeenCalledOnce();
     expect(s.failed).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe("reloadAfterSaving", () => {
+  /** PWA 새로 고침의 단계. left: save 뒤에 남는 문서 */
+  const reload = (o: { autosave: boolean; dirty?: string[]; answer?: CloseChoice | null; left?: string[] }) => {
+    let saved = false;
+    const s = {
+      autosave: vi.fn(() => o.autosave),
+      dirty: vi.fn(() => (saved ? (o.left ?? []) : (o.dirty ?? ["a.md"]))),
+      ask: vi.fn(async (): Promise<CloseChoice | null> => o.answer ?? null),
+      save: vi.fn(async () => {
+        saved = true;
+      }),
+      unsaved: vi.fn(),
+      close: vi.fn(async () => {}),
+      hold: { asking: false, closing: false } as SaveHold,
+      dropPending: vi.fn(),
+      renotify: vi.fn(),
+      failed: vi.fn(),
+    };
+    return s;
+  };
+
+  it("자동 저장이 켜져 있으면 묻지 않고 저장한 뒤 새로 고친다", async () => {
+    const s = reload({ autosave: true });
+    expect(await reloadAfterSaving(s)).toBe(true);
+    expect(s.ask).not.toHaveBeenCalled();
+    expect(s.save).toHaveBeenCalledOnce();
+    expect(s.close).toHaveBeenCalledOnce();
+    expect(s.renotify).not.toHaveBeenCalled();
+  });
+
+  it("자동 저장이 꺼져 있으면 묻는다 — 고른 대로 저장하고 새로 고치며 다시 알리지 않는다", async () => {
+    const s = reload({ autosave: false, answer: "save" });
+    expect(await reloadAfterSaving(s)).toBe(true);
+    expect(s.ask).toHaveBeenCalledWith(["a.md"]);
+    expect(s.save).toHaveBeenCalledOnce();
+    expect(s.close).toHaveBeenCalledOnce();
+    expect(s.renotify).not.toHaveBeenCalled();
+  });
+
+  it("저장 안 한 변경이 없으면 묻지 않고 새로 고친다", async () => {
+    const s = reload({ autosave: false, dirty: [] });
+    expect(await reloadAfterSaving(s)).toBe(true);
+    expect(s.ask).not.toHaveBeenCalled();
+    expect(s.close).toHaveBeenCalledOnce();
+  });
+
+  it("취소하면 새로 고치지 않고 다시 알린다", async () => {
+    const s = reload({ autosave: false, answer: null });
+    expect(await reloadAfterSaving(s)).toBe(false);
+    expect(s.close).not.toHaveBeenCalled();
+    expect(s.renotify).toHaveBeenCalledOnce();
+  });
+
+  it("저장하지 못한 것이 남으면 새로 고치지 않고 알린 뒤 다시 알린다", async () => {
+    const s = reload({ autosave: true, left: ["a.md"] });
+    expect(await reloadAfterSaving(s)).toBe(false);
+    expect(s.unsaved).toHaveBeenCalledWith(["a.md"]);
+    expect(s.close).not.toHaveBeenCalled();
+    expect(s.renotify).toHaveBeenCalledOnce();
+  });
+
+  it("도중에 던지면 failed 뒤 다시 알린다(던지지 않는다)", async () => {
+    const s = reload({ autosave: false, answer: "discard" });
+    s.close.mockRejectedValueOnce(new Error("denied"));
+    expect(await reloadAfterSaving(s)).toBe(false);
+    expect(s.failed).toHaveBeenCalledWith(expect.any(Error));
+    expect(s.renotify).toHaveBeenCalledOnce();
+    expect(s.failed.mock.invocationCallOrder[0]).toBeLessThan(s.renotify.mock.invocationCallOrder[0]);
   });
 });
 

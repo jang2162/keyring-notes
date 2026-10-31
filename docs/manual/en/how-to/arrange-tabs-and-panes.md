@@ -12,7 +12,18 @@ It is for everyone who works with several notes at once.
 - **Tabs and the note** in the middle, and the **right panel** with Outline, Links, Properties and History.
 - **Status bar** at the bottom: save state, offline, changes waiting to be sent, waiting reviews and character count.
 
-Icon-only buttons show their name and shortcut on hover, or the reason when they are unavailable. Drag a panel's edge to resize it (double-click for the default width), or collapse it. Collapsing the left panel keeps the rail, and the workspace switcher moves to the start of the path above the note. On narrow screens both panels become drawers. If docking both panels would leave the middle narrower than 440px, the right panel floats over the note instead and closes when you click outside it.
+Icon-only buttons show their name and shortcut on hover, or the reason when they are unavailable. Drag a panel's edge to resize it (double-click for the default width), or collapse it. Collapsing the left panel keeps the rail, and the workspace switcher moves to the start of the path above the note. On narrow screens both panels become drawers, and a bottom bar takes over from the tabs, the rail and the status bar (see [Narrow screens](#narrow-screens)). If docking both panels would leave the middle narrower than 440px, the right panel floats over the note instead and closes when you click outside it.
+
+## Narrow screens
+
+On narrow screens (800px or less), such as a phone, a bar at the bottom replaces the row of tabs, the rail and the status bar. The note's header (path and **⋯**) is at the top. The bar has five buttons:
+
+- **Files** and **Search** open the left drawer in that view. Press the same button again to close the drawer.
+- **New note** creates a note next to the note you are reading. Press and hold it to open today's note. When daily notes are off in the workspace, holding it creates a new note, just like a short press.
+- **Tabs** shows how many tabs are open and opens the list of open tabs. It is unavailable while no note is open.
+- **More** opens a sheet at the bottom of the screen with the rest of the rail: Today's note, Tags, Attachments, Graph view, Import, Review, Structure check, Sync (app), Settings and Log out (server).
+
+What the status bar would warn you about appears on **More**. A number counts changes waiting to be sent and waiting reviews. A dot means you are offline, a save failed or conflicts, a note has unsaved changes while autosave is off, sync failed, or a desktop app update is available. The top of the **More** list says what it is, and some lines act when you press them, for example **Send 1 now** or **Unsaved**, which saves the note. The bar hides while the on-screen keyboard is open.
 
 ## Open notes quickly
 
@@ -23,8 +34,8 @@ Icon-only buttons show their name and shortcut on hover, or the reason when they
 ## Tabs
 
 - Opening a note that is already in a tab jumps to that tab. A plain open replaces the current tab. `Ctrl/Cmd+click` or a middle click opens a new tab.
-- The tab bar is always visible, and the list of open tabs is remembered on this device.
-- On narrow screens (800px or less) a tab count button replaces the row of tabs. It opens the list of open tabs, where you can switch, close tabs or create a note.
+- On wide screens the tab bar is always visible. The list of open tabs is remembered on this device.
+- On narrow screens (800px or less) the **Tabs** button in the bottom bar replaces the row of tabs. It shows how many tabs are open and opens the list of open tabs, where you can switch, close tabs or create a note.
 
 ## Split panes
 

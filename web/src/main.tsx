@@ -4,6 +4,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { App } from "./App";
 import { startLocal, wantsLocal } from "./local/boot";
 import { hasOwnNotes, syncSetupRedirect } from "./local/mode";
+import { browserEnv, watchUpdates } from "./pwaUpdate";
 import { SOLO } from "./soloWindow";
 import "./styles.css";
 import { t } from "./i18n";
@@ -14,7 +15,10 @@ async function boot() {
   // 오프라인에서도 앱 화면이 열리도록(문서 데이터는 IndexedDB). 데스크톱·모바일 앱은 화면이 앱에 들어 있어 필요 없다.
   if ("serviceWorker" in navigator && import.meta.env.PROD && !isTauri()) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("service worker registration failed", e));
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => watchUpdates(reg, browserEnv()))
+        .catch((e) => console.warn("service worker registration failed", e));
     });
   }
   if (await wantsLocal()) {

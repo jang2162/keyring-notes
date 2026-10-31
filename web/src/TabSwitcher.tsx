@@ -3,17 +3,7 @@ import { FilePlus, X } from "lucide-react";
 import { DocIcon } from "./IconPicker";
 import { Modal } from "./Modal";
 import { t } from "./i18n";
-import { tipProps } from "./Tooltip";
 import { stemOf } from "./Tree";
-
-/** 좁은 화면의 탭 개수 단추: 모바일 브라우저처럼 열린 탭 수를 네모 안에 보인다 */
-export function TabCountButton({ count, onClick }: { count: number; onClick: () => void }) {
-  return (
-    <button type="button" className="tab-count" aria-label={t("tab.switch", { count })} {...tipProps({ label: t("tab.switch", { count }) })} onClick={onClick}>
-      <span aria-hidden>{count > 99 ? "99+" : count}</span>
-    </button>
-  );
-}
 
 /**
  * 좁은 화면의 열린 탭 목록(화면 전체 시트). 탭 줄 대신 여기서 골라 전환하고, 닫고, 새 노트를 만든다.
