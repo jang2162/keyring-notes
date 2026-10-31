@@ -8,6 +8,12 @@ import { buildCatalog } from "./src/emojiCatalog.ts";
 import { HAND_WORDS } from "./src/emojiWords.ts";
 
 /**
+ * 이 빌드의 id. 서비스 워커의 캐시 이름(stampServiceWorker)과 화면 번들(define 의 __KEYRING_BUILD__)이 같은 값을 써,
+ * 열린 화면이 새 워커의 빌드가 자기와 다른지 알 수 있다(src/pwaUpdate.ts). 36진수 시각이라 크기 순서가 만든 순서다(public/sw.js 의 옛 캐시 정리)
+ */
+const BUILD = Date.now().toString(36);
+
+/**
  * 빌드마다 서비스 워커의 캐시 이름을 바꿔, 새 배포 때 예전 화면 캐시를 정리하게 한다.
  * 나중에 불러오는 자산(수식 KaTeX·다이어그램 Mermaid·PDF 조각, woff2 글꼴) 목록도 넣어, 설치 뒤 틈틈이 받아 두게 한다(오프라인용).
  */
@@ -23,13 +29,12 @@ function stampServiceWorker(): Plugin {
       const file = path.join(outDir, "sw.js");
       // 앞 단계(번들 쓰기 전)에서 빌드가 실패해도 closeBundle 은 돈다 — 번들이 없으면 건너뛰어 원래 오류를 가리지 않는다
       if (!existsSync(path.join(outDir, "assets"))) return;
-      const build = Date.now().toString(36);
       const lazy = readdirSync(path.join(outDir, "assets"))
         .filter((f) => /\.(m?js|css|woff2)$/.test(f))
         .map((f) => `/assets/${f}`);
       // 제3자 라이선스 고지(licenseNotices)도 오프라인에서 열리게
       if (existsSync(path.join(outDir, "licenses.txt"))) lazy.push("/licenses.txt");
-      writeFileSync(file, readFileSync(file, "utf8").replace("__KEYRING_BUILD__", build).replace('"__KEYRING_LAZY__"', JSON.stringify(lazy)));
+      writeFileSync(file, readFileSync(file, "utf8").replace("__KEYRING_BUILD__", BUILD).replace('"__KEYRING_LAZY__"', JSON.stringify(lazy)));
     },
   };
 }
@@ -55,6 +60,7 @@ function emojiData(): Plugin {
 
 export default defineConfig({
   plugins: [react(), stampServiceWorker(), emojiData(), licenseNotices()],
+  define: { __KEYRING_BUILD__: JSON.stringify(BUILD) },
   // 같은 저장소의 core 패키지는 빌드 없이 TypeScript 원본을 쓴다
   resolve: { conditions: ["keyring-source", ...defaultClientConditions] },
   // vitest 는 Node(ssr) 쪽 해석을 쓰므로 여기에도 둬야 시험이 dist 가 아닌 원본을 읽는다

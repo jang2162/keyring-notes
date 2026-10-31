@@ -214,6 +214,7 @@ import {
   closeAskHandler,
   closeCurrentWindow,
   closeWindowCommands,
+  closeWindowSafely,
   destroyCurrentWindow,
   dropAutosaves,
   listenCloseAsks,
@@ -223,6 +224,7 @@ import {
   unsavedSummary,
   type SaveHold,
 } from "./closeWindow";
+import { onNewVersion } from "./pwaUpdate";
 import { tearOutAt } from "./tearOut";
 import { DockTitle, DRAG_REGION } from "./DockTitle";
 import { switcherSpot } from "./topbar";
@@ -1300,6 +1302,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 닫기로 정했으면 아래 beforeunload 경고도 다시 묻지 않는다
    */
   const guarded = canCloseWindow() && dirtyPaths(docs).length > 0;
+  /** 저장 안 한 문서를 자동 저장 설정과 상관없이 모두 저장한다. 자동 저장이 저장하던 문서는 끝나기를 기다렸다가 다시 저장한다(창 닫기·PWA 새로 고침) */
+  const saveAllDirty = async () => {
+    for (const p of dirtyPaths(docsRef.current)) {
+      while (savingRef.current.has(p)) await new Promise((r) => setTimeout(r, 50));
+      await saveRef.current(p);
+    }
+  };
   useEffect(() => {
     if (!canCloseWindow()) return;
     const text = guarded ? { message: t("window.notResponding"), discard: t("window.closeDiscard"), cancel: t("common.cancel") } : null;
@@ -1317,13 +1326,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           { value: "discard", label: t("window.closeDiscard") },
         ]);
       },
-      // 자동 저장 설정과 상관없이 모두 저장한다. 자동 저장이 저장하던 문서는 끝나기를 기다렸다가 다시 저장한다
-      save: async () => {
-        for (const p of dirtyPaths(docsRef.current)) {
-          while (savingRef.current.has(p)) await new Promise((r) => setTimeout(r, 50));
-          await saveRef.current(p);
-        }
-      },
+      save: saveAllDirty,
       unsaved: (paths) => toast(t("window.saveFailed", { names: unsavedSummary(paths, stemOf).names }), { kind: "error" }),
       close: destroyCurrentWindow,
       hold: closeHold.current,
@@ -1339,6 +1342,40 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       unlisten?.();
     };
   }, []);
+
+  /**
+   * PWA 새 버전(pwaUpdate.ts): 알림의 「새로 고침」 은 창 닫기와 같은 흐름으로 저장을 거친다 — 저장하지 못한 것이 있으면 새로 고치지 않는다.
+   * 자동 저장이 켜져 있으면 묻지 않고 저장한 뒤, 꺼져 있으면 「저장하고 · 저장하지 않고 · 취소」 를 묻는다.
+   * iOS 홈 화면 앱에서는 beforeunload 경고를 믿을 수 없으므로 이 물음이 유일한 안전장치다
+   */
+  const reloadSafely = async () => {
+    let reloaded = false;
+    try {
+      reloaded = await closeWindowSafely({
+        dirty: () => dirtyPaths(docsRef.current),
+        ask: async (paths) => {
+          if (prefsRef.current.autosave) return "save";
+          const { names, count, more } = unsavedSummary(paths, stemOf);
+          return chooseDialog(t(more ? "pwa.unsavedMore" : "pwa.unsaved", { names, count }), { value: "save", label: t("pwa.reloadSave") }, [
+            { value: "discard", label: t("pwa.reloadDiscard") },
+          ]);
+        },
+        save: saveAllDirty,
+        unsaved: (paths) => toast(t("pwa.saveFailed", { names: unsavedSummary(paths, stemOf).names }), { kind: "error" }),
+        close: async () => location.reload(),
+        hold: closeHold.current,
+        dropPending: () => dropAutosaves(autosaveTimers.current, autosaveArmed.current),
+      });
+    } catch (err) {
+      toastError(err);
+    }
+    // 단추를 누르면 알림이 사라진다 — 취소·저장 실패로 새로 고치지 않았으면 다시 띄워 둔다
+    if (!reloaded) showNewVersion();
+  };
+  const showNewVersion = () => toast(t("pwa.newVersion"), { duration: 0, action: { label: t("pwa.reload"), run: () => void reloadSafelyRef.current() } });
+  const reloadSafelyRef = useRef(reloadSafely);
+  reloadSafelyRef.current = reloadSafely;
+  useEffect(() => onNewVersion(() => showNewVersion()), []);
 
   // 업데이트 뒤 다시 시작을 누가 취소했으면 새 창(SOLO)에도 알린다. 업데이트 대화상자는 원래 창에만 있고, 그 창은 먼저 닫혔을 수 있다
   useEffect(() => {
