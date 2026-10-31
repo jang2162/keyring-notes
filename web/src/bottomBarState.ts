@@ -10,6 +10,8 @@ export interface MoreStatus {
   outbox: number;
   /** 저장 실패·충돌 */
   saveIssue: boolean;
+  /** 자동 저장이 꺼진 채 저장 안 한 변경 */
+  unsaved: boolean;
   /** 로컬 모드 동기화 오류 */
   syncError: boolean;
   /** 검토 대기 수 */
@@ -22,7 +24,7 @@ export interface MoreStatus {
 export function moreBadge(s: MoreStatus): number | "dot" | null {
   const n = s.outbox + s.reviewWaiting;
   if (n > 0) return n;
-  return s.offline || s.saveIssue || s.syncError || s.update ? "dot" : null;
+  return s.offline || s.saveIssue || s.unsaved || s.syncError || s.update ? "dot" : null;
 }
 
 /** 화면 키보드로 볼 높이 차이(px). 주소창이 접히고 펴지는 정도(대개 100px 아래)는 넘는다 */

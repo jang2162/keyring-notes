@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { KEYBOARD_GAP, LONG_PRESS_MS, keyboardState, keyboardUp, moreBadge, pressOutcome, type KeyboardState, type MoreStatus } from "./bottomBarState";
 
-const calm: MoreStatus = { offline: false, outbox: 0, saveIssue: false, syncError: false, reviewWaiting: 0, update: false };
+const calm: MoreStatus = { offline: false, outbox: 0, saveIssue: false, unsaved: false, syncError: false, reviewWaiting: 0, update: false };
 
 describe("moreBadge", () => {
   it("보낼 변경·검토 대기는 수로 더한다", () => expect(moreBadge({ ...calm, outbox: 2, reviewWaiting: 1 })).toBe(3));
   it("수가 있으면 점보다 수가 먼저", () => expect(moreBadge({ ...calm, offline: true, outbox: 2 })).toBe(2));
-  it("수가 없고 오프라인·저장 문제·동기화 오류·업데이트면 점", () => {
-    for (const k of ["offline", "saveIssue", "syncError", "update"] as const) expect(moreBadge({ ...calm, [k]: true })).toBe("dot");
+  it("수가 없고 오프라인·저장 문제·저장 안 함·동기화 오류·업데이트면 점", () => {
+    for (const k of ["offline", "saveIssue", "unsaved", "syncError", "update"] as const) expect(moreBadge({ ...calm, [k]: true })).toBe("dot");
   });
   it("평소에는 없음", () => expect(moreBadge(calm)).toBeNull());
 });

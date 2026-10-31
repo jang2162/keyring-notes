@@ -52,6 +52,7 @@ import {
   ChevronsUpDown,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { api, ApiError, appMode, review, type CommitInfo, type SearchHit, type SourcesInfo, type TreeNode } from "./api";
 import type { EditorHandle, LinkCandidate } from "./Editor";
 import { LintPanel, ReviewPanel } from "./Curation";
@@ -190,6 +191,7 @@ import {
 import { TabSwitcher } from "./TabSwitcher";
 import { BottomBar, MoreSheet, type MoreEntry, type MoreStatusLine } from "./BottomBar";
 import { keyboardState, moreBadge, type KeyboardState } from "./bottomBarState";
+import { moreEntrySpecs, moreStatusLines, moreStatusOf, saveAttention, type MoreEntryId, type MoreInput, type MoreStatusId } from "./moreMenu";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { forgetViewed, markViewed, renameViewed, viewedSnapshot } from "./viewed";
@@ -316,6 +318,20 @@ function nodeExists(node: string, paths: string[]): boolean {
     return l === `${lower}.md` || l.startsWith(lower + "/");
   });
 }
+
+/** 「더 보기」 항목의 아이콘(레일과 같은 것) */
+const MORE_ICONS: Record<MoreEntryId, LucideIcon> = {
+  daily: CalendarDays,
+  tags: Tag,
+  attachments: Paperclip,
+  graph: Waypoints,
+  ingest: Inbox,
+  review: ListChecks,
+  lint: BrushCleaning,
+  sync: RefreshCw,
+  settings: SettingsIcon,
+  logout: LogOut,
+};
 
 /** 탭·마지막 문서를 기억하는 범위 이름: 워크스페이스, 모든 워크스페이스면 "*" */
 const scopeKeyOf = (all: boolean, ws: string) => (all ? "*" : ws);
@@ -3663,59 +3679,52 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     !!doc &&
     rightPanelFloats(viewportWidth, { rail: rl ? 64 : 44, left: prefs.leftOpen ? prefs.leftWidth : 0, right: prefs.rightWidth });
   // ── 좁은 화면 하단 바와 「더 보기」: 상태 표시줄·레일이 없으므로 알아야 할 상태와 레일 항목을 여기에 모은다
-  const saveIssue = !!doc && (!!conflict || saveState.kind === "conflict" || (saveState.kind === "error" && dirty));
-  const moreStatus: MoreStatusLine[] = [
-    ...(saveIssue && saveLabel
-      ? [{ id: "save", text: saveLabel.text, kind: saveLabel.cls === "error" ? ("error" as const) : ("warn" as const), run: () => void save() }]
-      : []),
-    ...(!local && !online
-      ? [{ id: "offline", text: outboxCount ? t("status.offlineOutbox", { count: outboxCount }) : t("status.offline"), kind: "warn" as const }]
-      : []),
-    ...(!local && online && outboxCount > 0
-      ? [{ id: "outbox", text: t("status.sendNow", { count: outboxCount }), kind: "warn" as const, run: () => void flushOutbox() }]
-      : []),
-    ...(local && syncStatus?.lastError ? [{ id: "sync", text: t("sync.failed"), kind: "error" as const, run: () => openSettings("device") }] : []),
-    ...(!local && pendingCount > 0
-      ? [{ id: "review-waiting", text: t("status.reviewWaiting", { count: pendingCount }), kind: "" as const, run: () => setReviewOpen(true) }]
-      : []),
-  ];
-  // 레일과 같은 조건·순서(파일·검색은 바에 있고, 단축키 화면은 모바일에서 숨긴다)
-  const moreEntries: MoreEntry[] = [
-    ...(dailyCfg ? [{ id: "daily", label: t("cmd.daily"), icon: CalendarDays, run: () => void openDaily(0) }] : []),
-    { id: "tags", label: t("rail.tags"), icon: Tag, run: () => showLeft("tags") },
-    { id: "attachments", label: t("rail.attachments"), icon: Paperclip, run: () => showLeft("attachments") },
-    { id: "graph", label: t("tool.graph"), icon: Waypoints, run: () => setGraphOpen(true) },
-    ...(!local ? [{ id: "ingest", label: t("tool.ingestLong"), icon: Inbox, run: () => setIngestOpen(true) }] : []),
-    ...(!local ? [{ id: "review", label: t("tool.reviewLong"), icon: ListChecks, badge: pendingCount, run: () => setReviewOpen(true) }] : []),
-    { id: "lint", label: t("tool.lintLong"), icon: BrushCleaning, run: () => setLintOpen(true) },
-    ...(local
-      ? [
-          {
-            id: "sync",
-            label: syncStatus?.settings ? t("sync.with", { server: syncStatus.settings.server }) : t("tool.device"),
-            icon: RefreshCw,
-            dot: !!syncStatus?.lastError,
-            run: () => openSettings("device"),
-          },
-        ]
-      : []),
-    { id: "settings", label: t("settings.title"), icon: SettingsIcon, dot: !!newVersion, run: () => openSettings() },
-    ...(!local ? [{ id: "logout", label: t("rail.logout"), icon: LogOut, run: () => void logout() }] : []),
-  ];
+  const moreInput: MoreInput = {
+    local,
+    online,
+    outboxCount,
+    pendingCount,
+    save: saveAttention({
+      hasDoc: !!doc && !doc.generated,
+      conflict: !!conflict || saveState.kind === "conflict",
+      saving: saveState.kind === "saving",
+      failed: saveState.kind === "error",
+      dirty,
+      autosave: prefs.autosave,
+    }),
+    syncError: !!syncStatus?.lastError,
+    syncServer: syncStatus?.settings?.server ?? null,
+    dailyOn: !!dailyCfg,
+    update: !!newVersion,
+  };
+  // 누르면 할 일과 아이콘은 id 로 꽂는다(줄·항목의 조건과 글은 moreMenu.ts)
+  const statusRun: Partial<Record<MoreStatusId, () => void>> = {
+    save: () => void save(),
+    outbox: () => void flushOutbox(),
+    sync: () => openSettings("device"),
+    "review-waiting": () => setReviewOpen(true),
+  };
+  const moreStatus: MoreStatusLine[] = moreStatusLines(moreInput).map((l) => ({ ...l, run: statusRun[l.id] }));
+  const entryRun: Record<MoreEntryId, () => void> = {
+    daily: () => void openDaily(0),
+    tags: () => showLeft("tags"),
+    attachments: () => showLeft("attachments"),
+    graph: () => setGraphOpen(true),
+    ingest: () => setIngestOpen(true),
+    review: () => setReviewOpen(true),
+    lint: () => setLintOpen(true),
+    sync: () => openSettings("device"),
+    settings: () => openSettings(),
+    logout: () => void logout(),
+  };
+  const moreEntries: MoreEntry[] = moreEntrySpecs(moreInput).map((e) => ({ ...e, icon: MORE_ICONS[e.id], run: entryRun[e.id] }));
   const leftDrawerView = drawer === "left" && (prefs.leftView === "files" || prefs.leftView === "search") ? prefs.leftView : null;
   const bottomBar = (
     <BottomBar
       active={leftDrawerView}
       tabCount={focusedPane?.tabs.length ?? 0}
       canNew={!!ws || wsNames.length > 0}
-      badge={moreBadge({
-        offline: !local && !online,
-        outbox: local ? 0 : outboxCount,
-        saveIssue,
-        syncError: !!(local && syncStatus?.lastError),
-        reviewWaiting: local ? 0 : pendingCount,
-        update: !!newVersion,
-      })}
+      badge={moreBadge(moreStatusOf(moreInput))}
       onFiles={() => showLeft("files")}
       onSearch={() => showLeft("search")}
       onNew={() => void createDoc()}
