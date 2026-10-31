@@ -6,6 +6,8 @@ type Handler = (e: unknown) => void;
 interface WorkerOptions {
   /** 네트워크 가짜(기본: 빈 200 응답) */
   fetch?: (req: unknown) => Promise<Response>;
+  /** 나중에 불러오는 자산 목록(빌드 때 채우는 LAZY). 없으면 자리표시 글 그대로라 warmLazy 가 돌지 않는다 */
+  lazy?: string[];
 }
 
 /** sw.js 를 가짜 self·caches 와 함께 돌린다. 빌드 id 자리는 build 로 채운다(빌드 때 vite.config.ts 가 하는 일) */
@@ -33,7 +35,13 @@ function loadWorker(build: string, cacheKeys: string[], opts: WorkerOptions = {}
   };
   const fetch = opts.fetch ?? (async () => new Response(""));
   const location = { origin: "http://localhost" };
-  new Function("self", "caches", "fetch", "location", swSource.replace("__KEYRING_BUILD__", build))(self, caches, fetch, location);
+  new Function(
+    "self",
+    "caches",
+    "fetch",
+    "location",
+    swSource.replace("__KEYRING_BUILD__", build).replace('"__KEYRING_LAZY__"', opts.lazy ? JSON.stringify(opts.lazy) : '"__KEYRING_LAZY__"'),
+  )(self, caches, fetch, location);
   /** 처리기를 부르고 waitUntil·respondWith 로 넘긴 일이 끝날 때까지 기다린다 */
   async function fire(type: string, event: Record<string, unknown> = {}) {
     const waits: Promise<unknown>[] = [];
@@ -110,5 +118,18 @@ describe("sw.js", () => {
     await w.fire("fetch", { request: new Request("http://localhost/assets/index-a.js") });
     await new Promise((r) => setTimeout(r, 10));
     expect(w.puts).toEqual([["keyring-shell-b0005", "http://localhost/assets/index-a.js"]]);
+  });
+
+  it("나중에 불러오는 자산을 미리 받을 때도(warmLazy) HTML 대체 응답은 캐시하지 않는다", async () => {
+    const w = loadWorker("b0005", [], {
+      lazy: ["/assets/gone-zz9.js", "/assets/katex-a.js"],
+      fetch: async (req) =>
+        String(req).includes("gone")
+          ? new Response("<!doctype html>", { headers: { "content-type": "text/html; charset=UTF-8" } })
+          : new Response("export {};", { headers: { "content-type": "text/javascript" } }),
+    });
+    await w.fire("activate");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(w.puts).toEqual([["keyring-shell-b0005", "/assets/katex-a.js"]]);
   });
 });

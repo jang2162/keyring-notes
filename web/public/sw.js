@@ -62,7 +62,8 @@ async function warmLazy() {
     try {
       if (!(await cache.match(url))) {
         const res = await fetch(url);
-        if (res.ok) await cache.put(url, res);
+        // remember 와 같은 방어: SPA 대체 응답을 주는 프록시·옛 서버에서 없는 조각 자리에 HTML 을 넣지 않는다
+        if (res.ok && !isHtmlForAsset(url, res)) await cache.put(url, res);
       }
     } catch {
       return; // 연결이 끊겼으면 다음에
