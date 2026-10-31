@@ -29,6 +29,7 @@ function Cell({
   label,
   className,
   pressed,
+  disabled,
   children,
   onClick,
 }: {
@@ -37,11 +38,19 @@ function Cell({
   label: string;
   className?: string;
   pressed?: boolean;
+  disabled?: boolean;
   children?: ReactNode;
   onClick: () => void;
 }) {
   return (
-    <button type="button" className={`bar-cell${className ? ` ${className}` : ""}`} aria-label={label} aria-pressed={pressed} onClick={onClick}>
+    <button
+      type="button"
+      className={`bar-cell${className ? ` ${className}` : ""}`}
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+    >
       <span className="bar-icon">
         {Icon && <Icon size={20} strokeWidth={1.75} aria-hidden />}
         {children}
@@ -144,7 +153,8 @@ export function BottomBar({
           {t("tree.newNote")}
         </span>
       </button>
-      <Cell label={t("bar.tabs")} className="bar-tabs" onClick={onTabs}>
+      {/* 열린 탭이 없으면(노트가 없는 홈 화면 — 칸이 없다) 열 목록이 없으므로 누를 수 없다. 새 노트는 ＋ 가 한다 */}
+      <Cell label={t("bar.tabs")} className="bar-tabs" disabled={tabCount === 0} onClick={onTabs}>
         {/* 모바일 브라우저처럼 네모 안에 열린 탭 수(예전 위쪽 탭 개수 단추) */}
         <span className="bar-tab-count">{countText(tabCount)}</span>
       </Cell>
@@ -199,10 +209,13 @@ export function MoreSheetBody({ status, entries, onClose }: { status: MoreStatus
   );
 }
 
-/** 「더 보기」 시트: 탭 시트(TabSwitcher)와 같은 틀 — 배경을 누르거나 Esc 로 닫힌다 */
+/**
+ * 「더 보기」 시트: 화면 아래에 붙어 내용만큼 올라온다(엄지 자리, 넘치면 시트 안에서 스크롤).
+ * Modal 의 쌓기·Esc·포커스 가두기·배경 누르기로 닫기를 그대로 쓰고, 자리와 크기만 CSS(.more-sheet)가 바꾼다
+ */
 export function MoreSheet(props: { status: MoreStatusLine[]; entries: MoreEntry[]; onClose(): void }) {
   return (
-    <Modal title={t("bar.more")} size="sm" onClose={props.onClose} bodyClassName="more-sheet-body">
+    <Modal title={t("bar.more")} size="sm" onClose={props.onClose} className="more-sheet" bodyClassName="more-sheet-body">
       <MoreSheetBody {...props} />
     </Modal>
   );

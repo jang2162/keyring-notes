@@ -63,6 +63,11 @@ describe("BottomBar", () => {
     expect(none).not.toContain("bar-badge");
   });
 
+  it("열린 탭이 없으면(노트가 없는 홈 화면) 탭 칸이 disabled", () => {
+    expect(button(bar({ tabCount: 0 }), "Tabs")).toMatch(/ disabled=""/);
+    expect(button(bar({ tabCount: 1 }), "Tabs")).not.toMatch(/ disabled=""/);
+  });
+
   it("canNew=false 면 ＋ 가 disabled", () => {
     expect(button(bar({ canNew: false }), "New note")).toMatch(/ disabled=""/);
     expect(button(bar(), "New note")).not.toMatch(/ disabled=""/);

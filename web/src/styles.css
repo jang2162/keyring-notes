@@ -1004,7 +1004,10 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .bar-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 3px; border: 1.75px solid currentColor; border-radius: 5px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 .bar-badge { position: absolute; top: -2px; right: -8px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; line-height: 15px; font-weight: 600; text-align: center; }
 .bar-dot { position: absolute; top: 2px; right: 0; }
-/* 「더 보기」 시트: 위에 알아야 할 상태, 아래 레일 항목 */
+/* 「더 보기」 시트: 화면 아래에 붙어 내용만큼(넘치면 안에서 스크롤), 위쪽은 반투명 배경. 좁은 화면의 화면 전체 모달 규칙(!important)을 이긴다.
+   위에 알아야 할 상태, 아래 레일 항목 */
+.kmodal-backdrop:has(> .more-sheet) { align-items: flex-end; padding: 0; }
+.kmodal-backdrop .kmodal.more-sheet { width: 100vw !important; height: auto !important; max-height: 85dvh; border: none; border-top: 1px solid var(--border); border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding-bottom: env(safe-area-inset-bottom); }
 .more-sheet-body { gap: var(--sp-3) !important; }
 .more-status-list { display: flex; flex-direction: column; gap: 6px; }
 .more-status { display: block; width: 100%; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft); text-align: left; font-size: var(--fs-md); color: var(--fg); }
