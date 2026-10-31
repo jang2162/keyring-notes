@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { onVaultSettings, updateVaultSetting } from "./vaultSettings";
 import { setLanguage, systemLanguage, urlLanguage } from "./i18n";
+import { applyThemeColor } from "./themeColor";
 
 /**
  * 화면 설정. 두 가지로 나뉜다.
@@ -310,11 +311,12 @@ export function usePrefs(): Prefs {
   return p;
 }
 
-/** 테마: html[data-theme]에 둔다(system이면 지운다 → prefers-color-scheme) */
+/** 테마: html[data-theme]에 둔다(system이면 지운다 → prefers-color-scheme). PWA 상하단 색(theme-color)도 따라간다 */
 export function applyTheme(theme: Prefs["theme"]) {
   const root = document.documentElement;
   if (theme === "system") root.removeAttribute("data-theme");
   else root.setAttribute("data-theme", theme);
+  applyThemeColor(theme);
 }
 
 // 공통 설정 파일이 바뀌면(읽기·동기화·다른 기기) 따라간다. 이 기기 캐시도 바꿔 다음 시작 때 먼저 쓴다
