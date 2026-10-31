@@ -35,7 +35,6 @@ import {
   ListChecks,
   LocateFixed,
   LogOut,
-  Menu as MenuIcon,
   Pencil,
   Pin,
   PinOff,
@@ -188,7 +187,9 @@ import {
   type Side,
   type ViewMode,
 } from "./panes";
-import { TabCountButton, TabSwitcher } from "./TabSwitcher";
+import { TabSwitcher } from "./TabSwitcher";
+import { BottomBar, MoreSheet, type MoreEntry, type MoreStatusLine } from "./BottomBar";
+import { keyboardUp, moreBadge, nextTallest, type ViewportSize } from "./bottomBarState";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { forgetViewed, markViewed, renameViewed, viewedSnapshot } from "./viewed";
@@ -340,6 +341,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [isNarrow, setIsNarrow] = useState(narrow);
   /** 좁은 화면의 열린 탭 목록을 보고 있는 칸 */
   const [tabSheet, setTabSheet] = useState<string | null>(null);
+  /** 좁은 화면 하단 바의 「더 보기」 시트 */
+  const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia?.("(max-width: 800px)");
     if (!mq) return;
@@ -347,9 +350,40 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       setIsNarrow(mq.matches);
       setDrawer(null);
       setTabSheet(null);
+      setMoreOpen(false);
     };
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
+  }, []);
+  /**
+   * 좁은 화면: 화면 키보드가 올라와 있으면 하단 바를 숨긴다(.shell.kb-up). 보이는 높이를 지금까지 본 가장 큰 높이와 견준다 —
+   * 안드로이드는 키보드가 창 높이(innerHeight)까지 줄인다. 확대(핀치)는 높이에 scale 을 곱해 키보드로 보지 않는다
+   */
+  const [kbUp, setKbUp] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let tallest: ViewportSize | null = null;
+    const editing = () => {
+      const a = document.activeElement;
+      return a instanceof HTMLElement && (a.matches("input, textarea, select") || a.isContentEditable);
+    };
+    const check = () => {
+      const height = vv.height * vv.scale;
+      tallest = nextTallest(tallest, { width: window.innerWidth, height });
+      setKbUp(keyboardUp(height, tallest.height, editing()));
+    };
+    // focusout 동안에는 activeElement 가 아직 정해지지 않았다 — 다음 틱에 본다
+    const later = () => setTimeout(check, 0);
+    check();
+    vv.addEventListener("resize", check);
+    document.addEventListener("focusin", later);
+    document.addEventListener("focusout", later);
+    return () => {
+      vv.removeEventListener("resize", check);
+      document.removeEventListener("focusin", later);
+      document.removeEventListener("focusout", later);
+    };
   }, []);
   /** 창 폭: 오른쪽 패널을 붙일 자리가 있는지(rightPanelFloats) */
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -2790,6 +2824,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { label: t("ws.manage"), icon: SettingsIcon, run: () => openSettings("workspaces") },
   ];
 
+  /** 로그아웃(서버 모드): 레일과 좁은 화면의 「더 보기」 가 같이 쓴다 */
+  const logout = async () => {
+    await flush();
+    const d = docRef.current;
+    if (!d || d.draft === d.saved || (await confirmDialog(t("rail.logoutUnsaved"), t("rail.logout")))) onLogout();
+  };
+
   const rail = (
     <nav className={`rail${rl ? " with-labels" : ""}`} aria-label={t("rail.label")}>
       <div className="rail-top">
@@ -2901,19 +2942,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           dot={!!newVersion}
           onClick={() => (settings ? closeSettings() : openSettings())}
         />
-        {!local && (
-          <IconButton
-            icon={LogOut}
-            label={t("rail.logout")}
-            side={railSide}
-            showLabel={rl}
-            onClick={async () => {
-              await flush();
-              const d = docRef.current;
-              if (!d || d.draft === d.saved || (await confirmDialog(t("rail.logoutUnsaved"), t("rail.logout")))) onLogout();
-            }}
-          />
-        )}
+        {!local && <IconButton icon={LogOut} label={t("rail.logout")} side={railSide} showLabel={rl} onClick={() => void logout()} />}
       </div>
     </nav>
   );
@@ -3357,17 +3386,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 칸 하나의 탭 바(칸이 없으면 빈 탭 바). 탭을 끌어 다른 칸(가운데·가장자리)에 놓아 옮기거나 나눈다 — 놓을 자리는 renderDropZone.
    * 맨 위 줄(top)의 탭 바는 창의 첫 줄이라 빈 자리가 창 끌기 영역이다(macOS 앱)
    */
-  const renderTabBar = (pane: Pane | null, withNav: boolean, top: boolean) => (
+  const renderTabBar = (pane: Pane | null, top: boolean) => (
     <nav className="tabbar" aria-label={t("tab.label")} {...(top ? DRAG_REGION : {})}>
-      {withNav && (
-        <IconButton
-          className="nav-toggle"
-          icon={MenuIcon}
-          label={t("tab.docList")}
-          onClick={() => setDrawer((d) => (d === "left" ? null : "left"))}
-          size={18}
-        />
-      )}
       <div className="tab-list" role="tablist">
         {(pane?.tabs ?? []).map((tp) => {
           const cached = docs[tp]?.doc;
@@ -3432,8 +3452,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         onClick={() => void createDoc()}
         size={16}
       />
-      {/* 좁은 화면은 탭 줄 대신 탭 개수 단추로 열린 탭 목록을 연다(넓은 화면에서는 CSS 가 숨긴다) */}
-      <TabCountButton count={pane?.tabs.length ?? 0} onClick={() => pane && setTabSheet(pane.id)} />
     </nav>
   );
 
@@ -3514,7 +3532,6 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       onDaily={dailyCfg ? () => void openDaily(0) : null}
       onQuick={() => setPalette("files")}
       onSearch={() => showLeft("search")}
-      onMenu={() => setDrawer("left")}
       onManage={() => openSettings("workspaces")}
       hasWorkspace={wsNames.length > 0}
       pendingCount={pendingCount}
@@ -3583,7 +3600,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         onFocusCapture={() => !focused && setLayout((l) => focusPane(l, p.id))}
         onMouseDownCapture={() => !focused && setLayout((l) => focusPane(l, p.id))}
       >
-        {renderTabBar(p, isNarrow || n === 1, !edges.includes("edge-t"))}
+        {/* 좁은 화면에는 위쪽 탭 줄이 없다 — 탭·새 노트·서랍은 하단 바가 맡는다 */}
+        {!isNarrow && renderTabBar(p, !edges.includes("edge-t"))}
         {e ? (
           <DocPane
             pane={p.id}
@@ -3632,7 +3650,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     </div>
   ) : (
     <>
-      {renderTabBar(null, true, true)}
+      {!isNarrow && renderTabBar(null, true)}
       {home}
     </>
   );
@@ -3643,13 +3661,81 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     rightOpen &&
     !!doc &&
     rightPanelFloats(viewportWidth, { rail: rl ? 64 : 44, left: prefs.leftOpen ? prefs.leftWidth : 0, right: prefs.rightWidth });
+  // ── 좁은 화면 하단 바와 「더 보기」: 상태 표시줄·레일이 없으므로 알아야 할 상태와 레일 항목을 여기에 모은다
+  const saveIssue = !!doc && (!!conflict || saveState.kind === "conflict" || (saveState.kind === "error" && dirty));
+  const moreStatus: MoreStatusLine[] = [
+    ...(saveIssue && saveLabel
+      ? [{ id: "save", text: saveLabel.text, kind: saveLabel.cls === "error" ? ("error" as const) : ("warn" as const), run: () => void save() }]
+      : []),
+    ...(!local && !online
+      ? [{ id: "offline", text: outboxCount ? t("status.offlineOutbox", { count: outboxCount }) : t("status.offline"), kind: "warn" as const }]
+      : []),
+    ...(!local && online && outboxCount > 0
+      ? [{ id: "outbox", text: t("status.sendNow", { count: outboxCount }), kind: "warn" as const, run: () => void flushOutbox() }]
+      : []),
+    ...(local && syncStatus?.lastError ? [{ id: "sync", text: t("sync.failed"), kind: "error" as const, run: () => openSettings("device") }] : []),
+    ...(!local && pendingCount > 0
+      ? [{ id: "review-waiting", text: t("status.reviewWaiting", { count: pendingCount }), kind: "" as const, run: () => setReviewOpen(true) }]
+      : []),
+  ];
+  // 레일과 같은 조건·순서(파일·검색은 바에 있고, 단축키 화면은 모바일에서 숨긴다)
+  const moreEntries: MoreEntry[] = [
+    ...(dailyCfg ? [{ id: "daily", label: t("cmd.daily"), icon: CalendarDays, run: () => void openDaily(0) }] : []),
+    { id: "tags", label: t("rail.tags"), icon: Tag, run: () => showLeft("tags") },
+    { id: "attachments", label: t("rail.attachments"), icon: Paperclip, run: () => showLeft("attachments") },
+    { id: "graph", label: t("tool.graph"), icon: Waypoints, run: () => setGraphOpen(true) },
+    ...(!local ? [{ id: "ingest", label: t("tool.ingestLong"), icon: Inbox, run: () => setIngestOpen(true) }] : []),
+    ...(!local ? [{ id: "review", label: t("tool.reviewLong"), icon: ListChecks, badge: pendingCount, run: () => setReviewOpen(true) }] : []),
+    { id: "lint", label: t("tool.lintLong"), icon: BrushCleaning, run: () => setLintOpen(true) },
+    ...(local
+      ? [
+          {
+            id: "sync",
+            label: syncStatus?.settings ? t("sync.with", { server: syncStatus.settings.server }) : t("tool.device"),
+            icon: RefreshCw,
+            dot: !!syncStatus?.lastError,
+            run: () => openSettings("device"),
+          },
+        ]
+      : []),
+    { id: "settings", label: t("settings.title"), icon: SettingsIcon, dot: !!newVersion, run: () => openSettings() },
+    ...(!local ? [{ id: "logout", label: t("rail.logout"), icon: LogOut, run: () => void logout() }] : []),
+  ];
+  const leftDrawerView = drawer === "left" && (prefs.leftView === "files" || prefs.leftView === "search") ? prefs.leftView : null;
+  const bottomBar = (
+    <BottomBar
+      active={leftDrawerView}
+      tabCount={focusedPane?.tabs.length ?? 0}
+      canNew={!!ws || wsNames.length > 0}
+      badge={moreBadge({
+        offline: !local && !online,
+        outbox: local ? 0 : outboxCount,
+        saveIssue,
+        syncError: !!(local && syncStatus?.lastError),
+        reviewWaiting: local ? 0 : pendingCount,
+        update: !!newVersion,
+      })}
+      onFiles={() => showLeft("files")}
+      onSearch={() => showLeft("search")}
+      onNew={() => void createDoc()}
+      onNewHold={dailyCfg ? () => void openDaily(0) : null}
+      onTabs={() => {
+        setDrawer(null);
+        if (focusedPane) setTabSheet(focusedPane.id);
+      }}
+      onMore={() => {
+        setDrawer(null);
+        setMoreOpen(true);
+      }}
+    />
+  );
   const sheetPane = isNarrow && tabSheet !== null ? paneOf(layout, tabSheet) : undefined;
   const leftShown = (prefs.leftOpen && !isNarrow) || drawer === "left";
 
   return (
     <IconLookup.Provider value={iconOf}>
       <div
-        className={`shell${prefs.leftOpen ? " left-open" : " left-closed"}${rightOpen && doc && !isNarrow ? " right-open" : ""}${rightFloat ? " right-float" : ""}${drawer ? ` drawer-${drawer}` : ""}${rl ? " rail-labels" : ""}`}
+        className={`shell${prefs.leftOpen ? " left-open" : " left-closed"}${rightOpen && doc && !isNarrow ? " right-open" : ""}${rightFloat ? " right-float" : ""}${drawer ? ` drawer-${drawer}` : ""}${rl ? " rail-labels" : ""}${isNarrow && kbUp ? " kb-up" : ""}`}
         style={{
           ["--left-w" as string]: `${prefs.leftWidth}px`,
           ["--right-w" as string]: `${prefs.rightWidth}px`,
@@ -3676,7 +3762,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           {!isNarrow && <DockTitle open={prefs.leftOpen} label={t("cmd.left")} keys={keyOf("left")} onToggle={toggleLeft} onOverhang={setTitleOver} />}
           {leftShown && dockHead}
           <div className="dock-body">
-            {rail}
+            {/* 좁은 화면의 서랍에는 패널만 — 레일 항목은 하단 바와 「더 보기」 가 맡는다 */}
+            {!isNarrow && rail}
             {leftShown && leftPanel}
           </div>
         </div>
@@ -3710,7 +3797,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
             {rightPanel}
           </>
         )}
-        {statusBar}
+        {!isNarrow && statusBar}
+        {isNarrow && bottomBar}
+        {isNarrow && moreOpen && <MoreSheet status={moreStatus} entries={moreEntries} onClose={() => setMoreOpen(false)} />}
 
         {docMenu && <Menu at={docMenu} items={docMenuItems} onClose={() => setDocMenu(null)} />}
         {tabMenu && (
@@ -4128,7 +4217,6 @@ function Home({
   onDaily,
   onQuick,
   onSearch,
-  onMenu,
   onManage,
   hasWorkspace,
   pendingCount,
@@ -4149,7 +4237,6 @@ function Home({
   onDaily: (() => void) | null;
   onQuick: () => void;
   onSearch: () => void;
-  onMenu: () => void;
   onManage: () => void;
   hasWorkspace: boolean;
   pendingCount: number;
@@ -4161,9 +4248,6 @@ function Home({
   const k = (id: string) => (keyOf(id) ? <kbd>{formatCombo(keyOf(id))}</kbd> : null);
   return (
     <div className="home">
-      <button className="nav-toggle home-nav" aria-label={t("tab.docList")} onClick={onMenu}>
-        <MenuIcon size={18} aria-hidden /> {t("tab.docList")}
-      </button>
       <div className="home-inner">
         <h1>
           {workspace ? (

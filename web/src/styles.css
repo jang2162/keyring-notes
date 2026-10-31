@@ -746,11 +746,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .tab-close { display: inline-flex; padding: 3px !important; border-radius: var(--radius-sm) !important; opacity: 0.55; }
 .tab:hover .tab-close, .tab.on .tab-close { opacity: 1; }
 .tab-close:hover { background: var(--hover) !important; }
-.tab-new, .tabbar .nav-toggle { align-self: center; margin-bottom: 2px; }
-/* 탭 개수 단추(좁은 화면만): 모바일 브라우저처럼 둥근 네모 안에 열린 탭 수 */
-.tab-count { display: none; align-self: center; align-items: center; justify-content: center; width: 32px; height: 32px; margin-bottom: 2px; padding: 0; border: none; border-radius: var(--radius); background: transparent; color: var(--fg); }
-.tab-count span { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 3px; border: 1.75px solid currentColor; border-radius: 5px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
-.tab-count:hover { background: var(--hover); border: none; }
+.tab-new { align-self: center; margin-bottom: 2px; }
 /* 열린 탭 목록(좁은 화면의 화면 전체 시트) */
 .tab-sheet-body { display: flex; flex-direction: column; gap: var(--sp-3); }
 .tab-sheet-new { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 40px; font-size: var(--fs-base); }
@@ -946,7 +942,6 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
   .trash-sub, .trash-body { margin-left: 6px; }
 }
 .home-doc { font-size: var(--fs-base); }
-.home-nav { margin: var(--sp-3); align-self: flex-start; }
 
 /* 설정 */
 .settings-search { display: flex; align-items: center; gap: 6px; padding: 0 8px; margin-bottom: var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--muted); }
@@ -994,32 +989,61 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .button-like { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg); text-decoration: none; font-size: var(--fs-md); vertical-align: middle; }
 .button-like:hover { border-color: var(--accent); }
 
-/* 좁은 화면: 레일·왼쪽 패널은 왼쪽 서랍, 오른쪽 패널은 오른쪽 서랍 */
-.nav-toggle { display: none !important; }
+/* 좁은 화면 하단 바(BottomBar.tsx): 파일 · 검색 · ＋ · 탭 · 더 보기. 배경은 theme-color 와 같은 --bg(themeColor.ts) 라 시스템 하단 영역과 이어진다 */
+.bottom-bar { display: none; }
+.bar-cell { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 44px; min-height: 44px; padding: 4px 0; border: none; border-radius: 0; background: transparent; color: var(--muted); }
+.bar-cell:hover:not(:disabled) { border: none; color: var(--fg); }
+.bar-cell[aria-pressed="true"] { color: var(--accent); }
+.bar-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; }
+.bar-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; line-height: 1.1; }
+/* ＋: 강조색 원. 길게 누르기(오늘 노트)가 iOS 글 선택·콜아웃, 두 번 눌러 확대와 겹치지 않게 */
+.bar-new { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+.bar-new .bar-icon { border-radius: 50%; background: var(--accent); color: #fff; }
+.bar-new:hover:not(:disabled) { color: var(--muted); }
+/* 탭 칸: 모바일 브라우저처럼 둥근 네모 안에 열린 탭 수 */
+.bar-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 3px; border: 1.75px solid currentColor; border-radius: 5px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.bar-badge { position: absolute; top: -2px; right: -8px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; line-height: 15px; font-weight: 600; text-align: center; }
+.bar-dot { position: absolute; top: 2px; right: 0; }
+/* 「더 보기」 시트: 위에 알아야 할 상태, 아래 레일 항목 */
+.more-sheet-body { gap: var(--sp-3) !important; }
+.more-status-list { display: flex; flex-direction: column; gap: 6px; }
+.more-status { display: block; width: 100%; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft); text-align: left; font-size: var(--fs-md); color: var(--fg); }
+.more-status.warn { color: var(--warn-fg); }
+.more-status.error { color: var(--danger); }
+.more-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.more-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 10px; border: none; border-radius: var(--radius); background: transparent; text-align: left; font-size: var(--fs-base); color: var(--fg); }
+.more-item:hover:not(:disabled) { border: none; background: var(--hover); }
+.more-item svg { flex-shrink: 0; color: var(--muted); }
+.more-label { flex: 1; min-width: 0; }
+.more-item .bar-badge, .more-item .bar-dot { position: static; }
+
+/* 좁은 화면: 왼쪽 패널은 왼쪽 서랍, 오른쪽 패널은 오른쪽 서랍. 위쪽 탭 줄·상태 표시줄·레일 대신 하단 바 */
 .nav-backdrop { display: none; }
 @media (max-width: 800px) {
-  .shell { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "status"; }
+  .shell { --bar-h: 56px; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "center" "bar"; }
   .shell > .resizer { display: none; }
-  .nav-toggle { display: inline-flex !important; }
+  .bottom-bar { grid-area: bar; position: relative; z-index: 31; display: grid; grid-template-columns: repeat(5, 1fr); box-sizing: border-box; height: calc(var(--bar-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); border-top: 1px solid var(--border); background: var(--bg); }
   .left-dock { position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; max-width: 92vw; transform: translateX(-100%); transition: transform 0.18s ease; box-shadow: 0 0 24px rgb(0 0 0 / 0.25); }
-  .left-dock .left-panel { width: min(300px, calc(92vw - var(--rail-w))); }
+  .left-dock .left-panel { width: min(300px, 92vw); }
   .left-dock { visibility: hidden; transition: transform 0.18s ease, visibility 0s linear 0.18s; }
   .shell.drawer-left .left-dock { transform: none; visibility: visible; transition: transform 0.18s ease; }
   .right-panel { position: fixed; top: 0; bottom: 0; right: 0; z-index: 30; width: min(340px, 90vw); box-shadow: 0 0 24px rgb(0 0 0 / 0.25); }
   .nav-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: rgb(0 0 0 / 0.3); }
+  /* 서랍은 바 위에서 끝난다 — 바가 서랍 아래에 보이고 눌린다(파일·검색을 다시 누르면 닫힌다) */
+  .left-dock, .right-panel, .nav-backdrop { bottom: calc(var(--bar-h) + env(safe-area-inset-bottom)); }
+  .toasts { bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--sp-3)); }
+  /* 화면 키보드가 올라와 있으면 바를 숨기고 서랍·알림은 원래 자리로 */
+  .shell.kb-up .bottom-bar { display: none; }
+  .shell.kb-up .left-dock, .shell.kb-up .right-panel, .shell.kb-up .nav-backdrop { bottom: 0; }
+  .shell.kb-up .toasts { bottom: var(--sp-3); }
   .page { padding: var(--sp-4) var(--sp-4) 40vh; }
   .doc-head { padding-left: var(--sp-3); }
   .crumbs .crumb:not(.current) { display: none; }
-  /* 탭 줄 대신 탭 개수 단추 → 열린 탭 목록(TabSwitcher). 새 노트·탭 개수 단추는 오른쪽 끝에 */
-  .tabbar .tab-list { display: none; }
-  .tabbar .tab-new { margin-left: auto; }
-  .tab-count { display: inline-flex; }
   .inline-title { font-size: 24px; }
   .settings-search { flex-basis: 100%; }
   .kmodal-body.settings-body { padding: var(--sp-4); }
   .setting-row { flex-direction: column; align-items: flex-start; }
   .setting-control input { width: 100%; }
-  .statusbar .status-item.muted { display: none; }
   .editor .cm-editor { font-size: max(16px, var(--editor-size, 16px)); }
 }
 @media (max-width: 800px) and (prefers-reduced-motion: reduce) { .left-dock { transition: none; } }
