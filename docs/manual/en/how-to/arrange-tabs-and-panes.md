@@ -19,11 +19,11 @@ Icon-only buttons show their name and shortcut on hover, or the reason when they
 On narrow screens (800px or less), such as a phone, a bar at the bottom replaces the row of tabs, the rail and the status bar. The note's header (path and **⋯**) is at the top. The bar has five buttons:
 
 - **Files** and **Search** open the left drawer in that view. Press the same button again to close the drawer.
-- **New note** creates a note next to the note you are reading. Press and hold it to open today's note. Holding does nothing extra when daily notes are off in the workspace.
-- **Tabs** shows how many tabs are open and opens the list of open tabs.
-- **More** lists the rest of the rail: Today's note, Tags, Attachments, Graph view, Import, Review, Structure check, Sync (app), Settings and Log out (server).
+- **New note** creates a note next to the note you are reading. Press and hold it to open today's note. When daily notes are off in the workspace, holding it creates a new note, just like a short press.
+- **Tabs** shows how many tabs are open and opens the list of open tabs. It is unavailable while no note is open.
+- **More** opens a sheet at the bottom of the screen with the rest of the rail: Today's note, Tags, Attachments, Graph view, Import, Review, Structure check, Sync (app), Settings and Log out (server).
 
-What the status bar would warn you about appears on **More**. A number counts changes waiting to be sent and waiting reviews. A dot means you are offline, a save failed, sync failed or an update is available. The top of the **More** list says what it is, and some lines act when you press them, for example **Send 1 now**. The bar hides while the on-screen keyboard is open.
+What the status bar would warn you about appears on **More**. A number counts changes waiting to be sent and waiting reviews. A dot means you are offline, a save failed or conflicts, a note has unsaved changes while autosave is off, sync failed, or a desktop app update is available. The top of the **More** list says what it is, and some lines act when you press them, for example **Send 1 now** or **Unsaved**, which saves the note. The bar hides while the on-screen keyboard is open.
 
 ## Open notes quickly
 
@@ -34,7 +34,7 @@ What the status bar would warn you about appears on **More**. A number counts ch
 ## Tabs
 
 - Opening a note that is already in a tab jumps to that tab. A plain open replaces the current tab. `Ctrl/Cmd+click` or a middle click opens a new tab.
-- The tab bar is always visible, and the list of open tabs is remembered on this device.
+- On wide screens the tab bar is always visible. The list of open tabs is remembered on this device.
 - On narrow screens (800px or less) the **Tabs** button in the bottom bar replaces the row of tabs. It shows how many tabs are open and opens the list of open tabs, where you can switch, close tabs or create a note.
 
 ## Split panes

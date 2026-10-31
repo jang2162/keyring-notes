@@ -74,7 +74,7 @@ Notes live inside workspaces, the top-level nodes of the vault (for example `Wor
 
 1. Click **New note** (or press `Alt+N`). A note named "Untitled" opens with the cursor in the title field.
 2. Type `My first note` and press Enter. The note is renamed and the cursor moves to the body.
-3. Type some text. The status bar shows **Saved** about 1.5 seconds after you stop typing.
+3. Type some text. The status bar shows **Saved** about 1.5 seconds after you stop typing. (A phone has no status bar, but the note is saved the same way.)
 
 The note is now the file `Work/My first note.md` in the vault, with its first version in the vault's Git history.
 
