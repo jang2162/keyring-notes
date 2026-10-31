@@ -104,6 +104,25 @@ export function closeAskHandler(s: CloseWindowSteps & { ack: (id: number) => Pro
   };
 }
 
+/**
+ * 설치 웹 앱(PWA)의 「새 버전 · 새로 고침」(Workspace 가 pwaUpdate.ts 의 알림에서 부른다). 창 닫기와 같은 흐름으로 저장을 거친다.
+ * 자동 저장이 켜져 있으면 묻지 않고 저장하고, 꺼져 있으면 s.ask 로 「저장하고 · 저장하지 않고 · 취소」 를 묻는다.
+ * 새로 고치지 않았으면(취소·저장 실패·오류 — 오류는 failed 로 알린 뒤) renotify 로 알림을 다시 띄운다 — 단추를 누르면 알림이 닫히므로.
+ * 새로 고쳤으면 true
+ */
+export async function reloadAfterSaving(
+  s: CloseWindowSteps & { autosave: () => boolean; renotify: () => void; failed: (err: unknown) => void },
+): Promise<boolean> {
+  let reloaded = false;
+  try {
+    reloaded = await closeWindowSafely({ ...s, ask: (paths) => (s.autosave() ? Promise.resolve("save") : s.ask(paths)) });
+  } catch (err) {
+    s.failed(err);
+  }
+  if (!reloaded) s.renotify();
+  return reloaded;
+}
+
 /** 물음·알림에 들 문서 이름: 셋까지는 모두 들고, 넘으면 앞의 셋만 들고 more 로 표시한다(몇 개인지는 count) */
 export function unsavedSummary(paths: string[], name: (p: string) => string, shown = 3): { names: string; count: number; more: boolean } {
   return {

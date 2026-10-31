@@ -214,11 +214,11 @@ import {
   closeAskHandler,
   closeCurrentWindow,
   closeWindowCommands,
-  closeWindowSafely,
   destroyCurrentWindow,
   dropAutosaves,
   listenCloseAsks,
   listenRestartCancelled,
+  reloadAfterSaving,
   savesHeld,
   setCloseGuard,
   unsavedSummary,
@@ -1343,35 +1343,25 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     };
   }, []);
 
-  /**
-   * PWA 새 버전(pwaUpdate.ts): 알림의 「새로 고침」 은 창 닫기와 같은 흐름으로 저장을 거친다 — 저장하지 못한 것이 있으면 새로 고치지 않는다.
-   * 자동 저장이 켜져 있으면 묻지 않고 저장한 뒤, 꺼져 있으면 「저장하고 · 저장하지 않고 · 취소」 를 묻는다.
-   * iOS 홈 화면 앱에서는 beforeunload 경고를 믿을 수 없으므로 이 물음이 유일한 안전장치다
-   */
-  const reloadSafely = async () => {
-    let reloaded = false;
-    try {
-      reloaded = await closeWindowSafely({
-        dirty: () => dirtyPaths(docsRef.current),
-        ask: async (paths) => {
-          if (prefsRef.current.autosave) return "save";
-          const { names, count, more } = unsavedSummary(paths, stemOf);
-          return chooseDialog(t(more ? "pwa.unsavedMore" : "pwa.unsaved", { names, count }), { value: "save", label: t("pwa.reloadSave") }, [
-            { value: "discard", label: t("pwa.reloadDiscard") },
-          ]);
-        },
-        save: saveAllDirty,
-        unsaved: (paths) => toast(t("pwa.saveFailed", { names: unsavedSummary(paths, stemOf).names }), { kind: "error" }),
-        close: async () => location.reload(),
-        hold: closeHold.current,
-        dropPending: () => dropAutosaves(autosaveTimers.current, autosaveArmed.current),
-      });
-    } catch (err) {
-      toastError(err);
-    }
-    // 단추를 누르면 알림이 사라진다 — 취소·저장 실패로 새로 고치지 않았으면 다시 띄워 둔다
-    if (!reloaded) showNewVersion();
-  };
+  /** PWA 새 버전(pwaUpdate.ts) 알림의 「새로 고침」: 창 닫기와 같은 흐름으로 저장을 거친다(판단은 closeWindow.ts 의 reloadAfterSaving) */
+  const reloadSafely = () =>
+    reloadAfterSaving({
+      autosave: () => prefsRef.current.autosave,
+      dirty: () => dirtyPaths(docsRef.current),
+      ask: async (paths) => {
+        const { names, count, more } = unsavedSummary(paths, stemOf);
+        return chooseDialog(t(more ? "pwa.unsavedMore" : "pwa.unsaved", { names, count }), { value: "save", label: t("pwa.reloadSave") }, [
+          { value: "discard", label: t("pwa.reloadDiscard") },
+        ]);
+      },
+      save: saveAllDirty,
+      unsaved: (paths) => toast(t("pwa.saveFailed", { names: unsavedSummary(paths, stemOf).names }), { kind: "error" }),
+      close: async () => location.reload(),
+      hold: closeHold.current,
+      dropPending: () => dropAutosaves(autosaveTimers.current, autosaveArmed.current),
+      renotify: () => showNewVersion(),
+      failed: toastError,
+    });
   const showNewVersion = () => toast(t("pwa.newVersion"), { duration: 0, action: { label: t("pwa.reload"), run: () => void reloadSafelyRef.current() } });
   const reloadSafelyRef = useRef(reloadSafely);
   reloadSafelyRef.current = reloadSafely;
