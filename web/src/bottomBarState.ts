@@ -36,15 +36,28 @@ export function keyboardUp(viewport: number, tallest: number, editing: boolean):
   return editing && tallest - viewport > KEYBOARD_GAP;
 }
 
-export interface ViewportSize {
+/** 화면 키보드 판단의 상태: 지금까지 본 가장 큰 보이는 높이와 그때의 가로 폭 */
+export interface KeyboardState {
+  tallest: number;
   width: number;
-  height: number;
+  up: boolean;
+  /** 키보드가 올라온 채 회전해 tallest 를 믿을 수 없다 — 입력이 끝난 첫 측정에서 다시 잰다 */
+  remeasure: boolean;
 }
 
-/** 지금까지 본 가장 큰 보이는 높이. 가로 폭이 바뀌면(회전) 처음부터 다시 잰다 */
-export function nextTallest(prev: ViewportSize | null, now: ViewportSize): ViewportSize {
-  if (!prev || prev.width !== now.width) return now;
-  return now.height > prev.height ? now : prev;
+/**
+ * 측정 하나로 키보드 상태를 잇는다. 같은 폭에서는 가장 큰 높이를 지키고 keyboardUp 으로 가른다.
+ * 가로 폭이 바뀌면(회전) 다시 재되, 입력 중이고 직전에 키보드가 올라와 있었으면 up 을 지킨다 —
+ * 그때 잰 높이는 키보드에 줄어든 높이라 가장 큰 높이로 삼으면 키보드를 놓친다(바가 키보드 위에 뜬다).
+ * 그런 회전 뒤에는 입력이 끝난 첫 측정에서 가장 큰 높이를 다시 잰다.
+ */
+export function keyboardState(prev: KeyboardState | null, now: { width: number; height: number; editing: boolean }): KeyboardState {
+  const fresh = { tallest: now.height, width: now.width, up: false, remeasure: false };
+  if (!prev) return fresh;
+  if (prev.width !== now.width) return now.editing && prev.up ? { ...prev, width: now.width, up: true, remeasure: true } : fresh;
+  if (prev.remeasure) return now.editing ? prev : fresh;
+  const tallest = Math.max(prev.tallest, now.height);
+  return { tallest, width: now.width, up: keyboardUp(now.height, tallest, now.editing), remeasure: false };
 }
 
 /** ＋ 를 이만큼 누르고 있으면 길게 누르기(오늘 노트) */

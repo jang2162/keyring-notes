@@ -189,7 +189,7 @@ import {
 } from "./panes";
 import { TabSwitcher } from "./TabSwitcher";
 import { BottomBar, MoreSheet, type MoreEntry, type MoreStatusLine } from "./BottomBar";
-import { keyboardUp, moreBadge, nextTallest, type ViewportSize } from "./bottomBarState";
+import { keyboardState, moreBadge, type KeyboardState } from "./bottomBarState";
 import { dropWorkspaceLayout, dropWorkspaceRefs, restoreWorkspaceRefs, workspaceAfterDelete, workspaceRefs } from "./workspaceDelete";
 import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorkspacePins, shownPins, updatePins, usePins, type SavedPins } from "./pins";
 import { forgetViewed, markViewed, renameViewed, viewedSnapshot } from "./viewed";
@@ -357,21 +357,22 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   }, []);
   /**
    * 좁은 화면: 화면 키보드가 올라와 있으면 하단 바를 숨긴다(.shell.kb-up). 보이는 높이를 지금까지 본 가장 큰 높이와 견준다 —
-   * 안드로이드는 키보드가 창 높이(innerHeight)까지 줄인다. 확대(핀치)는 높이에 scale 을 곱해 키보드로 보지 않는다
+   * 안드로이드는 키보드가 창 높이(innerHeight)까지 줄인다. 확대(핀치)는 높이에 scale 을 곱해 키보드로 보지 않는다.
+   * 키보드가 올라온 채 회전하는 경우는 bottomBarState.keyboardState 가 맡는다
    */
   const [kbUp, setKbUp] = useState(false);
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    let tallest: ViewportSize | null = null;
+    let kb: KeyboardState | null = null;
     const editing = () => {
       const a = document.activeElement;
       return a instanceof HTMLElement && (a.matches("input, textarea, select") || a.isContentEditable);
     };
     const check = () => {
       const height = vv.height * vv.scale;
-      tallest = nextTallest(tallest, { width: window.innerWidth, height });
-      setKbUp(keyboardUp(height, tallest.height, editing()));
+      kb = keyboardState(kb, { width: window.innerWidth, height, editing: editing() });
+      setKbUp(kb.up);
     };
     // focusout 동안에는 activeElement 가 아직 정해지지 않았다 — 다음 틱에 본다
     const later = () => setTimeout(check, 0);

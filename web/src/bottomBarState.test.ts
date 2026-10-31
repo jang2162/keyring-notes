@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KEYBOARD_GAP, LONG_PRESS_MS, keyboardUp, moreBadge, nextTallest, pressOutcome, type MoreStatus } from "./bottomBarState";
+import { KEYBOARD_GAP, LONG_PRESS_MS, keyboardState, keyboardUp, moreBadge, pressOutcome, type KeyboardState, type MoreStatus } from "./bottomBarState";
 
 const calm: MoreStatus = { offline: false, outbox: 0, saveIssue: false, syncError: false, reviewWaiting: 0, update: false };
 
@@ -22,22 +22,64 @@ describe("keyboardUp", () => {
   });
   it("안드로이드처럼 창 높이까지 함께 줄어도 가장 컸던 높이와 견주므로 키보드로 본다(Review Focus 1)", () => {
     // 키보드가 레이아웃 뷰포트까지 줄이면 innerHeight 도 500 이 된다 — 창 높이와 견주면 차이가 0 이라 놓친다
-    let tallest = nextTallest(null, { width: 412, height: 800 });
-    tallest = nextTallest(tallest, { width: 412, height: 500 });
-    expect(tallest.height).toBe(800);
-    expect(keyboardUp(500, tallest.height, true)).toBe(true);
+    let k = keyboardState(null, { width: 412, height: 800, editing: true });
+    k = keyboardState(k, { width: 412, height: 500, editing: true });
+    expect(k.tallest).toBe(800);
+    expect(k.up).toBe(true);
   });
 });
 
-describe("nextTallest", () => {
+/** 측정을 차례로 넣고 각 단계의 up 을 모은다 */
+const run = (steps: { width: number; height: number; editing: boolean }[]) => {
+  let k: KeyboardState | null = null;
+  return steps.map((s) => (k = keyboardState(k, s)));
+};
+
+describe("keyboardState", () => {
   it("같은 폭에서는 지금까지 본 가장 큰 높이를 지킨다", () => {
-    const a = nextTallest(null, { width: 390, height: 700 });
-    expect(nextTallest(a, { width: 390, height: 844 })).toEqual({ width: 390, height: 844 });
-    expect(nextTallest({ width: 390, height: 844 }, { width: 390, height: 400 })).toEqual({ width: 390, height: 844 });
+    const [, b, c] = run([
+      { width: 390, height: 700, editing: false },
+      { width: 390, height: 844, editing: false },
+      { width: 390, height: 400, editing: false },
+    ]);
+    expect(b.tallest).toBe(844);
+    expect(c.tallest).toBe(844);
+    expect(c.up).toBe(false); // 입력 중이 아니면 키보드가 아니다
   });
-  it("가로 폭이 바뀌면(회전) 다시 잰다 — 세로일 때의 큰 높이로 가로 화면을 늘 키보드로 보지 않게", () => {
-    expect(nextTallest({ width: 390, height: 844 }, { width: 844, height: 390 })).toEqual({ width: 844, height: 390 });
-    expect(keyboardUp(390, nextTallest({ width: 390, height: 844 }, { width: 844, height: 390 }).height, true)).toBe(false);
+
+  it("키보드가 내려간 채 회전하면 다시 잰다 — 세로일 때의 큰 높이로 가로 화면을 늘 키보드로 보지 않게", () => {
+    const [, b, c] = run([
+      { width: 390, height: 844, editing: false },
+      { width: 844, height: 390, editing: false },
+      { width: 844, height: 390, editing: true },
+    ]);
+    expect(b.tallest).toBe(390);
+    expect(c.up).toBe(false);
+  });
+
+  it("키보드가 올라온 채 회전해도 up 을 지킨다 — 리뷰 B 재현(412×915 → 412×560 → 780×200 → 412×560, 입력 중)", () => {
+    const ups = run([
+      { width: 412, height: 915, editing: true },
+      { width: 412, height: 560, editing: true },
+      { width: 780, height: 200, editing: true },
+      { width: 412, height: 560, editing: true },
+    ]).map((k) => k.up);
+    expect(ups).toEqual([false, true, true, true]);
+  });
+
+  it("회전 뒤 가장 큰 높이는 입력이 끝난 첫 측정에서 다시 잰다", () => {
+    const [, , c, d, e, f] = run([
+      { width: 412, height: 915, editing: true },
+      { width: 412, height: 560, editing: true },
+      { width: 780, height: 200, editing: true }, // 키보드에 줄어든 높이를 가장 큰 높이로 삼지 않는다
+      { width: 780, height: 200, editing: false }, // 입력이 끝남 — 여기서 다시 잰다
+      { width: 780, height: 412, editing: false }, // 키보드가 내려감
+      { width: 780, height: 200, editing: true }, // 다시 입력 + 키보드
+    ]);
+    expect(c.tallest).not.toBe(200);
+    expect(d).toMatchObject({ up: false, tallest: 200 });
+    expect(e.tallest).toBe(412);
+    expect(f.up).toBe(true);
   });
 });
 
