@@ -1,6 +1,7 @@
 // Keyring Notes 서비스 워커: 오프라인에서도 앱이 열리도록 화면(index·assets)만 캐시한다.
 // 문서 데이터(/api)는 캐시하지 않는다 — 앱이 IndexedDB에 직접 둔다(오프라인 편집).
 // 빌드마다 아래 값이 바뀌어 새 워커가 설치되고 예전 assets를 정리한다.
+// 바로 앞 빌드 하나는 남긴다 — 새로 고치기 전의 옛 화면이 아직 안 불러온 조각을 받게.
 const BUILD = "__KEYRING_BUILD__";
 const CACHE = `keyring-shell-${BUILD}`;
 const STATIC = ["/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
@@ -21,10 +22,22 @@ self.addEventListener("install", (e) => {
   e.waitUntil(precache().then(() => self.skipWaiting()));
 });
 
+/**
+ * 지울 옛 화면 캐시: 이 빌드 것이 아닌 keyring-shell-* 중 빌드 id 가 가장 큰 하나(바로 앞 빌드)를 뺀 나머지.
+ * 빌드 id 는 Date.now().toString(36) 이라 36진수 크기가 만든 순서다. 되돌린 배포(지금 빌드가 더 옛것)에서도 가장 새것 하나를 남긴다.
+ */
+function staleCaches(keys) {
+  const PREFIX = "keyring-shell-";
+  const old = keys.filter((k) => k.startsWith(PREFIX) && k !== CACHE);
+  const age = (k) => parseInt(k.slice(PREFIX.length), 36) || 0;
+  const keep = old.reduce((best, k) => (best === null || age(k) > age(best) ? k : best), null);
+  return old.filter((k) => k !== keep);
+}
+
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     (async () => {
-      for (const key of await caches.keys()) if (key.startsWith("keyring-shell-") && key !== CACHE) await caches.delete(key);
+      for (const key of staleCaches(await caches.keys())) await caches.delete(key);
       await self.clients.claim();
     })(),
   );
@@ -46,6 +59,11 @@ async function warmLazy() {
     }
   }
 }
+
+// 열려 있는 화면이 「이 워커의 빌드가 내 빌드와 같은가」 를 묻는다(web/src/pwaUpdate.ts 의 askBuild). 포트로 빌드 id 를 답한다
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "build" && e.ports && e.ports[0]) e.ports[0].postMessage(BUILD);
+});
 
 function remember(req, res) {
   if (res.ok) {
