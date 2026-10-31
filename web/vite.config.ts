@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -61,6 +62,8 @@ function emojiData(): Plugin {
 export default defineConfig({
   plugins: [react(), stampServiceWorker(), emojiData(), licenseNotices()],
   define: { __KEYRING_BUILD__: JSON.stringify(BUILD) },
+  // 시험에서 styles.css 만 CSS 처리를 켠다 — 끈 기본값에서는 styles.css?raw 가 빈 글이다(themeColor.test.ts 가 --bg 를 읽는다)
+  test: { css: { include: [/styles\.css/] } },
   // 같은 저장소의 core 패키지는 빌드 없이 TypeScript 원본을 쓴다
   resolve: { conditions: ["keyring-source", ...defaultClientConditions] },
   // vitest 는 Node(ssr) 쪽 해석을 쓰므로 여기에도 둬야 시험이 dist 가 아닌 원본을 읽는다
