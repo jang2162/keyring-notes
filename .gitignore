@@ -33,6 +33,9 @@ dist/
 /.codex/config.toml.bak
 /.mcp.json
 /.mcp.json.bak
+/.opencode/skills
 /AGENTS.md
 /AGENTS.md.bak
+/opencode.json
+/opencode.json.bak
 # END Ruler Generated Files
