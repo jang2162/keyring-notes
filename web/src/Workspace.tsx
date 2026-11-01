@@ -231,6 +231,7 @@ import { onNewVersion } from "./pwaUpdate";
 import { tearOutAt } from "./tearOut";
 import { DockTitle, DRAG_REGION } from "./DockTitle";
 import { switcherSpot } from "./topbar";
+import { isTouch } from "./touch";
 import { bootOpen, isWorkspaceNote, withoutWorkspaceBacklinks } from "./workspaceNote";
 import { useAvailableUpdate } from "./update";
 import { SearchFilters, SearchResults } from "./Search";
@@ -1685,7 +1686,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /**
    * 그날 데일리 노트 열기(지금 워크스페이스). 그날 날짜로 시작하는 노트가 있으면 그것(제목이 붙어 있어도), 둘 이상이면 고르는 목록,
-   * 없으면 날짜만으로 새로 만들고(템플릿 + 자동 속성) 제목 칸에 커서를 둔다.
+   * 없으면 날짜만으로 새로 만들고(템플릿 + 자동 속성) 제목 칸에 커서를 둔다(터치에서는 두지 않는다).
    */
   const openDailyOn = async (day: Date) => {
     await vaultSettingsReady();
@@ -1716,7 +1717,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       await api.write(path, content, null);
       vaultChanged();
       await refreshTree();
-      focusTitle(path);
+      // 데일리 노트는 덤으로 만들어지는 것 — 터치에서는 「여는 것」 으로 보고 키보드를 올리지 않는다
+      if (!isTouch()) focusTitle(path);
     } catch (e) {
       // 그 사이 다른 곳에서 만들었으면 그것을 연다
       if (!(e instanceof ApiError && e.status === 409)) return toastError(e);

@@ -29,6 +29,8 @@ import { IconButton, Segmented } from "./ui";
 import { Widget } from "./Widget";
 import { withoutWorkspaceBacklinks } from "./workspaceNote";
 import { isAppField } from "./childSortUi";
+import { editorAutoFocus } from "./editorFocus";
+import { isTouch } from "./touch";
 
 export interface RevisionView {
   /** 이 과거 판의 문서. 칸이 다른 문서로 바뀌면 버린다 */
@@ -583,7 +585,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 foldKey={revision ? undefined : doc.path}
                 renderContext={() => ({ resolver: ctx.resolverRef.current, docPath: docRef.current.path, onLink: ctx.followLinkEl })}
                 readOnly={doc.generated}
-                autoFocus={focused}
+                autoFocus={editorAutoFocus({ touch: isTouch(), focused })}
                 onCursor={(line, col) => ctx.setCursor(pane, { line, col })}
                 onBlur={() => ctx.onEditorBlur(pane, doc.path)}
               />
