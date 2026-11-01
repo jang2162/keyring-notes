@@ -1280,6 +1280,7 @@
   "tree.newNote": "새 노트",
   "tree.openHere": "현재 탭에서 열기",
   "tree.openNewTab": "새 탭에서 열기",
+  "tree.openNote": "{name} 열기",
   "tree.options": "트리 표시 옵션",
   "tree.pin": "고정",
   "tree.pinned": "고정",
