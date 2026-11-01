@@ -1,3 +1,4 @@
+import { pushOverlay } from "./backStack";
 import { t } from "./i18n";
 
 /**
@@ -45,7 +46,9 @@ function open(message: string, input: { value: string } | null, okLabel: string,
     form.append(actions);
     backdrop.append(form);
     const prevFocus = document.activeElement as HTMLElement | null;
+    let offBack = () => {};
     const done = (v: string | null) => {
+      offBack();
       backdrop.remove();
       document.removeEventListener("keydown", onKey, true);
       prevFocus?.focus?.();
@@ -66,6 +69,8 @@ function open(message: string, input: { value: string } | null, okLabel: string,
     backdrop.addEventListener("mousedown", (e) => e.target === backdrop && done(null));
     document.addEventListener("keydown", onKey, true);
     document.body.append(backdrop);
+    // 뒤로가기(터치)는 취소와 같다. 취소가 없는 알림은 확인과 같다
+    offBack = pushOverlay(() => done(cancelable ? null : ""));
     if (field) {
       field.focus();
       field.setSelectionRange(field.value.length, field.value.length);

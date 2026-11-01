@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Maximize2, Minimize2, X } from "lucide-react";
+import { pushOverlay } from "./backStack";
 import { confirmDialog } from "./dialog";
 import { keyCapture } from "./shortcuts";
 import { toast } from "./toast";
@@ -96,6 +97,7 @@ export function Modal({
   maximizable = false,
   escapeFromInputs = false,
   hideHead = false,
+  backClose = true,
 }: {
   title: ReactNode;
   /** 스크린 리더용 이름(title이 글이 아닐 때) */
@@ -116,6 +118,8 @@ export function Modal({
   escapeFromInputs?: boolean;
   /** 머리 없이(팔레트). 닫기는 Esc·배경 */
   hideHead?: boolean;
+  /** 터치에서 뒤로가기로 닫기(backStack.ts). 설정은 자기 주소(#/:settings)로 닫으므로 false */
+  backClose?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -159,6 +163,9 @@ export function Modal({
       if (prev?.isConnected) prev.focus?.({ preventScroll: true });
     };
   }, [entry]);
+
+  // 뒤로가기(터치): 닫기 확인을 거친다 — 거부되면 표시가 다시 쌓인다
+  useLayoutEffect(() => (backClose ? pushOverlay(() => entry.attempt()) : undefined), [entry, backClose]);
 
   // Esc
   useEffect(() => {

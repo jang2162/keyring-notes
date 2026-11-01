@@ -231,6 +231,8 @@ import { onNewVersion } from "./pwaUpdate";
 import { tearOutAt } from "./tearOut";
 import { DockTitle, DRAG_REGION } from "./DockTitle";
 import { switcherSpot } from "./topbar";
+import { isTouch } from "./touch";
+import { backStack, pushOverlay } from "./backStack";
 import { bootOpen, isWorkspaceNote, withoutWorkspaceBacklinks } from "./workspaceNote";
 import { useAvailableUpdate } from "./update";
 import { SearchFilters, SearchResults } from "./Search";
@@ -449,6 +451,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const [outboxCount, setOutboxCount] = useState(0);
   /** 좁은 화면: 왼쪽·오른쪽 서랍 */
   const [drawer, setDrawer] = useState<"left" | "right" | null>(null);
+  // 뒤로가기(터치)로 서랍 닫기. 왼쪽 보기를 바꾸거나 서랍을 갈아도 같은 등록이다
+  const drawerOpen = drawer !== null;
+  useEffect(() => (drawerOpen ? pushOverlay(() => setDrawer(null)) : undefined), [drawerOpen]);
   const [semanticOn, setSemanticOn] = useState(false);
   const [searchMode, setSearchMode] = useState<"text" | "semantic">("text");
   /** 볼트 내용이 바뀔 때마다 올려 태그·백링크·위젯을 다시 불러온다. */
@@ -1319,7 +1324,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     if (settingsFromLocation()) return;
     const want = activePath ? `#/${encodeURIComponent(activePath)}` : "#";
-    if (activePath ? pathFromLocation() !== activePath : pathFromLocation() !== null) history.replaceState(null, "", want);
+    // 위에 뜬 것이 있으면(터치) 표시 항목을 지킨 채 바꾼다 — backStack.ts
+    if (activePath ? pathFromLocation() !== activePath : pathFromLocation() !== null) backStack.replace(want);
   }, [activePath, settings]);
 
   const settingsRef = useRef(settings);
@@ -1332,11 +1338,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         // 뒤로 가기로 설정을 닫을 때도 토큰 화면·저장 안 한 입력을 지킨다
         const leaving = location.hash;
         if (!(await attemptCloseTopModal())) {
-          history.pushState(null, "", `${SETTINGS_HASH}/${was}`);
+          // 닫기 확인 창이 쌓았던 표시를 치운 뒤에 설정 주소를 다시 쌓는다(기록이 둘 쌓이지 않게)
+          await backStack.navigate(`${SETTINGS_HASH}/${was}`);
           return;
         }
         if (location.hash !== leaving) return;
-        history.replaceState(null, "", leaving);
+        backStack.replace(leaving);
+        // 설정 아래 남아 있던 것(그래프 등)을 다시 뒤로가기로 닫게 한다
+        backStack.resume();
       }
       setSettings(next);
       const p = pathFromLocation();
@@ -1685,7 +1694,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /**
    * 그날 데일리 노트 열기(지금 워크스페이스). 그날 날짜로 시작하는 노트가 있으면 그것(제목이 붙어 있어도), 둘 이상이면 고르는 목록,
-   * 없으면 날짜만으로 새로 만들고(템플릿 + 자동 속성) 제목 칸에 커서를 둔다.
+   * 없으면 날짜만으로 새로 만들고(템플릿 + 자동 속성) 제목 칸에 커서를 둔다(터치에서는 두지 않는다).
    */
   const openDailyOn = async (day: Date) => {
     await vaultSettingsReady();
@@ -1716,7 +1725,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       await api.write(path, content, null);
       vaultChanged();
       await refreshTree();
-      focusTitle(path);
+      // 데일리 노트는 덤으로 만들어지는 것 — 터치에서는 「여는 것」 으로 보고 키보드를 올리지 않는다
+      if (!isTouch()) focusTitle(path);
     } catch (e) {
       // 그 사이 다른 곳에서 만들었으면 그것을 연다
       if (!(e instanceof ApiError && e.status === 409)) return toastError(e);
@@ -2345,7 +2355,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     void flush();
     setDrawer(null);
     if (settingsFromLocation()) replaceSettingsSection(history, s);
-    else history.pushState(null, "", `${SETTINGS_HASH}/${s}`);
+    // 위에 뜬 것(더 보기 등)에서 열면 그 표시 항목을 설정 주소로 갈아 끼운다 — backStack.ts
+    else void backStack.navigate(`${SETTINGS_HASH}/${s}`);
     setSettings(s);
   };
   /** restore: 지금 문서 주소로 되돌린다(아니면 곧 다른 문서를 여는 중이라 비워 둔다) */
@@ -2353,7 +2364,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     setSettings(null);
     // 부팅이 동기화 화면으로 바꿔 치운 노트(settingsNav.ts)가 있으면 그 노트로 돌아간다
     const go = settingsCloseTarget({ restore, current: docRef.current?.path ?? null, back: settingsBack(history.state) });
-    history.replaceState(null, "", go.hash);
+    backStack.replace(go.hash);
+    backStack.resume();
     if (go.open) void openRef.current(go.open);
     // 복원·동기화 등으로 볼트가 바뀌었을 수 있다: 트리·문서·공통 설정을 다시 읽는다
     vaultChanged();

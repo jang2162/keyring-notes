@@ -1041,7 +1041,10 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
   .shell.kb-up .toasts { bottom: var(--sp-3); }
   .page { padding: var(--sp-4) var(--sp-4) 40vh; }
   .doc-head { padding-left: var(--sp-3); }
-  .crumbs .crumb:not(.current) { display: none; }
+  /* 상위 경로는 한 줄로, 넘치면 옆으로 밀어 본다(스크롤 막대 없이). 칸은 줄어들지 않는다 */
+  .crumbs { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .crumbs::-webkit-scrollbar { display: none; }
+  .crumbs .crumb, .crumbs .crumb-btn, .crumbs .crumb-text, .crumbs .crumb.current { flex-shrink: 0; overflow: visible; text-overflow: clip; }
   .inline-title { font-size: 24px; }
   .settings-search { flex-basis: 100%; }
   .kmodal-body.settings-body { padding: var(--sp-4); }
@@ -1052,6 +1055,12 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 @media (max-width: 800px) and (prefers-reduced-motion: reduce) { .left-dock { transition: none; } }
 @media (pointer: coarse) {
   .tree-row { height: 36px; }
+  .crumb-btn { display: inline-flex; align-items: center; min-height: 32px; }
+  /* 화살표는 보이는 크기 그대로, 누르는 자리만 넓힌다 */
+  .tree-chevron { box-sizing: content-box; justify-content: center; align-items: center; align-self: stretch; padding: 0 7px; margin: 0 -7px; }
+  /* 하위가 있는 노트의 열기 단추(행 오른쪽 끝, 하위 노트 추가 단추 뒤) */
+  .tree-open { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 44px; min-width: 44px; height: 36px; padding: 0; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--muted); }
+  .tree-open:hover, .tree-open:active { background: var(--hover); color: var(--fg); border: none; }
   .icon-btn { width: 36px; height: 36px; }
 }
 

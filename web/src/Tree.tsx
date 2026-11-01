@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Check, ChevronRight, File, FileImage, FileText, FileType, Paperclip, Plus } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, File, FileImage, FileText, FileType, Paperclip, Plus } from "lucide-react";
 import { tipProps } from "./Tooltip";
 import { stripMd, type ChildSort, type VaultNode } from "@keyring-notes/core";
 import type { Prefs } from "./prefs";
@@ -7,6 +7,8 @@ import { Menu, type MenuEntry } from "./ui";
 import { t } from "./i18n";
 import { edgeDrop, shownChildren } from "./childSortUi";
 import { useViewedVersion, viewedSnapshot } from "./viewed";
+import { isTouch } from "./touch";
+import { nodeTap, showOpenButton } from "./treeTap";
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 
@@ -257,6 +259,7 @@ export const Tree = forwardRef<
       return next;
     });
 
+  const touch = isTouch();
   const expandable = (n: VaultNode) => n.children.length > 0 || (prefs.treeAttachments !== "hide" && n.attachments.length > 0);
 
   /**
@@ -589,6 +592,7 @@ export const Tree = forwardRef<
         const n = r.node;
         const isOpen = open.has(n.path);
         const canExpand = expandable(n);
+        const hasNote = n.path.includes("/");
         const emoji = decor.icon?.(n);
         const cls = [
           "tree-row",
@@ -626,9 +630,14 @@ export const Tree = forwardRef<
             onDrop={(e) => dropRow(e, r)}
             onClick={(e) => {
               if (renaming === n.path) return;
-              // 화살표를 누르면 펴기·접기만, 이름을 누르면 노트를 연다
+              // 화살표를 누르면 펴기·접기만, 이름을 누르면 노트를 연다(터치에서 하위가 있는 노트는 행 전체가 펴기·접기)
               if ((e.target as HTMLElement).closest(".tree-chevron")) {
                 if (canExpand) toggle(n.path);
+                return;
+              }
+              if (hasNote && nodeTap({ touch, canExpand, hasNote, onChevron: false }) === "toggle") {
+                setFocused(key);
+                toggle(n.path);
                 return;
               }
               activate(r);
@@ -685,6 +694,23 @@ export const Tree = forwardRef<
                 }}
               >
                 <Plus size={14} strokeWidth={2} aria-hidden />
+              </button>
+            )}
+            {renaming !== n.path && showOpenButton({ touch, canExpand, hasNote }) && (
+              <button
+                type="button"
+                className="tree-open"
+                tabIndex={-1}
+                draggable={false}
+                aria-label={t("tree.openNote", { name: n.name })}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFocused(key);
+                  actions.open(n, { newTab: true });
+                }}
+              >
+                <ArrowRight size={16} strokeWidth={2} aria-hidden />
               </button>
             )}
           </div>

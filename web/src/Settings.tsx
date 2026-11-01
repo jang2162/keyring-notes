@@ -297,6 +297,7 @@ export function SettingsModal({
     <Modal
       title={t("settings.title")}
       onClose={onClose}
+      backClose={false}
       bodyClassName="settings-body"
       nav={
         <SettingsNav

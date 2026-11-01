@@ -1318,6 +1318,7 @@
   "tree.newNote": "New note",
   "tree.openHere": "Open in this tab",
   "tree.openNewTab": "Open in new tab",
+  "tree.openNote": "Open {name}",
   "tree.options": "Tree display options",
   "tree.pin": "Pin",
   "tree.pinned": "Pinned",

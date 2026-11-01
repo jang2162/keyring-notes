@@ -29,6 +29,8 @@ import { IconButton, Segmented } from "./ui";
 import { Widget } from "./Widget";
 import { withoutWorkspaceBacklinks } from "./workspaceNote";
 import { isAppField } from "./childSortUi";
+import { editorAutoFocus } from "./editorFocus";
+import { isTouch } from "./touch";
 
 export interface RevisionView {
   /** 이 과거 판의 문서. 칸이 다른 문서로 바뀌면 버린다 */
@@ -426,12 +428,19 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
 
   /** 빵부스러기: 상위 노드들(누르면 그 노드를 연다) */
   const crumbs = crumbNodes(docNode, ctx.allWorkspaces);
+  // 좁은 화면에서는 빵부스러기가 옆으로 밀린다 — 처음과 노트가 바뀔 때 오른쪽 끝(지금 노트)을 보인다
+  const crumbsRef = useRef<HTMLElement>(null);
+  const crumbsKey = crumbs.join("/");
+  useLayoutEffect(() => {
+    const el = crumbsRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [doc.path, crumbsKey]);
   const toggleKey = formatCombo(ctx.keyOf("toggle-mode"));
 
   return (
     <>
       <header className="doc-head">
-        <nav className="crumbs" aria-label={t("doc.crumbs")}>
+        <nav ref={crumbsRef} className="crumbs" aria-label={t("doc.crumbs")}>
           {ctx.wsSwitcher && (
             <span className="crumb">
               {ctx.wsSwitcher(pane)}
@@ -583,7 +592,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 foldKey={revision ? undefined : doc.path}
                 renderContext={() => ({ resolver: ctx.resolverRef.current, docPath: docRef.current.path, onLink: ctx.followLinkEl })}
                 readOnly={doc.generated}
-                autoFocus={focused}
+                autoFocus={editorAutoFocus({ touch: isTouch(), focused })}
                 onCursor={(line, col) => ctx.setCursor(pane, { line, col })}
                 onBlur={() => ctx.onEditorBlur(pane, doc.path)}
               />
