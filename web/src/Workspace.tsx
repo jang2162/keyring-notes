@@ -1344,6 +1344,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         }
         if (location.hash !== leaving) return;
         backStack.replace(leaving);
+        // 설정 아래 남아 있던 것(그래프 등)을 다시 뒤로가기로 닫게 한다
+        backStack.resume();
       }
       setSettings(next);
       const p = pathFromLocation();
@@ -2363,6 +2365,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // 부팅이 동기화 화면으로 바꿔 치운 노트(settingsNav.ts)가 있으면 그 노트로 돌아간다
     const go = settingsCloseTarget({ restore, current: docRef.current?.path ?? null, back: settingsBack(history.state) });
     backStack.replace(go.hash);
+    backStack.resume();
     if (go.open) void openRef.current(go.open);
     // 복원·동기화 등으로 볼트가 바뀌었을 수 있다: 트리·문서·공통 설정을 다시 읽는다
     vaultChanged();

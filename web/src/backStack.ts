@@ -24,6 +24,8 @@ export interface BackStack {
   settle(): Promise<void>;
   /** 새 기록 항목으로 간다(설정 열기). 표시가 서 있으면 그 항목을 갈아 끼운다 */
   navigate(url: string, state?: Record<string, unknown>): Promise<void>;
+  /** 설정이 닫혀 노트 주소로 돌아왔다: navigate 가 미뤄 둔 것 중 아직 열린 것의 표시를 다시 쌓는다 */
+  resume(): void;
   /** 지금 항목의 주소만 바꾼다(활성 노트). 표시가 없으면 state 는 null, 있으면 표시를 지킨다 */
   replace(url: string): void;
   /** 시작 때 표시 항목에 서 있으면(새로 고침·앱 다시 열기) 치운다 */
@@ -43,6 +45,8 @@ export function createBackStack(env: BackEnv): BackStack {
     close: Close;
   }
   let items: Item[] = [];
+  /** navigate 가 표시를 갈아 끼울 때 열려 있던 것 — 설정이 닫히면 resume 이 items 로 되돌린다 */
+  let suspended: Item[] = [];
   /** 지금 기록 항목이 우리가 쌓은 표시다 */
   let marker = false;
   /** 우리가 부른 back 중 popstate 가 아직 안 온 수 */
@@ -121,7 +125,11 @@ export function createBackStack(env: BackEnv): BackStack {
         if (done) return;
         done = true;
         const i = items.indexOf(item);
-        if (i < 0) return; // 뒤로가기로 닫혔거나 navigate 가 표시를 갈아 끼웠다
+        if (i < 0) {
+          const j = suspended.indexOf(item);
+          if (j >= 0) suspended.splice(j, 1);
+          return; // 뒤로가기로 닫혔거나, 설정 아래에서 닫혔다(표시가 없으므로 back 을 부르지 않는다)
+        }
         items.splice(i, 1);
         if (items.length === 0 && marker) ourBack();
       };
@@ -132,15 +140,23 @@ export function createBackStack(env: BackEnv): BackStack {
     },
     async navigate(url, state) {
       if (marker && pending === 0) {
-        // 표시 항목을 새 주소로 갈아 끼운다 — 지금 열린 것들은 닫히는 중이므로 그 해제가 back 을 부르지 않게 뺀다
+        // 표시 항목을 새 주소로 갈아 끼운다. 지금 열린 것들은 설정 아래로 미룬다 — 닫히는 중인 것(더 보기·서랍)은
+        // 해제되며 back 없이 빠지고, 남는 것(그래프 등)은 설정이 닫힌 뒤 resume 이 표시를 다시 쌓는다
         h.replaceState(state ?? null, "", url);
         marker = false;
+        suspended = suspended.concat(items);
         items = [];
         wantUrl = null;
         return;
       }
       await api.settle();
       h.pushState(state ?? null, "", url);
+    },
+    resume() {
+      if (suspended.length === 0) return;
+      items = suspended.concat(items);
+      suspended = [];
+      ensure();
     },
     replace(url) {
       if (pending > 0) {

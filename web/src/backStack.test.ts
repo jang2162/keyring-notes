@@ -5,7 +5,7 @@ import { createBackStack } from "./backStack";
  * 가짜 주소 기록: 항목 배열 + 인덱스. back() 은 브라우저처럼 비동기다 — 인덱스를 줄이고 popstate 를 쏘는 것이 둘 다
  * 나중(microtask)이라, 그 사이의 pushState·replaceState 는 아직 떠나지 않은 항목에 적힌다
  */
-function fakeHistory(start: { state?: unknown; url?: string } = {}) {
+function fakeHistory(start: { state?: unknown; url?: string; slowBack?: boolean } = {}) {
   const entries: { state: unknown; url: string }[] = [{ state: start.state ?? null, url: start.url ?? "#/A.md" }];
   let index = 0;
   let listener: (e: { state: unknown }) => void = () => {};
@@ -22,7 +22,8 @@ function fakeHistory(start: { state?: unknown; url?: string } = {}) {
       entries[index] = { state, url: url == null ? entries[index].url : String(url) };
     },
     back: vi.fn(() => {
-      queueMicrotask(() => {
+      // slowBack: 브라우저처럼 다음 태스크에 도착한다(그 사이 microtask 인 Promise 처리가 먼저 돈다)
+      (start.slowBack ? (fn: () => void) => setTimeout(fn, 0) : queueMicrotask)(() => {
         if (index === 0) return;
         index--;
         listener({ state: entries[index].state });
@@ -49,7 +50,7 @@ function fakeHistory(start: { state?: unknown; url?: string } = {}) {
   };
 }
 
-function setup(o: { enabled?: boolean; state?: unknown; url?: string } = {}) {
+function setup(o: { enabled?: boolean; state?: unknown; url?: string; slowBack?: boolean } = {}) {
   const f = fakeHistory(o);
   const stack = createBackStack({ history: f.history, addPopListener: (fn) => f.listen(fn), enabled: () => o.enabled ?? true });
   return { f, stack };
@@ -180,6 +181,64 @@ describe("backStack", () => {
     expect(f.history.back).toHaveBeenCalledTimes(1);
     expect(f.index).toBe(1);
     expect(f.top.url).toBe("#/:settings/general");
+  });
+
+  it("resume re-marks overlays left open under settings", async () => {
+    const { f, stack } = setup();
+    const a = vi.fn();
+    const b = vi.fn();
+    const offA = stack.push(a); // 닫히는 중인 것(더 보기 등)
+    stack.push(b); // 설정 아래 남는 것(그래프 등)
+    await stack.navigate("#/:settings/general");
+    offA();
+    // 설정을 닫고 노트 주소로 돌아온다
+    f.history.replaceState(null, "", "#/A.md");
+    stack.resume();
+    expect(f.history.back).not.toHaveBeenCalled();
+    expect(f.entries.length).toBe(3);
+    expect(f.index).toBe(2);
+    expect((f.top.state as { kOverlay?: boolean }).kOverlay).toBe(true);
+    f.userBack();
+    await flush();
+    expect(b).toHaveBeenCalledTimes(1);
+    expect(a).not.toHaveBeenCalled();
+    expect(f.index).toBe(1);
+    expect((f.top.state as { kOverlay?: boolean } | null)?.kOverlay).toBeUndefined();
+  });
+
+  it("resume without leftovers adds nothing", () => {
+    const { f, stack } = setup();
+    stack.resume();
+    expect(f.entries.length).toBe(1);
+  });
+
+  it("refused async close with a nested overlay ends with one marker", async () => {
+    const { f, stack } = setup({ slowBack: true });
+    let release = () => {};
+    const close = vi.fn(() => {
+      const offConfirm = stack.push(() => {}); // 닫기 확인 창
+      return new Promise<boolean>((res) => {
+        release = () => {
+          offConfirm(); // 취소 단추로 확인 창을 닫는다
+          res(false);
+        };
+      });
+    });
+    stack.push(close);
+    f.userBack();
+    await flush();
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(f.index).toBe(1);
+    release();
+    await flush();
+    await flush();
+    expect(f.entries.length).toBe(2);
+    expect(f.index).toBe(1);
+    expect((f.top.state as { kOverlay?: boolean }).kOverlay).toBe(true);
+    // 다시 뒤로: 같은 모달을 다시 닫으려 한다
+    f.userBack();
+    await flush();
+    expect(close).toHaveBeenCalledTimes(2);
   });
 
   it("replace keeps marker", () => {
