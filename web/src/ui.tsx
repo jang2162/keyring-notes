@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
 import { formatCombo } from "./shortcuts";
 import { tipProps } from "./Tooltip";
+import { pushOverlay } from "./backStack";
 
 /**
  * 아이콘 버튼. 이름·단축키·못 쓰는 이유는 앱 공통 툴팁(Tooltip.tsx)으로 보인다(접근성 이름은 aria-label).
@@ -97,6 +98,11 @@ export function Menu({ at, items, onClose, label }: { at: { x: number; y: number
     setPos({ x: Math.max(4, Math.min(at.x, window.innerWidth - r.width - 4)), y: Math.max(4, Math.min(at.y, window.innerHeight - r.height - 4)) });
     el.focus();
   }, [at.x, at.y]);
+
+  // 뒤로가기(터치)로 닫기
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useLayoutEffect(() => pushOverlay(() => closeRef.current()), []);
 
   useEffect(() => {
     const down = (e: MouseEvent) => {
