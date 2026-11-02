@@ -38,6 +38,12 @@ describe("트리에 보일 하위 순서", () => {
     expect(names(shownChildren(ns, null, true, noView))).toEqual(["다", "나", "가"]);
   });
 
+  it("데일리 폴더의 정하지 않은 순서는 이름 내림차순 그대로 — 이름이 같으면 경로도 내림차순", () => {
+    const twins = [node("같음", { path: "W/a/같음" }), node("같음", { path: "W/b/같음" })];
+    expect(shownChildren(twins, null, true, noView).map((n) => n.path)).toEqual(["W/b/같음", "W/a/같음"]);
+    expect(shownChildren([...twins].reverse(), null, true, noView).map((n) => n.path)).toEqual(["W/b/같음", "W/a/같음"]);
+  });
+
   it("정렬을 정했으면 데일리 폴더라도 그 정렬을 따른다", () => {
     expect(names(shownChildren(ns, "name", true, noView))).toEqual(["가", "나", "다"]);
     expect(names(shownChildren(ns, "modified", true, noView))).toEqual(["나", "다", "가"]);
@@ -108,6 +114,17 @@ describe("정렬 메뉴", () => {
     expect(pick("name-desc", "tree.sortName")).toBe("name-desc");
     expect(pick(null, "tree.sortName", true)).toBe("name-desc");
     expect(pick("viewed-asc", "tree.sortCustom")).toBe("custom");
+  });
+
+  it("다른 항목 → 「이름순」 은 그 부모가 정하지 않았을 때 보이는 방향 — 데일리 폴더면 내림차순이라 sort 를 지운다", () => {
+    expect(pick("modified", "tree.sortName", true)).toBe("name-desc");
+    expect(pick("viewed-asc", "tree.sortName", true)).toBe("name-desc");
+    expect(pick("custom", "tree.sortName", true)).toBe("name-desc");
+    expect(pick("modified", "tree.sortName")).toBe("name");
+    const daily = { content: "---\nsort: modified\n---\n", hash: "h" };
+    const w = childSortWrites("W/Daily.md", daily, pick("modified", "tree.sortName", true), [], none, true);
+    expect(w).toHaveLength(1);
+    expect(fm(w[0].content)).toBeNull();
   });
 
   it("방향을 고르면 항목은 그대로 두고 방향만 바꾼다", () => {

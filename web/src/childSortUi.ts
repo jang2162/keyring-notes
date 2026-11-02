@@ -66,7 +66,9 @@ export type SortMenuRow = { label: string; checked: boolean; disabled: boolean; 
 /**
  * 하위 노트 정렬 메뉴: 항목 넷(지금 항목에 체크) → 구분선 → 오름차순·내림차순(지금 방향에 체크, 커스텀이면 꺼짐).
  * 정하지 않은 노트는 이름 오름차순, 정하지 않아 이름 내림차순으로 보이는 데일리 폴더(descending)는 이름 내림차순으로 체크한다.
- * 다른 항목을 고르면 그 항목의 기본 방향(이름은 오름차순, 수정·조회는 최신 먼저)으로, 지금 항목을 다시 고르면 그대로 둔다.
+ * 다른 항목을 고르면 그 항목의 기본 방향(수정·조회는 최신 먼저)으로, 지금 항목을 다시 고르면 그대로 둔다.
+ * 이름의 기본 방향은 그 부모가 정하지 않았을 때 보이는 방향이다 — 보통 오름차순, 데일리 폴더는 내림차순이라
+ * 데일리 폴더에서 다른 항목 → 「이름순」 이면 childSortWrites 가 sort 를 지워 데일리 기본으로 돌아간다.
  * 방향을 고르면 항목은 그대로 두고 방향만 바꾼다
  */
 export function childSortMenu(sort: ChildSort | undefined | null, descending: boolean): SortMenuRow[] {
@@ -85,7 +87,7 @@ export function childSortMenu(sort: ChildSort | undefined | null, descending: bo
       label,
       checked: key === k,
       disabled: false,
-      value: key === k ? current : childSortOf(k, defaultDescending(k)),
+      value: key === k ? current : childSortOf(k, k === "name" ? descending : defaultDescending(k)),
     })),
     "-",
     dir(false),

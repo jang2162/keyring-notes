@@ -52,7 +52,7 @@ Each note chooses the order of the notes directly under it. Right-click a note i
 - **Last opened**: the note you opened most recently on this device comes first. Notes you never opened follow, by name.
 - **Custom**: the order you set by hand.
 
-Below them, choose **Ascending** or **Descending** to reverse the order of **Name**, **Last modified** or **Last opened**. Picking another order starts with its usual direction: A to Z for **Name**, newest first for the other two. With **Last modified** and **Last opened**, notes without a time stay at the end, by name, in both directions. **Custom** has no direction.
+Below them, choose **Ascending** or **Descending** to reverse the order of **Name**, **Last modified** or **Last opened**. Picking another order starts with its usual direction: A to Z for **Name**, newest first for the other two. Inside the daily folder, **Name** starts newest first, which is the folder's default. With **Last modified** and **Last opened**, folders without a note stay at the end, by name, in both directions. With **Last opened**, so do notes you never opened. **Custom** has no direction.
 
 To sort the notes at the top of a workspace, click the display options (⋯) above the tree and choose **Sort notes**. With **All workspaces** on, a workspace row's menu has **Sort sub-notes** too.
 
