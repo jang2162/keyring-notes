@@ -62,6 +62,7 @@ import { IngestDialog } from "./Ingest";
 import { invalidateWidgets } from "./Widget";
 import { notePathOfHash, replaceSettingsSection, settingsBack, settingsCloseTarget, SETTINGS_HASH } from "./settingsNav";
 import { isNetworkError, offline, searchFailedOffline } from "./offline";
+import { closedForGood, dropFromNav, hasNodeChildren, isBlankNote, openAnywhere } from "./emptyNote";
 import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
@@ -501,6 +502,13 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const focusTitle = (path: string) => setTitleFocus({ path, n: Date.now() });
   const [now, setNow] = useState(Date.now());
   const closedTabs = useRef<string[]>([]);
+  /**
+   * 이 창에서 「새 노트」(createDoc)로 만든 노트. 사람이 손대지 않고 닫으면 지운다(discardIfBlank).
+   * 이름을 바꾸거나 옮기거나 지우면 빠진다 — 데일리·템플릿·원래 있던 노트는 들지 않는다
+   */
+  const createdRef = useRef(new Set<string>());
+  /** discardIfBlank 의 최신 판(먼저 정의되는 open 이 부른다) */
+  const discardRef = useRef<(path: string) => Promise<void>>(async () => undefined);
   const [recent, setRecent] = useStored<string[]>("keyring:recent", [], isStringArray);
   /** 고정한 노드(이 기기, pins.ts) */
   const pins = usePins();
@@ -1103,6 +1111,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           : undefined;
       const pane = switching ? before.focused : (opts.pane ?? elsewhere ?? before.focused);
       if (!switching && pane === before.focused && paneOf(before, pane)?.active === path) return;
+      // 같은 탭에서 갈아 끼우면 앞 문서가 어느 칸에도 안 남을 수 있다 — 비어 있는 새 노트면 지운다
+      const replaced = paneOf(before, pane)?.active;
       // 읽은 문서를 저장소와 배치에 같은 틈에 넣는다(안 쓰는 문서 정리가 그 사이에 치우지 않게)
       const fresh = docsRef.current[path] ? null : await fetchDoc(path);
       if (!docsRef.current[path] && !fresh) return;
@@ -1114,6 +1124,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       setLayoutFor(key, (l) => openIn(l, pane, path, { newTab: switching || opts.newTab, mode: l.root ? undefined : lastMode.current }));
       remember(path);
       if (!opts.noHistory) pushNav(path);
+      if (replaced && replaced !== path) void discardRef.current(replaced);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fetchDoc],
@@ -1219,6 +1230,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         delete out[path];
         return out;
       });
+    void discardRef.current(path);
   };
 
   /**
@@ -1242,6 +1254,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       toastError(err);
       return;
     }
+    // 새 창이 그 노트를 열었다 — 이 창의 탭을 닫아도 비어 있는 새 노트로 지우지 않는다
+    createdRef.current.delete(path);
     await closeTab(pane, path);
   };
 
@@ -1671,6 +1685,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       await offline.queue(path, content, null);
       setOutboxCount((await offline.pending()).length);
     }
+    createdRef.current.add(path);
     focusTitle(path);
     await open(path, { newTab: true });
     setFocusedMode((m) => (m === "preview" ? "edit" : m));
@@ -1837,6 +1852,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /** 이동이 끝난 뒤: 탭·열린 문서·기록의 경로를 바꾼다. content가 null이면(여러 개를 옮김) 그 문서를 다시 읽는다 */
   const afterMove = async (from: string, to: string, content: string | null, hash: string | null) => {
     moveFolds(from, to);
+    // 이름을 바꾼(옮긴) 새 노트는 사람이 손댄 것이다
+    createdRef.current.delete(from);
     setAllLayouts((l) => renamePath(l, from, to));
     setRecent((r) => r.map((p) => (p === from ? to : p)));
     renameViewed(from, to, false);
@@ -1954,6 +1971,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /** 이름 바꾸기(노드). 데일리 노트의 날짜가 바뀌면 자동 태그(있는 것만)도 같이 고친다 */
   const renameNode = async (node: string, name: string) => {
     const path = `${node}.md`;
+    // 이름을 고친 새 노트는 사람이 손댄 것이다 — 옮기기가 끝나기 전(실패해도)부터 지우지 않는다(discardIfBlank)
+    createdRef.current.delete(path);
     const before = dailyOfPath(path, daily);
     const to = join(parentOf(node), name);
     if (!(await moveNodeTo(node, to))) return false;
@@ -1976,6 +1995,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /** 탭·기록·저장소에서 지운 노드의 문서를 뺀다(저장 안 한 초안도: 남기면 자동 저장이 되살린다) */
   const forget = (gone: (p: string) => boolean) => {
+    for (const p of createdRef.current) if (gone(p)) createdRef.current.delete(p);
     setAllLayouts((l) => removePaths(l, gone));
     updateDocs((s) => {
       const dead = Object.keys(s).filter(gone);
@@ -1987,6 +2007,55 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     setRecent((r) => r.filter((p) => !gone(p)));
     forgetViewed(gone);
   };
+
+  /**
+   * 비어 있는 새 노트 지우기(emptyNote.ts): 이 창에서 만든 노트가 어느 칸에도 안 남았고, 초안과 볼트의 내용이 비었고(앱 속성만),
+   * 하위·첨부가 없고, 고정하지 않았으면 확인 없이 지운다. 알림은 띄우지 않는다(만들었다가 그냥 닫은 것이라 소음이다).
+   * 확실하지 않으면 그대로 둔다 — 읽기·지우기 실패, 오프라인에서 읽은 내용, 저장 중, 이미 보내기 시작한 오프라인 대기분.
+   * 지우지 못해도 예전처럼 빈 노트가 남을 뿐이므로 오류도 알리지 않는다
+   */
+  const discardIfBlank = async (path: string) => {
+    if (!createdRef.current.has(path)) return;
+    // 탭을 닫거나 갈아 끼우며 제목 칸이 포커스를 잃으면 그 이름 바꾸기(renameNode)가 조금 뒤에 시작된다 — 그 뒤에 본다
+    await new Promise((r) => setTimeout(r, 300));
+    if (!closedForGood(path, createdRef.current, Object.values(layoutsRef.current))) return;
+    // 한 번만 본다(실패해도 다시 지우려 하지 않는다)
+    createdRef.current.delete(path);
+    const node = stripMd(path);
+    const untouched = () => {
+      const e = docsRef.current[path];
+      return (
+        !openAnywhere(path, Object.values(layoutsRef.current)) &&
+        (!e || isBlankNote(e.doc.draft)) &&
+        !savingRef.current.has(path) &&
+        !hasNodeChildren(path, resolverRef.current.paths) &&
+        !pins.includes(node)
+      );
+    };
+    if (!untouched()) return;
+    try {
+      const queued = await offline.pendingFor(path).catch(() => undefined);
+      if (queued) {
+        // 오프라인에서 만들어 아직 서버에 없는 노트: 대기분만 걷는다(서버에 있던 문서의 대기분이거나 보내는 중이면 둔다)
+        if (queued.baseHash !== null || !isBlankNote(queued.content) || flushing.current || !untouched()) return;
+        await offline.done(path);
+        setOutboxCount((await offline.pending().catch(() => [])).length);
+      } else {
+        const d = await api.read(path, { fresh: true });
+        if (d.cachedOffline || d.generated || !isBlankNote(d.content) || !untouched()) return;
+        // 트리 「삭제」 와 같은 길(읽은 해시와 다르면 409 — 그 사이 다른 곳에서 고쳤으면 지우지 않는다)
+        await api.deleteNode(node, [{ path, hash: d.hash }]);
+        vaultChanged();
+      }
+    } catch {
+      return;
+    }
+    forget((p) => p === path);
+    closedTabs.current = closedTabs.current.filter((p) => p !== path);
+    nav.current = dropFromNav(nav.current, path);
+    await refreshTree();
+  };
+  discardRef.current = discardIfBlank;
 
   /**
    * 노드 삭제: 노드 노트와 하위 전체를 한 번에(한 커밋). 하위 개수를 보여 주고 확인받는다.
