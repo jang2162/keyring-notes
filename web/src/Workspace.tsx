@@ -2090,6 +2090,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       for (const p of files) {
         if (/\.md$/i.test(p)) {
           const d = await api.read(p, { fresh: true });
+          // 생성 문서(위키 index·log)는 트리에 있지만 파일이 아니다: 볼트가 지우지 않고, 되돌리기로 쓰면 이력·저장소에 실제 파일로 남는다
+          if (d.generated) continue;
           saved.push({ path: p, content: d.content, hash: d.hash });
         } else {
           const data = await api.readBytes(p);

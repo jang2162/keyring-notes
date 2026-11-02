@@ -728,7 +728,11 @@ export class ScopedVault {
     const node = normalizeVaultPath(input).replace(/\.md$/i, "");
     const files = await this.nodeFilesOf(node);
     if (files.length === 0) throw new NotFoundError("node_missing", { path: node });
-    const given = expect ? new Map(expect.map((e) => [normalizeVaultPath(e.path), e.baseHash])) : null;
+    // 생성 문서(위키 index·log)는 트리에 있어 화면 목록에 끼지만 nodeFilesOf 가 빼고 지우지도 않으므로 대지 않는다
+    // (로컬 볼트 deleteNode 와 같은 판정)
+    const given = expect
+      ? new Map(expect.filter((e) => !this.wiki?.isGenerated(normalizeVaultPath(e.path))).map((e) => [normalizeVaultPath(e.path), e.baseHash]))
+      : null;
     if (given && (given.size !== files.length || files.some((f) => !given.has(f)))) throw new ConflictError(null, "node_children_changed", { path: node });
     const ops: Op[] = [];
     for (const f of files) ops.push({ op: "delete", path: f, baseHash: given?.get(f) ?? hashContent((await this.vault.readRaw(f)).data) });

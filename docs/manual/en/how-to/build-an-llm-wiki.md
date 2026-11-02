@@ -53,6 +53,8 @@ The server rebuilds `wiki/index.md` and `wiki/log.md` whenever anything in the t
 
 They are generated for each reader's permissions, so an agent that cannot see a source does not see its name. A source becomes "processed" once a wiki page cites it in a body link or in `sources`.
 
+If you delete the topic from the tree, or delete its `SCHEMA.md`, the folder is no longer a wiki topic and the index and log go away with it. Undoing the delete brings the topic back, and the index and log are rebuilt.
+
 ## Cite a paragraph
 
 In the frontmatter `sources`, point to part of a source with a block ID or a heading:

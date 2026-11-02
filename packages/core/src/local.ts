@@ -887,8 +887,13 @@ export class LocalVault {
       const md: { path: string; content: string }[] = [];
       const attachments: string[] = [];
       await this.refreshFiles(files.map((f) => normalizeVaultPath(f.path)));
+      // 되살린 뒤의 토픽(지금 토픽 + 함께 되살리는 SCHEMA.md)의 생성 문서(위키 index·log)는 쓰지 않는다. 화면이 지우기 전에
+      // 트리의 생성 문서까지 읽어 넘기는데, 그대로 쓰면 저장소에 실제 파일로 남아 토픽이 다시 사라질 때 유령 노트가 된다
+      const topics = new Set([...this.topicSet, ...files.map((f) => schemaTopic(normalizeVaultPath(f.path))).filter((t) => t !== null)]);
       for (const f of files) {
         const rel = normalizeVaultPath(f.path);
+        const g = generatedKind(rel);
+        if (g && topics.has(g.topic)) continue;
         if (this.files.has(rel)) throw new ConflictError(this.files.get(rel)!.hash, "file_exists", { path: rel });
         if (f.content !== undefined) {
           if (!isMarkdown(rel)) throw new PathError("restore_data");

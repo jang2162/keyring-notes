@@ -56,16 +56,21 @@ export class Wiki {
   async resync(): Promise<void> {
     const before = new Set(this.topics);
     await this.prepare();
-    for (const t of before) {
-      if (this.topics.has(t)) continue;
-      for (const f of ["index.md", "log.md"]) await rm(path.join(this.vault.root, t, "wiki", f), { force: true });
-      const ws = t.split("/")[0];
-      for (const d of [path.join(this.vault.root, t, "wiki"), path.join(this.vault.root, t), path.join(this.vault.root, ws)])
-        await rmdir(d).catch(() => undefined);
-    }
+    for (const t of before) if (!this.topics.has(t)) await this.dropGenerated(t);
     await this.updateExcludes();
     await this.index.sync(this.vault);
     for (const t of this.topics) await this.regenerate(t);
+  }
+
+  /**
+   * 사라진 토픽의 자동 생성 문서(index·log)를 디스크에서 지우고 비게 된 폴더를 걷는다.
+   * 남기면 토픽이 아니게 된 순간 일반 문서로 보여 트리에 유령으로 남고, Git 제외에서도 빠져 다음 커밋에 섞인다.
+   */
+  private async dropGenerated(topic: string): Promise<void> {
+    for (const f of ["index.md", "log.md"]) await rm(path.join(this.vault.root, topic, "wiki", f), { force: true });
+    const ws = topic.split("/")[0];
+    for (const d of [path.join(this.vault.root, topic, "wiki"), path.join(this.vault.root, topic), path.join(this.vault.root, ws)])
+      await rmdir(d).catch(() => undefined);
   }
 
   private generatedPaths(): string[] {
@@ -90,6 +95,7 @@ export class Wiki {
   /** Vault.onChange에서 부른다(인덱스 갱신 뒤). */
   async onChange(paths: string[]): Promise<void> {
     let topicsChanged = false;
+    const dropped: string[] = [];
     for (const p of paths) {
       const topic = schemaTopic(p);
       if (!topic) continue;
@@ -102,8 +108,11 @@ export class Wiki {
         topicsChanged = true;
       } else if (!exists && this.topics.delete(topic)) {
         topicsChanged = true;
+        dropped.push(topic);
       }
     }
+    // 토픽 노드를 지우거나 옮기면 SCHEMA.md 가 사라진다. Git 제외를 고치기 전에 생성 문서부터 지운다
+    for (const t of dropped) await this.dropGenerated(t);
     if (topicsChanged) {
       await this.updateExcludes();
       // 새로 위키가 된 토픽의 index·log가 검색 인덱스에 들어 있었다면 뺀다.
