@@ -680,7 +680,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .pins-list li.active { background: var(--active); }
 .pins-list li.active a { color: var(--accent); font-weight: 500; }
 .pins-list a { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; height: 100%; padding-left: 18px; color: var(--fg); text-decoration: none; white-space: nowrap; font-size: var(--fs-base); }
-.pins-list .doc-icon { font-size: 15px; margin-right: 0; }
 .pins-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .pins-where { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm); }
 .pins-list .pins-unpin { width: 22px; height: 22px; margin-right: 2px; opacity: 0; }
@@ -740,8 +739,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .tab:hover { background: var(--hover); }
 .tab.on { background: var(--bg); border-color: var(--border); color: var(--fg); margin-bottom: -1px; height: 33px; }
 .tab button { border: none; background: transparent; font-size: var(--fs-md); padding: 4px 6px; color: inherit; }
-.tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
-.tab-name .doc-icon { margin-right: 6px; }
+.tab-name { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 170px; white-space: nowrap; }
+/* docLabel 이 span 여러 개를 돌려줄 수 있어 flex 안에서 하나로 줄이려면 글을 .tab-label 로 감싸야 한다 */
+.tab-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tab-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .tab-close { display: inline-flex; padding: 3px !important; border-radius: var(--radius-sm) !important; opacity: 0.55; }
 .tab:hover .tab-close, .tab.on .tab-close { opacity: 1; }
@@ -1129,9 +1129,13 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .icon-grid button.on { background: var(--active); }
 .icon-grid .meta { grid-column: 1 / -1; padding: 8px; }
 .doc-icon { display: inline-block; flex-shrink: 0; width: 1.25em; text-align: center; font-style: normal; line-height: 1; margin-right: 4px; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
-.tree-row .doc-icon { font-size: 15px; margin-right: 0; line-height: normal; }
+/* 트리·탭·고정 목록의 이모지는 옆 행의 SVG 아이콘(15px 칸, 잉크 약 11.5px)과 같은 칸에 잉크 12px 로 세운다.
+   Apple Color Emoji 잉크를 WebKit 은 글자 크기의 1.25배, Chromium 은 1배로 그려 한 크기로는 두 엔진의 간격이 안 맞는다 — WebKit 에서만 참인 @supports 로 크기를 나눈다.
+   Chromium 은 잉크가 글자 칸 왼쪽에 붙어 padding-left 를 더 주고, 두 엔진 모두 잉크가 글자 칸 아래로 처져 padding-bottom 으로 가운데를 맞춘다.
+   다시 재는 법: 4배 스크린샷에서 아이콘 잉크 오른쪽 끝 → 제목 잉크 왼쪽 끝이 SVG 행과 ±1px, 이모지·한글 잉크 세로 중심이 ±0.5px 인지 본다. */
+.tree-row .doc-icon, .tab .doc-icon, .pins-list .doc-icon { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; padding: 0 0 1px 2px; margin-right: 0; font-size: 12px; line-height: 1; }
+@supports (font: -apple-system-body) { .tree-row .doc-icon, .tab .doc-icon, .pins-list .doc-icon { padding: 0 0 1px; font-size: 9.5px; } }
 .tree-row .doc-icon, .tree-row .tree-name { align-self: center; }
-.tab .doc-icon { font-size: 13px; margin-right: 2px; }
 .daily-date { color: var(--muted); font-weight: normal; }
 .daily-title { font-weight: 500; }
 .badge-shared { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: var(--fs-xs); font-weight: normal; color: var(--accent); background: var(--active); vertical-align: 1px; }
@@ -1275,9 +1279,6 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 
 .tree-row.attachments-row { color: var(--muted); font-size: var(--fs-sm); }
 .tree-row.empty-node > .tree-name { color: var(--muted); }
-.tree-emoji { width: 15px; text-align: center; font-size: 13px; line-height: 1; flex-shrink: 0; }
-/* .tree-row .doc-icon(15px)이 이 규칙을 이겨 이모지가 커 보였다 */
-.tree-row .tree-emoji { font-size: 13px; }
 
 .badge-device { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: var(--fs-xs); font-weight: normal; color: var(--warn-fg); background: var(--warn-bg); vertical-align: 1px; }
 .setting-text { min-width: 0; }
