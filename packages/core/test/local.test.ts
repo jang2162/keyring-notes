@@ -336,6 +336,23 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     expect(await store.read("W/T.md")).toBeNull();
   });
 
+  it("restoreFiles: 노드 삭제 되돌리기는 생성 문서를 실제 파일로 쓰지 않는다(다시 지운 뒤 유령이 남지 않는다)", async () => {
+    const { store, v } = await vault({ "W.md": "" });
+    await v.createTopic("W/T");
+    await v.write("W/T/wiki/page.md", "# page", null);
+    // 화면(removeNode)처럼 트리의 생성 문서까지 읽어 둔다
+    const shown = ["W/T/wiki/index.md", "W/T/wiki/log.md", "W/T/wiki/page.md", "W/T/SCHEMA.md"];
+    const saved = await Promise.all(shown.map(async (p) => ({ path: p, content: (await v.read(p)).content })));
+    await v.deleteNode("W/T");
+    await v.restoreFiles(saved);
+    expect(v.topics().find((t) => t.name === "W/T")).toMatchObject({ wiki: true });
+    expect((await v.read("W/T/wiki/index.md")).generated).toBe(true);
+    expect(await store.read("W/T/wiki/index.md")).toBeNull();
+    await v.deleteNode("W/T");
+    const left = (await store.list()).map((e) => e.path).filter((p) => p.startsWith("W/"));
+    expect(left).toEqual([]);
+  });
+
   it("deleteNode: 첨부도 바이트 해시로 대 본다", async () => {
     const { store, b } = await two({ "N.md": "노드" });
     store.touch("N/img.png", "IMG");

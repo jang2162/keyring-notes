@@ -115,6 +115,51 @@ describe("위키 토픽", () => {
     await expect(agent.createTopic("새토픽")).rejects.toThrow(/소유자만/);
   });
 
+  /** 화면(Workspace removeNode)이 넘기는 목록: 트리에 보이는 노드 파일 전부(생성 문서 포함)와 지금 해시 */
+  const treeExpect = async (node: string) => {
+    const all: string[] = [];
+    const walk = (ns: Awaited<ReturnType<ScopedVault["tree"]>>) => {
+      for (const n of ns) {
+        if (n.type === "dir") walk(n.children ?? []);
+        else all.push(n.path);
+      }
+    };
+    walk(await owner.tree());
+    const files = all.filter((p) => p === `${node}.md` || p.startsWith(node + "/"));
+    return Promise.all(files.map(async (p) => ({ path: p, baseHash: (await owner.read(p)).hash })));
+  };
+
+  it("주제 노드를 트리 목록 그대로 지우면 지워지고, 토픽·생성 문서도 남지 않는다", async () => {
+    await owner.createTopic("업무/경제");
+    await owner.write("업무/경제/wiki/금리.md", "# 금리", null);
+    const expectList = await treeExpect("업무/경제");
+    expect(expectList.map((e) => e.path)).toContain("업무/경제/wiki/index.md");
+    const r = await owner.deleteNode("업무/경제", expectList);
+    expect(r.deleted.sort()).toEqual(["업무/경제/SCHEMA.md", "업무/경제/wiki/금리.md"]);
+    expect([...wiki.topics]).toEqual([]);
+    expect((await owner.topics()).find((t) => t.name === "업무/경제")).toBeUndefined();
+    // 토픽이 사라졌으니 index·log 가 일반 문서로 트리에 남으면 안 된다(유령)
+    expect(JSON.stringify(await owner.tree())).not.toContain("경제");
+    expect(git("status", "--porcelain")).toBe("");
+  });
+
+  it("주제 노드를 옮기면 옛 자리에 생성 문서가 유령으로 남지 않고 새 자리가 토픽이 된다", async () => {
+    await owner.createTopic("업무/경제");
+    await owner.moveNode("업무/경제", "업무/금융");
+    expect([...wiki.topics]).toEqual(["업무/금융"]);
+    expect(JSON.stringify(await owner.tree())).not.toContain("경제");
+    expect((await owner.read("업무/금융/wiki/index.md")).generated).toBe(true);
+    expect(git("status", "--porcelain")).toBe("");
+  });
+
+  it("주제 노드에 생성 문서가 아닌 하위가 몰래 생겼으면 여전히 거부한다", async () => {
+    await owner.createTopic("업무/경제");
+    const expectList = await treeExpect("업무/경제");
+    await owner.write("업무/경제/wiki/새.md", "새", null);
+    await expect(owner.deleteNode("업무/경제", expectList)).rejects.toMatchObject({ code: "node_children_changed" });
+    expect([...wiki.topics]).toEqual(["업무/경제"]);
+  });
+
   it("위키 토픽이 아닌 폴더에는 수집할 수 없다", async () => {
     await owner.write("메모/a.md", "x", null);
     await expect(ingestor.ingest(owner, { kind: "text", topic: "메모", title: "t", text: "x" })).rejects.toThrow(/위키 토픽이 아닙니다/);
