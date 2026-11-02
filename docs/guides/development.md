@@ -36,7 +36,7 @@ pnpm dev:web         # 웹: http://localhost:5173 (API 는 프록시)
 
 데스크톱 앱 개발 실행은 `pnpm app:dev`. 플랫폼별 준비물은 사용자 문서 `docs/manual/ko/how-to/build-the-desktop-app.md` 에 있다.
 
-화면을 확인할 때는 사람의 데이터와 서버를 건드리지 않게 임시 `KEYRING_DATA` 와 다른 포트로 띄운다.
+화면을 확인할 때는 사람의 데이터와 서버를 건드리지 않게 임시 `KEYRING_DATA` 와 다른 포트로 띄운다. 로그인 비밀번호는 띄우기 전에 `KEYRING_DATA=<임시 폴더> KEYRING_PASSWORD=<비밀번호> pnpm --filter @keyring-notes/server keyring passwd` 로 넣는다.
 
 ```bash
 KEYRING_DATA=<임시 폴더> KEYRING_PORT=<빈 포트> pnpm start

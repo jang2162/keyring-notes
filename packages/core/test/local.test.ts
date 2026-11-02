@@ -299,6 +299,58 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     expect(await store.read("N/x.md")).toBeNull();
   });
 
+  it("deleteNode: 미리 읽은 해시가 디스크와 다르면 충돌로 지우지 않고, 다시 읽은 해시로는 지운다", async () => {
+    const { store, a, b } = await two({ "N.md": "노드" });
+    const stale = (await b.read("N.md")).hash;
+    await a.write("N.md", "A 가 고친 글", (await a.read("N.md")).hash);
+    await expect(b.deleteNode("N", [{ path: "N.md", baseHash: stale }])).rejects.toMatchObject({ code: "conflict_path" });
+    expect(unstamped(dec(await store.read("N.md")))).toBe("A 가 고친 글");
+    // 실패한 시도가 메모리를 디스크로 맞췄다 — 다시 읽으면 지금 해시가 나온다(화면의 「다시 시도」 가 된다)
+    await b.deleteNode("N", [{ path: "N.md", baseHash: (await b.read("N.md")).hash }]);
+    expect(await store.read("N.md")).toBeNull();
+  });
+
+  it("deleteNode: 미리 읽은 목록에 없는 하위(다른 창이 만든 것)가 있으면 충돌로 지우지 않는다", async () => {
+    const { store, a, b } = await two({ "N.md": "노드" });
+    const expectList = [{ path: "N.md", baseHash: (await b.read("N.md")).hash }];
+    await a.write("N/새.md", "A 가 만든 하위", null);
+    await expect(b.deleteNode("N", expectList)).rejects.toMatchObject({ code: "node_children_changed" });
+    expect(await store.read("N.md")).not.toBeNull();
+    expect(await store.read("N/새.md")).not.toBeNull();
+    // 목록에 있는데 이미 없는 파일도 같은 충돌
+    await expect(b.deleteNode("N", [...expectList, { path: "N/없음.md", baseHash: "x" }])).rejects.toMatchObject({ code: "node_children_changed" });
+  });
+
+  it("deleteNode: 화면 목록에 낀 생성 문서(위키 index·log)는 대지 않는다", async () => {
+    const { store, b } = await two({ "W/T.md": "주제" });
+    await b.createTopic("W/T");
+    const files = b.tree().flatMap(function walk(n): string[] {
+      return n.type === "dir" ? (n.children ?? []).flatMap(walk) : [n.path];
+    });
+    const shown = files.filter((p) => p === "W/T.md" || p.startsWith("W/T/"));
+    expect(shown).toContain("W/T/wiki/index.md");
+    const list = await Promise.all(
+      shown.map(async (p) => ({ path: p, baseHash: p.endsWith(".md") ? (await b.read(p)).hash : await sha256Hex((await b.readBytes(p)) ?? new Uint8Array()) })),
+    );
+    await b.deleteNode("W/T", list);
+    expect(await store.read("W/T.md")).toBeNull();
+  });
+
+  it("deleteNode: 첨부도 바이트 해시로 대 본다", async () => {
+    const { store, b } = await two({ "N.md": "노드" });
+    store.touch("N/img.png", "IMG");
+    await b.rescan();
+    const list = [
+      { path: "N.md", baseHash: (await b.read("N.md")).hash },
+      { path: "N/img.png", baseHash: await sha256Hex(new TextEncoder().encode("IMG")) },
+    ];
+    store.touch("N/img.png", "IMH");
+    await expect(b.deleteNode("N", list)).rejects.toMatchObject({ code: "conflict_path" });
+    store.touch("N/img.png", "IMG");
+    await b.deleteNode("N", list);
+    expect(await store.read("N/img.png")).toBeNull();
+  });
+
   it("restoreFiles: 다른 창이 그 자리에 만든 문서는 덮지 않고 충돌", async () => {
     const { store, a, b } = await two({});
     await a.write("r.md", "A 가 만든 글", null);

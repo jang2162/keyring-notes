@@ -838,7 +838,7 @@ export class LocalVault {
    * 노드 삭제: 노드 노트와 하위 전체를 한 기록으로 지운다. 되살릴 수 있게 지운 내용을 돌려준다
    * (마크다운은 글, 첨부는 바이트).
    */
-  deleteNode(input: string): Promise<{ deleted: { path: string; content?: string; data?: Uint8Array }[] }> {
+  deleteNode(input: string, expect?: { path: string; baseHash: string }[]): Promise<{ deleted: { path: string; content?: string; data?: Uint8Array }[] }> {
     return this.exclusive(async () => {
       const node = normalizeVaultPath(input).replace(/\.md$/i, "");
       // 다른 창이 만든 하위 파일까지 보고, 돌려줄(되살리기용) 내용은 디스크의 것으로
@@ -847,6 +847,18 @@ export class LocalVault {
       const files = nodeFiles(node, this.files.keys());
       if (files.length === 0) throw new NotFoundError("node_missing", { path: node });
       for (const p of files) if (this.isGenerated(p)) throw new ForbiddenError("generated_delete");
+      // 서버(scoped.ts deleteNode)와 같은 계약: 화면이 지우기 전에 읽은 파일 목록·해시와 디스크가 다르면(다른 창·동기화가 그 사이
+      // 쓰거나 하위를 만들었으면) 지우지 않는다. 화면이 모르는 것을 지우면 되돌리기 알림도 그것을 되살리지 못한다.
+      // 생성 문서(위키 index·log)는 트리에 있어 화면 목록에 끼지만 파일이 아니라 지우지도 않으므로 대지 않는다
+      if (expect) {
+        const given = new Map(expect.filter((e) => !this.isGenerated(normalizeVaultPath(e.path))).map((e) => [normalizeVaultPath(e.path), e.baseHash]));
+        if (given.size !== files.length || files.some((f) => !given.has(f))) throw new ConflictError(null, "node_children_changed", { path: node });
+        for (const f of files) {
+          const e = this.files.get(f)!;
+          const hash = e.hash ?? (await sha256Hex((await this.store.read(f)) ?? new Uint8Array()));
+          if (hash !== given.get(f)) throw new ConflictError(hash, "conflict_path", { path: f });
+        }
+      }
       const deleted: { path: string; content?: string; data?: Uint8Array }[] = [];
       const md: { path: string; content: string | null }[] = [];
       const attachments: string[] = [];
