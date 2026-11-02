@@ -2203,10 +2203,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const parent = node ?? wsNode(ws);
     if (!parent) return;
     const parentNote = `${parent.path}.md`;
-    const shown = shownChildren(parent.children, parent.sort ?? null, !!treeDecor.descending?.(parent.path), viewedSnapshot());
+    const descending = !!treeDecor.descending?.(parent.path);
+    const shown = shownChildren(parent.children, parent.sort ?? null, descending, viewedSnapshot());
     // 자동 생성 노트(위키 index·log)에는 rank 를 적지 않는다 — 쓰면 일괄 쓰기 전체가 거부된다
     const seeds = sort === "custom" ? seedWritable(shown, isGeneratedNote) : [];
-    await writeNotes([parentNote, ...seeds.map((x) => x.note)], (read) => childSortWrites(parentNote, read(parentNote), sort, seeds, read));
+    await writeNotes([parentNote, ...seeds.map((x) => x.note)], (read) => childSortWrites(parentNote, read(parentNote), sort, seeds, read, descending));
   };
 
   /** 커스텀 순서 바꾸기: 같은 부모 안에서 path 를 beforePath 앞으로(null 이면 맨 뒤). 보통은 옮긴 노트 하나의 rank 만 바뀐다 */

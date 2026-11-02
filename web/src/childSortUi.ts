@@ -1,4 +1,6 @@
 import {
+  childSortOf,
+  defaultDescending,
   EDITED_FIELD,
   parseFrontmatter,
   planReorder,
@@ -7,7 +9,10 @@ import {
   setFrontmatterField,
   SORT_FIELD,
   sortChildren,
+  sortDescending,
+  sortKey,
   type ChildSort,
+  type SortKey,
   type VaultNode,
 } from "@keyring-notes/core";
 
@@ -45,8 +50,49 @@ export function shownChildren(
   descending: boolean,
   viewedAt: (notePath: string) => number | undefined,
 ): VaultNode[] {
-  if (sort === null && descending) return [...nodes].sort((a, b) => b.name.localeCompare(a.name, "ko"));
-  return sortChildren(nodes, sort, viewedAt);
+  return sortChildren(nodes, sort ?? (descending ? "name-desc" : null), viewedAt);
+}
+
+const SORT_LABELS: [SortKey, string][] = [
+  ["name", "tree.sortName"],
+  ["modified", "tree.sortModified"],
+  ["viewed", "tree.sortViewed"],
+  ["custom", "tree.sortCustom"],
+];
+
+/** 정렬 메뉴 한 줄. label 은 화면 글 키, value 는 고르면 적을 정렬 */
+export type SortMenuRow = { label: string; checked: boolean; disabled: boolean; value: ChildSort } | "-";
+
+/**
+ * 하위 노트 정렬 메뉴: 항목 넷(지금 항목에 체크) → 구분선 → 오름차순·내림차순(지금 방향에 체크, 커스텀이면 꺼짐).
+ * 정하지 않은 노트는 이름 오름차순, 정하지 않아 이름 내림차순으로 보이는 데일리 폴더(descending)는 이름 내림차순으로 체크한다.
+ * 다른 항목을 고르면 그 항목의 기본 방향(수정·조회는 최신 먼저)으로, 지금 항목을 다시 고르면 그대로 둔다.
+ * 이름의 기본 방향은 그 부모가 정하지 않았을 때 보이는 방향이다 — 보통 오름차순, 데일리 폴더는 내림차순이라
+ * 데일리 폴더에서 다른 항목 → 「이름순」 이면 childSortWrites 가 sort 를 지워 데일리 기본으로 돌아간다.
+ * 방향을 고르면 항목은 그대로 두고 방향만 바꾼다
+ */
+export function childSortMenu(sort: ChildSort | undefined | null, descending: boolean): SortMenuRow[] {
+  const current: ChildSort = sort ?? (descending ? "name-desc" : "name");
+  const key = sortKey(current);
+  const custom = key === "custom";
+  const desc = sortDescending(current);
+  const dir = (d: boolean): SortMenuRow => ({
+    label: d ? "tree.sortDesc" : "tree.sortAsc",
+    checked: !custom && desc === d,
+    disabled: custom,
+    value: childSortOf(key, d),
+  });
+  return [
+    ...SORT_LABELS.map(([k, label]) => ({
+      label,
+      checked: key === k,
+      disabled: false,
+      value: key === k ? current : childSortOf(k, k === "name" ? descending : defaultDescending(k)),
+    })),
+    "-",
+    dir(false),
+    dir(true),
+  ];
 }
 
 /** 지금 읽은 노트(없으면 null) */
@@ -59,7 +105,10 @@ export interface NoteWrite {
 }
 
 /**
- * 하위 노트 정렬을 적을 쓰기 목록. 부모 노트의 sort 를 바꾸고(이름순이면 지운다), 노트가 없으면 만든다(이름순이면 만들지 않는다).
+ * 하위 노트 정렬을 적을 쓰기 목록. 부모 노트의 sort 를 바꾸고, 노트가 없으면 만든다.
+ * 고른 값이 정하지 않았을 때 보이는 순서와 같으면 sort 를 지운다(노트가 없으면 만들지 않는다) — 보통은 이름 오름차순,
+ * descending(데일리 폴더, prefs.dailySortDesc)이면 이름 내림차순이다. 그래서 데일리 폴더에서 이름 오름차순을 고르면
+ * 지우는 대신 `sort: name` 을 적는다(지우면 다시 내림차순으로 보인다).
  * seeds: 처음 커스텀으로 바꿀 때 하위 노트에 적을 rank(seedRanks). 내용이 그대로인 노트는 넣지 않는다.
  * 부모의 프런트매터가 깨졌으면 던진다(고를 수 없다고 알린다). 하위 노트의 프런트매터가 깨졌으면 그 노트만 건너뛴다 —
  * rank 없는 노트로 남아 rank 있는 노트 뒤에 이름순으로 보인다
@@ -70,9 +119,10 @@ export function childSortWrites(
   sort: ChildSort,
   seeds: { note: string; rank: string }[],
   read: (note: string) => NoteState,
+  descending = false,
 ): NoteWrite[] {
   const out: NoteWrite[] = [];
-  const value = sort === "name" ? null : sort;
+  const value = sort === (descending ? "name-desc" : "name") ? null : sort;
   if (parent || value !== null) {
     const content = setFrontmatterField(parent?.content ?? "", SORT_FIELD, value);
     if (!parent || content !== parent.content) out.push({ path: parentNote, content, baseHash: parent?.hash ?? null });

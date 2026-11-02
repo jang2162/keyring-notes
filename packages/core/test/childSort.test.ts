@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseChildSort, planReorder, seedRanks, sortChildren, type VaultNode } from "../src/index.js";
+import { childSortOf, parseChildSort, planReorder, seedRanks, sortChildren, sortDescending, sortKey, type VaultNode } from "../src/index.js";
 
 /** 노트 노드(rank·edited 는 선택). folder: 노트 없는 폴더 노드 */
 function node(name: string, extra: Partial<VaultNode> & { folder?: boolean } = {}): VaultNode {
@@ -75,7 +75,68 @@ describe("sortChildren", () => {
   });
 });
 
+describe("sortChildren 방향", () => {
+  it("name-desc: 이름 내림차순(ko 비교라 한글이 라틴 글자 앞 — 뒤집으면 뒤), 입력 순서를 섞어도 같다", () => {
+    const list = [node("가"), node("다"), node("B"), node("나"), node("A")];
+    for (let i = 1; i <= 5; i++) expect(names(sortChildren(shuffled(list, i), "name-desc", none))).toEqual(["B", "A", "다", "나", "가"]);
+  });
+
+  it("name-desc: 이름이 같으면 경로 내림차순(어느 기기에서나 같은 순서)", () => {
+    const a = { ...node("가"), path: "ws/a/가" };
+    const b = { ...node("가"), path: "ws/b/가" };
+    expect(sortChildren([a, b], "name-desc", none).map((n) => n.path)).toEqual(["ws/b/가", "ws/a/가"]);
+    expect(sortChildren([b, a], "name-desc", none).map((n) => n.path)).toEqual(["ws/b/가", "ws/a/가"]);
+  });
+
+  it("modified-asc: 오래된 것이 위, 시각 없는 노드는 그래도 맨 뒤 이름순, 동점은 이름순", () => {
+    const list = [
+      node("가", { edited: 100 }),
+      node("폴더2", { folder: true }),
+      node("나", { edited: 300 }),
+      node("폴더1", { folder: true }),
+      node("다", { edited: 200 }),
+      node("라", { edited: 100 }),
+    ];
+    expect(names(sortChildren(list, "modified-asc", none))).toEqual(["가", "라", "다", "나", "폴더1", "폴더2"]);
+    expect(names(sortChildren(list, "modified", none))).toEqual(["나", "다", "가", "라", "폴더1", "폴더2"]);
+  });
+
+  it("viewed-asc: 오래전에 연 것이 위, 연 적 없는 노트는 맨 뒤 이름순", () => {
+    const seen: Record<string, number> = { "ws/다.md": 10, "ws/나.md": 30, "ws/마.md": 20 };
+    const list = [node("라"), node("다"), node("가"), node("나"), node("마"), node("폴더", { folder: true })];
+    expect(names(sortChildren(list, "viewed-asc", (p) => seen[p]))).toEqual(["다", "마", "나", "가", "라", "폴더"]);
+  });
+});
+
+describe("정렬 값 다루기", () => {
+  it("항목·방향 ↔ 값: 기본 방향이면 접미사 없음, 커스텀은 방향 무시", () => {
+    expect(childSortOf("name", false)).toBe("name");
+    expect(childSortOf("name", true)).toBe("name-desc");
+    expect(childSortOf("modified", true)).toBe("modified");
+    expect(childSortOf("modified", false)).toBe("modified-asc");
+    expect(childSortOf("viewed", true)).toBe("viewed");
+    expect(childSortOf("viewed", false)).toBe("viewed-asc");
+    expect(childSortOf("custom", true)).toBe("custom");
+    expect(childSortOf("custom", false)).toBe("custom");
+    for (const s of ["name", "name-desc", "modified", "modified-asc", "viewed", "viewed-asc", "custom"] as const)
+      expect(childSortOf(sortKey(s), sortDescending(s))).toBe(s);
+    expect(sortKey("modified-asc")).toBe("modified");
+    expect(sortDescending("custom")).toBe(false);
+  });
+});
+
 describe("parseChildSort", () => {
+  it("방향 붙은 셋을 받고, 대소문자가 다르거나 기본 방향에 접미사를 붙인 값은 null", () => {
+    expect(parseChildSort("name-desc")).toBe("name-desc");
+    expect(parseChildSort("modified-asc")).toBe("modified-asc");
+    expect(parseChildSort("viewed-asc")).toBe("viewed-asc");
+    expect(parseChildSort("Name-Desc")).toBeNull();
+    expect(parseChildSort("modified-ASC")).toBeNull();
+    expect(parseChildSort("name-asc")).toBeNull();
+    expect(parseChildSort("modified-desc")).toBeNull();
+    expect(parseChildSort("custom-asc")).toBeNull();
+  });
+
   it("네 값만 받고 나머지(대소문자 다름·목록·숫자)는 null", () => {
     expect(parseChildSort("viewed")).toBe("viewed");
     expect(parseChildSort("name")).toBe("name");

@@ -501,7 +501,6 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
             icon={SlidersHorizontal}
             label={propCount ? t("doc.propsCount", { count: propCount }) : t("doc.props")}
             active={focused && ctx.propsShown}
-            badge={!(focused && ctx.propsShown) && propCount ? propCount : undefined}
             onClick={() => ctx.toggleRight("props")}
             size={16}
           />
