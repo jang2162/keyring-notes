@@ -31,7 +31,7 @@ Press `Alt+N` (`Ctrl/Cmd+N` in the desktop app), click ＋ on the tab bar, or ch
 
 If you close a new note without giving it a title, text or properties, it is deleted. This applies to its last open tab, or to switching that tab to another note. Daily notes, notes made from a template and notes that already existed are kept. A deleted new note can be restored from the trash.
 
-The big title field at the top of a note is the file name. Edit it and press Enter, or click elsewhere, to rename the file and update links. Characters that file names cannot hold are flagged while you type: `/ \ : * ? " < > |`, a leading `.`, and `# ^ [ ]`, which clash with links. The frontmatter `title` is edited in the Properties tab instead.
+The big title field at the top of a note is the file name. Edit it and press Enter, or click elsewhere, to rename the file and update links. Closing the tab or opening another note in the same tab also applies a name you typed but did not confirm. If the name cannot be used (for example, another note already has it), the tab stays open. Press Esc to cancel the edit. Characters that file names cannot hold are flagged while you type: `/ \ : * ? " < > |`, a leading `.`, and `# ^ [ ]`, which clash with links. The frontmatter `title` is edited in the Properties tab instead.
 
 ## Use the note tree
 

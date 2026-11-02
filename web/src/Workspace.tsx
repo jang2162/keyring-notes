@@ -136,6 +136,7 @@ import { tipProps } from "./Tooltip";
 import { AttachmentList } from "./Attachments";
 import { mirrorTargets } from "./mirror";
 import { DocPane, docMeta, type PaneContext, type PaneHandle, type PendingAnchor, type RevisionView } from "./DocPane";
+import { settleTitles, titlePendingIn } from "./titleEdit";
 import { isRecordOf, isStringArray, readStored } from "./stored";
 import {
   dirtyPaths,
@@ -463,6 +464,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const paneRefs = useRef(
     new Map<string, { handle: MutableRefObject<EditorHandle | null>; api: MutableRefObject<PaneHandle | null>; el: MutableRefObject<HTMLElement | null> }>(),
   );
+  /** 칸마다의 제목 확정(titleEdit.ts) */
+  const titleHandles = () => [...paneRefs.current.values()].map((r) => r.api.current);
+
   /** 칸 요소(el)는 보이는 에디터가 없는 칸(미리보기·과거 판 보기)으로 포커스를 옮길 때 쓴다 */
   const refsOf = (id: string) => {
     let r = paneRefs.current.get(id);
@@ -1093,7 +1097,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 다른 워크스페이스의 문서면(모든 워크스페이스 보기가 아닐 때) 그 워크스페이스로 바꾼다.
    */
   const open = useCallback(
-    async (path: string, opts: { newTab?: boolean; noHistory?: boolean; pane?: string } = {}) => {
+    async (path: string, opts: { newTab?: boolean; noHistory?: boolean; pane?: string } = {}): Promise<void> => {
       // 화면의 모든 열기(트리·빠른 열기·검색·링크·주소·뒤로 가기)가 여기를 지난다 — 워크스페이스 루트 노트는 열지 않는다(workspaceNote.ts)
       if (isWorkspaceNote(path)) return void toast(t("ws.noteBlocked"));
       if (/\.pdf$/i.test(path)) return setPdfView({ path });
@@ -1115,6 +1119,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       if (!switching && pane === before.focused && paneOf(before, pane)?.active === path) return;
       // 같은 탭에서 갈아 끼우면 앞 문서가 어느 칸에도 안 남을 수 있다 — 비어 있는 새 노트면 지운다
       const replaced = paneOf(before, pane)?.active;
+      // 칸의 제목 칸은 이제 열 문서를 보인다 — 앞 문서에 입력해 두고 확정하지 않은 제목을 먼저 확정한다. 못 했으면 열지 않는다(titleEdit.ts).
+      // 이름이 바뀌면 배치도 바뀌므로 처음부터 다시 연다
+      if (replaced && replaced !== path && titlePendingIn(titleHandles(), replaced)) {
+        if ((await settleTitles(titleHandles(), replaced)) === null) return;
+        return openRef.current(path, opts);
+      }
       // 읽은 문서를 저장소와 배치에 같은 틈에 넣는다(안 쓰는 문서 정리가 그 사이에 치우지 않게)
       const fresh = docsRef.current[path] ? null : await fetchDoc(path);
       if (!docsRef.current[path] && !fresh) return;
@@ -1211,8 +1221,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     void open(n.list[i], { noHistory: true });
   };
 
-  /** 그 칸의 탭 닫기. 닫는 탭에 저장 안 한 변경이 있으면 저장(자동 저장)하거나 묻는다(다른 칸에도 열려 있으면 그냥 닫는다) */
-  const closeTab = async (pane: string, path: string) => {
+  /**
+   * 그 칸의 탭 닫기. 닫는 탭에 저장 안 한 변경이 있으면 저장(자동 저장)하거나 묻는다(다른 칸에도 열려 있으면 그냥 닫는다).
+   * 탭을 닫는 길(키보드·✕·가운데 클릭·탭 메뉴·탭 목록·떼어 내기)은 모두 여기를 지난다 — 제목 칸에 입력하고 확정하지 않은 이름을
+   * 먼저 확정하고 바뀐 경로를 닫는다. 확정하지 못했으면(잘못된 이름·같은 이름이 있음) 입력을 잃지 않게 닫지 않는다(titleEdit.ts)
+   */
+  const closeTab = async (pane: string, tab: string) => {
+    const path = titlePendingIn(titleHandles(), tab) ? await settleTitles(titleHandles(), tab) : tab;
+    if (path === null) return;
     const elsewhere = panesOf(curLayout()).some((p) => p.id !== pane && p.tabs.includes(path));
     let discard = false;
     if (!elsewhere && docsRef.current[path] && isDirty(docsRef.current[path])) {
@@ -1240,10 +1256,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 넘어가지 않으므로 먼저 저장하고, 저장하지 못했으면(자동 저장을 끈 경우 등) 옮기지 않는다.
    * 새 창(solo)의 하나뿐인 탭은 떼어 내도 빈 창만 남으므로 그대로 둔다
    */
-  const tearOut = async (e: DragEvent, pane: string, path: string) => {
+  const tearOut = async (e: DragEvent, pane: string, tab: string) => {
     if (SOLO && panesOf(curLayout()).reduce((n, p) => n + p.tabs.length, 0) < 2) return;
     const at = await tearOutAt(e);
     if (!at) return;
+    // 새 창이 열 경로가 확정 뒤의 이름이어야 한다(closeTab 도 확정하지만 그때는 이미 옛 이름으로 새 창을 연 뒤다)
+    const settled = await settleTitles(titleHandles(), tab);
+    if (settled === null) return;
+    const path = settled;
     await flush([path]);
     const d = docsRef.current[path];
     if (d && isDirty(d)) {
