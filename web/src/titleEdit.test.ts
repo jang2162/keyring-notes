@@ -78,15 +78,46 @@ describe("제목 칸의 확정 안 한 입력", () => {
     expect(d.pending()).toBeNull();
   });
 
-  it("이름 바꾸기가 실패하면 failed", async () => {
+  it("이름 바꾸기가 실패하면 failed — 입력은 확정 대기로 남아 다음 확정이 다시 바꿔 본다", async () => {
     const d = new TitleDraft();
+    const seen: string[] = [];
     d.typed({ path: "W/Old.md", name: "Taken" });
-    expect((await d.commit("W/Old.md", { invalid, rename: async () => false })).kind).toBe("failed");
-    d.typed({ path: "W/Old.md", name: "Taken" });
-    expect((await d.commit("W/Old.md", { invalid, rename: () => Promise.reject(new Error("x")) })).kind).toBe("failed");
+    expect((await d.commit("W/Old.md", { invalid, rename: async (p, n) => (seen.push(`${p}→${n}`), false) })).kind).toBe("failed");
+    expect(d.pending()).toBe("W/Old.md");
+    expect((await d.commit("W/Old.md", { invalid, rename: (p, n) => (seen.push(`${p}→${n}`), Promise.reject(new Error("x"))) })).kind).toBe("failed");
+    expect(d.pending()).toBe("W/Old.md");
+    expect(seen).toEqual(["W/Old.md→Taken", "W/Old.md→Taken"]);
   });
 
-  it("이름 바꾸는 중에 다시 확정을 부르면(✕ 를 누르면 blur 가 먼저 난다) 두 번 바꾸지 않고 같은 결과를 기다린다", async () => {
+  it("실패한 입력도 Esc 로 취소하면 남지 않는다", async () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    await d.commit("W/Old.md", { invalid, rename: async () => false });
+    d.cancel();
+    expect(d.pending()).toBeNull();
+  });
+
+  it("다른 노트로 넘어간 칸에서 실패한 입력은 버린다", async () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    expect((await d.commit("W/Other.md", { invalid, rename: async () => false })).kind).toBe("failed");
+    expect(d.pending()).toBeNull();
+  });
+
+  it("이름 바꾸는 중에 새로 입력했으면 실패해도 새 입력을 둔다", async () => {
+    const d = new TitleDraft();
+    let finish!: (ok: boolean) => void;
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    const first = d.commit("W/Old.md", { invalid, rename: () => new Promise<boolean>((r) => (finish = r)) });
+    d.typed({ path: "W/Old.md", name: "Fresh" });
+    finish(false);
+    expect((await first).kind).toBe("failed");
+    const seen: string[] = [];
+    await d.commit("W/Old.md", { invalid, rename: async (_p, n) => (seen.push(n), true) });
+    expect(seen).toEqual(["Fresh"]);
+  });
+
+  it("이름 바꾸는 중에 다시 확정을 부르면(탭 메뉴를 열면 blur 가 먼저 난다) 두 번 바꾸지 않고 같은 결과를 기다린다", async () => {
     const d = new TitleDraft();
     let calls = 0;
     let finish!: (ok: boolean) => void;
@@ -135,10 +166,23 @@ describe("닫기 전 확정", () => {
     expect(asked).toEqual([]);
   });
 
-  it("같은 이름이 있어 못 바꾸면 null — 닫지 않는다", async () => {
+  it("같은 이름이 있어 못 바꾸면 null — 닫지 않고 입력을 남긴다", async () => {
     const d = new TitleDraft();
     d.typed({ path: "W/Old.md", name: "Taken" });
     expect(await settleTitles([paneOf(d, "W/Old.md", async () => false)], "W/Old.md")).toBeNull();
+    expect(d.pending()).toBe("W/Old.md");
+  });
+
+  it("blur 확정이 먼저 실패한 뒤의 닫기(탭 메뉴)도 다시 확정하고 닫지 않는다", async () => {
+    const d = new TitleDraft();
+    let calls = 0;
+    const taken = async () => (calls++, false);
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    await d.commit("W/Old.md", { invalid, rename: taken });
+    const panes = [paneOf(d, "W/Old.md", taken)];
+    expect(titlePendingIn(panes, "W/Old.md")).toBe(true);
+    expect(await settleTitles(panes, "W/Old.md")).toBeNull();
+    expect(calls).toBe(2);
   });
 
   it("잘못된 이름이면 null — 닫지 않고 입력을 남긴다", async () => {

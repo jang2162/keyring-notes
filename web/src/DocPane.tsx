@@ -98,7 +98,9 @@ export interface PaneContext {
   uploadFiles: (files: File[], from: string) => Promise<string[]>;
   renameNode: (node: string, name: string) => Promise<boolean>;
   /** 제목 칸에 입력했다(확정 전). 비어 있는 새 노트 지우기에서 손댄 노트로 친다 */
-  touchedNote: (path: string) => void;
+  typedNote: (path: string) => void;
+  /** 제목 칸에서 Esc 로 원래 이름에 돌아갔다 — 입력만으로 손댄 새 노트면 다시 지울 수 있게 한다(emptyNote.ts 의 CreatedNotes) */
+  untypedNote: (path: string) => void;
   setIconPick: (p: { x: number; y: number; node: string }) => void;
   followLinkEl: (a: HTMLAnchorElement, mod: boolean) => void;
   onWidgetChanged: (path: string) => void;
@@ -154,6 +156,7 @@ function InlineTitle({
   onFocused,
   onRename,
   onTyped,
+  onUntyped,
   onDone,
   handle,
 }: {
@@ -167,6 +170,8 @@ function InlineTitle({
   onRename: (path: string, stem: string) => Promise<boolean>;
   /** 칸의 글을 고쳤다(확정 전). 키보드로 탭을 닫으면 blur 없이 칸이 사라져 commit 이 돌지 않는다 */
   onTyped: (path: string) => void;
+  /** Esc 로 원래 이름에 돌아갔다 — 입력만으로 손댄 것이었으면 되돌린다 */
+  onUntyped: (path: string) => void;
   onDone: () => void;
   /** 닫기 전에 Workspace 가 부르는 확정(PaneHandle 로 나간다) */
   handle: MutableRefObject<TitleHandle | null>;
@@ -200,9 +205,10 @@ function InlineTitle({
   const commit = async (): Promise<TitleOutcome> => {
     // 노트가 바뀌며 포커스를 잃으면 이미 새 노트의 path 로 그려진 뒤라, 고친 글이 속한 노트는 입력 때 적어 둔 것을 따른다
     const o = await draft.commit(path, { invalid: invalidNameReason, rename: onRename });
-    // 잘못된 이름은 칸에 오류를 띄운 채 입력을 남긴다. 이름 바꾸기가 실패하면 알림(이름 바꾸기가 띄운다) 뒤 원래 이름으로
-    if (o.kind !== "invalid" && o.kind !== "renamed") setV(initial);
-    if (o.kind !== "invalid" && o.kind !== "dropped") setFull(false);
+    // 잘못된 이름(칸에 오류)과 실패한 이름 바꾸기(알림은 이름 바꾸기가 띄운다)는 입력을 칸에 남긴다 — 확정 대기로 남아 닫기가 다시 확정한다
+    const kept = draft.pending() === path;
+    if (!kept && o.kind !== "renamed") setV(initial);
+    if (!kept) setFull(false);
     return o;
   };
   const commitRef = useRef(commit);
@@ -212,8 +218,8 @@ function InlineTitle({
     commitTitle: async (p) => {
       if (draft.pending() !== p) return { kind: "none", path: p };
       const o = await commitRef.current();
-      // 닫지 않고 남긴 칸: 오류가 보이게 칸으로 돌아간다
-      if (o.kind === "invalid") ref.current?.focus();
+      // 닫지 않고 남긴 칸: 고치거나 Esc 를 누를 수 있게 칸으로 돌아간다
+      if (o.kind === "invalid" || o.kind === "failed") ref.current?.focus();
       return o;
     },
   };
@@ -286,6 +292,7 @@ function InlineTitle({
               e.preventDefault();
               e.stopPropagation();
               draft.cancel();
+              onUntyped(path);
               setV(initial);
               setFull(false);
               onDone();
@@ -595,7 +602,8 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 onIcon={doc.generated || revision ? undefined : (at) => ctx.setIconPick({ ...at, node: docNode })}
                 onFocused={ctx.clearTitleFocus}
                 onRename={(p, stem) => ctx.renameNode(stripMd(p), stem)}
-                onTyped={ctx.touchedNote}
+                onTyped={ctx.typedNote}
+                onUntyped={ctx.untypedNote}
                 onDone={() => handle.current?.focus()}
                 handle={titleHandle}
               />

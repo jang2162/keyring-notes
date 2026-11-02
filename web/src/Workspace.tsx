@@ -1885,6 +1885,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     renameViewed(from, to, false);
     updatePins((p) => movePins(p, stripMd(from), stripMd(to), false));
     nav.current.list = nav.current.list.map((p) => (p === from ? to : p));
+    closedTabs.current = closedTabs.current.map((p) => (p === from ? to : p));
+    // 열린 탭 메뉴도 따라간다 — 탭을 우클릭하면 제목 칸이 blur 되어 이름 바꾸기가 메뉴보다 먼저 끝난다(옛 경로로 닫기·새 창 열기를 하지 않게)
+    setTabMenu((m) => (m && m.path === from ? { ...m, path: to } : m));
     const opened = !!docsRef.current[from];
     updateDocs((s) =>
       renameDoc(s, from, to, (d) =>
@@ -1994,11 +1997,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  /** 이름 바꾸기(노드). 데일리 노트의 날짜가 바뀌면 자동 태그(있는 것만)도 같이 고친다 */
-  const renameNode = async (node: string, name: string) => {
+  /**
+   * 이름 바꾸기(노드). 데일리 노트의 날짜가 바뀌면 자동 태그(있는 것만)도 같이 고친다.
+   * title: 문서 머리 제목 칸에서 온 것 — 입력 때 이미 손댄 것으로 쳤고(typed), 실패한 뒤 Esc 로 되돌릴 수 있게 여기서 굳히지 않는다
+   */
+  const renameNode = async (node: string, name: string, opts: { title?: boolean } = {}) => {
     const path = `${node}.md`;
     // 이름을 고친 새 노트는 사람이 손댄 것이다 — 옮기기가 실패해도 지우지 않는다(discardIfBlank)
-    createdRef.current.touched(path);
+    if (!opts.title) createdRef.current.touched(path);
     const before = dailyOfPath(path, daily);
     const to = join(parentOf(node), name);
     if (!(await moveNodeTo(node, to))) return false;
@@ -3547,6 +3553,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
               <button
                 className="tab-name"
                 onClick={() => void open(tp, { pane: pane?.id })}
+                // 가운데 버튼으로 닫을 때도 포커스를 옮기지 않는다(.tab-close 와 같은 까닭 — 오래 누르면 안 닫히거나 옛 경로로 닫는다)
+                onMouseDown={(e) => e.button === 1 && e.preventDefault()}
                 onAuxClick={(e) => e.button === 1 && pane && void closeTab(pane.id, tp)}
               >
                 <DocIcon icon={iconOf(tp)} />
@@ -3557,6 +3565,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 className="tab-close"
                 aria-label={t("tab.closeName", { name: stemOf(tp) })}
                 {...tipProps({ label: t("cmd.closeTab"), keys: keyOf("close-tab") })}
+                // 포커스를 옮기지 않는다: 제목 칸이 blur 되어 이름 바꾸기가 누르는 동안 끝나면 탭이 새 경로로 다시 그려져 click 이 안 나거나
+                // 옛 경로로 닫는다. 확정은 closeTab 이 한다(titleEdit.ts)
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => pane && void closeTab(pane.id, tp)}
               >
                 <X size={13} aria-hidden />
@@ -3621,8 +3632,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         paneRefs.current.get(j)?.handle.current?.applyChanges(changes, docsRef.current[path]?.doc.draft ?? "");
     },
     uploadFiles,
-    renameNode,
-    touchedNote: (path) => createdRef.current.touched(path),
+    renameNode: (node, name) => renameNode(node, name, { title: true }),
+    typedNote: (path) => createdRef.current.typed(path),
+    untypedNote: (path) => createdRef.current.untyped(path),
     setIconPick,
     followLinkEl,
     onWidgetChanged,

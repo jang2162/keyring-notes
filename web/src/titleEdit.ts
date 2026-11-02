@@ -20,7 +20,10 @@ export type TitleOutcome =
   /** 이미 다른 노트로 넘어간 칸에 남은 잘못된 이름 — 보여 줄 곳이 없으니 버린다 */
   | { kind: "dropped"; path: string }
   | { kind: "renamed"; path: string; from: string }
-  /** 이름 바꾸기가 실패했다(같은 이름이 있음 등 — 알림은 이름 바꾸기가 띄운다) */
+  /**
+   * 이름 바꾸기가 실패했다(같은 이름이 있음 등 — 알림은 이름 바꾸기가 띄운다). 보이는 노트의 입력이면 invalid 처럼 확정 대기로 남아
+   * 사람이 이름을 고치거나 Esc 를 누를 때까지 닫기·갈아 끼우기가 다시 확정한다
+   */
   | { kind: "failed"; path: string };
 
 const stem = (p: string) => p.split("/").pop()!.replace(/\.md$/i, "");
@@ -33,7 +36,7 @@ export function renamedPath(notePath: string, name: string): string {
 }
 
 /**
- * 한 제목 칸의 확정 안 한 입력과 진행 중인 확정. 칸이 blur 로 확정하는 중에 닫기가 확정을 부르면(✕ 를 누르면 blur 가 먼저 난다)
+ * 한 제목 칸의 확정 안 한 입력과 진행 중인 확정. 칸이 blur 로 확정하는 중에 닫기가 확정을 부르면(탭 메뉴를 열면 blur 가 먼저 난다 — ✕ 와 가운데 버튼은 포커스를 옮기지 않는다)
  * 이름 바꾸기를 두 번 하지 않고 같은 결과를 기다린다
  */
 export class TitleDraft {
@@ -59,7 +62,8 @@ export class TitleDraft {
 
   /**
    * 확정한다. shown 은 칸이 지금 보이는 노트(입력한 노트와 다를 수 있다 — 같은 칸에서 다른 노트로 바뀐 뒤의 blur).
-   * 보이는 노트의 잘못된 이름은 입력을 남기고(invalid), 이름 바꾸기가 끝날 때까지는 같은 결과를 돌려준다
+   * 보이는 노트의 잘못된 이름과 실패한 이름 바꾸기는 입력을 남기고(invalid·failed), 이름 바꾸기가 끝날 때까지는 같은 결과를 돌려준다.
+   * 실패를 남기는 까닭: 탭 메뉴를 열면 blur 확정이 먼저 끝나는데, 입력을 비우면 뒤따르는 닫기가 기다릴 것이 없다고 보고 닫는다
    */
   commit(shown: string, opts: { invalid: (name: string) => string | null; rename: (path: string, name: string) => Promise<boolean> }): Promise<TitleOutcome> {
     if (this.running) return this.running.done;
@@ -77,9 +81,12 @@ export class TitleDraft {
     const done = opts
       .rename(target.path, target.name)
       .catch(() => false)
-      .then((ok): TitleOutcome =>
-        ok ? { kind: "renamed", path: renamedPath(target.path, target.name), from: target.path } : { kind: "failed", path: target.path },
-      )
+      .then((ok): TitleOutcome => {
+        if (ok) return { kind: "renamed", path: renamedPath(target.path, target.name), from: target.path };
+        // 그 사이 새로 입력했으면 그것을 둔다. 다른 노트로 넘어간 칸의 입력은 보여 줄 곳이 없으니 버린다(dropped 와 같다)
+        if (!this.edit && target.path === shown) this.edit = target;
+        return { kind: "failed", path: target.path };
+      })
       .finally(() => {
         this.running = null;
       });
