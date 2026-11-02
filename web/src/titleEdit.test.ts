@@ -117,6 +117,49 @@ describe("제목 칸의 확정 안 한 입력", () => {
     expect(seen).toEqual(["Fresh"]);
   });
 
+  it("칸이 사라질 때의 확정(shown 이 null)은 실패해도 입력을 남기지 않는다", async () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    expect((await d.commit(null, { invalid, rename: async () => false })).kind).toBe("failed");
+    expect(d.pending()).toBeNull();
+    d.typed({ path: "W/Old.md", name: "a/b" });
+    expect((await d.commit(null, { invalid, rename: ok })).kind).toBe("dropped");
+    expect(d.pending()).toBeNull();
+  });
+
+  it("칸이 보이는 동안 실패해 남은 입력도, 칸이 사라질 때의 확정이 다시 실패하면 남지 않는다", async () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    await d.commit("W/Old.md", { invalid, rename: async () => false });
+    expect(d.pending()).toBe("W/Old.md");
+    await d.commit(null, { invalid, rename: async () => false });
+    expect(d.pending()).toBeNull();
+  });
+
+  it("이름 바꾸는 중에 Esc 로 취소하면 실패해도 입력을 되살리지 않는다", async () => {
+    const d = new TitleDraft();
+    let finish!: (ok: boolean) => void;
+    d.typed({ path: "W/Old.md", name: "Fresh" });
+    const first = d.commit("W/Old.md", { invalid, rename: () => new Promise<boolean>((r) => (finish = r)) });
+    d.cancel();
+    finish(false);
+    expect((await first).kind).toBe("failed");
+    expect(d.pending()).toBeNull();
+  });
+
+  it("취소는 그 확정에만 — 다음 확정이 실패하면 다시 입력을 남긴다", async () => {
+    const d = new TitleDraft();
+    let finish!: (ok: boolean) => void;
+    d.typed({ path: "W/Old.md", name: "Fresh" });
+    const first = d.commit("W/Old.md", { invalid, rename: () => new Promise<boolean>((r) => (finish = r)) });
+    d.cancel();
+    finish(false);
+    await first;
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    await d.commit("W/Old.md", { invalid, rename: async () => false });
+    expect(d.pending()).toBe("W/Old.md");
+  });
+
   it("이름 바꾸는 중에 다시 확정을 부르면(탭 메뉴를 열면 blur 가 먼저 난다) 두 번 바꾸지 않고 같은 결과를 기다린다", async () => {
     const d = new TitleDraft();
     let calls = 0;
@@ -185,10 +228,99 @@ describe("닫기 전 확정", () => {
     expect(calls).toBe(2);
   });
 
+  it("칸이 사라질 때 실패한 입력은 그 노트의 닫기를 막지 않는다", async () => {
+    const d = new TitleDraft();
+    let calls = 0;
+    const taken = async () => (calls++, false);
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    await d.commit("W/Old.md", { invalid, rename: taken });
+    await d.commit(null, { invalid, rename: taken });
+    const panes = [paneOf(d, "W/Old.md", taken)];
+    expect(titlePendingIn(panes, "W/Old.md")).toBe(false);
+    expect(await settleTitles(panes, "W/Old.md")).toBe("W/Old.md");
+    expect(calls).toBe(2);
+  });
+
+  it("이름 바꾸는 중에 Esc 로 취소하고 실패했으면 닫기는 바꾸지 않고 그대로 닫는다", async () => {
+    const d = new TitleDraft();
+    let finish!: (ok: boolean) => void;
+    const seen: string[] = [];
+    d.typed({ path: "W/Untitled 2.md", name: "Fresh" });
+    const first = d.commit("W/Untitled 2.md", { invalid, rename: () => new Promise<boolean>((r) => (finish = r)) });
+    d.cancel();
+    finish(false);
+    await first;
+    const panes = [paneOf(d, "W/Untitled 2.md", async (_p, n) => (seen.push(n), true))];
+    expect(await settleTitles(panes, "W/Untitled 2.md")).toBe("W/Untitled 2.md");
+    expect(seen).toEqual([]);
+  });
+
   it("잘못된 이름이면 null — 닫지 않고 입력을 남긴다", async () => {
     const d = new TitleDraft();
     d.typed({ path: "W/Old.md", name: "" });
     expect(await settleTitles([paneOf(d, "W/Old.md", ok)], "W/Old.md")).toBeNull();
     expect(d.pending()).toBe("W/Old.md");
+  });
+});
+
+describe("Esc 가 되돌릴 입력(이 칸이 이번에 입력한 노트)", () => {
+  it("입력했으면 그 노트, 입력하지 않았으면 null", () => {
+    const d = new TitleDraft();
+    expect(d.cancel()).toBeNull();
+    d.typed({ path: "W/Old.md", name: "Ol" });
+    expect(d.cancel()).toBe("W/Old.md");
+    expect(d.cancel()).toBeNull();
+  });
+
+  it("쳤다 지운 입력도 칸을 떠나기 전의 Esc 는 되돌린다", () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Old.md", name: "Oldx" });
+    d.typed({ path: "W/Old.md", name: "Old" });
+    expect(d.cancel()).toBe("W/Old.md");
+  });
+
+  it("확정이 끝나 남은 입력이 없으면 null — 원래 이름으로 확정·이름 바꾸기 성공·다른 노트로 넘어감·실패해도 버린 입력", async () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Old.md", name: "Old" });
+    await d.commit("W/Old.md", { invalid, rename: ok });
+    expect(d.cancel()).toBeNull();
+    d.typed({ path: "W/Old.md", name: "New" });
+    await d.commit("W/Old.md", { invalid, rename: ok });
+    expect(d.cancel()).toBeNull();
+    d.typed({ path: "W/Old.md", name: "a/b" });
+    await d.commit("W/Other.md", { invalid, rename: ok });
+    expect(d.cancel()).toBeNull();
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    await d.commit(null, { invalid, rename: async () => false });
+    expect(d.cancel()).toBeNull();
+  });
+
+  it("실패해 입력이 칸에 남았으면 그 노트", async () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Old.md", name: "Taken" });
+    await d.commit("W/Old.md", { invalid, rename: async () => false });
+    expect(d.cancel()).toBe("W/Old.md");
+    d.typed({ path: "W/Old.md", name: "a/b" });
+    await d.commit("W/Old.md", { invalid, rename: ok });
+    expect(d.cancel()).toBe("W/Old.md");
+  });
+
+  it("칸이 다른 노트로 넘어갔다 돌아오면 null — 앞서 입력한 것은 이번 입력이 아니다", () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Untitled.md", name: "Untitled" });
+    d.shows("W/Untitled.md");
+    d.shows("W/Existing.md");
+    d.shows("W/Untitled.md");
+    expect(d.cancel()).toBeNull();
+    d.typed({ path: "W/Untitled.md", name: "Untitled" });
+    d.shows("W/Untitled.md");
+    expect(d.cancel()).toBe("W/Untitled.md");
+  });
+
+  it("이름 바꾸는 중의 Esc 도 그 노트", () => {
+    const d = new TitleDraft();
+    d.typed({ path: "W/Old.md", name: "Fresh" });
+    void d.commit("W/Old.md", { invalid, rename: () => new Promise<boolean>(() => undefined) });
+    expect(d.cancel()).toBe("W/Old.md");
   });
 });

@@ -202,9 +202,10 @@ function InlineTitle({
   const err = next === stem ? null : invalidNameReason(next);
   // 전체 이름을 고치다 날짜를 지우면 데일리 노트가 아니게 된다
   const warn = daily && full && !next.startsWith(daily.datePart) ? t("title.dailyWarn") : null;
-  const commit = async (): Promise<TitleOutcome> => {
+  /** shown: 칸이 보이는 노트. 칸이 사라지며 하는 확정은 null(실패해도 입력을 남기지 않는다) */
+  const commit = async (shown: string | null = path): Promise<TitleOutcome> => {
     // 노트가 바뀌며 포커스를 잃으면 이미 새 노트의 path 로 그려진 뒤라, 고친 글이 속한 노트는 입력 때 적어 둔 것을 따른다
-    const o = await draft.commit(path, { invalid: invalidNameReason, rename: onRename });
+    const o = await draft.commit(shown, { invalid: invalidNameReason, rename: onRename });
     // 잘못된 이름(칸에 오류)과 실패한 이름 바꾸기(알림은 이름 바꾸기가 띄운다)는 입력을 칸에 남긴다 — 확정 대기로 남아 닫기가 다시 확정한다
     const kept = draft.pending() === path;
     if (!kept && o.kind !== "renamed") setV(initial);
@@ -213,7 +214,7 @@ function InlineTitle({
   };
   const commitRef = useRef(commit);
   commitRef.current = commit;
-  handle.current = {
+  const [mine] = useState<TitleHandle>(() => ({
     titlePending: () => draft.pending(),
     commitTitle: async (p) => {
       if (draft.pending() !== p) return { kind: "none", path: p };
@@ -222,19 +223,27 @@ function InlineTitle({
       if (o.kind === "invalid" || o.kind === "failed") ref.current?.focus();
       return o;
     },
-  };
+  }));
+  handle.current = mine;
   // 칸이 다른 노트를 보이게 됐는데(탭 옮기기 등) 앞 노트의 입력이 남아 있으면 바로 확정한다 — 칸에는 이미 새 노트의 이름이 보인다
   useEffect(() => {
+    draft.shows(path);
     const p = draft.pending();
     if (p && p !== path) void commitRef.current();
   }, [path, draft]);
-  // 칸이 사라질 때(칸 합치기 등 Workspace 가 미리 확정하지 않은 길): 남은 입력을 확정한다
-  useEffect(
-    () => () => {
-      if (draft.pending()) void commitRef.current();
-    },
-    [draft],
-  );
+  // 칸이 사라질 때(탭 옮기기·칸 합치기 등 Workspace 가 미리 확정하지 않은 길): 남은 입력을 확정하고 핸들을 비운다.
+  // 보여 줄 칸이 없으니 실패해도 입력을 남기지 않는다(알림만 남는다). 핸들은 확정이 끝난 뒤에 비운다 —
+  // 그 사이 다른 칸의 닫기가 이 이름 바꾸기를 기다리게. 비우지 않으면 Workspace 의 titleHandles() 가 사라진 칸에 계속 닿는다
+  useEffect(() => {
+    handle.current = mine;
+    return () => {
+      const clear = () => {
+        if (handle.current === mine) handle.current = null;
+      };
+      if (draft.pending()) void commitRef.current(null).finally(clear);
+      else clear();
+    };
+  }, [draft, handle, mine]);
   return (
     <div className="inline-title-wrap">
       <div className="inline-title-row">
@@ -291,8 +300,8 @@ function InlineTitle({
             } else if (e.key === "Escape") {
               e.preventDefault();
               e.stopPropagation();
-              draft.cancel();
-              onUntyped(path);
+              // 이 칸이 이번에 입력했을 때만 손댐을 되돌린다 — 입력하지 않은 칸의 Esc 는 취소할 입력이 없다
+              if (draft.cancel() === path) onUntyped(path);
               setV(initial);
               setFull(false);
               onDone();

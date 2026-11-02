@@ -42,15 +42,32 @@ export function renamedPath(notePath: string, name: string): string {
 export class TitleDraft {
   private edit: TitleEdit | null = null;
   private running: { from: string; done: Promise<TitleOutcome> } | null = null;
+  /** 진행 중인 확정을 Esc 로 취소했다 — 그 확정이 실패해도 입력을 되살리지 않는다 */
+  private runCanceled = false;
+  /** 이 칸이 이번에 입력한 노트(확정이 끝나 남은 입력이 없으면 비운다). Esc 는 이 노트의 「입력만으로 손댐」 만 되돌린다 */
+  private typedIn: string | null = null;
 
   /** 칸의 글을 고쳤다 */
   typed(edit: TitleEdit): void {
     this.edit = edit;
+    this.typedIn = edit.path;
   }
 
-  /** Esc: 확정하지 않는다 */
-  cancel(): void {
+  /**
+   * Esc: 확정하지 않는다. 확정 중이면 그 확정이 실패해도 입력을 되살리지 않는다.
+   * 이 칸이 이번에 입력한 노트를 돌려준다 — 없으면 null(입력하지 않은 칸의 Esc 는 손댐을 되돌리지 않는다)
+   */
+  cancel(): string | null {
+    const typedIn = this.typedIn;
     this.edit = null;
+    this.typedIn = null;
+    if (this.running) this.runCanceled = true;
+    return typedIn;
+  }
+
+  /** 칸이 path 를 보이게 됐다. 다른 노트로 넘어가면 앞서 입력한 것은 「이번 입력」 이 아니다 — 같은 칸이 그 노트로 돌아와도 Esc 가 되돌리지 않는다 */
+  shows(path: string): void {
+    if (this.typedIn !== path) this.typedIn = null;
   }
 
   /** 확정을 기다려야 하는 노트의 경로(이름 바꾸는 중이거나, 원래와 다른 이름을 입력해 두었다). 없으면 null */
@@ -62,30 +79,38 @@ export class TitleDraft {
 
   /**
    * 확정한다. shown 은 칸이 지금 보이는 노트(입력한 노트와 다를 수 있다 — 같은 칸에서 다른 노트로 바뀐 뒤의 blur).
+   * 칸이 사라지며 하는 확정은 null — 보여 줄 칸이 없으니 잘못된 이름·실패한 이름 바꾸기도 입력을 남기지 않는다(남기면 그 노트의 닫기가 사람이 고칠 수 없는 입력을 끝없이 다시 확정한다).
    * 보이는 노트의 잘못된 이름과 실패한 이름 바꾸기는 입력을 남기고(invalid·failed), 이름 바꾸기가 끝날 때까지는 같은 결과를 돌려준다.
    * 실패를 남기는 까닭: 탭 메뉴를 열면 blur 확정이 먼저 끝나는데, 입력을 비우면 뒤따르는 닫기가 기다릴 것이 없다고 보고 닫는다
    */
-  commit(shown: string, opts: { invalid: (name: string) => string | null; rename: (path: string, name: string) => Promise<boolean> }): Promise<TitleOutcome> {
+  commit(
+    shown: string | null,
+    opts: { invalid: (name: string) => string | null; rename: (path: string, name: string) => Promise<boolean> },
+  ): Promise<TitleOutcome> {
     if (this.running) return this.running.done;
     const target = this.edit;
     if (!target || target.name === stem(target.path)) {
       this.edit = null;
+      this.typedIn = null;
       return Promise.resolve({ kind: "none", path: target?.path ?? null });
     }
     if (opts.invalid(target.name)) {
       if (target.path === shown) return Promise.resolve({ kind: "invalid", path: target.path });
       this.edit = null;
+      this.typedIn = null;
       return Promise.resolve({ kind: "dropped", path: target.path });
     }
     this.edit = null;
+    this.runCanceled = false;
     const done = opts
       .rename(target.path, target.name)
       .catch(() => false)
       .then((ok): TitleOutcome => {
-        if (ok) return { kind: "renamed", path: renamedPath(target.path, target.name), from: target.path };
-        // 그 사이 새로 입력했으면 그것을 둔다. 다른 노트로 넘어간 칸의 입력은 보여 줄 곳이 없으니 버린다(dropped 와 같다)
-        if (!this.edit && target.path === shown) this.edit = target;
-        return { kind: "failed", path: target.path };
+        // 그 사이 새로 입력했으면 그것을 둔다. 다른 노트로 넘어갔거나 사라진 칸의 입력은 보여 줄 곳이 없으니 버린다(dropped 와 같다).
+        // 확정 중에 Esc 로 취소한 입력도 되살리지 않는다 — 칸에는 원래 이름이 보이는데 닫기가 취소한 이름으로 바꾸게 된다
+        if (!ok && !this.edit && !this.runCanceled && target.path === shown) this.edit = target;
+        if (!this.edit) this.typedIn = null;
+        return ok ? { kind: "renamed", path: renamedPath(target.path, target.name), from: target.path } : { kind: "failed", path: target.path };
       })
       .finally(() => {
         this.running = null;
