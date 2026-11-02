@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closedForGood, dropFromNav, hasNodeChildren, isBlankNote, openAnywhere } from "./emptyNote";
+import { closedForGood, CreatedNotes, dropFromNav, hasNodeChildren, isBlankNote, openAnywhere } from "./emptyNote";
 import { emptyLayout, openIn, splitPane, type Layout } from "./panes";
 
 describe("손대지 않은 노트 내용", () => {
@@ -38,6 +38,15 @@ describe("손대지 않은 노트 내용", () => {
 
   it("닫히지 않은 프런트매터는 본문 글이다", () => {
     expect(isBlankNote("---\nedited: x\n")).toBe(false);
+  });
+
+  it("프런트매터에 YAML 주석이 있으면 사람이 쓴 것이다", () => {
+    expect(isBlankNote("---\nedited: x\n# memo\n---\n")).toBe(false);
+    expect(isBlankNote("---\n  # memo\n---\n")).toBe(false);
+    expect(isBlankNote("---\nedited: x # memo\n---\n")).toBe(false);
+    expect(isBlankNote("\uFEFF---\r\nedited: x\r\n# memo\r\n---\r\n")).toBe(false);
+    // 주석이 아닌 # (값 안)과 프런트매터 밖의 줄은 이 판정에 들지 않는다
+    expect(isBlankNote("---\nrank: a#0\n---\n")).toBe(true);
   });
 });
 
@@ -94,5 +103,45 @@ describe("열어 본 기록에서 빼기", () => {
   it("기록이 그 노트뿐이면 빈 기록이 된다", () => {
     expect(dropFromNav({ list: ["x"], i: 0 }, "x")).toEqual({ list: [], i: -1 });
     expect(dropFromNav({ list: [], i: -1 }, "x")).toEqual({ list: [], i: -1 });
+  });
+});
+
+describe("이 창에서 만든 노트 집합", () => {
+  const closed = [openIn(emptyLayout(), "", "W/b.md")];
+  const made = (...paths: string[]) => {
+    const c = new CreatedNotes();
+    for (const p of paths) c.created(p);
+    return c;
+  };
+
+  it("만든 노트를 닫으면 한 번만 지울지 본다", () => {
+    const c = made("W/a.md");
+    expect(c.take("W/a.md", closed)).toBe(true);
+    expect(c.take("W/a.md", closed)).toBe(false);
+  });
+
+  it("아직 열려 있으면 집합에 둔다", () => {
+    const c = made("W/a.md");
+    expect(c.take("W/a.md", [openIn(emptyLayout(), "", "W/a.md")])).toBe(false);
+    expect(c.has("W/a.md")).toBe(true);
+  });
+
+  it("제목 칸에 입력하면(확정 전에도) 지우지 않는다", () => {
+    const c = made("W/a.md", "W/b.md");
+    c.touched("W/a.md");
+    expect(c.take("W/a.md", closed)).toBe(false);
+    expect(c.has("W/b.md")).toBe(true);
+  });
+
+  it("다른 창으로 넘긴 노트는 이 창에서 닫아도 지우지 않는다", () => {
+    const c = made("W/a.md");
+    c.handedOff("W/a.md");
+    expect(c.take("W/a.md", closed)).toBe(false);
+  });
+
+  it("지운 노드와 그 하위는 집합에서 빠진다", () => {
+    const c = made("W/a.md", "W/a/x.md", "W/ab.md");
+    c.forget((p) => p === "W/a.md" || p.startsWith("W/a/"));
+    expect([c.has("W/a.md"), c.has("W/a/x.md"), c.has("W/ab.md")]).toEqual([false, false, true]);
   });
 });

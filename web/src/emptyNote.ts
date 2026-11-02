@@ -15,7 +15,10 @@ export function isBlankNote(content: string): boolean {
   const fm = parseFrontmatter(content);
   if (fm.error) return false;
   if (fm.data && Object.keys(fm.data).some((k) => !isAppField(k))) return false;
-  return !content.split("\n").slice(fm.lines).join("\n").trim();
+  const lines = content.split("\n");
+  // YAML 주석(줄 전체든 값 뒤든)은 데이터로 읽히지 않지만 사람이 쓴 글이다
+  if (lines.slice(1, Math.max(1, fm.lines - 1)).some((l) => /(^|\s)#/.test(l))) return false;
+  return !lines.slice(fm.lines).join("\n").trim();
 }
 
 /** 노드 노트(A.md) 아래에 하위 노트·첨부(A/ 아래 파일)가 있는가 */
@@ -48,3 +51,37 @@ export function dropFromNav(nav: { list: string[]; i: number }, path: string): {
 /** 닫혀서 지울지 볼 차례인가: 이 창에서 만든 노트이고(이름을 바꾸면 집합에서 빠진다) 이제 어느 칸에도 남지 않았다 */
 export const closedForGood = (path: string, created: ReadonlySet<string>, layouts: Iterable<Layout>): boolean =>
   created.has(path) && !openAnywhere(path, layouts);
+
+/**
+ * 이 창에서 「새 노트」로 만든 노트 중 아직 지울 수 있는 것(창마다 메모리, 새로 고치면 비워진다).
+ * 들어오는 길은 하나(만듦), 나가는 길은 넷이다 — 사람이 손댐(제목 칸에 입력·이름 바꾸기·옮기기), 다른 창으로 넘김,
+ * 지워짐, 닫혀서 지울지 본 차례(한 번만 본다)
+ */
+export class CreatedNotes {
+  private readonly paths = new Set<string>();
+  /** 「새 노트」로 만들었다 */
+  created(path: string): void {
+    this.paths.add(path);
+  }
+  /** 사람이 손댔다(제목 칸에 입력, 이름 바꾸기·옮기기) — 확정하지 않은 입력도 손댄 것이다 */
+  touched(path: string): void {
+    this.paths.delete(path);
+  }
+  /** 다른 창이 그 노트를 열었다(끌어서 새 창, 탭 메뉴 「새 창으로 열기」) — 이 창에서 탭을 닫아도 지우지 않는다 */
+  handedOff(path: string): void {
+    this.paths.delete(path);
+  }
+  /** 지운 노드 */
+  forget(gone: (p: string) => boolean): void {
+    for (const p of this.paths) if (gone(p)) this.paths.delete(p);
+  }
+  has(path: string): boolean {
+    return this.paths.has(path);
+  }
+  /** 닫혀서 지울지 볼 차례면 집합에서 빼고 true(지우기가 실패해도 다시 보지 않는다) */
+  take(path: string, layouts: Iterable<Layout>): boolean {
+    if (!closedForGood(path, this.paths, layouts)) return false;
+    this.paths.delete(path);
+    return true;
+  }
+}

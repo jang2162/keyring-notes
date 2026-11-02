@@ -72,8 +72,16 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     remove: (path, baseHash) => wrap(() => vault.remove(path, baseHash)),
     move: (from, to, baseHash, opts) => wrap(() => vault.move(from, to, baseHash, opts)),
     moveNode: (from, to) => wrap(() => vault.moveNode(from, to)),
-    // 앱은 지울 때 내용을 직접 돌려준다(되살리기용). files(미리 읽은 해시)는 같은 기기라 다시 확인하지 않는다
-    deleteNode: (path) => wrap(async () => ({ deleted: (await vault.deleteNode(path)).deleted.map((d) => d.path) })),
+    // 미리 읽은 파일·해시와 디스크가 다르면 서버처럼 409(다른 창·동기화가 그 사이 바꾼 것을 모르고 지우지 않게)
+    deleteNode: (path, files) =>
+      wrap(async () => ({
+        deleted: (
+          await vault.deleteNode(
+            path,
+            files.map((f) => ({ path: f.path, baseHash: f.hash })),
+          )
+        ).deleted.map((d) => d.path),
+      })),
     restoreFiles: (files) => wrap(() => vault.restoreFiles(files)),
     moveFiles: (pairs, message) => wrap(() => vault.moveFiles(pairs, message)),
     writeMany: (files, message) => wrap(() => vault.writeMany(files, message)),

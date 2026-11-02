@@ -62,7 +62,7 @@ import { IngestDialog } from "./Ingest";
 import { invalidateWidgets } from "./Widget";
 import { notePathOfHash, replaceSettingsSection, settingsBack, settingsCloseTarget, SETTINGS_HASH } from "./settingsNav";
 import { isNetworkError, offline, searchFailedOffline } from "./offline";
-import { closedForGood, dropFromNav, hasNodeChildren, isBlankNote, openAnywhere } from "./emptyNote";
+import { CreatedNotes, dropFromNav, hasNodeChildren, isBlankNote, openAnywhere } from "./emptyNote";
 import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
@@ -504,14 +504,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const closedTabs = useRef<string[]>([]);
   /**
    * 이 창에서 「새 노트」(createDoc)로 만든 노트. 사람이 손대지 않고 닫으면 지운다(discardIfBlank).
-   * 이름을 바꾸거나 옮기거나 지우면 빠진다 — 데일리·템플릿·원래 있던 노트는 들지 않는다
+   * 데일리·템플릿·원래 있던 노트는 들지 않는다. 언제 빠지는지는 emptyNote.ts 의 CreatedNotes
    */
-  const createdRef = useRef(new Set<string>());
+  const createdRef = useRef(new CreatedNotes());
   /** discardIfBlank 의 최신 판(먼저 정의되는 open 이 부른다) */
   const discardRef = useRef<(path: string) => Promise<void>>(async () => undefined);
   const [recent, setRecent] = useStored<string[]>("keyring:recent", [], isStringArray);
   /** 고정한 노드(이 기기, pins.ts) */
   const pins = usePins();
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
   /** 열어 본 문서 기록(뒤로·앞으로) */
   const nav = useRef<{ list: string[]; i: number }>({ list: [], i: -1 });
   const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | "search-folder" | null>(null);
@@ -1249,14 +1251,18 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       return;
     }
     try {
-      await openSolo(path, stemOf(path), at);
+      await openInNewWindow(path, at);
     } catch (err) {
       toastError(err);
       return;
     }
-    // 새 창이 그 노트를 열었다 — 이 창의 탭을 닫아도 비어 있는 새 노트로 지우지 않는다
-    createdRef.current.delete(path);
     await closeTab(pane, path);
+  };
+
+  /** 노트를 새 창(solo)으로 연다. 새 창이 그 노트를 열고 있으므로 이 창에서 탭을 닫아도 비어 있는 새 노트로 지우지 않는다 */
+  const openInNewWindow = async (path: string, at?: { x: number; y: number }) => {
+    await openSolo(path, stemOf(path), at);
+    createdRef.current.handedOff(path);
   };
 
   /**
@@ -1685,7 +1691,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       await offline.queue(path, content, null);
       setOutboxCount((await offline.pending()).length);
     }
-    createdRef.current.add(path);
+    createdRef.current.created(path);
     focusTitle(path);
     await open(path, { newTab: true });
     setFocusedMode((m) => (m === "preview" ? "edit" : m));
@@ -1853,7 +1859,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const afterMove = async (from: string, to: string, content: string | null, hash: string | null) => {
     moveFolds(from, to);
     // 이름을 바꾼(옮긴) 새 노트는 사람이 손댄 것이다
-    createdRef.current.delete(from);
+    createdRef.current.touched(from);
     setAllLayouts((l) => renamePath(l, from, to));
     setRecent((r) => r.map((p) => (p === from ? to : p)));
     renameViewed(from, to, false);
@@ -1971,8 +1977,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /** 이름 바꾸기(노드). 데일리 노트의 날짜가 바뀌면 자동 태그(있는 것만)도 같이 고친다 */
   const renameNode = async (node: string, name: string) => {
     const path = `${node}.md`;
-    // 이름을 고친 새 노트는 사람이 손댄 것이다 — 옮기기가 끝나기 전(실패해도)부터 지우지 않는다(discardIfBlank)
-    createdRef.current.delete(path);
+    // 이름을 고친 새 노트는 사람이 손댄 것이다 — 옮기기가 실패해도 지우지 않는다(discardIfBlank)
+    createdRef.current.touched(path);
     const before = dailyOfPath(path, daily);
     const to = join(parentOf(node), name);
     if (!(await moveNodeTo(node, to))) return false;
@@ -1995,7 +2001,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /** 탭·기록·저장소에서 지운 노드의 문서를 뺀다(저장 안 한 초안도: 남기면 자동 저장이 되살린다) */
   const forget = (gone: (p: string) => boolean) => {
-    for (const p of createdRef.current) if (gone(p)) createdRef.current.delete(p);
+    createdRef.current.forget(gone);
     setAllLayouts((l) => removePaths(l, gone));
     updateDocs((s) => {
       const dead = Object.keys(s).filter(gone);
@@ -2015,12 +2021,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 지우지 못해도 예전처럼 빈 노트가 남을 뿐이므로 오류도 알리지 않는다
    */
   const discardIfBlank = async (path: string) => {
-    if (!createdRef.current.has(path)) return;
-    // 탭을 닫거나 갈아 끼우며 제목 칸이 포커스를 잃으면 그 이름 바꾸기(renameNode)가 조금 뒤에 시작된다 — 그 뒤에 본다
-    await new Promise((r) => setTimeout(r, 300));
-    if (!closedForGood(path, createdRef.current, Object.values(layoutsRef.current))) return;
-    // 한 번만 본다(실패해도 다시 지우려 하지 않는다)
-    createdRef.current.delete(path);
+    // 제목 칸에 입력했으면 확정(blur·Enter) 전에도 이미 빠져 있다 — 키보드로 닫으면 blur 없이 칸이 사라지기 때문이다
+    if (!createdRef.current.take(path, Object.values(layoutsRef.current))) return;
     const node = stripMd(path);
     const untouched = () => {
       const e = docsRef.current[path];
@@ -2029,7 +2031,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         (!e || isBlankNote(e.doc.draft)) &&
         !savingRef.current.has(path) &&
         !hasNodeChildren(path, resolverRef.current.paths) &&
-        !pins.includes(node)
+        !pinsRef.current.includes(node)
       );
     };
     if (!untouched()) return;
@@ -3598,6 +3600,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     },
     uploadFiles,
     renameNode,
+    touchedNote: (path) => createdRef.current.touched(path),
     setIconPick,
     followLinkEl,
     onWidgetChanged,
@@ -3928,7 +3931,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                     {
                       label: t("tab.newWindow"),
                       icon: ExternalLink,
-                      run: () => void openSolo(tabMenu.path, stemOf(tabMenu.path)).catch(toastError),
+                      run: () => void openInNewWindow(tabMenu.path).catch(toastError),
                     },
                   ]
                 : []),

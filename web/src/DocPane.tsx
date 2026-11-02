@@ -96,6 +96,8 @@ export interface PaneContext {
   onChanges: (pane: string, path: string, changes: ChangeSet, docKey: string) => void;
   uploadFiles: (files: File[], from: string) => Promise<string[]>;
   renameNode: (node: string, name: string) => Promise<boolean>;
+  /** 제목 칸에 입력했다(확정 전). 비어 있는 새 노트 지우기에서 손댄 노트로 친다 */
+  touchedNote: (path: string) => void;
   setIconPick: (p: { x: number; y: number; node: string }) => void;
   followLinkEl: (a: HTMLAnchorElement, mod: boolean) => void;
   onWidgetChanged: (path: string) => void;
@@ -154,6 +156,7 @@ function InlineTitle({
   onIcon,
   onFocused,
   onRename,
+  onTyped,
   onDone,
 }: {
   path: string;
@@ -164,6 +167,8 @@ function InlineTitle({
   onIcon?: (at: { x: number; y: number }) => void;
   onFocused: () => void;
   onRename: (path: string, stem: string) => Promise<boolean>;
+  /** 칸의 글을 고쳤다(확정 전). 키보드로 탭을 닫으면 blur 없이 칸이 사라져 commit 이 돌지 않는다 */
+  onTyped: (path: string) => void;
   onDone: () => void;
 }) {
   const stem = stemOf(path);
@@ -259,6 +264,7 @@ function InlineTitle({
           onChange={(e) => {
             setV(e.target.value);
             edit.current = { path, name: nameOf(e.target.value) };
+            onTyped(path);
           }}
           onBlur={() => void commit()}
           onKeyDown={(e) => {
@@ -573,6 +579,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 onIcon={doc.generated || revision ? undefined : (at) => ctx.setIconPick({ ...at, node: docNode })}
                 onFocused={ctx.clearTitleFocus}
                 onRename={(p, stem) => ctx.renameNode(stripMd(p), stem)}
+                onTyped={ctx.touchedNote}
                 onDone={() => handle.current?.focus()}
               />
               <Editor
