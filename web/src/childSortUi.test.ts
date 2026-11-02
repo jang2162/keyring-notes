@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseFrontmatter, planReorder, seedRanks, sortChildren, type VaultNode } from "@keyring-notes/core";
 import {
+  childSortMenu,
   childSortWrites,
   edgeDrop,
   fillBlankNote,
@@ -40,6 +41,113 @@ describe("트리에 보일 하위 순서", () => {
   it("정렬을 정했으면 데일리 폴더라도 그 정렬을 따른다", () => {
     expect(names(shownChildren(ns, "name", true, noView))).toEqual(["가", "나", "다"]);
     expect(names(shownChildren(ns, "modified", true, noView))).toEqual(["나", "다", "가"]);
+  });
+});
+
+describe("트리에 보일 하위 순서 — 방향", () => {
+  const ns = [node("가", { edited: 1 }), node("나", { edited: 3 }), node("다", { edited: 2 }), node("폴더", { note: null })];
+  const seen: Record<string, number> = { "W/가.md": 5, "W/다.md": 9 };
+
+  it("이름 내림차순·수정 오름차순·조회 오름차순, 시각 없는 노드는 맨 뒤", () => {
+    expect(names(shownChildren(ns, "name-desc", false, noView))).toEqual(["폴더", "다", "나", "가"]);
+    expect(names(shownChildren(ns, "modified-asc", false, noView))).toEqual(["가", "다", "나", "폴더"]);
+    expect(names(shownChildren(ns, "viewed-asc", false, (p) => seen[p]))).toEqual(["가", "다", "나", "폴더"]);
+    expect(names(shownChildren(ns, "viewed", false, (p) => seen[p]))).toEqual(["다", "가", "나", "폴더"]);
+  });
+
+  it("처음 커스텀으로 바꿀 때 rank 는 방향까지 반영된 보이는 순서대로 매긴다", () => {
+    const shown = shownChildren(ns, "modified-asc", false, noView);
+    const seeds = seedRanks(shown);
+    expect(seeds.map((x) => x.note)).toEqual(["W/가.md", "W/다.md", "W/나.md"]);
+    const ranks = seeds.map((x) => x.rank);
+    expect([...ranks].sort()).toEqual(ranks);
+  });
+});
+
+describe("정렬 메뉴", () => {
+  type Row = Exclude<ReturnType<typeof childSortMenu>[number], "-">;
+  const rows = (sort: Parameters<typeof childSortMenu>[0], desc = false) => childSortMenu(sort, desc).filter((r): r is Row => r !== "-");
+  const checked = (sort: Parameters<typeof childSortMenu>[0], desc = false) =>
+    rows(sort, desc)
+      .filter((r) => r.checked)
+      .map((r) => r.label);
+  const pick = (sort: Parameters<typeof childSortMenu>[0], label: string, desc = false) => rows(sort, desc).find((r) => r.label === label)!.value;
+
+  it("항목 넷 → 구분선 → 오름차순·내림차순", () => {
+    expect(childSortMenu("name", false).map((r) => (r === "-" ? r : r.label))).toEqual([
+      "tree.sortName",
+      "tree.sortModified",
+      "tree.sortViewed",
+      "tree.sortCustom",
+      "-",
+      "tree.sortAsc",
+      "tree.sortDesc",
+    ]);
+  });
+
+  it("지금 항목과 방향에 체크한다. 정하지 않았으면 이름 오름차순, 데일리 폴더면 이름 내림차순", () => {
+    expect(checked(null)).toEqual(["tree.sortName", "tree.sortAsc"]);
+    expect(checked(undefined, true)).toEqual(["tree.sortName", "tree.sortDesc"]);
+    expect(checked("name-desc")).toEqual(["tree.sortName", "tree.sortDesc"]);
+    expect(checked("modified")).toEqual(["tree.sortModified", "tree.sortDesc"]);
+    expect(checked("modified-asc")).toEqual(["tree.sortModified", "tree.sortAsc"]);
+    expect(checked("viewed-asc", true)).toEqual(["tree.sortViewed", "tree.sortAsc"]);
+  });
+
+  it("커스텀이면 방향 둘은 꺼지고 체크도 없다. 다른 정렬이면 켜져 있다", () => {
+    expect(checked("custom")).toEqual(["tree.sortCustom"]);
+    expect(rows("custom").map((r) => r.disabled)).toEqual([false, false, false, false, true, true]);
+    expect(rows("modified").some((r) => r.disabled)).toBe(false);
+  });
+
+  it("다른 항목을 고르면 그 항목의 기본 방향, 지금 항목을 다시 고르면 그대로", () => {
+    expect(pick("name", "tree.sortModified")).toBe("modified");
+    expect(pick("name-desc", "tree.sortViewed")).toBe("viewed");
+    expect(pick("modified-asc", "tree.sortName")).toBe("name");
+    expect(pick("modified-asc", "tree.sortModified")).toBe("modified-asc");
+    expect(pick("name-desc", "tree.sortName")).toBe("name-desc");
+    expect(pick(null, "tree.sortName", true)).toBe("name-desc");
+    expect(pick("viewed-asc", "tree.sortCustom")).toBe("custom");
+  });
+
+  it("방향을 고르면 항목은 그대로 두고 방향만 바꾼다", () => {
+    expect(pick("name", "tree.sortDesc")).toBe("name-desc");
+    expect(pick("name-desc", "tree.sortAsc")).toBe("name");
+    expect(pick("modified", "tree.sortAsc")).toBe("modified-asc");
+    expect(pick("modified-asc", "tree.sortDesc")).toBe("modified");
+    expect(pick("viewed", "tree.sortAsc")).toBe("viewed-asc");
+    expect(pick(null, "tree.sortAsc", true)).toBe("name");
+  });
+});
+
+describe("정렬을 적을 쓰기 목록 — 방향", () => {
+  const parent: NoteState = { content: "---\nicon: 📁\n---\n본문", hash: "h0" };
+
+  it("반대 방향은 접미사를 붙여 적고, 기본 방향은 접미사 없이 적는다", () => {
+    expect(fm(childSortWrites("W/P.md", parent, "name-desc", [], none)[0].content)).toEqual({ icon: "📁", sort: "name-desc" });
+    expect(fm(childSortWrites("W/P.md", parent, "modified-asc", [], none)[0].content)).toEqual({ icon: "📁", sort: "modified-asc" });
+    expect(fm(childSortWrites("W/P.md", parent, "viewed-asc", [], none)[0].content)).toEqual({ icon: "📁", sort: "viewed-asc" });
+    const back = { content: "---\nsort: modified-asc\n---\n", hash: "h" };
+    expect(fm(childSortWrites("W/P.md", back, "modified", [], none)[0].content)).toEqual({ sort: "modified" });
+  });
+
+  it("일반 부모에서 이름 오름차순이면 필드를 지운다", () => {
+    const w = childSortWrites("W/P.md", { content: "---\nicon: 📁\nsort: name-desc\n---\n본문", hash: "h" }, "name", [], none);
+    expect(fm(w[0].content)).toEqual({ icon: "📁" });
+  });
+
+  it("데일리 폴더에서 이름 오름차순이면 sort: name 을 적는다(노트가 없으면 만든다)", () => {
+    expect(fm(childSortWrites("W/P.md", parent, "name", [], none, true)[0].content)).toEqual({ icon: "📁", sort: "name" });
+    const w = childSortWrites("W/P.md", null, "name", [], none, true);
+    expect(w).toEqual([{ path: "W/P.md", content: expect.any(String), baseHash: null }]);
+    expect(fm(w[0].content)).toEqual({ sort: "name" });
+  });
+
+  it("데일리 폴더에서 이름 내림차순이면 지금 보이는 것이라 필드를 지운다(노트 없는 폴더 노드에 노트를 만들지 않는다)", () => {
+    expect(childSortWrites("W/P.md", null, "name-desc", [], none, true)).toEqual([]);
+    expect(childSortWrites("W/P.md", parent, "name-desc", [], none, true)).toEqual([]);
+    const w = childSortWrites("W/P.md", { content: "---\nsort: name\n---\n본문", hash: "h" }, "name-desc", [], none, true);
+    expect(w[0].content).toBe("본문");
   });
 });
 

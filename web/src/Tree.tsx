@@ -5,7 +5,7 @@ import { stripMd, type ChildSort, type VaultNode } from "@keyring-notes/core";
 import type { Prefs } from "./prefs";
 import { Menu, type MenuEntry } from "./ui";
 import { t } from "./i18n";
-import { edgeDrop, shownChildren } from "./childSortUi";
+import { childSortMenu, edgeDrop, shownChildren } from "./childSortUi";
 import { useViewedVersion, viewedSnapshot } from "./viewed";
 import { isTouch } from "./touch";
 import { nodeTap, showOpenButton } from "./treeTap";
@@ -59,20 +59,11 @@ export interface TreeActions {
   moveSibling: (path: string, dir: -1 | 1) => void;
 }
 
-const SORT_LABELS: [ChildSort, string][] = [
-  ["name", "tree.sortName"],
-  ["modified", "tree.sortModified"],
-  ["viewed", "tree.sortViewed"],
-  ["custom", "tree.sortCustom"],
-];
-
-/**
- * 하위 노트 정렬 네 항목(지금 값에 체크). 정하지 않은 노트는 이름순이라 이름순에 체크한다 — 단 정하지 않아 이름 내림차순으로 보이는
- * 데일리 폴더(descending)는 넷 중 어느 것도 아니므로 체크하지 않는다
- */
+/** 하위 노트 정렬 메뉴(childSortMenu: 항목 넷 → 구분선 → 오름차순·내림차순) */
 export function childSortItems(sort: ChildSort | undefined | null, descending: boolean, pick: (sort: ChildSort) => void): MenuEntry[] {
-  const current = sort ?? (descending ? null : "name");
-  return SORT_LABELS.map(([s, key]) => ({ label: t(key), icon: current === s ? Check : undefined, run: () => pick(s) }));
+  return childSortMenu(sort, descending).map((r) =>
+    r === "-" ? r : { label: t(r.label), icon: r.checked ? Check : undefined, disabled: r.disabled || undefined, run: () => pick(r.value) },
+  );
 }
 
 /** 트리 표시를 바꾸는 것들(모두 선택) */

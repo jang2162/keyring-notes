@@ -9,11 +9,31 @@ import { rankBetween, rankFits } from "./rank.js";
  * 정렬은 부모의 바로 아래 하위에만 쓰고 물려받지 않는다. 모든 규칙의 마지막 동점 처리는 이름순이라
  * 어느 기기에서 몇 번을 그려도 같은 순서가 나온다.
  */
-export type ChildSort = "name" | "modified" | "viewed" | "custom";
+export type SortKey = "name" | "modified" | "viewed" | "custom";
+/**
+ * 프런트매터에 적는 값. 기본 방향(이름은 오름차순, 수정·조회는 최신 먼저)이면 항목 이름 그대로, 반대 방향이면 접미사를 붙인다.
+ * 접미사 없는 값이 예전 앱과 같은 뜻이라 기존 볼트가 그대로 읽히고, 예전 앱은 모르는 값을 이름순으로 본다. 커스텀에는 방향이 없다
+ */
+export type ChildSort = "name" | "name-desc" | "modified" | "modified-asc" | "viewed" | "viewed-asc" | "custom";
 export const SORT_FIELD = "sort";
 export const RANK_FIELD = "rank";
 
-const SORTS: readonly ChildSort[] = ["name", "modified", "viewed", "custom"];
+const SORTS: readonly ChildSort[] = ["name", "name-desc", "modified", "modified-asc", "viewed", "viewed-asc", "custom"];
+
+/** 정렬의 항목(방향을 뺀 것) */
+export const sortKey = (s: ChildSort): SortKey => s.replace(/-(asc|desc)$/, "") as SortKey;
+
+/** 내림차순인가(이름 내림차순, 수정·조회의 최신 먼저). 커스텀은 false */
+export const sortDescending = (s: ChildSort): boolean => s === "name-desc" || s === "modified" || s === "viewed";
+
+/** 항목의 기본 방향이 내림차순인가(수정·조회) */
+export const defaultDescending = (key: SortKey): boolean => key === "modified" || key === "viewed";
+
+/** 항목과 방향 → 적을 값. 기본 방향이면 접미사가 없고, 커스텀은 방향을 무시한다 */
+export function childSortOf(key: SortKey, descending: boolean): ChildSort {
+  if (key === "custom" || descending === defaultDescending(key)) return key;
+  return `${key}-${descending ? "desc" : "asc"}` as ChildSort;
+}
 
 /** rank 를 지운 내용(다른 부모로 옮긴 노드의 노트). rank 가 없거나 YAML 이 깨졌으면 그대로 — 옮기기가 실패하면 안 된다 */
 export function withoutRank(content: string): string {
@@ -25,31 +45,37 @@ export function withoutRank(content: string): string {
   }
 }
 
-/** 프런트매터 sort 값 → 정렬. 네 글자 값이 아니면(대소문자가 다른 것 포함) 정하지 않은 것(null) */
+/** 프런트매터 sort 값 → 정렬. 위 일곱 값이 아니면(대소문자가 다른 것 포함) 정하지 않은 것(null) */
 export function parseChildSort(v: unknown): ChildSort | null {
   return typeof v === "string" && (SORTS as readonly string[]).includes(v) ? (v as ChildSort) : null;
 }
 
 const byName = (a: VaultNode, b: VaultNode) => a.name.localeCompare(b.name, "ko") || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
-/** 값이 있는 것을 큰 것부터, 없는 것은 그 뒤에 이름순 */
-function latestFirst(value: (n: VaultNode) => number | undefined) {
+/** 값이 있는 것을 큰 것부터(descending) 또는 작은 것부터, 없는 것은 방향과 상관없이 그 뒤에 이름순. 동점도 이름순 */
+function byTime(value: (n: VaultNode) => number | undefined, descending: boolean) {
   return (a: VaultNode, b: VaultNode) => {
     const x = value(a);
     const y = value(b);
     if (x === undefined || y === undefined) return x === y ? byName(a, b) : x === undefined ? 1 : -1;
-    return y - x || byName(a, b);
+    return (descending ? y - x : x - y) || byName(a, b);
   };
 }
 
 /**
  * 하위 노드를 부모의 정렬로 늘어놓은 새 배열. null·name 은 받은 순서(buildNodeTree 의 이름순)를 그대로 둔다.
+ * 수정·조회는 오름차순이어도 시각 없는 노드를 맨 뒤에 둔다(「시각 없음」 은 가장 오래된 것이 아니다).
  * viewedAt: 이 기기에서 그 노트를 마지막으로 연 시각(기기별 기록). 노트 없는 폴더 노드는 시각·rank 가 없는 것으로 친다.
  */
 export function sortChildren(nodes: VaultNode[], sort: ChildSort | null, viewedAt: (notePath: string) => number | undefined): VaultNode[] {
   const out = [...nodes];
-  if (sort === "modified") return out.sort(latestFirst((n) => n.edited));
-  if (sort === "viewed") return out.sort(latestFirst((n) => (n.note === null ? undefined : viewedAt(n.note))));
+  if (sort === null) return out;
+  const key = sortKey(sort);
+  const desc = sortDescending(sort);
+  // 이름 내림차순은 동점(경로)까지 뒤집는다 — 어느 기기에서나 같은 순서
+  if (sort === "name-desc") return out.sort((a, b) => byName(b, a));
+  if (key === "modified") return out.sort(byTime((n) => n.edited, desc));
+  if (key === "viewed") return out.sort(byTime((n) => (n.note === null ? undefined : viewedAt(n.note)), desc));
   if (sort === "custom") {
     // rank 끼리는 글자 코드 비교(localeCompare 가 아니다 — rank 키는 코드 순서로 만든다)
     return out.sort((a, b) => {

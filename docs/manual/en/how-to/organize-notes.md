@@ -39,7 +39,7 @@ The big title field at the top of a note is the file name. Edit it and press Ent
 - The right-click menu has **New child note**, rename, move to another note, duplicate, open in a new tab or the other pane, copy path or link, change icon, **Sort sub-notes**, **Move up** and **Move down**, pin, and delete (with children).
 - The toolbar above the tree has **New note**, **Reveal current note**, **Collapse all** and display options (show or hide the "N attachments" rows, **Sort notes**).
 - The workspace's attachment folder is hidden from the tree.
-- Notes sort by name unless you choose another order (see [Sort child notes](#sort-child-notes)). Inside the daily folder, the newest comes first (configurable) until you choose an order for it.
+- Notes sort by name unless you choose another order (see [Sort child notes](#sort-child-notes)). Inside the daily folder, the newest comes first (configurable) until you choose an order for it. Its sort menu shows this as **Name** and **Descending**.
 
 Renaming, moving or deleting a node handles `A.md` and everything in `A/` in one go: one commit on the server, one journal entry in the app.
 
@@ -51,6 +51,8 @@ Each note chooses the order of the notes directly under it. Right-click a note i
 - **Last modified**: the most recently changed note comes first. Editing, renaming, moving and changing properties such as the icon all count as changes.
 - **Last opened**: the note you opened most recently on this device comes first. Notes you never opened follow, by name.
 - **Custom**: the order you set by hand.
+
+Below them, choose **Ascending** or **Descending** to reverse the order of **Name**, **Last modified** or **Last opened**. Picking another order starts with its usual direction: A to Z for **Name**, newest first for the other two. With **Last modified** and **Last opened**, notes without a time stay at the end, by name, in both directions. **Custom** has no direction.
 
 To sort the notes at the top of a workspace, click the display options (⋯) above the tree and choose **Sort notes**. With **All workspaces** on, a workspace row's menu has **Sort sub-notes** too.
 
@@ -79,7 +81,7 @@ Usually only the moved note changes, so two devices can reorder different notes 
 The app keeps the sort in these frontmatter fields. The Properties tab hides them.
 
 - `edited`: when the note last changed through Keyring Notes, in UTC. The app writes it when it saves, renames or moves a note, and when an agent writes through MCP or the REST API. Changes made in another editor don't update it.
-- `sort`: how the note sorts its child notes: `modified`, `viewed` or `custom`. Choosing **Name** removes the field.
+- `sort`: how the note sorts its child notes: `modified`, `viewed` or `custom`, or `name-desc`, `modified-asc` or `viewed-asc` for the reverse direction. Choosing **Name** ascending removes the field. Inside the daily folder, which shows newest first by default, it writes `name` instead.
 - `rank`: the note's place in its parent's custom order.
 
 A note without `edited` sorts by its file time. In the desktop and mobile app, that time can differ between devices until the note changes in the app.
