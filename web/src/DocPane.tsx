@@ -31,6 +31,7 @@ import { withoutWorkspaceBacklinks } from "./workspaceNote";
 import { isAppField } from "./childSortUi";
 import { editorAutoFocus } from "./editorFocus";
 import { isTouch } from "./touch";
+import { TitleDraft, type TitleHandle, type TitleOutcome } from "./titleEdit";
 
 export interface RevisionView {
   /** 이 과거 판의 문서. 칸이 다른 문서로 바뀌면 버린다 */
@@ -48,8 +49,8 @@ export interface PendingAnchor {
   text?: string;
 }
 
-/** 칸이 밖(링크 따라가기·개요)에 내주는 동작 */
-export interface PaneHandle {
+/** 칸이 밖(링크 따라가기·개요, 탭 닫기 전 제목 확정)에 내주는 동작 */
+export interface PaneHandle extends TitleHandle {
   scrollToAnchor(anchor: { heading?: string; block?: string }): void;
 }
 
@@ -97,7 +98,9 @@ export interface PaneContext {
   uploadFiles: (files: File[], from: string) => Promise<string[]>;
   renameNode: (node: string, name: string) => Promise<boolean>;
   /** 제목 칸에 입력했다(확정 전). 비어 있는 새 노트 지우기에서 손댄 노트로 친다 */
-  touchedNote: (path: string) => void;
+  typedNote: (path: string) => void;
+  /** 제목 칸에서 Esc 로 원래 이름에 돌아갔다 — 입력만으로 손댄 새 노트면 다시 지울 수 있게 한다(emptyNote.ts 의 CreatedNotes) */
+  untypedNote: (path: string) => void;
   setIconPick: (p: { x: number; y: number; node: string }) => void;
   followLinkEl: (a: HTMLAnchorElement, mod: boolean) => void;
   onWidgetChanged: (path: string) => void;
@@ -137,15 +140,11 @@ export interface DocPaneProps {
   extra?: ReactNode;
 }
 
-/** 제목 칸에서 고친 글: 고친 때의 노트 경로와 그 글이 뜻하는 노드 이름 */
-export interface TitleEdit {
-  path: string;
-  name: string;
-}
-
 /**
  * 문서 위 큰 제목 칸: 고치고 Enter나 포커스 이탈 때 노드 이름을 바꾼다(노트와 하위를 같이). 앞에 아이콘(누르면 고르기).
  * 데일리 노트는 날짜 부분을 고정된 앞머리(흐린 글자)로 보이고 그 뒤 제목만 고친다. 날짜를 누르면 전체 이름을 고친다.
+ * 키보드로 닫거나 갈아 끼우면 blur 없이 칸이 사라지거나 다른 노트를 보이므로, Workspace 가 그 전에 handle 로 확정을 부른다(titleEdit.ts).
+ * 그 밖의 길(탭 옮기기·칸 합치기 등)로 칸이 다른 노트로 바뀌거나 사라질 때도 확정한다
  */
 function InlineTitle({
   path,
@@ -157,7 +156,9 @@ function InlineTitle({
   onFocused,
   onRename,
   onTyped,
+  onUntyped,
   onDone,
+  handle,
 }: {
   path: string;
   readOnly: boolean;
@@ -169,17 +170,20 @@ function InlineTitle({
   onRename: (path: string, stem: string) => Promise<boolean>;
   /** 칸의 글을 고쳤다(확정 전). 키보드로 탭을 닫으면 blur 없이 칸이 사라져 commit 이 돌지 않는다 */
   onTyped: (path: string) => void;
+  /** Esc 로 원래 이름에 돌아갔다 — 입력만으로 손댄 것이었으면 되돌린다 */
+  onUntyped: (path: string) => void;
   onDone: () => void;
+  /** 닫기 전에 Workspace 가 부르는 확정(PaneHandle 로 나간다) */
+  handle: MutableRefObject<TitleHandle | null>;
 }) {
   const stem = stemOf(path);
   const [full, setFull] = useState(false);
   const split = !!daily && !full;
   const initial = split ? daily!.title : stem;
   const [v, setV] = useState(initial);
-  const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
-  /** 아직 반영 안 한 고침: 어느 노트의 제목을 무슨 이름으로 */
-  const edit = useRef<TitleEdit | null>(null);
+  /** 아직 반영 안 한 고침(어느 노트의 제목을 무슨 이름으로)과 진행 중인 이름 바꾸기 */
+  const [draft] = useState(() => new TitleDraft());
   useEffect(() => setV(initial), [initial]);
   useEffect(() => setFull(false), [path]);
   useEffect(() => {
@@ -198,27 +202,48 @@ function InlineTitle({
   const err = next === stem ? null : invalidNameReason(next);
   // 전체 이름을 고치다 날짜를 지우면 데일리 노트가 아니게 된다
   const warn = daily && full && !next.startsWith(daily.datePart) ? t("title.dailyWarn") : null;
-  const commit = async () => {
+  /** shown: 칸이 보이는 노트. 칸이 사라지며 하는 확정은 null(실패해도 입력을 남기지 않는다) */
+  const commit = async (shown: string | null = path): Promise<TitleOutcome> => {
     // 노트가 바뀌며 포커스를 잃으면 이미 새 노트의 path 로 그려진 뒤라, 고친 글이 속한 노트는 입력 때 적어 둔 것을 따른다
-    const target = edit.current;
-    if (busy || !target || target.name === stemOf(target.path)) {
-      edit.current = null;
-      setV(initial);
-      setFull(false);
-      return;
-    }
-    if (target.path === path && err) return;
-    edit.current = null;
-    if (target.path !== path && invalidNameReason(target.name)) {
-      setV(initial);
-      return;
-    }
-    setBusy(true);
-    const ok = await onRename(target.path, target.name);
-    setBusy(false);
-    if (!ok) setV(initial);
-    setFull(false);
+    const o = await draft.commit(shown, { invalid: invalidNameReason, rename: onRename });
+    // 잘못된 이름(칸에 오류)과 실패한 이름 바꾸기(알림은 이름 바꾸기가 띄운다)는 입력을 칸에 남긴다 — 확정 대기로 남아 닫기가 다시 확정한다
+    const kept = draft.pending() === path;
+    if (!kept && o.kind !== "renamed") setV(initial);
+    if (!kept) setFull(false);
+    return o;
   };
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+  const [mine] = useState<TitleHandle>(() => ({
+    titlePending: () => draft.pending(),
+    commitTitle: async (p) => {
+      if (draft.pending() !== p) return { kind: "none", path: p };
+      const o = await commitRef.current();
+      // 닫지 않고 남긴 칸: 고치거나 Esc 를 누를 수 있게 칸으로 돌아간다
+      if (o.kind === "invalid" || o.kind === "failed") ref.current?.focus();
+      return o;
+    },
+  }));
+  handle.current = mine;
+  // 칸이 다른 노트를 보이게 됐는데(탭 옮기기 등) 앞 노트의 입력이 남아 있으면 바로 확정한다 — 칸에는 이미 새 노트의 이름이 보인다
+  useEffect(() => {
+    draft.shows(path);
+    const p = draft.pending();
+    if (p && p !== path) void commitRef.current();
+  }, [path, draft]);
+  // 칸이 사라질 때(탭 옮기기·칸 합치기 등 Workspace 가 미리 확정하지 않은 길): 남은 입력을 확정하고 핸들을 비운다.
+  // 보여 줄 칸이 없으니 실패해도 입력을 남기지 않는다(알림만 남는다). 핸들은 확정이 끝난 뒤에 비운다 —
+  // 그 사이 다른 칸의 닫기가 이 이름 바꾸기를 기다리게. 비우지 않으면 Workspace 의 titleHandles() 가 사라진 칸에 계속 닿는다
+  useEffect(() => {
+    handle.current = mine;
+    return () => {
+      const clear = () => {
+        if (handle.current === mine) handle.current = null;
+      };
+      if (draft.pending()) void commitRef.current(null).finally(clear);
+      else clear();
+    };
+  }, [draft, handle, mine]);
   return (
     <div className="inline-title-wrap">
       <div className="inline-title-row">
@@ -263,7 +288,7 @@ function InlineTitle({
           spellCheck={false}
           onChange={(e) => {
             setV(e.target.value);
-            edit.current = { path, name: nameOf(e.target.value) };
+            draft.typed({ path, name: nameOf(e.target.value) });
             onTyped(path);
           }}
           onBlur={() => void commit()}
@@ -275,7 +300,8 @@ function InlineTitle({
             } else if (e.key === "Escape") {
               e.preventDefault();
               e.stopPropagation();
-              edit.current = null;
+              // 이 칸이 이번에 입력했을 때만 손댐을 되돌린다 — 입력하지 않은 칸의 Esc 는 취소할 입력이 없다
+              if (draft.cancel() === path) onUntyped(path);
               setV(initial);
               setFull(false);
               onDone();
@@ -297,6 +323,8 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   const { doc, conflict } = entry;
   const live = prefs.live;
   const previewRef = useRef<HTMLDivElement>(null);
+  /** 제목 칸의 확정(InlineTitle 이 채운다) */
+  const titleHandle = useRef<TitleHandle | null>(null);
   const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
   /** 접힌 상태가 바뀔 때 올린다(미리보기를 다시 맞춘다) */
   const [foldVersion, setFoldVersion] = useState(0);
@@ -363,7 +391,11 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     el.classList.add("anchor-flash");
     setTimeout(() => el!.classList.remove("anchor-flash"), 1600);
   };
-  paneApi.current = { scrollToAnchor };
+  paneApi.current = {
+    scrollToAnchor,
+    titlePending: () => titleHandle.current?.titlePending() ?? null,
+    commitTitle: (p) => titleHandle.current?.commitTitle(p) ?? Promise.resolve({ kind: "none", path: p }),
+  };
 
   const onPreviewClick = (e: MouseEvent<HTMLDivElement>) => {
     const fold = (e.target as HTMLElement).closest<HTMLElement>(".pv-fold");
@@ -579,8 +611,10 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 onIcon={doc.generated || revision ? undefined : (at) => ctx.setIconPick({ ...at, node: docNode })}
                 onFocused={ctx.clearTitleFocus}
                 onRename={(p, stem) => ctx.renameNode(stripMd(p), stem)}
-                onTyped={ctx.touchedNote}
+                onTyped={ctx.typedNote}
+                onUntyped={ctx.untypedNote}
                 onDone={() => handle.current?.focus()}
+                handle={titleHandle}
               />
               <Editor
                 docKey={docKeyOf(doc)}

@@ -128,9 +128,48 @@ describe("이 창에서 만든 노트 집합", () => {
 
   it("제목 칸에 입력하면(확정 전에도) 지우지 않는다", () => {
     const c = made("W/a.md", "W/b.md");
-    c.touched("W/a.md");
+    c.typed("W/a.md");
     expect(c.take("W/a.md", closed)).toBe(false);
     expect(c.has("W/b.md")).toBe(true);
+  });
+
+  it("제목 칸 입력을 Esc 로 취소하면 다시 지울 수 있다", () => {
+    const c = made("W/a.md");
+    c.typed("W/a.md");
+    c.typed("W/a.md");
+    c.untyped("W/a.md");
+    expect(c.take("W/a.md", closed)).toBe(true);
+  });
+
+  it("Esc 로 되돌리는 것은 입력만으로 손댄 새 노트뿐이다", () => {
+    // 만들지 않은 노트
+    const c = made();
+    c.typed("W/a.md");
+    c.untyped("W/a.md");
+    expect(c.has("W/a.md")).toBe(false);
+    // 이름을 바꾸거나 옮겼다(afterMove 의 touched — 옛 경로)
+    const moved = made("W/b.md");
+    moved.typed("W/b.md");
+    moved.touched("W/b.md");
+    moved.untyped("W/b.md");
+    expect(moved.has("W/b.md")).toBe(false);
+    // 다른 창으로 넘겼다·지웠다
+    const off = made("W/c.md", "W/d.md");
+    off.typed("W/c.md");
+    off.typed("W/d.md");
+    off.handedOff("W/c.md");
+    off.forget((p) => p === "W/d.md");
+    off.untyped("W/c.md");
+    off.untyped("W/d.md");
+    expect([off.has("W/c.md"), off.has("W/d.md")]).toEqual([false, false]);
+  });
+
+  it("입력하지 않고 Esc 만 누르면 아무 일도 없다", () => {
+    const c = made("W/a.md");
+    c.untyped("W/a.md");
+    expect(c.take("W/a.md", closed)).toBe(true);
+    c.untyped("W/a.md");
+    expect(c.has("W/a.md")).toBe(false);
   });
 
   it("다른 창으로 넘긴 노트는 이 창에서 닫아도 지우지 않는다", () => {

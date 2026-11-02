@@ -54,26 +54,42 @@ export const closedForGood = (path: string, created: ReadonlySet<string>, layout
 
 /**
  * 이 창에서 「새 노트」로 만든 노트 중 아직 지울 수 있는 것(창마다 메모리, 새로 고치면 비워진다).
- * 들어오는 길은 하나(만듦), 나가는 길은 넷이다 — 사람이 손댐(제목 칸에 입력·이름 바꾸기·옮기기), 다른 창으로 넘김,
- * 지워짐, 닫혀서 지울지 본 차례(한 번만 본다)
+ * 들어오는 길은 둘이다 — 만듦, 제목 칸 입력을 Esc 로 취소(입력만으로 빠졌던 것이 돌아온다).
+ * 나가는 길은 넷이다 — 사람이 손댐(제목 칸에 입력·이름 바꾸기·옮기기), 다른 창으로 넘김, 지워짐, 닫혀서 지울지 본 차례(한 번만 본다)
  */
 export class CreatedNotes {
   private readonly paths = new Set<string>();
+  /** 제목 칸에 입력한 것만으로 빠진 노트(만든 경로 그대로). Esc 로 원래 이름에 돌아가면 paths 로 돌아온다 */
+  private readonly typing = new Set<string>();
   /** 「새 노트」로 만들었다 */
   created(path: string): void {
     this.paths.add(path);
   }
-  /** 사람이 손댔다(제목 칸에 입력, 이름 바꾸기·옮기기) — 확정하지 않은 입력도 손댄 것이다 */
+  /** 제목 칸에 입력했다 — 확정하지 않은 입력도 손댄 것이다. 이름 바꾸기가 실패해도 그대로다(Esc 로만 되돌린다) */
+  typed(path: string): void {
+    if (this.paths.delete(path)) this.typing.add(path);
+  }
+  /**
+   * 제목 칸의 입력을 Esc 로 취소했다: 입력만으로 손댄 노트면 다시 지울 수 있다. 이름을 바꿨으면(경로가 바뀜)·옮겼으면·
+   * 처음부터 만든 노트가 아니면 아무 일도 없다
+   */
+  untyped(path: string): void {
+    if (this.typing.delete(path)) this.paths.add(path);
+  }
+  /** 사람이 손댔다(이름 바꾸기·옮기기) — 되돌리지 않는다 */
   touched(path: string): void {
     this.paths.delete(path);
+    this.typing.delete(path);
   }
   /** 다른 창이 그 노트를 열었다(끌어서 새 창, 탭 메뉴 「새 창으로 열기」) — 이 창에서 탭을 닫아도 지우지 않는다 */
   handedOff(path: string): void {
     this.paths.delete(path);
+    this.typing.delete(path);
   }
   /** 지운 노드 */
   forget(gone: (p: string) => boolean): void {
     for (const p of this.paths) if (gone(p)) this.paths.delete(p);
+    for (const p of this.typing) if (gone(p)) this.typing.delete(p);
   }
   has(path: string): boolean {
     return this.paths.has(path);
