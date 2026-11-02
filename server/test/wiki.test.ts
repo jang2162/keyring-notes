@@ -160,6 +160,24 @@ describe("위키 토픽", () => {
     expect([...wiki.topics]).toEqual(["업무/경제"]);
   });
 
+  it("토픽이 아닌 노드의 사람이 쓴 wiki/index.md 는 생성 문서가 아니므로 대 보고 지운다", async () => {
+    await owner.createTopic("업무/경제");
+    await owner.write("업무/메모.md", "메모", null);
+    await owner.write("업무/메모/wiki/index.md", "사람 목차", null);
+    // 다른 토픽을 지워도 토픽이 아닌 곳의 같은 모양 경로는 걷히지 않는다
+    await owner.deleteNode("업무/경제", await treeExpect("업무/경제"));
+    expect((await owner.read("업무/메모/wiki/index.md")).content).toContain("사람 목차");
+    // 화면이 본 뒤 내용이 바뀌었으면 충돌
+    const stale = await treeExpect("업무/메모");
+    const cur = await owner.read("업무/메모/wiki/index.md");
+    await owner.write("업무/메모/wiki/index.md", "사람 목차 고침", cur.hash);
+    await expect(owner.deleteNode("업무/메모", stale)).rejects.toMatchObject({ code: "conflict_path" });
+    // 트리 목록 그대로면 지워지고, index.md 도 지운 것에 든다
+    const r = await owner.deleteNode("업무/메모", await treeExpect("업무/메모"));
+    expect(r.deleted.sort()).toEqual(["업무/메모.md", "업무/메모/wiki/index.md"]);
+    expect(git("status", "--porcelain")).toBe("");
+  });
+
   it("위키 토픽이 아닌 폴더에는 수집할 수 없다", async () => {
     await owner.write("메모/a.md", "x", null);
     await expect(ingestor.ingest(owner, { kind: "text", topic: "메모", title: "t", text: "x" })).rejects.toThrow(/위키 토픽이 아닙니다/);

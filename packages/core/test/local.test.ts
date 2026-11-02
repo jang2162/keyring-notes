@@ -353,6 +353,18 @@ describe("다른 창이 먼저 바꾼 파일", () => {
     expect(left).toEqual([]);
   });
 
+  it("restoreFiles: 토픽이 아닌 노드의 사람이 쓴 wiki/index.md 는 되살린다", async () => {
+    const { store, v } = await vault({ "W.md": "", "W/X.md": "", "W/X/wiki/index.md": "사람 목차", "W/X/wiki/a.md": "a" });
+    const shown = ["W/X.md", "W/X/wiki/index.md", "W/X/wiki/a.md"];
+    const saved = await Promise.all(shown.map(async (p) => ({ path: p, content: (await v.read(p)).content })));
+    await v.deleteNode("W/X");
+    expect(await store.read("W/X/wiki/index.md")).toBeNull();
+    await v.restoreFiles(saved);
+    const back = await store.read("W/X/wiki/index.md");
+    expect(back).not.toBeNull();
+    expect(unstamped(new TextDecoder().decode(back!))).toBe("사람 목차");
+  });
+
   it("deleteNode: 첨부도 바이트 해시로 대 본다", async () => {
     const { store, b } = await two({ "N.md": "노드" });
     store.touch("N/img.png", "IMG");
