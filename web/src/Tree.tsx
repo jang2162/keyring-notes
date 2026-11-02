@@ -650,7 +650,7 @@ export const Tree = forwardRef<
               {canExpand && <ChevronRight size={14} strokeWidth={2} />}
             </span>
             {emoji ? (
-              <span className="doc-icon tree-emoji" aria-hidden>
+              <span className="doc-icon" aria-hidden>
                 {emoji}
               </span>
             ) : (

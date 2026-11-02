@@ -3558,7 +3558,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                 onAuxClick={(e) => e.button === 1 && pane && void closeTab(pane.id, tp)}
               >
                 <DocIcon icon={iconOf(tp)} />
-                {docLabel(tp)}
+                <span className="tab-label">{docLabel(tp)}</span>
               </button>
               {tabDirty ? <span className="tab-dirty" aria-label={t("status.unsaved")} /> : null}
               <button
