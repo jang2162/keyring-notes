@@ -5,6 +5,7 @@ import { enhance } from "./enhance";
 import { renderMarkdown, type LinkResolver } from "./markdown";
 import { api } from "./api";
 import { t } from "./i18n";
+import { CALLOUT_LINE } from "./liveSyntax";
 
 /**
  * Live Preview에서 8단계 형식을 그린다. 커서(선택)가 그 블록 밖에 있을 때만 그리고, 들어가면 원문을 보인다.
@@ -130,7 +131,7 @@ function findBlocks(state: EditorState): Block[] {
       }
       if (n.name === "Blockquote") {
         const first = doc.lineAt(n.from);
-        if (/^\s*>\s*\[![A-Za-z][\w-]*\][+-]?/.test(first.text)) out.push({ from: first.from, to: doc.lineAt(n.to).to, kind: "callout" });
+        if (CALLOUT_LINE.test(first.text)) out.push({ from: first.from, to: doc.lineAt(n.to).to, kind: "callout" });
         return false;
       }
       return undefined;

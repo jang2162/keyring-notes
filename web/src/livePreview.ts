@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { EditorState, StateField, Transaction, type Extension, type Range, type TransactionSpec } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { liveBlocks, type LiveRenderContext } from "./liveBlocks";
+import { frontmatterEnd, syntaxMarks, toggleTaskAt } from "./liveSyntax";
 import { t } from "./i18n";
 import { isAppField } from "./childSortUi";
 
@@ -11,9 +12,10 @@ import { isAppField } from "./childSortUi";
  *
  *   # 제목 → 제목(크게)        **굵게**·*기울임*·~~취소~~·==강조== → 기호 숨김
  *   `코드` → 백틱 숨김         [글자](주소) → 글자만     [[대상|별칭]] → 별칭(없으면 대상)
+ *   --- → 가로줄   > 인용 → 왼쪽 막대   - 글머리 → •   - [ ] → 체크박스(판정은 liveSyntax.ts)
  *
- * 이미지·콜아웃·수식·주석·블록 ID·Mermaid·문서 임베드·각주는 liveBlocks.ts가 미리보기 렌더러로 그린다.
- * 코드 블록·표·HTML은 건드리지 않는다.
+ * 이미지·콜아웃·수식·주석·블록 ID·Mermaid·문서 임베드·각주·HTML 블록은 liveBlocks.ts가 미리보기 렌더러로 그린다.
+ * 표는 건드리지 않는다.
  */
 
 const hide = Decoration.replace({});
@@ -32,10 +34,78 @@ function activeLines(state: EditorState): Set<number> {
   return out;
 }
 
+class HrWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-lp-hr";
+    return el;
+  }
+  // 누르면 편집기가 그 줄에 커서를 두어 원문(---)을 보인다
+  ignoreEvent() {
+    return false;
+  }
+}
+
+class BulletWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-lp-bullet";
+    el.textContent = "•";
+    return el;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+/** 할 일 체크박스. 누르면 커서를 옮기지 않고 그 줄의 [ ]↔[x] 만 바꾼다 */
+class TaskWidget extends WidgetType {
+  constructor(
+    readonly done: boolean,
+    readonly readOnly: boolean,
+  ) {
+    super();
+  }
+  eq(o: TaskWidget) {
+    return o.done === this.done && o.readOnly === this.readOnly;
+  }
+  toDOM(view: EditorView) {
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "cm-lp-task";
+    box.checked = this.done;
+    box.disabled = this.readOnly;
+    box.addEventListener("mousedown", (e) => {
+      // 기본 동작(포커스·커서 이동)을 막고 문서만 바꾼다. 체크 표시는 바뀐 문서로 다시 그린다
+      e.preventDefault();
+      if (view.state.readOnly) return;
+      const spec = toggleTaskAt(view.state, view.state.doc.lineAt(view.posAtDOM(box)).number);
+      if (spec) view.dispatch(spec);
+    });
+    box.addEventListener("click", (e) => e.preventDefault());
+    return box;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+const hrWidget = Decoration.replace({ widget: new HrWidget() });
+const bulletWidget = Decoration.replace({ widget: new BulletWidget() });
+const quoteLine = (depth: number) => Decoration.line({ class: "cm-lp-quote", attributes: { style: `--quote-depth: ${depth}` } });
+
 interface Item {
   from: number;
   to: number;
   deco: Decoration;
+  /** 글을 바꾸는(숨기는) 장식. 겹치면 바깥 것만 남긴다 */
+  replace?: boolean;
 }
 
 function build(view: EditorView): DecorationSet {
@@ -97,6 +167,18 @@ function build(view: EditorView): DecorationSet {
     });
 
     // 위키링크 [[대상|별칭]]과 하이라이트 ==글자==(lezer 마크다운 문법에 없어 글자로 찾는다)
+    for (const m of syntaxMarks(state, from, to, active)) {
+      if (m.kind === "hide") items.push({ from: m.from, to: m.to, deco: hide });
+      else if (m.kind === "hr") items.push({ from: m.from, to: m.to, deco: hrWidget, replace: true });
+      else if (m.kind === "bullet") items.push({ from: m.from, to: m.to, deco: bulletWidget, replace: true });
+      else if (m.kind === "task")
+        items.push({ from: m.from, to: m.to, deco: Decoration.replace({ widget: new TaskWidget(m.done, state.readOnly) }), replace: true });
+      else if (m.kind === "quoteLine") {
+        const at = state.doc.line(m.line).from;
+        items.push({ from: at, to: at, deco: quoteLine(m.depth) });
+      }
+    }
+
     const text = state.sliceDoc(from, to);
     const inCode = (pos: number) => code.some(([a, b]) => pos >= a && pos < b);
     for (const m of text.matchAll(/(!?)\[\[([^\]\n]+)\]\]/g)) {
@@ -125,7 +207,7 @@ function build(view: EditorView): DecorationSet {
   let hiddenUntil = -1;
   const ranges = [];
   for (const it of items) {
-    if (it.deco === hide) {
+    if (it.deco === hide || it.replace) {
       if (it.from < hiddenUntil) continue;
       hiddenUntil = it.to;
     }
@@ -156,6 +238,16 @@ const theme = EditorView.baseTheme({
   ".cm-lp-h3": { fontSize: "1.18em" },
   ".cm-lp-mark": { backgroundColor: "var(--mark-bg)", color: "var(--mark-fg)", borderRadius: "3px" },
   ".cm-lp-link": { color: "var(--accent)", textDecoration: "underline", textDecorationStyle: "dashed", textUnderlineOffset: "3px" },
+  ".cm-lp-hr": { display: "inline-block", width: "100%", verticalAlign: "middle", borderTop: "1px solid var(--border)", cursor: "text" },
+  ".cm-lp-bullet": { display: "inline-block", minWidth: "0.6em", textAlign: "center", color: "var(--muted)" },
+  ".cm-lp-task": { margin: "0 6px 0 0", verticalAlign: "-1px", cursor: "pointer" },
+  ".cm-lp-task:disabled": { cursor: "default" },
+  // 막대 하나, 겹친 단계마다 왼쪽 여백(미리보기 blockquote 와 같은 색)
+  ".cm-lp-quote": {
+    borderLeft: "3px solid var(--border)",
+    paddingLeft: "calc(var(--quote-depth, 1) * 12px) !important",
+    color: "var(--muted)",
+  },
 });
 
 /** ctx: 블록을 그릴 때 쓸 링크 해석·문서 경로(없으면 기호 숨기기만) */
@@ -241,16 +333,6 @@ class FrontmatterWidget extends WidgetType {
   ignoreEvent() {
     return false;
   }
-}
-
-function frontmatterEnd(state: EditorState): number | null {
-  const doc = state.doc;
-  if (doc.lines < 2 || doc.line(1).text.trimEnd() !== "---") return null;
-  for (let i = 2; i <= Math.min(doc.lines, 300); i++) {
-    const t = doc.line(i).text.trimEnd();
-    if (t === "---" || t === "...") return i;
-  }
-  return null;
 }
 
 /** 프런트매터 맨 위 키 수(들여쓰지 않은 "키:" 줄). 앱이 적는 정렬·순서·수정 시각(sort·rank·edited)은 세지 않는다 */
