@@ -32,6 +32,7 @@ import { isAppField } from "./childSortUi";
 import { editorAutoFocus } from "./editorFocus";
 import { isTouch } from "./touch";
 import { TitleDraft, type TitleHandle, type TitleOutcome } from "./titleEdit";
+import { DRAG_REGION } from "./windowChrome";
 
 export interface RevisionView {
   /** 이 과거 판의 문서. 칸이 다른 문서로 바뀌면 버린다 */
@@ -477,7 +478,8 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
 
   return (
     <>
-      <header className="doc-head">
+      {/* 좁은 화면에는 위쪽 탭 줄이 없어 이 줄이 창 맨 위다 — 창을 여기서 끈다 */}
+      <header className="doc-head" {...(ctx.narrow ? DRAG_REGION : {})}>
         <nav ref={crumbsRef} className="crumbs" aria-label={t("doc.crumbs")}>
           {ctx.wsSwitcher && (
             <span className="crumb">

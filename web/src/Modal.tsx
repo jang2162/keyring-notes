@@ -1,4 +1,16 @@
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { pushOverlay } from "./backStack";
@@ -7,6 +19,7 @@ import { keyCapture } from "./shortcuts";
 import { toast } from "./toast";
 import { t } from "./i18n";
 import { tipProps } from "./Tooltip";
+import { DRAG_REGION } from "./windowChrome";
 
 /**
  * 모달 틀 하나: 설정·그래프·변경 검토·정리 점검·원본 수집·명령 팔레트·단축키가 같이 쓴다.
@@ -81,6 +94,16 @@ export function useModalControl(): ModalControl | null {
   return useContext(ModalContext);
 }
 
+/** styles.css 의 `@media (max-width: 640px)`: 이 폭 이하에서는 모달이 창을 가득 채운다(아래에서 올라오는 .more-sheet 만 빼고) */
+const COMPACT = "(max-width: 640px)";
+const compactQuery = () => window.matchMedia?.(COMPACT);
+const subscribeCompact = (on: () => void) => {
+  const mq = compactQuery();
+  mq?.addEventListener("change", on);
+  return () => mq?.removeEventListener("change", on);
+};
+const isCompact = () => compactQuery()?.matches ?? false;
+
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -124,6 +147,9 @@ export function Modal({
   const box = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const [max, setMax] = useState(false);
+  const compact = useSyncExternalStore(subscribeCompact, isCompact);
+  /** 창을 가득 채우면 머리줄이 창 맨 위에 닿는다 — 제목 표시줄이 없는 창은 여기서 끈다. 가운데 뜬 모달에서는 끌지 않는다 */
+  const fillsWindow = max || (compact && !className?.split(" ").includes("more-sheet"));
   /** 처음 열 때 자동으로 포커스한 입력칸(사람이 직접 들어간 칸이 아니다) */
   const autoFocused = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
@@ -232,7 +258,7 @@ export function Modal({
           onKeyDown={onKeyDown}
         >
           {!hideHead && (
-            <div className="kmodal-head">
+            <div className="kmodal-head" {...(fillsWindow ? DRAG_REGION : {})}>
               <h2 id={titleId} className="kmodal-title">
                 {title}
               </h2>

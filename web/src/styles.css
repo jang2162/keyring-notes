@@ -46,10 +46,15 @@
   --top-h: 38px;
   --head-h: 48px;
   --read-w: 760px;
+  /* 창 맨 위 왼쪽에서 신호등이 차지하는 폭. 신호등이 떠 있을 때만 0 이 아니다(아래 .traffic-lights) */
+  --lights-w: 0px;
   font-family: var(--font-sans);
   color: var(--fg);
   color-scheme: light;
 }
+/* macOS 앱의 신호등(app/src-tauri/tauri.conf.json 의 trafficLightPosition, soloWindow.ts 의 새 창)이 떠 있다 — 판정은 windowChrome.ts.
+   창 맨 위 왼쪽에 닿는 줄은 왼쪽 여백을 max(원래 여백, var(--lights-w)) 로 둔다. 전체 화면이면 신호등이 사라져 원래 여백이 된다 */
+:root.traffic-lights { --lights-w: 84px; }
 
 /* 어두운 테마: 설정에서 고르거나(data-theme="dark"), 시스템 설정을 따른다(data-theme 없음) */
 :root[data-theme="dark"] {
@@ -519,7 +524,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 
 /* PDF 보기·주석 */
 .pdf-viewer { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); }
-.pdf-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.pdf-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px max(12px, var(--lights-w)); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .pdf-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .pdf-nav { display: flex; align-items: center; gap: 4px; }
 .pdf-nav input { width: 44px; text-align: center; font: inherit; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: inherit; }
@@ -595,9 +600,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* 왼쪽 칸: 첫 줄(신호등 자리·앱 이름·사이드바 토글) · 둘째 줄(워크스페이스 전환기 + 트리 단추) · 그 아래 레일 | 사이드바 */
 .left-dock { grid-area: dock; position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--bg-soft); border-right: 1px solid var(--border); }
 .dock-body { flex: 1; display: flex; min-height: 0; }
-.dock-title { display: flex; align-items: center; gap: var(--sp-2); height: var(--top-h); flex-shrink: 0; padding: 0 var(--sp-1) 0 var(--sp-3); border-bottom: 1px solid var(--border); background: var(--bg-soft); user-select: none; -webkit-user-select: none; cursor: default; }
-/* macOS 앱의 신호등(app/src-tauri/tauri.conf.json 의 trafficLightPosition, soloWindow.ts 의 새 창)이 앉는 자리 */
-.dock-title.with-lights { padding-left: 84px; }
+.dock-title { display: flex; align-items: center; gap: var(--sp-2); height: var(--top-h); flex-shrink: 0; padding: 0 var(--sp-1) 0 max(var(--sp-3), var(--lights-w)); border-bottom: 1px solid var(--border); background: var(--bg-soft); user-select: none; -webkit-user-select: none; cursor: default; }
 .dock-app { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: 600; color: var(--muted); }
 .dock-toggle { width: 28px; height: 28px; }
 /* 사이드바를 접으면 첫 줄 왼쪽 칸은 내용 너비로 줄어 레일보다 넓다. 맨 위 왼쪽 칸의 탭 줄 위에 걸치고, 걸친 폭(--title-over, DockTitle 이 잰다)만큼 그 탭 줄이 비켜 앉는다 */
@@ -1040,7 +1043,9 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
   .shell.kb-up .left-dock, .shell.kb-up .right-panel, .shell.kb-up .nav-backdrop { bottom: 0; }
   .shell.kb-up .toasts { bottom: var(--sp-3); }
   .page { padding: var(--sp-4) var(--sp-4) 40vh; }
-  .doc-head { padding-left: var(--sp-3); }
+  /* 위쪽 탭 줄이 없어 문서 머리와 왼쪽 서랍의 첫 줄이 창 맨 위 왼쪽에 닿는다 */
+  .doc-head { padding-left: max(var(--sp-3), var(--lights-w)); }
+  .left-dock .dock-head { padding-left: max(var(--sp-2), var(--lights-w)); }
   /* 상위 경로는 한 줄로, 넘치면 옆으로 밀어 본다(스크롤 막대 없이). 칸은 줄어들지 않는다 */
   .crumbs { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
   .crumbs::-webkit-scrollbar { display: none; }
@@ -1079,6 +1084,7 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .kmodal-palette .kmodal { width: min(620px, 100%); max-height: 70vh; padding: 10px; }
 .kmodal-backdrop.max { padding: 0; }
 .kmodal-backdrop.max .kmodal { width: 100vw; height: 100vh; max-height: none; border-radius: 0; border: none; }
+.kmodal-backdrop.max .kmodal-head { padding-left: max(var(--sp-4), var(--lights-w)); }
 .kmodal-head { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: 6px 8px 6px var(--sp-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .kmodal-title { margin: 0; font-size: var(--fs-lg); font-weight: 600; white-space: nowrap; }
 .kmodal-tools { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -1103,6 +1109,9 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
   .kmodal-palette .kmodal { padding: 8px; }
   .kmodal-max { display: none; }
   .kmodal-head { position: sticky; top: 0; background: var(--bg); z-index: 2; padding-left: var(--sp-3); flex-wrap: wrap; }
+  /* 창을 채우므로 머리줄과 팔레트 입력칸이 창 맨 위 왼쪽에 닿는다(아래에서 올라오는 .more-sheet 는 빼고) */
+  .kmodal:not(.more-sheet) > .kmodal-head { padding-left: max(var(--sp-3), var(--lights-w)); }
+  .kmodal-palette .palette input { margin-left: max(0px, calc(var(--lights-w) - 8px)); }
   .kmodal-tools { order: 3; flex-basis: 100%; padding-bottom: 4px; }
   .kmodal-close { order: 2; margin-left: auto; }
   .kmodal-main.with-nav { flex-direction: column; }
