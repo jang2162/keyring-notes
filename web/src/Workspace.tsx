@@ -32,6 +32,7 @@ import {
   Link,
   Link2,
   Paperclip,
+  PanelRightClose,
   ListChecks,
   LocateFixed,
   LogOut,
@@ -3291,7 +3292,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         />
         <IconButton
           size={16}
-          icon={X}
+          icon={PanelRightClose}
           label={t("panel.close")}
           keys={keyOf("right")}
           onClick={() => (narrow() ? setDrawer(null) : setPrefs({ rightOpen: false }))}

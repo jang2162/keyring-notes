@@ -13,7 +13,7 @@ Click the gear at the bottom of the rail, press `Ctrl/Cmd+,`, or go to `#/:setti
 | **General** | Theme, show icons, labels on the side bar, reset |
 | **Language** | Display language, vault language, language packs. On a server also agent language and server language |
 | **Editor** | Autosave, Live Preview, font and size, readable width, line numbers, properties above the document |
-| **Files & links** | New link format, attachments in the tree, backlinks at the end of the document, daily display |
+| **Files & links** | New link format, files in the tree, backlinks at the end of the document, daily display |
 | **Workspaces** | Workspaces and their daily, template and attachment folders |
 | **Shortcuts** | Keyboard shortcuts (desktop and web only) |
 | **This device & sync** | Sync (app only) |
@@ -24,7 +24,7 @@ Search settings with the box at the top left, in the current language or in Engl
 
 ## Settings that follow you
 
-Settings marked **All devices** are stored in the vault's shared settings file and used by every device, web and app: theme, display language, editor font and size, line numbers, Live Preview, readable width, autosave, show icons, attachments in the tree, daily display, sorting, properties above the document, backlinks at the end of the document, side bar labels and shortcuts.
+Settings marked **All devices** are stored in the vault's shared settings file and used by every device, web and app: theme, display language, editor font and size, line numbers, Live Preview, readable width, autosave, show icons, files in the tree, daily display, sorting, properties above the document, backlinks at the end of the document, side bar labels and shortcuts.
 
 - Turn on **Different on this device only** for an item to keep its value on this device only. It then stops following the shared value, which is shown dimmed next to it.
 - The value used is: this device's override, then the shared value, then the default.

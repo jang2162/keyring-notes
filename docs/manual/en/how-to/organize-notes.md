@@ -153,7 +153,7 @@ The icon is stored as the note's frontmatter `icon: 📘`, so other editors and 
 
 Paste or drop images and files into the editor. They are uploaded to the current workspace's attachment folder (`_attachments` by default, `_첨부` when the vault language is Korean), and a link is inserted: `![[image]]` for images, `[[file]]` for other files, or a path when the link format is **Full path**. Pasted images are named `Pasted image <date-time>.png`. If a name is taken, ` 2`, ` 3` and so on is appended.
 
-The Attachments panel on the rail also has a drop area for adding files.
+The Files panel on the rail also has a drop area for adding files.
 
 ## Next steps
 
