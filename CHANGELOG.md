@@ -2,6 +2,13 @@
 
 All notable user-facing changes to Keyring Notes are listed here. The server and the desktop app share one version.
 
+## [Unreleased]
+
+### Changed
+
+- The rail button for the attachments panel is now **Files**, and the button for the note tree is now **Notes**, on the rail and the bottom bar. The panel title, its filter and the **Files in the tree** setting use the new name too.
+- The button at the top right of the right panel now collapses the panel, with a panel icon instead of ✕.
+
 ## [0.11.0] - 2026-11-01
 
 ### Added

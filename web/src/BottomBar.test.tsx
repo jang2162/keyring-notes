@@ -33,10 +33,10 @@ const button = (html: string, label: string) => {
 beforeEach(() => setLanguage("en"));
 
 describe("BottomBar", () => {
-  it("다섯 칸이 이 순서: Files · Search · New note · Tabs · More", () => {
+  it("다섯 칸이 이 순서: Notes · Search · New note · Tabs · More", () => {
     const labels = [...bar().matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map((m) => m[1]);
     expect(labels).toEqual([t("rail.files"), t("rail.search"), t("tree.newNote"), t("bar.tabs"), t("bar.more")]);
-    expect(labels).toEqual(["Files", "Search", "New note", "Tabs", "More"]);
+    expect(labels).toEqual(["Notes", "Search", "New note", "Tabs", "More"]);
   });
 
   it("주 메뉴 이름이 붙은 nav", () => expect(bar()).toMatch(/<nav class="bottom-bar" aria-label="Main"/));
@@ -44,8 +44,8 @@ describe("BottomBar", () => {
   it("active 칸은 aria-pressed=true, 다른 칸은 false", () => {
     const html = bar({ active: "search" });
     expect(button(html, "Search")).toContain('aria-pressed="true"');
-    expect(button(html, "Files")).toContain('aria-pressed="false"');
-    expect(button(bar(), "Files")).toContain('aria-pressed="false"');
+    expect(button(html, "Notes")).toContain('aria-pressed="false"');
+    expect(button(bar(), "Notes")).toContain('aria-pressed="false"');
   });
 
   it("탭 칸에 열린 탭 수가 보인다", () => {

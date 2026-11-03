@@ -7,7 +7,7 @@ It is for everyone who works with several notes at once.
 ## The screen
 
 - **Top row**: the app name and the left panel button (`Ctrl/Cmd+Shift+E`) on the left, then the tabs. In the macOS app the window buttons sit at the start of this row, and you drag the row's empty space to move the window.
-- **Rail** on the left: Files, Search, Tags, Attachments, Today's note, Graph, Import, Review and Structure check. At the bottom are Sync (app), Shortcuts, Settings and Log out (server). Settings → **General** can show names next to the icons.
+- **Rail** on the left: Notes, Search, Tags, Files, Today's note, Graph, Import, Review and Structure check. At the bottom are Sync (app), Shortcuts, Settings and Log out (server). Settings → **General** can show names next to the icons.
 - **Left panel** next to the rail. At the top of the left panel are the workspace switcher and the tree buttons.
 - **Tabs and the note** in the middle, and the **right panel** with Outline, Links, Properties and History.
 - **Status bar** at the bottom: save state, offline, changes waiting to be sent, waiting reviews and character count.
@@ -18,10 +18,10 @@ Icon-only buttons show their name and shortcut on hover, or the reason when they
 
 On narrow screens (800px or less), such as a phone, a bar at the bottom replaces the row of tabs, the rail and the status bar. The note's header (path and **⋯**) is at the top. The bar has five buttons:
 
-- **Files** and **Search** open the left drawer in that view. Press the same button again to close the drawer.
+- **Notes** and **Search** open the left drawer in that view. Press the same button again to close the drawer.
 - **New note** creates a note next to the note you are reading. Press and hold it to open today's note. When daily notes are off in the workspace, holding it creates a new note, just like a short press.
 - **Tabs** shows how many tabs are open and opens the list of open tabs. It is unavailable while no note is open.
-- **More** opens a sheet at the bottom of the screen with the rest of the rail: Today's note, Tags, Attachments, Graph view, Import, Review, Structure check, Sync (app), Settings and Log out (server).
+- **More** opens a sheet at the bottom of the screen with the rest of the rail: Today's note, Tags, Files, Graph view, Import, Review, Structure check, Sync (app), Settings and Log out (server).
 
 What the status bar would warn you about appears on **More**. A number counts changes waiting to be sent and waiting reviews. A dot means you are offline, a save failed or conflicts, a note has unsaved changes while autosave is off, sync failed, or a desktop app update is available. The top of the **More** list says what it is, and some lines act when you press them, for example **Send 1 now** or **Unsaved**, which saves the note. The bar hides while the on-screen keyboard is open.
 
