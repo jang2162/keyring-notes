@@ -20,6 +20,7 @@ Nov 3, 2026 · 기준 커밋 `8b22590`
 | 6. 표 | **표 편집기** — 칸마다 편집기(아래), 열 정렬, 행·열 끌어 옮기기, sort | 사용자 |
 | 7. 줄 안 `![글](주소)` | 그림으로 | 사용자(요청) |
 | 8. HTML 블록 | 그린 결과로 | 사용자(요청) |
+| 9. 코드 블록 언어별 색 | 미리보기에도 칠하고, 편집 화면과 같은 테마 색으로 | 사용자(요청), 방식은 코디네이터 |
 
 **하지 않는 것(non-goals)**
 
@@ -203,6 +204,14 @@ B 를 고른 까닭(사용자): 칸 안에서도 본문과 똑같이 `[[` 자동
 ### 8. HTML 블록
 
 - `HTMLBlock` 노드(`<!-- … -->` 주석 블록 제외 — 붙여넣기 업로드 자리 표시 `<!-- uploading… -->` 이 이 모양이다). 커서가 없으면 `BlockWidget` 으로, 렌더러는 `renderMarkdown`(DOMPurify 정화 그대로). 누르면 원문.
+
+### 9. 코드 블록 언어별 색
+
+- **지금**: 편집 화면은 `markdown({ codeLanguages: languages })`(`@codemirror/language-data`)로 언어별 파서를 받아 `syntaxHighlighting(defaultHighlightStyle, { fallback: true })` 로 칠한다 — 밝은 테마용 고정 색이라 어두운 테마에서 대비가 낮을 수 있다(확인 안 함). 미리보기(`markdown.ts` 의 markdown-it)는 칠하지 않는다.
+- **방식(코디네이터)**: 미리보기도 같은 lezer 파서로 칠한다 — `languages` 에서 `LanguageDescription.matchLanguageName(languages, info, true)` 로 찾아 `load()`(편집기와 같은 지연 로딩 청크) 뒤 `@lezer/highlight` 의 `highlightCode` + `classHighlighter`(`tok-*` 클래스)로 `<code>` 안을 다시 그린다. KaTeX·Mermaid 처럼 그린 뒤 `enhance.ts` 에서 비동기로 한다(모르는 언어·실패면 지금처럼 글자만).
+- 색은 `styles.css` 의 `tok-*` 규칙으로, 밝은·어두운 테마 토큰을 둔다. 편집 화면도 `defaultHighlightStyle` 대신 같은 `classHighlighter` 를 써(`syntaxHighlighting(classHighlighter)`) 두 화면이 같은 색이 된다. 제목 굵기(`headingStyle`)는 그대로.
+- 버린 방식: highlight.js·shiki — 새 의존성, 편집기와 색이 갈리고, 오프라인 캐시 목록(`sw`)에 따로 넣어야 한다.
+- 미리보기 색칠은 DOMPurify 정화 뒤에 하므로 만든 `<span class="tok-…">` 는 글자만 감싼다(정화된 글 노드에서 만든다 — HTML 을 문자열로 다시 넣지 않는다).
 
 ### 문서
 
