@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { crumbNodes, overlayTitleBar, switcherSpot } from "./topbar";
+import { crumbNodes, overlayTitleBar, switcherSpot, trafficLightsShown } from "./topbar";
 
 describe("crumbNodes", () => {
   it("워크스페이스 하나를 보는 동안에는 워크스페이스 칸을 뺀다", () => {
@@ -43,5 +43,20 @@ describe("overlayTitleBar", () => {
     expect(overlayTitleBar({ tauri: false, userAgent: mac, touchPoints: 0 })).toBe(false);
     expect(overlayTitleBar({ tauri: true, userAgent: mac, touchPoints: 5 })).toBe(false);
     expect(overlayTitleBar({ tauri: true, userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", touchPoints: 0 })).toBe(false);
+  });
+});
+
+describe("trafficLightsShown", () => {
+  it("신호등을 얹은 창이고 전체 화면이 아닐 때만 그 자리를 비운다", () => {
+    expect(trafficLightsShown(true, false)).toBe(true);
+  });
+
+  it("전체 화면에서는 신호등이 사라지므로 비우지 않는다", () => {
+    expect(trafficLightsShown(true, true)).toBe(false);
+  });
+
+  it("신호등을 얹지 않은 창(브라우저·다른 데스크톱 앱)은 비우지 않는다", () => {
+    expect(trafficLightsShown(false, false)).toBe(false);
+    expect(trafficLightsShown(false, true)).toBe(false);
   });
 });

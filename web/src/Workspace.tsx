@@ -232,7 +232,8 @@ import {
 } from "./closeWindow";
 import { onNewVersion } from "./pwaUpdate";
 import { tearOutAt } from "./tearOut";
-import { DockTitle, DRAG_REGION } from "./DockTitle";
+import { DockTitle } from "./DockTitle";
+import { DRAG_REGION, DRAG_SELF } from "./windowChrome";
 import { switcherSpot } from "./topbar";
 import { isTouch } from "./touch";
 import { backStack, pushOverlay } from "./backStack";
@@ -3083,9 +3084,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const canInsert = !!doc && !doc.generated && !revision && !doc.virtual;
   // 고정: 지금 있는 노드 중 지금 워크스페이스의 것(지운 것·다른 기기에서 옮겨 간 것은 숨는다)
   const pinnedShown = shownPins(pins, (n) => pinExists(n, resolver.paths), inScope);
-  /** 사이드바 둘째 줄: 전환기 + 지금 보기의 단추(파일 보기면 트리 단추). 편집 칸의 문서 머리와 높이를 맞춘다(--head-h) */
+  /**
+   * 사이드바 둘째 줄: 전환기 + 지금 보기의 단추(파일 보기면 트리 단추). 편집 칸의 문서 머리와 높이를 맞춘다(--head-h).
+   * 좁은 화면에서는 첫 줄(DockTitle)이 없어 서랍의 맨 위 줄이 되므로 창을 여기서 끈다
+   */
   const dockHead = (
-    <div className="dock-head">
+    <div className="dock-head" {...(isNarrow ? DRAG_REGION : {})}>
       {wsSwitcher("dock", false)}
       {prefs.leftView === "files" && (
         <span className="panel-tools">
@@ -3676,6 +3680,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       onTrash={() => setTrashOpen(true)}
       local={local}
       keyOf={keyOf}
+      dragWindow={isNarrow}
     />
   );
 
@@ -4354,6 +4359,7 @@ function Home({
   onTrash,
   local,
   keyOf,
+  dragWindow,
 }: {
   workspace: string | null;
   wsIcon: string | null;
@@ -4374,10 +4380,12 @@ function Home({
   onTrash: () => void;
   local: boolean;
   keyOf: (id: string) => string | undefined;
+  /** 좁은 화면에서는 탭 줄도 문서 머리도 없어 창을 끌 곳이 없다 — 홈의 빈 바탕을 끌게 한다 */
+  dragWindow: boolean;
 }) {
   const k = (id: string) => (keyOf(id) ? <kbd>{formatCombo(keyOf(id))}</kbd> : null);
   return (
-    <div className="home">
+    <div className="home" {...(dragWindow ? DRAG_SELF : {})}>
       <div className="home-inner">
         <h1>
           {workspace ? (

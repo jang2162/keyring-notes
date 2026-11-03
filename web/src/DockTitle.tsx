@@ -1,44 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { isTauri } from "@tauri-apps/api/core";
+import { useLayoutEffect, useRef } from "react";
 import { PanelLeft } from "lucide-react";
 import { IconButton } from "./ui";
-import { overlayTitleBar } from "./topbar";
-
-/** 이 창이 제목 표시줄 없이 신호등을 콘텐츠 위에 얹었는가(창마다 같다) */
-export const OVERLAY_TITLE = overlayTitleBar({ tauri: isTauri(), userAgent: navigator.userAgent, touchPoints: navigator.maxTouchPoints });
-
-/**
- * 창 끌기 영역 표시. 「deep」 은 그 아래 어디를 눌러도 창을 끈다 — 단추·탭(role="tab")처럼 누르는 것은 Tauri 가 알아서 뺀다.
- * 끌기·두 번 눌러 확대에는 capabilities 의 core:window:allow-start-dragging·allow-internal-toggle-maximize 가 있어야 한다
- */
-export const DRAG_REGION = OVERLAY_TITLE ? ({ "data-tauri-drag-region": "deep" } as const) : {};
-
-/** 전체 화면에서는 신호등이 사라지므로 그 자리를 비우지 않는다 */
-function useFullscreen(): boolean {
-  const [full, setFull] = useState(false);
-  useEffect(() => {
-    if (!OVERLAY_TITLE) return;
-    let alive = true;
-    let off: (() => void) | undefined;
-    void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
-      const w = getCurrentWindow();
-      const check = () =>
-        void w
-          .isFullscreen()
-          .then((f) => alive && setFull(f))
-          .catch(() => {});
-      check();
-      const un = await w.onResized(check);
-      if (alive) off = un;
-      else un();
-    });
-    return () => {
-      alive = false;
-      off?.();
-    };
-  }, []);
-  return full;
-}
+import { DRAG_REGION, useTrafficLights } from "./windowChrome";
 
 /**
  * 창 맨 위 첫 줄의 왼쪽 칸: 신호등 자리 · 앱 이름 · 사이드바 토글. 오른쪽은 탭 줄이 잇는다.
@@ -59,8 +22,9 @@ export function DockTitle({
   onOverhang: (px: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const full = useFullscreen();
-  const lights = OVERLAY_TITLE && !full;
+  // 신호등이 나타나고 사라지면 CSS(--lights-w)가 왼쪽 padding 만 바꾼다. ResizeObserver 는 content-box 만 봐서
+  // padding 변화를 못 잡으므로(접혔을 때 width: max-content) 이 값을 의존성에 넣어 걸친 폭을 다시 잰다 — 빼면 탭 줄이 옛 폭만큼 비켜 앉는다
+  const lights = useTrafficLights();
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -75,7 +39,7 @@ export function DockTitle({
   }, [open, lights, onOverhang]);
 
   return (
-    <div ref={ref} className={`dock-title${lights ? " with-lights" : ""}`} {...DRAG_REGION}>
+    <div ref={ref} className="dock-title" {...DRAG_REGION}>
       <span className="dock-app">Keyring Notes</span>
       <IconButton className="dock-toggle" icon={PanelLeft} label={label} keys={keys} active={open} side="bottom" size={16} onClick={onToggle} />
     </div>

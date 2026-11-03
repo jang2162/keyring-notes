@@ -7,10 +7,12 @@ import { startLocal, wantsLocal } from "./local/boot";
 import { hasOwnNotes, syncSetupRedirect } from "./local/mode";
 import { browserEnv, watchUpdates } from "./pwaUpdate";
 import { SOLO } from "./soloWindow";
+import { watchTrafficLights } from "./windowChrome";
 import "./styles.css";
 import { t } from "./i18n";
 
 const root = createRoot(document.getElementById("root")!);
+watchTrafficLights();
 
 async function boot() {
   // 새로 고침·앱 다시 열기 때 뒤로가기 표시 항목에 서 있으면 치운다(첫 뒤로가기가 헛돌지 않게, backStack.ts).

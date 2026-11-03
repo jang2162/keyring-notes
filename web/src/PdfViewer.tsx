@@ -18,6 +18,7 @@ import { editCompanion, type Companion, type CompanionTarget } from "./pdfCompan
 import { errorText } from "./toast";
 import { vaultLang } from "./vaultSettings";
 import { tipProps } from "./Tooltip";
+import { DRAG_REGION } from "./windowChrome";
 import type { PDFDocumentProxy } from "./render/pdf";
 
 /**
@@ -281,7 +282,8 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
 
   return (
     <div className="pdf-viewer" role="dialog" aria-label={t("pdf.viewerLabel", { path })} onKeyDown={(e) => e.key === "Escape" && onClose()}>
-      <header className="pdf-bar">
+      {/* 창 전체를 덮으므로 이 줄이 창 맨 위다 — 창을 여기서 끈다 */}
+      <header className="pdf-bar" {...DRAG_REGION}>
         <strong className="pdf-title" title={path}>
           {path.split("/").pop()}
         </strong>

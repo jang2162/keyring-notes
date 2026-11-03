@@ -29,3 +29,9 @@ export const switcherSpot = (narrow: boolean, leftOpen: boolean): SwitcherSpot =
  */
 export const overlayTitleBar = (env: { tauri: boolean; userAgent: string; touchPoints: number }) =>
   env.tauri && /Macintosh|Mac OS X/.test(env.userAgent) && env.touchPoints === 0;
+
+/**
+ * 신호등이 지금 떠 있는가 — 그 자리를 비워야 하는가. 전체 화면에서는 macOS 가 신호등을 숨긴다.
+ * 비우는 폭은 styles.css 의 --lights-w(windowChrome.ts 가 <html> 클래스로 켠다)
+ */
+export const trafficLightsShown = (overlay: boolean, fullscreen: boolean) => overlay && !fullscreen;
