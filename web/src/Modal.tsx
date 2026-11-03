@@ -19,7 +19,7 @@ import { keyCapture } from "./shortcuts";
 import { toast } from "./toast";
 import { t } from "./i18n";
 import { tipProps } from "./Tooltip";
-import { DRAG_REGION } from "./windowChrome";
+import { DRAG_REGION, DRAG_SELF } from "./windowChrome";
 
 /**
  * 모달 틀 하나: 설정·그래프·변경 검토·정리 점검·원본 수집·명령 팔레트·단축키가 같이 쓴다.
@@ -256,6 +256,7 @@ export function Modal({
           aria-label={label}
           tabIndex={-1}
           onKeyDown={onKeyDown}
+          {...(hideHead && fillsWindow ? DRAG_SELF : {})}
         >
           {!hideHead && (
             <div className="kmodal-head" {...(fillsWindow ? DRAG_REGION : {})}>
@@ -288,7 +289,9 @@ export function Modal({
           )}
           <div className={`kmodal-main${nav ? " with-nav" : ""}`}>
             {nav && <nav className="kmodal-nav">{nav}</nav>}
-            <div className={`kmodal-body${bodyClassName ? ` ${bodyClassName}` : ""}`}>{children}</div>
+            <div className={`kmodal-body${bodyClassName ? ` ${bodyClassName}` : ""}`} {...(hideHead && fillsWindow ? DRAG_SELF : {})}>
+              {children}
+            </div>
           </div>
         </div>
       </div>

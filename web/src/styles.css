@@ -1033,7 +1033,8 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
   .left-dock .left-panel { width: min(300px, 92vw); }
   .left-dock { visibility: hidden; transition: transform 0.18s ease, visibility 0s linear 0.18s; }
   .shell.drawer-left .left-dock { transform: none; visibility: visible; transition: transform 0.18s ease; }
-  .right-panel { position: fixed; top: 0; bottom: 0; right: 0; z-index: 30; width: min(340px, 90vw); box-shadow: 0 0 24px rgb(0 0 0 / 0.25); }
+  /* 창 폭이 좁으면(신호등이 뜬 360~약 410px) 서랍 왼쪽 끝이 신호등 밑에 들어가므로 신호등 폭만큼은 비운다 */
+  .right-panel { position: fixed; top: 0; bottom: 0; right: 0; z-index: 30; width: min(340px, 90vw, calc(100vw - var(--lights-w))); box-shadow: 0 0 24px rgb(0 0 0 / 0.25); }
   .nav-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: rgb(0 0 0 / 0.3); }
   /* 서랍은 바 위에서 끝난다 — 바가 서랍 아래에 보이고 눌린다(파일·검색을 다시 누르면 닫힌다) */
   .left-dock, .right-panel, .nav-backdrop { bottom: calc(var(--bar-h) + env(safe-area-inset-bottom)); }
@@ -1109,8 +1110,12 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
   .kmodal-palette .kmodal { padding: 8px; }
   .kmodal-max { display: none; }
   .kmodal-head { position: sticky; top: 0; background: var(--bg); z-index: 2; padding-left: var(--sp-3); flex-wrap: wrap; }
-  /* 창을 채우므로 머리줄과 팔레트 입력칸이 창 맨 위 왼쪽에 닿는다(아래에서 올라오는 .more-sheet 는 빼고) */
-  .kmodal:not(.more-sheet) > .kmodal-head { padding-left: max(var(--sp-3), var(--lights-w)); }
+  /* 창을 채우므로 머리줄 첫 줄(제목)과 팔레트 입력칸이 창 맨 위 왼쪽에 닿는다(아래에서 올라오는 .more-sheet 는 빼고).
+     머리줄 padding 이 아니라 제목만 민다 — 둘째 줄로 내려간 도구 줄은 창 맨 위가 아니다.
+     끌기 영역은 Modal.tsx 의 fillsWindow 가 같은 조건(640px·.more-sheet)으로 붙인다 */
+  .kmodal:not(.more-sheet) > .kmodal-head > .kmodal-title { margin-left: max(0px, calc(var(--lights-w) - var(--sp-3))); }
+  /* 최대화한 채 좁아지면 위 .max 규칙의 머리줄 padding 과 겹쳐 두 번 밀린다 */
+  .kmodal-backdrop.max .kmodal-head { padding-left: var(--sp-3); }
   .kmodal-palette .palette input { margin-left: max(0px, calc(var(--lights-w) - 8px)); }
   .kmodal-tools { order: 3; flex-basis: 100%; padding-bottom: 4px; }
   .kmodal-close { order: 2; margin-left: auto; }

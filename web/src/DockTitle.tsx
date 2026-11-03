@@ -22,7 +22,8 @@ export function DockTitle({
   onOverhang: (px: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  // 여백은 CSS(--lights-w)가 바꾸지만 폭이 바뀌므로 걸친 폭을 다시 잰다
+  // 신호등이 나타나고 사라지면 CSS(--lights-w)가 왼쪽 padding 만 바꾼다. ResizeObserver 는 content-box 만 봐서
+  // padding 변화를 못 잡으므로(접혔을 때 width: max-content) 이 값을 의존성에 넣어 걸친 폭을 다시 잰다 — 빼면 탭 줄이 옛 폭만큼 비켜 앉는다
   const lights = useTrafficLights();
 
   useLayoutEffect(() => {
