@@ -189,7 +189,8 @@ function build(view: EditorView): DecorationSet {
           items.push({ from: line.from, to: line.from, deco: headingLine(Number(m[1])) });
           return;
         }
-        if (name === "Image") return false; // 이미지 문법은 그대로
+        // 이미지는 liveBlocks 가 그린다(혼자 있는 줄은 블록, 글 사이는 buildInline). 링크 기호 숨기기를 하지 않는다
+        if (name === "Image") return false;
         if (!visible(node.from)) return;
         if (name === "HeaderMark") {
           // "# " 기호와 뒤 공백

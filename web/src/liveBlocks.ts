@@ -2,18 +2,19 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { enhance } from "./enhance";
-import { renderMarkdown, type LinkResolver } from "./markdown";
+import { renderMarkdown, vaultRelative, type LinkResolver } from "./markdown";
 import { api } from "./api";
 import { t } from "./i18n";
 import { CALLOUT_LINE } from "./liveSyntax";
+import { inlineImageUrl, isCommentBlock } from "./liveImage";
 
 /**
  * Live Preview에서 8단계 형식을 그린다. 커서(선택)가 그 블록 밖에 있을 때만 그리고, 들어가면 원문을 보인다.
  * 렌더러는 미리보기와 같은 것(markdown.ts의 renderMarkdown, enhance.ts의 KaTeX·Mermaid·문서 임베드)을 쓴다.
  *
  *   블록(줄 전체를 바꾼다): 이미지·문서 임베드만 있는 줄, 콜아웃(> [!note]), 수식 블록($$…$$), Mermaid,
- *                          여러 줄 주석(%%…%%만 있는 줄들)
- *   줄 안: 이미지 임베드, 인라인 수식 $…$, 주석 %%…%% 숨기기, 블록 ID ^id 숨기기, 각주 [^1] → 위첨자, 각주 정의 줄
+ *                          여러 줄 주석(%%…%%만 있는 줄들), HTML 블록(<!-- … --> 주석 하나뿐인 것은 빼고)
+ *   줄 안: 이미지 임베드·![글](주소), 인라인 수식 $…$, 주석 %%…%% 숨기기, 블록 ID ^id 숨기기, 각주 [^1] → 위첨자, 각주 정의 줄
  */
 export interface LiveRenderContext {
   resolver: LinkResolver;
@@ -125,7 +126,13 @@ function findBlocks(state: EditorState): Block[] {
         if (info === "mermaid") out.push({ from: doc.lineAt(n.from).from, to: doc.lineAt(n.to).to, kind: "mermaid" });
         return false;
       }
-      if (n.name === "CodeBlock" || n.name === "HTMLBlock") {
+      if (n.name === "HTMLBlock") {
+        code.push([n.from, n.to]);
+        // 붙여넣기 업로드 자리 표시(<!-- uploading… -->)가 주석 블록이다 — 그리면 업로드 중인 줄이 사라져 보인다
+        if (!isCommentBlock(doc.sliceString(n.from, n.to))) out.push({ from: doc.lineAt(n.from).from, to: doc.lineAt(n.to).to, kind: "html" });
+        return false;
+      }
+      if (n.name === "CodeBlock") {
         code.push([n.from, n.to]);
         return false;
       }
@@ -273,6 +280,7 @@ function buildInline(view: EditorView, getCtx: GetCtx): DecorationSet {
   const active = activeLines(state);
   const items: Range<Decoration>[] = [];
   const code: [number, number][] = [];
+  const images: { from: number; to: number; alt: string; url: string }[] = [];
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(state).iterate({
       from,
@@ -280,6 +288,13 @@ function buildInline(view: EditorView, getCtx: GetCtx): DecorationSet {
       enter: (n) => {
         if (n.name === "FencedCode" || n.name === "CodeBlock" || n.name === "InlineCode" || n.name === "HTMLBlock") {
           code.push([n.from, n.to]);
+          return false;
+        }
+        if (n.name === "Image") {
+          const marks = n.node.getChildren("LinkMark");
+          const url = n.node.getChild("URL");
+          if (url && marks.length >= 2)
+            images.push({ from: n.from, to: n.to, alt: state.sliceDoc(marks[0].to, marks[1].from), url: state.sliceDoc(url.from, url.to) });
           return false;
         }
         return undefined;
@@ -305,6 +320,13 @@ function buildInline(view: EditorView, getCtx: GetCtx): DecorationSet {
           items.push(
             Decoration.replace({ widget: new InlineImage(api.rawUrl(resolved), target, m[2] ?? null) }).range(at(m.index!), at(m.index! + m[0].length)),
           );
+        }
+      }
+      if (!alone) {
+        for (const img of images) {
+          if (img.from < line.from || img.to > line.to) continue;
+          const src = inlineImageUrl(img.url, (target) => ctx.resolver.resolve(vaultRelative(ctx.docPath, target), ctx.docPath), api.rawUrl);
+          if (src) items.push(Decoration.replace({ widget: new InlineImage(src, img.alt, null) }).range(img.from, img.to));
         }
       }
       // 인라인 수식 $…$(여는 $ 뒤·닫는 $ 앞이 공백이 아니고, 닫는 $ 뒤가 숫자가 아님)
