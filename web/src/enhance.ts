@@ -3,6 +3,7 @@ import { blockText, section } from "@keyring-notes/core";
 import { api } from "./api";
 import { renderMarkdown, SAFE_URI, splitFrontmatter, type LinkResolver } from "./markdown";
 import { t } from "./i18n";
+import { highlightPieces, paintCode, type Piece } from "./codeHighlight";
 
 /**
  * 미리보기를 그린 뒤 채우는 것들: 수식(KaTeX), 다이어그램(Mermaid), 문서 임베드(![[문서]]).
@@ -24,6 +25,31 @@ let katexMod: typeof import("./render/katex") | null = null;
 let katexLoading: Promise<typeof import("./render/katex")> | null = null;
 const mermaidCache = new Map<string, string>();
 const embedCache = new Map<string, Promise<string>>();
+/** 칠한 코드 조각(언어 + 원문 → 조각). 입력마다 미리보기가 다시 그려져도 깜빡이지 않게 바로 칠한다. 오래된 것부터 버린다 */
+const codeCache = new Map<string, Piece[] | null>();
+const CODE_CACHE_MAX = 300;
+
+function paintCodes(root: HTMLElement, alive: () => boolean) {
+  for (const el of root.querySelectorAll<HTMLElement>("pre > code[class*='language-']:not([data-done])")) {
+    if (el.closest(".mermaid-slot")) continue;
+    const lang = /(?:^|\s)language-(\S+)/.exec(el.className)?.[1];
+    if (!lang) continue;
+    el.dataset.done = "1";
+    const code = el.textContent ?? "";
+    const key = `${lang}\u0000${code}`;
+    const cached = codeCache.get(key);
+    if (cached !== undefined) {
+      if (cached) paintCode(el, cached);
+      continue;
+    }
+    void highlightPieces(code, lang).then((pieces) => {
+      if (codeCache.size >= CODE_CACHE_MAX) codeCache.delete(codeCache.keys().next().value!);
+      codeCache.set(key, pieces);
+      // 늦게 끝났을 때 그 자리 글이 바뀌었으면 칠하지 않는다(모르는 언어·실패면 글자 그대로)
+      if (pieces && alive() && el.textContent === code) paintCode(el, pieces);
+    });
+  }
+}
 
 /** 볼트가 바뀌면 임베드한 문서 내용을 다시 읽게 한다. */
 export function invalidateEmbeds() {
@@ -116,7 +142,7 @@ async function fillEmbed(el: HTMLElement, ctx: EnhanceContext, alive: () => bool
 }
 
 /**
- * root 안의 자리(.math, .mermaid-slot, .note-embed)를 채운다. 돌려준 함수를 부르면 늦게 끝난 작업이 더는 손대지 않는다.
+ * root 안의 자리(.math, .mermaid-slot, .note-embed)를 채우고 코드 블록(pre > code.language-*)을 언어별로 칠한다. 돌려준 함수를 부르면 늦게 끝난 작업이 더는 손대지 않는다.
  */
 export function enhance(root: HTMLElement, ctx: EnhanceContext, parentAlive?: () => boolean): () => void {
   let live = true;
@@ -161,6 +187,8 @@ export function enhance(root: HTMLElement, ctx: EnhanceContext, parentAlive?: ()
   for (const el of root.querySelectorAll<HTMLElement>(".note-embed[data-embed]:not([data-done])")) {
     void fillEmbed(el, ctx, alive);
   }
+
+  paintCodes(root, alive);
 
   return () => {
     live = false;
