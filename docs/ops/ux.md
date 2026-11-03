@@ -715,7 +715,7 @@ SiYuan·Notion처럼 모든 노드가 내용(노트)을 가지면서 하위 노�
 **첨부(추천)**:
 - 노드 모델에서 지금처럼 문서 옆 `attachments/`에 두면 `attachments`가 노트 없는 노드로 트리에 보인다.
 - 그래서 붙여넣은 첨부는 **워크스페이스마다 하나인 첨부 폴더**(예: `<워크스페이스>/_첨부/`)에 두고 트리에서 숨긴다. 이름은 공통 설정에서 바꿀 수 있다.
-- 노드 폴더 안에 이미 있는 비마크다운 파일은 노드가 아니라 그 노드의 "첨부 N"으로 접어 보인다.
+- 노드 폴더 안에 이미 있는 비마크다운 파일은 노드가 아니라 그 노드의 "파일 N"으로 접어 보인다.
 
 **그 밖(추천)**:
 - 정렬은 이름순(데일리 폴더는 최신순). 손으로 순서 바꾸기는 이후.
@@ -1492,12 +1492,9 @@ OFF 에서 창이 활성인 채로 같은 자리를 누르면 검색 패널이 �
 ### 정한 것(사용자)
 
 - 레일의 노트 트리 단추(`rail.files`)가 이미 「파일 / Files」 라 이름이 겹친다 — 트리 단추를 「노트 / Notes」 로 바꾸고 첨부 단추(`rail.attachments`)를 「파일 / Files」 로 한다. 하단 바(`BottomBar`)의 첫 칸도 같은 키라 함께 「노트」 가 된다.
-- 범위는 ko 에서 「첨부 파일」 이 그대로 든 5곳과 그 영어 짝만이다: `attach.filter`(「파일 찾기」/"Filter files"), `attach.title`(「파일 {count}」/"Files {count}"), `rail.attachments`, `review.binary`(「파일(내용 미리보기 없음)」/"File (no preview)"), `settings.treeAttachments`(「트리의 파일」/"Files in the tree"). 키 이름은 그대로다. 관리자·휴지통·동기화·트리 「첨부 N개」·설정 「첨부 폴더」 등 나머지 「첨부」/"attachment" 문구는 두었다.
+- 범위는 ko 에서 「첨부 파일」 이 그대로 든 5곳과 그 영어 짝만이다: `attach.filter`(「파일 찾기」/"Filter files"), `attach.title`(「파일 {count}」/"Files {count}"), `rail.attachments`, `review.binary`(「파일(내용 미리보기 없음)」/"File (no preview)"), `settings.treeAttachments`(「트리의 파일」/"Files in the tree"). 키 이름은 그대로다. 관리자·휴지통·동기화·설정 「첨부 폴더」 등 나머지 「첨부」/"attachment" 문구는 두었다.
+- 이어서(사용자 승인) 트리의 「첨부 N」 줄도 「파일 N」 으로 맞췄다: `tree.attachments`(「파일 {count}」/"{count} file(s)"), `tree.showAttachments`·`settings.attach.show`(「"파일 N" 줄 보이기」/"Show \"N files\" row(s)"), `tree.hideAttachments`(「파일 숨기기」/"Hide files"), `settings.treeAttachmentsHint`. 휴지통의 「첨부 N개」 는 그대로다.
 - 오른쪽 패널 머리(`Workspace.tsx` `.panel-head`)의 닫기 단추는 아이콘을 `X` 에서 lucide `PanelRightClose` 로, 글을 `panel.close` 「오른쪽 패널 접기」/"Collapse right panel" 로 바꿨다. 누를 때 하는 일(넓은 화면 `rightOpen: false`, 좁은 화면 서랍 닫기)과 단축키는 그대로다.
-
-### 남긴 것
-
-- `settings.treeAttachmentsHint` 와 그 선택지는 「"첨부 N"」 줄을 말한다 — 트리에 보이는 줄 글(「첨부 N개」)을 바꾸지 않았으므로 맞춰 두었다. 설정 라벨 「트리의 파일」 아래 선택지가 「"첨부 N" 줄 보이기」 로 읽힌다.
 
 ### 확인한 것
 

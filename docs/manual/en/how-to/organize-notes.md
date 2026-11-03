@@ -10,7 +10,7 @@ A note `A` is the file `A.md`, and its children live in the sibling folder `A/`.
 
 - The tree shows `A.md` and `A/` as one node.
 - A folder without a note shows as an **Empty node**. Click it to open a blank note. Typing creates `A.md`.
-- Non-Markdown files (images, PDFs and so on) in a node's folder collapse into one "N attachments" row under the node.
+- Non-Markdown files (images, PDFs and so on) in a node's folder collapse into one "N files" row under the node.
 
 ## Workspaces
 
@@ -39,7 +39,7 @@ The big title field at the top of a note is the file name. Edit it and press Ent
 - Drag and drop to move. Hovering over a collapsed node expands it.
 - Keyboard: ↑↓ move, ←→ collapse and expand, Enter open, F2 rename, Delete delete.
 - The right-click menu has **New child note**, rename, move to another note, duplicate, open in a new tab or the other pane, copy path or link, change icon, **Sort sub-notes**, **Move up** and **Move down**, pin, and delete (with children).
-- The toolbar above the tree has **New note**, **Reveal current note**, **Collapse all** and display options (show or hide the "N attachments" rows, **Sort notes**).
+- The toolbar above the tree has **New note**, **Reveal current note**, **Collapse all** and display options (show or hide the "N files" rows, **Sort notes**).
 - The workspace's attachment folder is hidden from the tree.
 - Notes sort by name unless you choose another order (see [Sort child notes](#sort-child-notes)). Inside the daily folder, the newest comes first (configurable) until you choose an order for it. Its sort menu shows this as **Name** and **Descending**.
 
