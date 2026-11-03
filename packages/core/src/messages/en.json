@@ -347,6 +347,8 @@
   "cmd.wide": "Full width",
   "cmd.wsAll": "All workspaces",
   "cmd.wsOnlyOne": "Only the current workspace",
+  "code.copied": "Copied",
+  "code.copy": "Copy",
   "common.cancel": "Cancel",
   "common.change": "Change",
   "common.close": "Close",

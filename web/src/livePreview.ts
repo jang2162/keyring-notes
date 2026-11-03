@@ -13,6 +13,7 @@ import { isAppField } from "./childSortUi";
  *   # 제목 → 제목(크게)        **굵게**·*기울임*·~~취소~~·==강조== → 기호 숨김
  *   `코드` → 백틱 숨김         [글자](주소) → 글자만     [[대상|별칭]] → 별칭(없으면 대상)
  *   --- → 가로줄   > 인용 → 왼쪽 막대   - 글머리 → •   - [ ] → 체크박스(판정은 liveSyntax.ts)
+ *   코드 블록 → 커서가 블록 밖이면 펜스 줄을 숨기고 머리(언어·복사)를 둔 상자. 안쪽 코드 줄은 원문 그대로라 그 자리에서 고친다
  *
  * 이미지·콜아웃·수식·주석·블록 ID·Mermaid·문서 임베드·각주·HTML 블록은 liveBlocks.ts가 미리보기 렌더러로 그린다.
  * 표는 건드리지 않는다.
@@ -96,7 +97,61 @@ class TaskWidget extends WidgetType {
   }
 }
 
+/** 코드 블록 머리: 언어 이름과 「복사」(안쪽 코드만). 머리의 나머지를 누르면 편집기가 그 줄에 커서를 두어 펜스 원문을 보인다 */
+class CodeHeadWidget extends WidgetType {
+  constructor(
+    readonly lang: string,
+    readonly code: string,
+  ) {
+    super();
+  }
+  eq(o: CodeHeadWidget) {
+    return o.lang === this.lang && o.code === this.code;
+  }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-lp-codehead-bar";
+    const lang = document.createElement("span");
+    lang.className = "cm-lp-codelang";
+    lang.textContent = this.lang;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "cm-lp-codecopy";
+    copy.textContent = t("code.copy");
+    copy.addEventListener("mousedown", (e) => e.preventDefault());
+    copy.addEventListener("click", (e) => {
+      e.preventDefault();
+      void navigator.clipboard?.writeText(this.code).then(() => {
+        copy.textContent = t("code.copied");
+        setTimeout(() => (copy.textContent = t("code.copy")), 1500);
+      });
+    });
+    el.append(lang, copy);
+    return el;
+  }
+  ignoreEvent(e: Event) {
+    return (e.target as HTMLElement).closest?.(".cm-lp-codecopy") != null;
+  }
+}
+
+/** 닫는 펜스 자리. 줄은 상자 아래 여백으로 남는다 */
+class CodeTailWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+  toDOM() {
+    return document.createElement("span");
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
 const hrWidget = Decoration.replace({ widget: new HrWidget() });
+const codeTail = Decoration.replace({ widget: new CodeTailWidget() });
+const codeBlockLine = Decoration.line({ class: "cm-lp-codeblock" });
+const codeHeadLine = Decoration.line({ class: "cm-lp-codeblock cm-lp-codehead" });
+const codeTailLine = Decoration.line({ class: "cm-lp-codeblock cm-lp-codetail" });
 const bulletWidget = Decoration.replace({ widget: new BulletWidget() });
 const quoteLine = (depth: number) => Decoration.line({ class: "cm-lp-quote", attributes: { style: `--quote-depth: ${depth}` } });
 
@@ -176,6 +231,17 @@ function build(view: EditorView): DecorationSet {
       else if (m.kind === "quoteLine") {
         const at = state.doc.line(m.line).from;
         items.push({ from: at, to: at, deco: quoteLine(m.depth) });
+      } else if (m.kind === "codeLine") {
+        const at = state.doc.line(m.line).from;
+        items.push({ from: at, to: at, deco: codeBlockLine });
+      } else if (m.kind === "fenceHead") {
+        const at = state.doc.lineAt(m.from).from;
+        items.push({ from: at, to: at, deco: codeHeadLine });
+        items.push({ from: m.from, to: m.to, deco: Decoration.replace({ widget: new CodeHeadWidget(m.lang, m.code) }), replace: true });
+      } else if (m.kind === "fenceTail") {
+        const at = state.doc.lineAt(m.from).from;
+        items.push({ from: at, to: at, deco: codeTailLine });
+        items.push({ from: m.from, to: m.to, deco: codeTail, replace: true });
       }
     }
 
@@ -242,6 +308,21 @@ const theme = EditorView.baseTheme({
   ".cm-lp-bullet": { display: "inline-block", minWidth: "0.6em", textAlign: "center", color: "var(--muted)" },
   ".cm-lp-task": { margin: "0 6px 0 0", verticalAlign: "-1px", cursor: "pointer" },
   ".cm-lp-task:disabled": { cursor: "default" },
+  // 코드 상자: 고정폭·바탕은 codeFont 가 단다(.cm-code-line). 여기서는 머리·꼬리 줄 모양만
+  ".cm-lp-codeblock": { paddingLeft: "12px !important", paddingRight: "12px !important" },
+  ".cm-lp-codehead": { borderTopLeftRadius: "6px", borderTopRightRadius: "6px", paddingTop: "2px !important" },
+  ".cm-lp-codetail": { borderBottomLeftRadius: "6px", borderBottomRightRadius: "6px", lineHeight: "0.6" },
+  ".cm-lp-codehead-bar": { display: "inline-flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: "8px" },
+  ".cm-lp-codelang": { fontSize: "11px", color: "var(--muted)", fontFamily: "var(--font-sans)" },
+  ".cm-lp-codecopy": {
+    font: "11px var(--font-sans)",
+    color: "var(--muted)",
+    background: "none",
+    border: "1px solid var(--border)",
+    borderRadius: "4px",
+    padding: "0 6px",
+    cursor: "pointer",
+  },
   // 막대 하나, 겹친 단계마다 왼쪽 여백(미리보기 blockquote 와 같은 색)
   ".cm-lp-quote": {
     borderLeft: "3px solid var(--border)",

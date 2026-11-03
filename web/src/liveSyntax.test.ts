@@ -99,3 +99,51 @@ describe("글머리와 할 일", () => {
     expect(toggleTaskAt(state("- a\n글"), 9)).toBeNull();
   });
 });
+
+describe("코드 블록", () => {
+  const doc = "앞\n```ts\nconst a = 1;\n```\n뒤";
+
+  it("커서가 블록 밖이면 펜스 두 줄을 숨기고 머리에 언어와 안쪽 코드를 싣는다", () => {
+    const list = marks(doc, [1]);
+    expect(only(list, "fenceHead")).toEqual([{ kind: "fenceHead", from: 2, to: 7, lang: "ts", code: "const a = 1;" }]);
+    expect(only(list, "codeLine")).toEqual([{ kind: "codeLine", line: 3 }]);
+    expect(only(list, "fenceTail")).toEqual([{ kind: "fenceTail", from: 21, to: 24 }]);
+  });
+
+  it("커서가 블록 안이면 펜스 줄은 원문, 상자는 그대로", () => {
+    const list = marks(doc, [3]);
+    expect(only(list, "fenceHead")).toEqual([]);
+    expect(only(list, "fenceTail")).toEqual([]);
+    expect(only(list, "codeLine")).toEqual([{ kind: "codeLine", line: 3 }]);
+    expect(only(marks(doc, [2]), "fenceHead")).toEqual([]);
+  });
+
+  it("Mermaid 는 건드리지 않는다(liveBlocks 가 그린다)", () => {
+    const list = marks("```mermaid\ngraph TD\n```");
+    expect(list.filter((m) => m.kind === "fenceHead" || m.kind === "fenceTail" || m.kind === "codeLine")).toEqual([]);
+  });
+
+  it("들여쓴 코드 블록은 상자만", () => {
+    expect(marks("    code\n    more")).toEqual([
+      { kind: "codeLine", line: 1 },
+      { kind: "codeLine", line: 2 },
+    ]);
+  });
+
+  it("닫는 펜스 없이 문서가 끝나면 머리만, 코드는 끝까지", () => {
+    const list = marks("```js\nabc\ndef");
+    expect(only(list, "fenceHead")).toEqual([{ kind: "fenceHead", from: 0, to: 5, lang: "js", code: "abc\ndef" }]);
+    expect(only(list, "fenceTail")).toEqual([]);
+    expect(only(list, "codeLine").map((m) => m.line)).toEqual([2, 3]);
+  });
+
+  it("언어가 없거나 비어 있는 블록, ~~~ 펜스", () => {
+    expect(only(marks("```\n```"), "fenceHead")).toEqual([{ kind: "fenceHead", from: 0, to: 3, lang: "", code: "" }]);
+    expect(only(marks("~~~py extra\nx\n~~~"), "fenceHead")).toEqual([{ kind: "fenceHead", from: 0, to: 11, lang: "py", code: "x" }]);
+  });
+
+  it("코드 안의 ---·> ·- 는 그리지 않는다", () => {
+    const list = marks("```\n---\n> a\n- b\n```");
+    expect(list.filter((m) => m.kind === "hr" || m.kind === "quoteLine" || m.kind === "bullet")).toEqual([]);
+  });
+});

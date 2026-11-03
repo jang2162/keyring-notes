@@ -1,8 +1,11 @@
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState, TransactionSpec } from "@codemirror/state";
 
+/** @lezer/common 은 web 의 직접 의존성이 아니라 syntaxTree 의 결과에서 노드 타입을 얻는다 */
+type SyntaxNode = ReturnType<ReturnType<typeof syntaxTree>["resolve"]>;
+
 /**
- * Live Preview 의 줄 단위 그리기 판정(구분선·인용·글머리·할 일). DOM 없이 EditorState 만 보고 정하므로 Node 에서 시험한다.
+ * Live Preview 의 줄 단위 그리기 판정(구분선·인용·글머리·할 일·코드 블록). DOM 없이 EditorState 만 보고 정하므로 Node 에서 시험한다.
  * 장식으로 바꾸는 것은 livePreview.ts 의 build 다.
  */
 export type SyntaxMark =
@@ -14,7 +17,13 @@ export type SyntaxMark =
   /** "- [ ] " 전체(글머리부터 표시 뒤 공백까지). line 은 1부터 */
   | { kind: "task"; from: number; to: number; done: boolean; line: number }
   /** 인용 줄 장식. 커서가 있는 줄에도 단다 — 줄마다 막대가 들쭉날쭉하지 않게 */
-  | { kind: "quoteLine"; line: number; depth: number };
+  | { kind: "quoteLine"; line: number; depth: number }
+  /** 코드 블록 안쪽 줄의 상자 장식. 커서가 블록 안에 있어도 단다 */
+  | { kind: "codeLine"; line: number }
+  /** 여는 펜스 줄(펜스부터 줄 끝). 커서가 블록 밖일 때만. code 는 펜스를 뺀 안쪽 코드(복사용) */
+  | { kind: "fenceHead"; from: number; to: number; lang: string; code: string }
+  /** 닫는 펜스 줄(펜스부터 줄 끝). 닫는 펜스 없이 문서가 끝나면 없다 */
+  | { kind: "fenceTail"; from: number; to: number };
 
 /** 콜아웃(> [!note]) 첫 줄. liveBlocks 가 위젯으로 그리고, 여기서는 인용으로 보지 않는다 */
 export const CALLOUT_LINE = /^\s*>\s*\[![A-Za-z][\w-]*\][+-]?/;
@@ -41,12 +50,38 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
   const quoteDepth = new Map<number, number>();
   let depth = 0;
 
+  const fenced = (node: SyntaxNode) => {
+    const marks = node.getChildren("CodeMark");
+    const open = marks[0];
+    if (!open) return;
+    const info = node.getChild("CodeInfo");
+    const lang = info ? (state.sliceDoc(info.from, info.to).trim().split(/\s+/)[0] ?? "") : "";
+    // Mermaid 는 liveBlocks 가 그린 다이어그램으로 바꾼다
+    if (lang === "mermaid") return;
+    const close = marks.length > 1 ? marks[marks.length - 1] : null;
+    const head = lineOf(open.from);
+    const tail = close ? lineOf(close.from) : lineOf(node.to);
+    for (let i = head + 1; i <= (close ? tail - 1 : tail); i++) out.push({ kind: "codeLine", line: i });
+    for (let i = head; i <= tail; i++) if (active.has(i)) return;
+    const text = node.getChild("CodeText");
+    out.push({ kind: "fenceHead", from: open.from, to: doc.line(head).to, lang, code: text ? state.sliceDoc(text.from, text.to) : "" });
+    if (close) out.push({ kind: "fenceTail", from: close.from, to: doc.line(tail).to });
+  };
+
   syntaxTree(state).iterate({
     from,
     to,
     enter: (n) => {
       const name = n.name;
-      if (name === "FencedCode" || name === "CodeBlock" || name === "HTMLBlock" || name === "Table" || name === "CommentBlock") return false;
+      if (name === "FencedCode") {
+        fenced(n.node);
+        return false;
+      }
+      if (name === "CodeBlock") {
+        for (let i = lineOf(n.from); i <= lineOf(n.to); i++) out.push({ kind: "codeLine", line: i });
+        return false;
+      }
+      if (name === "HTMLBlock" || name === "Table" || name === "CommentBlock") return false;
       if (name === "HorizontalRule") {
         if (n.from > fmTo && !active.has(lineOf(n.from))) out.push({ kind: "hr", from: n.from, to: n.to });
         return false;
