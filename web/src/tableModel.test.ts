@@ -369,6 +369,19 @@ describe("sort", () => {
     ).toEqual(["| 1 | z |", "| 2 |"]);
   });
 
+  it("숫자·글이 섞인 열(2, 1,000, 1,5x)은 입력 순서와 상관없이 같은 결과 — 숫자 먼저, 내림차순은 뒤집되 빈 칸만 끝", () => {
+    const orders = [
+      ["2", "1,000", "1,5x", ""],
+      ["1,5x", "2", "", "1,000"],
+      ["", "1,000", "2", "1,5x"],
+      ["1,000", "1,5x", "2", ""],
+    ];
+    for (const o of orders) {
+      expect(values(run(col(o), (m) => sortRows(m, 0, "asc")))).toEqual(["2", "1,000", "1,5x", ""]);
+      expect(values(run(col(o), (m) => sortRows(m, 0, "desc")))).toEqual(["1,5x", "1,000", "2", ""]);
+    }
+  });
+
   it("보이는 글로 비교한다(**12** 는 12)", () => {
     expect(values(run(col(["**12**", "9"]), (m) => sortRows(m, 0, "asc")))).toEqual(["9", "**12**"]);
   });
@@ -385,7 +398,13 @@ describe("compareCells / visibleText", () => {
   it("숫자와 글이 섞이면 localeCompare numeric·base", () => {
     expect(compareCells("item 2", "item 10")).toBeLessThan(0);
     expect(compareCells("a", "A")).toBe(0);
-    expect(compareCells("10", "abc")).toBe("10".localeCompare("abc", undefined, { numeric: true, sensitivity: "base" }));
+    expect(compareCells("abc", "abd")).toBeLessThan(0);
+  });
+  it("2단계: 숫자로 읽히는 값은 늘 글보다 앞(섞인 열에서도 추이적 — 설계 6.6)", () => {
+    expect(compareCells("10", "abc")).toBeLessThan(0);
+    expect(compareCells("1,5x", "2")).toBeGreaterThan(0);
+    expect(compareCells("1,5x", "1,000")).toBeGreaterThan(0);
+    expect(compareCells("2", "1,000")).toBeLessThan(0);
   });
   it("visibleText 는 마크다운 기호를 뺀 글", () => {
     expect(visibleText("**12**")).toBe("12");

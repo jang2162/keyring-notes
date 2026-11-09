@@ -333,11 +333,16 @@ function asNumber(s: string): number | null {
   return Number(m[1] + (m[2] ?? "0").replace(/,/g, "") + (m[3] ?? ""));
 }
 
-/** 둘 다 숫자로 읽히면 숫자로, 아니면 localeCompare(numeric·base) */
+/**
+ * 2단계 비교(설계 6.6): 숫자로 읽히는 값은 늘 글보다 앞, 숫자끼리는 숫자로, 글끼리는 localeCompare(numeric·base).
+ * 한 단계(둘 다 숫자일 때만 숫자로)로 하면 섞인 열(2, 1,000, 1,5x)에서 순환이 생겨 결과가 입력 순서에 따라 달라진다
+ */
 export function compareCells(a: string, b: string): number {
   const x = asNumber(a);
   const y = asNumber(b);
   if (x !== null && y !== null) return x - y;
+  if (x !== null) return -1;
+  if (y !== null) return 1;
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
