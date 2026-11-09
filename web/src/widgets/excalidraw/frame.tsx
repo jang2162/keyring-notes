@@ -1,0 +1,137 @@
+import { installFontShim } from "./fontShim";
+import { StrictMode, useEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
+import type { WidgetApi, WidgetContext, WidgetRender } from "../types";
+import { parseScene, SceneGate, sceneKey } from "./scene";
+
+/**
+ * 내장 위젯 Excalidraw 의 iframe 묶음(IIFE — web/frameBuild.ts). 런타임이 먼저 돌고 이 묶음이 keyringWidgetRegister 를 부른다.
+ * Excalidraw 는 render 안에서 import() 한다 — 그래야 모듈이 돌 때(글꼴 FontFace 를 만들 때) 부모가 건넨 글꼴 바이트(init)가 이미 있다.
+ */
+installFontShim((rel) => window.keyringWidgetFonts?.[rel]);
+// srcdoc 에서는 location.origin 이 "null" 이라 이것이 없으면 파일의 source 가 열 때마다 달라진다
+(window as unknown as Record<string, unknown>).EXCALIDRAW_EXPORT_SOURCE = "keyring-notes";
+
+/** 앱 테마 토큰 --bg 의 밝기로 Excalidraw 테마를 고른다 */
+function isDark(bg: string | undefined): boolean {
+  const s = (bg ?? "").trim();
+  let rgb: number[] | null = null;
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s);
+  if (hex) {
+    const h = hex[1]!.length === 3 ? [...hex[1]!].map((c) => c + c).join("") : hex[1]!;
+    rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  } else {
+    const m = /rgba?\(([^)]+)\)/i.exec(s);
+    if (m)
+      rgb = m[1]!
+        .split(/[ ,/]+/)
+        .slice(0, 3)
+        .map(Number);
+  }
+  if (!rgb || rgb.some((n) => !Number.isFinite(n))) return false;
+  return (0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!) / 255 < 0.5;
+}
+
+const langCode = (lang: string) => (lang.toLowerCase().startsWith("ko") ? "ko-KR" : "en");
+
+function line(el: HTMLElement, text: string) {
+  const p = document.createElement("p");
+  p.style.cssText = "margin:0;padding:8px 12px;font:14px system-ui,sans-serif;color:var(--danger,#c00)";
+  p.textContent = text;
+  el.replaceChildren(p);
+}
+
+async function start(el: HTMLElement, first: WidgetContext, api: WidgetApi, onCtx: (cb: (c: WidgetContext) => void) => void): Promise<() => void> {
+  const maybe = api.file;
+  if (!maybe) {
+    line(el, api.t("noFile"));
+    return () => {};
+  }
+  const file = maybe;
+  let read: { bytes: Uint8Array; hash: string };
+  try {
+    read = await file.read();
+  } catch {
+    // 「파일 없음」 은 호스트가 그 자리를 바꾼다. 그 밖(오프라인 등)은 여기 한 줄
+    line(el, api.t("readFailed"));
+    return () => {};
+  }
+  const scene = parseScene(read.bytes);
+  if (!scene) {
+    // 깨진 파일에는 쓰지 않는다
+    line(el, api.t("badScene"));
+    return () => {};
+  }
+  const lib = await import("@excalidraw/excalidraw");
+  const { Excalidraw, restore, serializeAsJSON, getSceneVersion, FONT_FAMILY } = lib;
+  const restored = restore(scene as Parameters<typeof restore>[0], null, null);
+  // 기준선은 첫 onChange 가 아니라 불러온 장면 — 첫 onChange 가 사용자의 획이면 그 획이 기준이 되어 쓰이지 않는다
+  const gate = new SceneGate(
+    sceneKey(getSceneVersion(restored.elements), Object.keys(restored.files), restored.appState as Record<string, unknown>),
+    serializeAsJSON(restored.elements, restored.appState, restored.files, "local"),
+  );
+  let base = read.hash;
+  let stopped = false;
+  const enc = new TextEncoder();
+
+  function App() {
+    const [c, setC] = useState(first);
+    useEffect(() => onCtx(setC), []);
+    const readOnly = !c.editable || c.readOnly;
+    return (
+      <div style={{ height: c.fullscreen ? "100vh" : "480px" }}>
+        <Excalidraw
+          initialData={{
+            elements: restored.elements,
+            // 새 글의 기본 글꼴은 Virgil — Excalifont·Liberation 은 라이선스가 확인되지 않아 싣지 않는다(vite.config.ts 의 fontsSkip, 사용자 결정)
+            appState: { ...restored.appState, currentItemFontFamily: FONT_FAMILY.Virgil },
+            files: restored.files,
+            scrollToContent: true,
+          }}
+          viewModeEnabled={readOnly}
+          theme={isDark(c.theme["--bg"]) ? "dark" : "light"}
+          langCode={langCode(c.lang)}
+          UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: false } }}
+          // 요소 링크로 iframe 이 다른 곳으로 옮겨 가지 않게(옮기면 부모가 위젯을 멈춘다)
+          onLinkOpen={(_el, e) => e.preventDefault()}
+          onChange={(elements, appState, files) => {
+            if (stopped || readOnly) return;
+            const text = gate.next(sceneKey(getSceneVersion(elements), Object.keys(files), appState as unknown as Record<string, unknown>), () =>
+              serializeAsJSON(elements, appState, files, "local"),
+            );
+            if (text === null) return;
+            file.write(enc.encode(text), base).then(
+              (r) => (base = r.hash),
+              // 거절(다른 칸이 먼저 씀·충돌)이면 그리기를 멈추고 호스트가 다시 그리기를 기다린다
+              () => (stopped = true),
+            );
+          }}
+        />
+      </div>
+    );
+  }
+
+  const root = createRoot(el);
+  root.render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+  return () => root.unmount();
+}
+
+const render: WidgetRender = (el, ctx, api) => {
+  const listeners = new Set<(c: WidgetContext) => void>();
+  api.onUpdate((c) => listeners.forEach((cb) => cb(c)));
+  let cleanup: (() => void) | null = null;
+  let dead = false;
+  void start(el, ctx, api, (cb) => {
+    listeners.add(cb);
+  }).then((c) => (dead ? c() : (cleanup = c)));
+  return () => {
+    dead = true;
+    cleanup?.();
+  };
+};
+
+window.keyringWidgetRegister?.(render);

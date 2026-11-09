@@ -89,6 +89,17 @@ function emojiData(): Plugin {
 const frames = widgetFrames([
   { name: "runtime", entry: "src/widgets/frame/runtimeEntry.ts" },
   { name: "dday", entry: "src/widgets/frame/ddayEntry.ts", dev: true },
+  {
+    name: "excalidraw",
+    entry: "src/widgets/excalidraw/frame.tsx",
+    // Mermaid 변환(gzip 약 1MB)은 싣지 않는다
+    alias: { "@excalidraw/mermaid-to-excalidraw": path.resolve(import.meta.dirname, "src/widgets/excalidraw/mermaidStub.ts") },
+    css: "node_modules/@excalidraw/excalidraw/dist/prod/index.css",
+    fontsDir: "node_modules/@excalidraw/excalidraw/dist/prod/fonts",
+    // Xiaolai(CJK, 약 13MB)는 뺀다 — 한글은 시스템 글꼴로 보인다. Liberation(1.05 — GPLv2 + font exception)과
+    // Excalifont(파일·원저장소에 라이선스 표기 없음)는 싣지 않는다(사용자 결정) — 그 글꼴로 쓴 글은 시스템 글꼴로 보인다
+    fontsSkip: ["Xiaolai", "Liberation", "Excalifont"],
+  },
 ]);
 
 export default defineConfig({

@@ -8,6 +8,8 @@ import { startFrameRuntime, type FrameEnv } from "./runtime";
 declare global {
   interface Window {
     keyringWidgetId?: string;
+    /** 부모가 건넨 글꼴 바이트(init) — 키는 글꼴 폴더 기준 경로 */
+    keyringWidgetFonts?: Record<string, ArrayBuffer>;
     keyringWidgetRegister?: (render: Parameters<ReturnType<typeof startFrameRuntime>["register"]>[0]) => void;
   }
 }
@@ -38,13 +40,9 @@ function domFrameEnv(w: Window): FrameEnv {
       doc.head.append(style);
     },
     setFonts: (fonts) => {
-      // 키 = 글꼴 폴더 기준 경로(<family>/<file>.woff2). iframe CSP 는 글꼴 URL 을 막으므로 바이트로 등록한다
-      for (const [key, buf] of Object.entries(fonts)) {
-        const family = key.split("/")[0]!;
-        const face = new FontFace(family, buf);
-        doc.fonts.add(face);
-        void face.load().catch(() => {});
-      }
+      // 키 = 글꼴 폴더 기준 경로(<family 폴더>/<file>.woff2). 글꼴 이름·unicode-range 는 위젯이 안다 — 여기서 FontFace 로 등록하면
+      // 폴더 이름이 글꼴 이름과 다르고(Lilita ↔ Lilita One) 범위 없는 얼굴이 겹친다. 바이트만 두고 위젯이 쓴다(excalidraw/fontShim.ts)
+      w.keyringWidgetFonts = fonts;
     },
     observeHeight: (cb) => {
       let last = -1;
