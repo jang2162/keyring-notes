@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Compartment, EditorState } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
-import { editTableRaw, inDrawnTable, tableEditor, tableRanges } from "./tableWidget";
+import { EditorView, type DecorationSet } from "@codemirror/view";
+import { disposeTable, editTableRaw, inDrawnTable, onDispose, tableEditor, tableRanges } from "./tableWidget";
 
 const opts = { linkCandidates: () => [] };
 function state(doc: string, anchor = 0, readOnly = false) {
@@ -90,5 +91,36 @@ describe("Live Preview 를 껐다 켜기(Compartment 재구성)", () => {
     expect(tableRanges(s)).toEqual([{ from: FROM, to: TO }]);
     s = s.update({ effects: slot.reconfigure([]) }).state;
     expect(inDrawnTable(s, FROM + 3)).toBe(false);
+  });
+});
+
+describe("표 위젯이 사라질 때 정리(열린 메뉴·끌기 처리기)", () => {
+  it("onDispose 로 건 것은 disposeTable 때 한 번씩 불리고, 푼 것은 불리지 않는다", () => {
+    const wrap = {};
+    const calls: string[] = [];
+    onDispose(wrap, () => calls.push("menu"));
+    const off = onDispose(wrap, () => calls.push("drag"));
+    onDispose({}, () => calls.push("other"));
+    off();
+    disposeTable(wrap);
+    disposeTable(wrap);
+    expect(calls).toEqual(["menu"]);
+  });
+
+  it("표 위젯의 destroy 가 그 DOM 의 정리를 부른다", () => {
+    const s = state(DOC);
+    let widget: { destroy(dom: HTMLElement): void } | undefined;
+    for (const d of s.facet(EditorView.decorations)) {
+      if (typeof d === "function") continue;
+      (d as DecorationSet).between(0, DOC.length, (_f, _t, v) => {
+        widget ??= v.spec.widget;
+      });
+    }
+    expect(widget).toBeDefined();
+    const dom = {} as HTMLElement;
+    let closed = 0;
+    onDispose(dom, () => closed++);
+    widget!.destroy(dom);
+    expect(closed).toBe(1);
   });
 });

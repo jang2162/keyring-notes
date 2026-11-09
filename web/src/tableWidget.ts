@@ -118,6 +118,29 @@ export function tableAtDOM(view: EditorView, wrap: HTMLElement): TableModel | nu
   return tb ? parseTable(view.state.doc, tb.from, tb.to) : null;
 }
 
+/**
+ * 표 위젯 DOM 이 사라질 때 할 정리: 열린 손잡이·⋯ 메뉴 내리기, 끌기 중 window 처리기 떼기(2차 리뷰 ⑨).
+ * Live Preview 끄기·문서 바꾸기·편집기 다시 만들기로 위젯이 없어져도 document.body 의 메뉴는 남아,
+ * 거기서 고르면 떨어져 나간 뷰에 dispatch 한다. CodeMirror 는 DOM 을 다시 쓰는 갱신(updateDOM)에서는 destroy 를 부르지 않는다
+ */
+const disposers = new WeakMap<object, Set<() => void>>();
+
+/** wrap 이 사라질 때 fn 을 부른다. 돌려준 함수로 등록을 푼다 */
+export function onDispose(wrap: object, fn: () => void): () => void {
+  let set = disposers.get(wrap);
+  if (!set) disposers.set(wrap, (set = new Set()));
+  set.add(fn);
+  return () => void set.delete(fn);
+}
+
+/** 표 위젯 DOM 이 사라질 때(TableWidget.destroy) */
+export function disposeTable(wrap: object) {
+  const set = disposers.get(wrap);
+  if (!set) return;
+  disposers.delete(wrap);
+  for (const fn of [...set]) fn();
+}
+
 const ALIGN: Record<string, string> = { left: "left", center: "center", right: "right" };
 
 class TableWidget extends WidgetType {
@@ -163,6 +186,7 @@ class TableWidget extends WidgetType {
           ],
           t("table.menu"),
           () => refocus(view, wrap),
+          wrap,
         );
       });
       wrap.append(menu);
@@ -246,6 +270,9 @@ class TableWidget extends WidgetType {
   ignoreEvent() {
     return true;
   }
+  destroy(dom: HTMLElement) {
+    disposeTable(dom);
+  }
   get estimatedHeight() {
     return (this.text.split("\n").length - 1) * 30;
   }
@@ -308,7 +335,7 @@ function menuOf(view: EditorView, wrap: HTMLElement, items: MenuAction[], label:
     last = g;
     entries.push({ label: t(it.key), danger: /Delete/.test(it.key), run: () => act(view, wrap, it.action) });
   }
-  openMenu(at, entries, label, () => refocus(view, wrap));
+  openMenu(at, entries, label, () => refocus(view, wrap), wrap);
 }
 
 /** 메뉴가 가져간 포커스를 돌려준다: 칸 편집기가 열려 있으면 그 칸, 아니면 본문(안 그러면 이어서 친 글이 사라진다) */
@@ -414,6 +441,7 @@ function attachHandles(view: EditorView, wrap: HTMLElement) {
         menuOf(view, wrap, isRow ? rowMenu(m, index) : colMenu(m, index), h.title, { x: r.left, y: r.bottom + 2 });
       };
       const cleanup = () => {
+        offDispose();
         h.removeEventListener("pointermove", move);
         h.removeEventListener("pointerup", up);
         h.removeEventListener("pointercancel", up);
@@ -423,6 +451,8 @@ function attachHandles(view: EditorView, wrap: HTMLElement) {
       h.addEventListener("pointerup", up);
       h.addEventListener("pointercancel", up);
       window.addEventListener("keydown", onKey, true);
+      // 끄는 중에 표가 사라지면(편집기 다시 만들기 등) 처리기를 뗀다
+      const offDispose = onDispose(wrap, cancel);
     });
   }
 }
@@ -434,17 +464,30 @@ export function paintCell(td: HTMLElement, raw: string, ctx: LiveRenderContext |
   else td.textContent = cellText(raw);
 }
 
-/** ui.tsx 의 Menu 를 document.body 에 띄운다(편집기 위젯은 React 밖이다) */
-export function openMenu(at: { x: number; y: number }, items: MenuEntry[], label?: string, onClosed?: () => void) {
+/**
+ * ui.tsx 의 Menu 를 document.body 에 띄운다(편집기 위젯은 React 밖이다).
+ * owner(표 위젯 DOM)가 사라지면 메뉴도 내린다 — 이때는 포커스를 돌려주지 않는다(돌려줄 뷰가 없어졌다)
+ */
+export function openMenu(at: { x: number; y: number }, items: MenuEntry[], label?: string, onClosed?: () => void, owner?: HTMLElement) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  const close = () => {
-    root.unmount();
+  let closed = false;
+  const off = owner ? onDispose(owner, () => close(false)) : () => {};
+  function close(refocus = true) {
+    if (closed) return;
+    closed = true;
+    off();
     host.remove();
-    onClosed?.();
-  };
-  root.render(createElement(Menu, { at, items, label, onClose: close }));
+    if (refocus) {
+      root.unmount();
+      onClosed?.();
+    } else {
+      // 위젯 destroy 는 React 커밋(편집기 다시 만들기) 안에서 올 수 있다 — 그 자리에서 다른 root 를 동기로 내리면 React 가 경고한다
+      queueMicrotask(() => root.unmount());
+    }
+  }
+  root.render(createElement(Menu, { at, items, label, onClose: () => close() }));
 }
 
 function buildTables(state: EditorState, getCtx: GetCtx): DecorationSet {
