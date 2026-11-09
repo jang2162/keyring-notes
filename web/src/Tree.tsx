@@ -3,7 +3,7 @@ import { ArrowRight, Check, ChevronRight, File, FileImage, FileText, FileType, F
 import { tipProps } from "./Tooltip";
 import { stripMd, type ChildSort, type VaultNode } from "@keyring-notes/core";
 import type { Prefs } from "./prefs";
-import { Menu, type MenuEntry } from "./ui";
+import { Menu, type MenuEntry, type MenuItem } from "./ui";
 import { t } from "./i18n";
 import { childSortMenu, edgeDrop, shownChildren } from "./childSortUi";
 import { useViewedVersion, viewedSnapshot } from "./viewed";
@@ -67,6 +67,14 @@ export function childSortItems(sort: ChildSort | undefined | null, descending: b
   return childSortMenu(sort, descending).map((r) =>
     r === "-" ? r : { label: t(r.label), icon: r.checked ? Check : undefined, disabled: r.disabled || undefined, run: () => pick(r.value) },
   );
+}
+
+/**
+ * 「폴더로 쓰기」 메뉴 항목 — 트리 노드 메뉴와 노트 머리의 노트 메뉴가 같이 쓴다. checked 를 주어 켜짐·꺼짐이
+ * 보조기기에도 전해진다(menuitemradio·aria-checked). 고르면 지금과 반대로 바꾼다
+ */
+export function folderMenuItem(on: boolean, disabled: boolean, set: (on: boolean) => void): MenuItem {
+  return { label: t("tree.useAsFolder"), icon: on ? Check : undefined, checked: on, disabled: disabled || undefined, run: () => set(!on) };
 }
 
 /** 트리 표시를 바꾸는 것들(모두 선택) */
@@ -308,7 +316,7 @@ export const Tree = forwardRef<
       ...(n.note && !isWs ? [{ label: t("tree.duplicate"), run: () => actions.duplicate(n) }] : []),
       { label: t("tree.changeIcon"), disabled: ro, run: () => actions.pickIcon(n, menuAt()) },
       { label: t("tree.childSort"), disabled: ro, run: () => setSortMenu({ ...menuAt(), node: n }) },
-      ...(isWs ? [] : [{ label: t("tree.useAsFolder"), icon: n.folder ? Check : undefined, disabled: ro, run: () => actions.setFolder(n, !n.folder) }]),
+      ...(isWs ? [] : [folderMenuItem(!!n.folder, ro, (on) => actions.setFolder(n, on))]),
       // 부모가 커스텀일 때만 순서를 바꾼다. 워크스페이스 행의 순서는 workspaceOrder 가 맡는다
       ...(isWs
         ? []

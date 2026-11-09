@@ -47,7 +47,7 @@ Renaming, moving or deleting a node handles `A.md` and everything in `A/` in one
 
 ## Use a note as a folder
 
-Some notes only hold other notes. Right-click such a note in the tree and choose **Use as folder**. A check mark shows it is on. Choose it again to turn it off.
+Some notes only hold other notes. Right-click such a note in the tree, or open the note and click **Note menu** (⋯) above it, and choose **Use as folder**. A check mark shows it is on. Choose it again to turn it off.
 
 - Clicking the note's name, or pressing Enter on it, expands or collapses it like the arrow, instead of opening it. This works the same on touch screens.
 - To open the note, choose **Open in this tab** or **Open in a new tab** in its menu, `Ctrl/Cmd`+click it, middle-click it, or press `Ctrl/Cmd+Enter`. On touch screens, tap the arrow button at the right end of its row.

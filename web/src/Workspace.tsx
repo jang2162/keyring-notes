@@ -119,7 +119,7 @@ import { DEFAULT_PREFS, setPrefs, usePrefs, type Prefs } from "./prefs";
 import { errorText, toast, toastError, Toasts } from "./toast";
 import { commandKey, formatCombo, keyCapture, matchCommand, type Command } from "./shortcuts";
 import { IconButton, Menu, Resizer, Segmented, type MenuEntry } from "./ui";
-import { childSortItems, invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
+import { childSortItems, folderMenuItem, invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
 import { SettingsModal, KeySettings, type SettingsSection, type WorkspaceOps } from "./Settings";
 import { attemptCloseTopModal, Modal } from "./Modal";
 import {
@@ -3421,6 +3421,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   const docNode = doc ? stripMd(doc.path) : "";
   const isWsDoc = !!doc && !doc.path.includes("/");
+  // 노트 메뉴의 「폴더로 쓰기」 는 트리 메뉴와 같은 노드 값(트리 응답의 folder)을 보고 같은 setFolder 로 쓴다
+  const docTreeNode = doc && !isWsDoc ? findNode(nodeTree, docNode) : null;
   const docMenuItems: MenuEntry[] = doc
     ? [
         { label: t("cmd.save"), icon: Pencil, keys: keyOf("save"), disabled: !dirty || doc.generated, run: () => void save() },
@@ -3434,6 +3436,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         ...(docIcon && !doc.generated && !revision ? [{ label: t("title.removeIcon"), run: () => void setIcon(docNode, null) }] : []),
         { label: t("tree.newChild"), icon: FilePlus, disabled: doc.generated, run: () => void createDoc(docNode) },
         { label: t("tree.moveTo"), icon: FolderInput, disabled: doc.generated || isWsDoc, run: () => startMove(docNode, "node") },
+        ...(isWsDoc
+          ? []
+          : [folderMenuItem(!!docTreeNode?.folder, doc.generated || !!revision || !docTreeNode, (on) => docTreeNode && void setFolder(docTreeNode, on))]),
         {
           label: t("tree.duplicate"),
           icon: Copy,
