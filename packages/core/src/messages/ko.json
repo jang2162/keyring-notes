@@ -851,6 +851,8 @@
   "outline.unfoldName": "{name} 펴기",
   "palette.commands": "명령",
   "palette.daily": "같은 날 데일리 노트가 여럿입니다. 열 것을 고르세요",
+  "palette.dailyWs": "데일리 노트를 열 워크스페이스",
+  "palette.dailyWsHint": "↑↓ 고르기 · 1–9 바로 고르기 · Enter 열기 · Esc 닫기",
   "palette.files": "노트 이름으로 열기 (Ctrl+Enter: 새 탭)",
   "palette.filesHint": "↑↓ 고르기 · Enter 열기 · Ctrl+Enter 새 탭 · Esc 닫기",
   "palette.hint": "↑↓ 고르기 · Enter 실행 · Esc 닫기",

@@ -8,6 +8,8 @@ It is for people who keep a journal or a daily log.
 
 Daily notes are separate per workspace. Click the calendar on the rail, or press `Ctrl/Cmd+Shift+D`, to open today's note for the current workspace. Workspaces with daily notes turned off have no calendar button.
 
+In **All workspaces**, if more than one workspace has daily notes turned on, you first pick the workspace, in the switcher's order. Use ↑↓ and Enter, or press its number (1–9). Esc cancels. If only one has daily notes, its note opens right away. The yesterday's and tomorrow's note commands ask the same way. ◀ date ▶ in a daily note's header stays in that note's workspace.
+
 - If a note whose name starts with today's date exists, it opens, even with a title after the date. If there are several, you pick one.
 - If none exists, a note named with only the date is created, and the cursor goes to the title field.
 - ◀ date ▶ in the note header, and the **Previous daily note** and **Next daily note** commands, skip missing days. The yesterday's and tomorrow's note commands open or create the note for that day.

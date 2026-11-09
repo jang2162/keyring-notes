@@ -514,6 +514,10 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .palette-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-detail { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 .palette-hint { margin: 0; font-size: 11px; }
+/* 번호 고르기 목록(Palette numbered): 찾기 칸 대신 제목, 목록이 포커스를 받고 고른 줄은 .on 으로 보인다 */
+.palette-title { margin: 0; padding: 4px 10px; font-weight: 600; }
+.palette ul[tabindex]:focus-visible { outline: none; box-shadow: none; }
+.palette-num { display: inline-block; min-width: 1.6em; margin-right: 8px; text-align: center; }
 
 /* 편집 가능한 위젯 뷰: 칸 고치기·묶음·카드·칸반 */
 .field-cell { border: none; background: transparent; padding: 0 2px; font: inherit; color: inherit; text-align: inherit; cursor: text; border-radius: 3px; min-width: 2em; }
