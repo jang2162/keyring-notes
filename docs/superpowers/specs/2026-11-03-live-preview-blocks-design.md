@@ -97,7 +97,7 @@ B 를 고른 까닭(사용자): 칸 안에서도 본문과 똑같이 `[[` 자동
 
 - `ListItem` 안의 `Task` → `TaskMarker`(`[ ]`·`[x]`). 커서가 없는 줄에서 `- [ ] ` 전체(글머리 + 표시 + 뒤 공백)를 체크박스 위젯으로 바꾼다.
 - 체크박스를 누르면 **커서를 옮기지 않고** 그 줄의 `[ ]`↔`[x]` 한 글자만 바꾼다(`Editor.tsx` 의 `toggleTask` 와 같은 변경, `userEvent: "input"`). 읽기 전용이면 누를 수 없다(`disabled`).
-- 끝낸 항목 글의 모양(흐림·취소선)은 미리보기의 `task-item` 모양을 따른다.
+- 끝낸 항목 글은 꾸미지 않는다 — 미리보기의 `task-item` 에도 꾸밈이 없다(사용자 확인, 1차 리뷰).
 
 ### 5. 코드 블록
 
@@ -126,7 +126,7 @@ B 를 고른 까닭(사용자): 칸 안에서도 본문과 똑같이 `[[` 자동
 
 #### 6.3 칸 편집기
 
-- 칸 편집기에 붙는 것: 마크다운 언어와 구문 색(`headingStyle`·`defaultHighlightStyle`), 위키링크 자동완성(같은 `linkCandidates`), 서식 키맵(`Mod-b`/`Mod-i`/`Mod-k`/`Mod-Shift-h`), 코드 고정폭. **자기 실행 취소 기록은 두지 않는다.**
+- 칸 편집기에 붙는 것: 마크다운 언어와 구문 색(`headingStyle`·`classHighlighter` — 본문과 같은 색, 9절), 위키링크 자동완성(같은 `linkCandidates`), 서식 키맵(`Mod-b`/`Mod-i`/`Mod-k`/`Mod-Shift-h`), 코드 고정폭. **자기 실행 취소 기록은 두지 않는다.**
 - **고치는 칸은 원문이다**(사용자). 본문의 「커서가 있는 줄은 원문」 규칙과 같다 — 칸은 한 줄이라 고치는 동안 늘 원문(`**`·`[[…|`·`==` 가 보임, 구문 색 있음)이고, 칸을 떠나면 HTML 로 그린다. 그래서 칸 편집기에 Live Preview 의 기호 숨기기·줄 안 장식은 붙이지 않는다. 요소 단위(커서가 닿은 요소만 원문)는 고르지 않았다 — 본문의 줄 단위 판정을 바꿔야 하고 본문 동작까지 흔든다.
 - 칸 글과 문서의 대응:
   - 칸의 문서 구간은 `|` 사이에서 앞뒤 공백을 뺀 부분이다. 칸 편집기는 그 구간의 글을 보인다.
@@ -207,9 +207,10 @@ B 를 고른 까닭(사용자): 칸 안에서도 본문과 똑같이 `[[` 자동
 
 ### 9. 코드 블록 언어별 색
 
-- **지금**: 편집 화면은 `markdown({ codeLanguages: languages })`(`@codemirror/language-data`)로 언어별 파서를 받아 `syntaxHighlighting(defaultHighlightStyle, { fallback: true })` 로 칠한다 — 밝은 테마용 고정 색이라 어두운 테마에서 대비가 낮을 수 있다(확인 안 함). 미리보기(`markdown.ts` 의 markdown-it)는 칠하지 않는다.
+- **지금**: 편집 화면은 `markdown({ codeLanguages: languages })`(`@codemirror/language-data`)로 언어별 파서를 받지만 **코드를 칠하지 않는다** — `syntaxHighlighting(defaultHighlightStyle, { fallback: true })` 는 다른 하이라이터(`headingStyle`)가 있으면 쓰이지 않으므로 한 번도 켜진 적이 없다(1차 리뷰가 `highlightingFor` 로 확인). 미리보기(`markdown.ts` 의 markdown-it)도 칠하지 않는다. `classHighlighter` 로 바꾸면 코드 색과 함께 본문 원문의 `**굵게**`·`*기울임*`·`[ ]`·HTML 태그에도 모양이 처음 생긴다 — 받아들이고 `docs/ops/ux.md` 에 적는다.
 - **방식(코디네이터)**: 미리보기도 같은 lezer 파서로 칠한다 — `languages` 에서 `LanguageDescription.matchLanguageName(languages, info, true)` 로 찾아 `load()`(편집기와 같은 지연 로딩 청크) 뒤 `@lezer/highlight` 의 `highlightCode` + `classHighlighter`(`tok-*` 클래스)로 `<code>` 안을 다시 그린다. KaTeX·Mermaid 처럼 그린 뒤 `enhance.ts` 에서 비동기로 한다(모르는 언어·실패면 지금처럼 글자만).
 - 색은 `styles.css` 의 `tok-*` 규칙으로, 밝은·어두운 테마 토큰을 둔다. 편집 화면도 `defaultHighlightStyle` 대신 같은 `classHighlighter` 를 써(`syntaxHighlighting(classHighlighter)`) 두 화면이 같은 색이 된다. 제목 굵기(`headingStyle`)는 그대로.
+- **언어 별칭(사용자)**: `language-data` 에 없는 흔한 짧은 이름도 칠한다 — `py`→Python, `sh`·`zsh`·`bash`→Shell, `yml`→YAML, `md`→Markdown, `rb`→Ruby, `rs`→Rust, `kt`→Kotlin, `ps1`→PowerShell 등. 별칭 표는 한곳에 두고 편집 화면(`markdown({ codeLanguages })` 에 함수로)과 미리보기가 함께 쓴다.
 - 버린 방식: highlight.js·shiki — 새 의존성, 편집기와 색이 갈리고, 오프라인 캐시 목록(`sw`)에 따로 넣어야 한다.
 - 미리보기 색칠은 DOMPurify 정화 뒤에 하므로 만든 `<span class="tok-…">` 는 글자만 감싼다(정화된 글 노드에서 만든다 — HTML 을 문자열로 다시 넣지 않는다).
 
