@@ -126,6 +126,17 @@ describe("cellTransactionToMain", () => {
     expect(next.isUserEvent("input.type")).toBe(true);
   });
 
+  it("본문 변경은 친 글자 하나만큼이다(칸 전체 바꾸기가 아니다 — 설계 6.3)", () => {
+    const at = DOC.indexOf("| 2") + 3;
+    const main = state(DOC, at);
+    const sel = selectedCell(main)!;
+    const tr = cellTr("2", { changes: { from: 1, insert: "Q" }, selection: { anchor: 2 }, userEvent: "input.type" });
+    const changes = main.update(cellTransactionToMain(main, sel, tr)).changes;
+    const got: [number, number, string][] = [];
+    changes.iterChanges((fromA, toA, _fromB, _toB, ins) => got.push([fromA, toA, ins.toString()]));
+    expect(got).toEqual([[at, at, "Q"]]);
+  });
+
   it("| 를 치면 \\| 로, 선택은 그 뒤", () => {
     const at = DOC.indexOf("| 1") + 3;
     const main = state(DOC, at);

@@ -257,6 +257,15 @@ describe("열 작업", () => {
     expect(m.header.cells.map((c) => c.raw)).toEqual(["a", "", "b"]);
   });
 
+  it("insertColumn: 변경은 줄마다 새 칸만 넣는 것이다(줄을 통째로 바꾸지 않는다 — 다른 자리의 커서·찾기 위치가 끌려가지 않게)", () => {
+    const specs = insertColumn(tableOf(W), 1) as { from: number; to?: number; insert: string }[];
+    expect(specs).toHaveLength(3);
+    for (const s of specs) {
+      expect(s.to ?? s.from).toBe(s.from);
+      expect(s.insert.length).toBeLessThanOrEqual(" --- |".length);
+    }
+  });
+
   it("insertColumn: 맨 앞·맨 끝", () => {
     expect(run(W, (m) => insertColumn(m, 0)).split("\n")[0]).toBe("|  |  a   | b |");
     const end = run(W, (m) => insertColumn(m, 2));
