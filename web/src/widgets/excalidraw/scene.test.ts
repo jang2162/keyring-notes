@@ -84,3 +84,16 @@ describe("escapeIsNoop — Excalidraw 가 Esc 로 할 일이 없을 때만 전�
     expect(escapeIsNoop({ ...idle, multiElement: { id: "m" } })).toBe(false);
   });
 });
+
+import { keepsWriting } from "./scene";
+
+describe("keepsWriting — 쓰기가 거절된 뒤 그리기를 계속 저장할지", () => {
+  it("네트워크·오프라인(failed)이면 계속 쓴다 — 바이트는 남아 있고 다음 쓰기 때 다시 시도한다", () => {
+    expect(keepsWriting({ code: "failed" })).toBe(true);
+  });
+  it("충돌·파일 없음·거부면 멈추고 호스트가 다시 그리기를 기다린다", () => {
+    for (const code of ["conflict", "missing", "denied"]) expect(keepsWriting({ code })).toBe(false);
+    expect(keepsWriting(new Error("x"))).toBe(false);
+    expect(keepsWriting(undefined)).toBe(false);
+  });
+});

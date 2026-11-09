@@ -72,3 +72,11 @@ export function escapeIsNoop(s: Record<string, unknown>): boolean {
   if ((s.activeTool as { type?: string } | undefined)?.type !== "selection") return false;
   return [s.editingTextElement, s.openMenu, s.openPopup, s.openDialog, s.contextMenu, s.newElement, s.multiElement].every((v) => v === null || v === undefined);
 }
+
+/**
+ * 쓰기가 거절된 뒤에도 그리기를 계속 저장할지. failed(네트워크·오프라인·5xx)는 호스트가 바이트를 지우지 않고 다음 쓰기 때 다시 시도하므로
+ * 멈추면 다시 연결해도 저장되지 않는다. 충돌·파일 없음·거부는 호스트가 위젯을 다시 그리므로 멈춘다
+ */
+export function keepsWriting(e: unknown): boolean {
+  return (e as { code?: unknown } | null | undefined)?.code === "failed";
+}

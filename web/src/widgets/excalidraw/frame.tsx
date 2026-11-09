@@ -2,13 +2,34 @@ import { installFontShim } from "./fontShim";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { WidgetApi, WidgetContext, WidgetRender } from "../types";
-import { escapeIsNoop, parseScene, SceneGate, sceneKey } from "./scene";
+import { escapeIsNoop, keepsWriting, parseScene, SceneGate, sceneKey } from "./scene";
 
 /**
  * 내장 위젯 Excalidraw 의 iframe 묶음(IIFE — web/frameBuild.ts). 런타임이 먼저 돌고 이 묶음이 keyringWidgetRegister 를 부른다.
  * Excalidraw 는 render 안에서 import() 한다 — 그래야 모듈이 돌 때(글꼴 FontFace 를 만들 때) 부모가 건넨 글꼴 바이트(init)가 이미 있다.
  */
 installFontShim((rel) => window.keyringWidgetFonts?.[rel]);
+/** 메모리에만 두는 Storage — 샌드박스(allow-same-origin 없음)에서는 localStorage 를 읽기만 해도 던져 Excalidraw 가 오류를 낸다. 위젯 상태는 데이터 파일에만 남는다 */
+function memoryStorage(): Storage {
+  const m = new Map<string, string>();
+  return {
+    get length() {
+      return m.size;
+    },
+    clear: () => m.clear(),
+    getItem: (k) => m.get(k) ?? null,
+    key: (i) => [...m.keys()][i] ?? null,
+    removeItem: (k) => void m.delete(k),
+    setItem: (k, v) => void m.set(k, String(v)),
+  };
+}
+for (const name of ["localStorage", "sessionStorage"] as const) {
+  try {
+    void window[name];
+  } catch {
+    Object.defineProperty(window, name, { configurable: true, value: memoryStorage() });
+  }
+}
 // srcdoc 에서는 location.origin 이 "null" 이라 이것이 없으면 파일의 source 가 열 때마다 달라진다
 (window as unknown as Record<string, unknown>).EXCALIDRAW_EXPORT_SOURCE = "keyring-notes";
 
@@ -112,8 +133,10 @@ async function start(el: HTMLElement, first: WidgetContext, api: WidgetApi, onCt
             if (text === null) return;
             file.write(enc.encode(text), base).then(
               (r) => (base = r.hash),
-              // 거절(다른 칸이 먼저 씀·충돌)이면 그리기를 멈추고 호스트가 다시 그리기를 기다린다
-              () => (stopped = true),
+              // 거절(다른 칸이 먼저 씀·충돌)이면 그리기를 멈추고 호스트가 다시 그리기를 기다린다. 오프라인(failed)은 이어서 쓴다(keepsWriting)
+              (e) => {
+                if (!keepsWriting(e)) stopped = true;
+              },
             );
           }}
         />
