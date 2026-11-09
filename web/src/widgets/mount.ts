@@ -132,11 +132,16 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
 
     // 판정은 핸들러 안이 아니라 마이크로태스크 뒤에 — 엔진에 따라 포커스된 요소를 지우는 처리 중에 blur 가 나
     // 그 순간에는 isConnected 가 아직 true 일 수 있다. 다시 그리기로 빠지는 뿌리의 blur 로 적용하지 않기 위해서다.
-    const onFocusOut = () =>
+    // 안에서 안으로 옮기는 것은 relatedTarget 으로 본다: 마이크로태스크는 새 요소가 포커스를 받기 전(focusin 앞)에 돌아
+    // 그때 activeElement 는 body 다(Chromium 실측 — 날짜 칸에서 이름 칸을 누르면 수정이 끝나 버렸다).
+    const onFocusOut = (e: FocusEvent) => {
+      const related = e.relatedTarget instanceof Node ? e.relatedTarget : null;
       queueMicrotask(() => {
         if (dead || live?.root !== root || !session.editing) return;
-        if (focusOutAction({ rootConnected: root.isConnected, relatedInside: root.contains(document.activeElement) }) === "apply") session.focusOut();
+        const relatedInside = (!!related && root.contains(related)) || root.contains(document.activeElement);
+        if (focusOutAction({ rootConnected: root.isConnected, relatedInside }) === "apply") session.focusOut();
       });
+    };
     const onFocusIn = (e: FocusEvent) => {
       if (!session.editing) return;
       const i = [...root.querySelectorAll(FOCUSABLE)].indexOf(e.target as Element);
