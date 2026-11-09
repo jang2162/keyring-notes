@@ -199,6 +199,8 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .tok-emphasis { font-style: italic; }
 .tok-strong { font-weight: 700; }
 .tok-link { text-decoration: underline; }
+/* Live Preview 는 링크 글자에 점선 밑줄(.cm-lp-link)을 따로 긋는다 — 안쪽 실선까지 두 줄이 되지 않게 */
+.cm-lp-link .tok-link { text-decoration: none; }
 
 /* ── 미리보기: 할 일, 백링크 ── */
 .preview-pane { padding: 0 0 48px; }
