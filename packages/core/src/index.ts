@@ -27,4 +27,5 @@ export * from "./trash.js";
 export * from "./vaultText.js";
 export * from "./types.js";
 export * from "./widget.js";
+export * from "./widgetFrame.js";
 export * from "./wiki.js";

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { withoutEdited } from "@keyring-notes/core";
+import { WIDGET_FRAME_SCRIPT_HASH, withoutEdited } from "@keyring-notes/core";
 import { createApp } from "../src/app.js";
 import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
@@ -316,6 +316,9 @@ describe("관리 API·설치·보안", () => {
     expect(ok.status).toBe(200);
     expect(ok.headers.get("x-frame-options")).toBe("DENY");
     expect(ok.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    // keyring-widget iframe(srcdoc) 이 부모 CSP 를 물려받아 부트스트랩·blob: 위젯 코드를 돌린다
+    const scriptSrc = /(?:^|;)\s*script-src ([^;]*)/.exec(ok.headers.get("content-security-policy") ?? "")?.[1].split(" ");
+    expect(scriptSrc).toEqual(["'self'", WIDGET_FRAME_SCRIPT_HASH, "blob:"]);
     expect((await app.request("http://evil.example.net/api/health")).status).toBe(421);
     expect((await app.request("http://localhost/api/health")).status).toBe(200);
     // 첨부는 자체 sandbox CSP를 유지한다
