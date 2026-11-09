@@ -1,8 +1,8 @@
-import { autocompletion } from "@codemirror/autocomplete";
+import { acceptCompletion, autocompletion, completionStatus } from "@codemirror/autocomplete";
 import { defaultKeymap, redo, undo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
-import { Annotation, ChangeSet, EditorSelection, EditorState, Text, Transaction, type Extension, type TransactionSpec } from "@codemirror/state";
+import { Annotation, ChangeSet, EditorSelection, EditorState, Prec, Text, Transaction, type Extension, type TransactionSpec } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, runScopeHandlers, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { classHighlighter } from "@lezer/highlight";
 import { headingStyle, insertLink, wikilinkSource, wrapSelection } from "./editorCommands";
@@ -23,7 +23,8 @@ import {
   type TableModel,
   type TableRow,
 } from "./tableModel";
-import { cellClick, paintCell, tableAtDOM, tableRanges, topTables, virtualField, type CellRef, type TableOptions } from "./tableWidget";
+import { enterTableFrom, exitTarget, navigate, newRowSpec, type NavKey } from "./tableNav";
+import { cellClick, paintCell, setVirtualCell, tableAtDOM, tableRanges, topTables, virtualField, type CellRef, type TableOptions } from "./tableWidget";
 
 /**
  * 표의 칸 편집기: 본문 선택이 표의 한 칸 안에 있으면 그 칸 자리에 CodeMirror 편집기 하나를 붙인다(설계 6.2·6.3).
@@ -265,6 +266,53 @@ class CellPlugin {
     }
   }
 
+  /** 칸 편집기의 이동 키. false 면 칸 편집기의 기본 동작(커서 이동 등)에 맡긴다 */
+  private nav(key: NavKey | "Shift-Enter" | "Escape", v: EditorView): boolean {
+    if (shouldDefer(v.composing, key)) return false;
+    const c = this.cell;
+    if (!c || c.view !== v) return false;
+    if (key === "Tab" && completionStatus(v.state) === "active") return acceptCompletion(v);
+    // 칸에는 줄바꿈을 넣을 수 없다 — GFM 표 관례대로 <br>
+    if (key === "Shift-Enter") {
+      v.dispatch(v.state.replaceSelection("<br>"), { userEvent: "input", scrollIntoView: true });
+      return true;
+    }
+    const m = modelAt(this.main.state, c.ref.table);
+    if (!m) return false;
+    if (key === "Escape") return this.exit(m, "after");
+    const sel = v.state.selection.main;
+    // 칸 글이 여러 줄로 감겼으면 ↑↓ 는 먼저 칸 안에서 움직인다
+    if ((key === "ArrowUp" || key === "ArrowDown") && movesWithin(v, key === "ArrowDown")) return false;
+    if ((key === "ArrowLeft" || key === "ArrowRight") && !sel.empty) return false;
+    const r = navigate(m, c.ref.row, c.ref.col, key, sel.head === 0, sel.head === v.state.doc.length);
+    if (r.kind === "stay") return key === "Tab" || key === "Shift-Tab" || key === "Enter";
+    if (r.kind === "exit") return this.exit(m, r.where);
+    if (r.kind === "newRow") {
+      this.main.dispatch({ ...newRowSpec(m, key === "Tab" ? 0 : c.ref.col), userEvent: "input", scrollIntoView: true });
+      return true;
+    }
+    const row = rowOf(m, r.row)!;
+    const cell = row.cells[r.col];
+    // → 로 오면 칸 처음, 나머지는 칸 끝
+    if (cell) this.main.dispatch({ selection: { anchor: key === "ArrowRight" ? cell.from : cell.to }, scrollIntoView: true });
+    else
+      this.main.dispatch({
+        selection: { anchor: row.from + row.text.trimEnd().length },
+        effects: setVirtualCell.of({ table: m.from, row: r.row, col: r.col }),
+        scrollIntoView: true,
+      });
+    return true;
+  }
+
+  /** 칸 편집을 끝내고 본문 커서를 표 앞 줄 끝 / 뒤 줄 처음에. 앞 줄이 없으면 그대로 */
+  private exit(m: TableModel, where: "before" | "after"): boolean {
+    const target = exitTarget(this.main.state, m, where);
+    if (!target) return true;
+    this.main.dispatch({ ...target, scrollIntoView: true });
+    this.main.focus();
+    return true;
+  }
+
   close(focusMain = false) {
     const c = this.cell;
     if (!c) return;
@@ -329,8 +377,11 @@ class CellPlugin {
         { key: "Mod-i", preventDefault: true, run: (v) => !ro() && wrapSelection(v, "*") },
         { key: "Mod-k", preventDefault: true, run: (v) => !ro() && insertLink(v) },
         { key: "Mod-Shift-h", preventDefault: true, run: (v) => !ro() && wrapSelection(v, "==") },
-        // 칸에는 줄바꿈을 넣을 수 없다(칸 이동 키는 tableNav)
-        { key: "Enter", run: () => true },
+        // 칸 이동(설계 6.4). 자동완성이 열려 있으면 그쪽 키맵(Prec.highest)이 Enter·↑↓·Esc 를 먼저 받는다
+        ...(["Tab", "Shift-Tab", "Enter", "Shift-Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Escape"] as const).map((key) => ({
+          key,
+          run: (v: EditorView) => this.nav(key, v),
+        })),
         ...defaultKeymap,
       ]),
       EditorView.domEventHandlers({
@@ -379,10 +430,42 @@ const cellTheme = EditorView.theme({
   ".cm-scroller": { overflow: "visible", lineHeight: "inherit", fontFamily: "inherit" },
 });
 
+/** 칸 편집기 안에서 위/아래로 한 줄 움직일 자리가 있는가(감긴 칸 글) */
+function movesWithin(v: EditorView, down: boolean): boolean {
+  const r = v.state.selection.main;
+  const next = v.moveVertically(r, down);
+  if (next.head === r.head) return false;
+  const a = v.coordsAtPos(r.head);
+  const b = v.coordsAtPos(next.head);
+  return !!a && !!b && Math.abs(a.top - b.top) > 1;
+}
+
+/** 본문 커서가 표 바로 위 줄에서 ↓, 바로 아래 줄에서 ↑ 이면 그 표의 첫 칸으로(설계 6.4) */
+function enterFromBody(dir: "up" | "down") {
+  return (view: EditorView): boolean => {
+    const sel = view.state.selection;
+    if (sel.ranges.length !== 1 || !sel.main.empty) return false;
+    const line = view.state.doc.lineAt(sel.main.head);
+    // 감긴 긴 줄은 그 줄의 끝(↓)·처음(↑) 화면 줄에서만
+    const next = view.moveVertically(sel.main, dir === "down");
+    if (next.head !== sel.main.head && next.head >= line.from && next.head <= line.to) return false;
+    const pos = enterTableFrom(view.state, line.number, dir);
+    if (pos === null) return false;
+    view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+    return true;
+  };
+}
+
 /** 표 편집기(tableWidget.ts 의 tableEditor)가 함께 켠다 */
 export function cellEditing(getCtx: GetCtx, opts: TableOptions): Extension {
   return [
     ViewPlugin.define((view) => new CellPlugin(view, getCtx, opts)),
+    Prec.high(
+      keymap.of([
+        { key: "ArrowDown", run: enterFromBody("down") },
+        { key: "ArrowUp", run: enterFromBody("up") },
+      ]),
+    ),
     EditorView.baseTheme({
       ".cm-lp-table .cm-lp-cell-editing": { outline: "2px solid var(--accent)", outlineOffset: "-2px", cursor: "text" },
     }),
