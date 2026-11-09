@@ -1,4 +1,5 @@
 import { language, onLanguageChange, t } from "../i18n";
+import { THEME_TOKEN_NAMES } from "./frame/themeTokens";
 import { widgetMessages } from "./messages";
 import { isFrameEntry, resolveWidgetView, widgetViewChange, type WidgetView } from "./registry";
 import { focusOutAction, widgetKeyAction, WidgetSession } from "./session";
@@ -34,7 +35,7 @@ export interface MountedWidget {
   destroy(): void;
 }
 
-export const THEME_TOKENS: readonly string[] = ["--bg", "--bg-soft", "--fg", "--muted", "--border", "--accent", "--danger"];
+export const THEME_TOKENS = THEME_TOKEN_NAMES;
 
 function readTheme(): Record<string, string> {
   const cs = getComputedStyle(document.documentElement);

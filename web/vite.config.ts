@@ -5,6 +5,7 @@ import { gzipSync } from "node:zlib";
 import path from "node:path";
 import { defaultClientConditions, defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { widgetFrames } from "./frameBuild.ts";
 import { licenseNotices } from "./licenses/plugin.ts";
 import { buildCatalog } from "./src/emojiCatalog.ts";
 import { HAND_WORDS } from "./src/emojiWords.ts";
@@ -84,8 +85,15 @@ function emojiData(): Plugin {
   };
 }
 
+/** keyring-widget iframe 묶음(/widget-frame/). dev 표시는 개발 서버에서만 — 배포 빌드에는 없다 */
+const frames = widgetFrames([
+  { name: "runtime", entry: "src/widgets/frame/runtimeEntry.ts" },
+  { name: "dday", entry: "src/widgets/frame/ddayEntry.ts", dev: true },
+]);
+
 export default defineConfig({
-  plugins: [react(), stampServiceWorker(), emojiData(), licenseNotices(), inlineWidgetBudget()],
+  // frames 를 licenseNotices 앞에 둔다 — 고지 수집(generateBundle)이 iframe 묶음의 모듈까지 본다
+  plugins: [react(), stampServiceWorker(), emojiData(), frames, licenseNotices({ extraModules: () => frames.modules() }), inlineWidgetBudget()],
   define: { __KEYRING_BUILD__: JSON.stringify(BUILD) },
   // 시험에서 styles.css 만 CSS 처리를 켠다 — 끈 기본값에서는 styles.css?raw 가 빈 글이다(themeColor.test.ts 가 --bg 를 읽는다)
   test: { css: { include: [/styles\.css/] } },

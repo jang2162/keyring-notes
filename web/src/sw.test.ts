@@ -113,6 +113,20 @@ describe("sw.js", () => {
     expect(w.puts).toEqual([]);
   });
 
+  it("/widget-frame 요청에 HTML 이 오면 캐시하지 않는다(iframe 묶음 — 없는 주소의 SPA 대체 응답)", async () => {
+    const w = loadWorker("b0005", [], { fetch: async () => new Response("<!doctype html>", { headers: { "content-type": "text/html" } }) });
+    await w.fire("fetch", { request: new Request("http://localhost/widget-frame/x.js") });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(w.puts).toEqual([]);
+  });
+
+  it("/widget-frame 요청에 JS 가 오면 캐시한다(처음 쓸 때 — 그 뒤 오프라인에서도 열린다)", async () => {
+    const w = loadWorker("b0005", [], { fetch: async () => new Response("1", { headers: { "content-type": "text/javascript" } }) });
+    await w.fire("fetch", { request: new Request("http://localhost/widget-frame/runtime-a.js") });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(w.puts).toEqual([["keyring-shell-b0005", "http://localhost/widget-frame/runtime-a.js"]]);
+  });
+
   it("/assets 요청에 JS 가 오면 그 빌드 캐시에 넣는다", async () => {
     const w = loadWorker("b0005", [], { fetch: async () => new Response("export {};", { headers: { "content-type": "text/javascript" } }) });
     await w.fire("fetch", { request: new Request("http://localhost/assets/index-a.js") });

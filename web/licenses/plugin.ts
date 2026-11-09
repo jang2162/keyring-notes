@@ -80,8 +80,16 @@ function resolvePackage(from: string, name: string): string | null {
 }
 
 /** 웹 번들: 내보내는 청크의 모듈과 자산의 원본 파일(글꼴·`?url` 로 싣는 pdf.js 워커 등)이 든 패키지 */
-function bundlePackages(root: string, bundle: Record<string, { type: string; moduleIds?: string[]; originalFileNames?: string[] }>): string[] {
+function bundlePackages(
+  root: string,
+  bundle: Record<string, { type: string; moduleIds?: string[]; originalFileNames?: string[] }>,
+  extra: string[] = [],
+): string[] {
   const dirs = new Set<string>();
+  for (const id of extra) {
+    const pkg = packageOfModule(id);
+    if (pkg && existsSync(path.join(pkg.dir, "package.json"))) dirs.add(pkg.dir);
+  }
   for (const out of Object.values(bundle)) {
     const ids = out.type === "chunk" ? (out.moduleIds ?? []) : (out.originalFileNames ?? []).map((f) => path.resolve(root, f));
     for (const id of ids) {
@@ -115,12 +123,12 @@ function sourceMapSources(file: string): (string | null)[] | null {
  * 출력에 쓰인 node_modules 파일 안에 미리 묶여 실린 다른 패키지(이름 → 싣고 온 패키지들). 동봉 소스맵으로만 보므로
  * 소스맵이 없는 묶음과 네이티브 바이너리는 못 본다(docs/guides/development.md 「의존성과 라이선스 고지」).
  */
-function bundledInside(bundle: Record<string, { type: string; moduleIds?: string[] }>): Map<string, Set<string>> {
+function bundledInside(bundle: Record<string, { type: string; moduleIds?: string[] }>, extra: string[] = []): Map<string, Set<string>> {
   const found = new Map<string, Set<string>>();
   const files = new Set(
-    Object.values(bundle)
-      .flatMap((out) => (out.type === "chunk" ? (out.moduleIds ?? []) : []))
-      .map((id) => id.replace(/^\0/, "").replace(/[?#].*$/, "")),
+    [...Object.values(bundle).flatMap((out) => (out.type === "chunk" ? (out.moduleIds ?? []) : [])), ...extra].map((id) =>
+      id.replace(/^\0/, "").replace(/[?#].*$/, ""),
+    ),
   );
   for (const file of files) {
     const pkg = packageOfModule(file);
@@ -211,7 +219,8 @@ function standardTexts(): Record<string, string> {
  * Tauri 가 부른 빌드(beforeBuildCommand — TAURI_ENV_TARGET_TRIPLE 이 있다)면 서버 대신 앱의 Rust 크레이트를 싣는다:
  * 앱에는 서버의 node_modules 가 들어가지 않고, Docker 이미지에는 Rust 가 들어가지 않는다.
  */
-export function licenseNotices(): Plugin {
+/** extraModules: 앱 묶음 밖에서 따로 빌드해 싣는 코드의 모듈(위젯 iframe 묶음 — web/frameBuild.ts)도 같은 수집에 넣는다 */
+export function licenseNotices(opts: { extraModules?: () => string[] } = {}): Plugin {
   let webRoot = "";
   let logger: Logger | undefined;
   return {
@@ -224,13 +233,14 @@ export function licenseNotices(): Plugin {
     generateBundle(_, bundle) {
       const repo = path.resolve(webRoot, "..");
       const triple = process.env.TAURI_ENV_TARGET_TRIPLE;
-      const web = bundlePackages(webRoot, bundle as never).map((dir) => npmNotice(dir, ["web"]));
+      const extra = opts.extraModules?.() ?? [];
+      const web = bundlePackages(webRoot, bundle as never, extra).map((dir) => npmNotice(dir, ["web"]));
       const other = triple ? appCrates(repo, triple) : serverPackages(repo).map((dir) => npmNotice(dir, ["server"]));
       const auto = [...web, ...other];
       const parts: NoticePart[] = ["web", triple ? "app" : "server"];
       const manual = manualForParts(MANUAL_NOTICES, parts);
       const merged = mergeNotices([...auto, ...manualNotices(repo, manual, auto)]);
-      const bundled = bundledProblems(bundledInside(bundle as never), merged, manual);
+      const bundled = bundledProblems(bundledInside(bundle as never, extra), merged, manual);
       if (bundled.length) throw new Error(`라이선스 고지: 다른 패키지 안에 묶여 실린 것이 손 목록(web/licenses/manual.ts)과 어긋난다 — ${bundled.join("; ")}`);
       const chosen = applyChoices(merged, LICENSE_CHOICES, parts);
       if (chosen.problems.length)
