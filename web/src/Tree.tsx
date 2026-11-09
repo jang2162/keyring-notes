@@ -1,14 +1,15 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowRight, Check, ChevronRight, File, FileImage, FileText, FileType, Paperclip, Plus } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, File, FileImage, FileText, FileType, Folder, FolderOpen, Paperclip, Plus } from "lucide-react";
 import { tipProps } from "./Tooltip";
 import { stripMd, type ChildSort, type VaultNode } from "@keyring-notes/core";
 import type { Prefs } from "./prefs";
-import { Menu, type MenuEntry } from "./ui";
+import { Menu, type MenuEntry, type MenuItem } from "./ui";
 import { t } from "./i18n";
 import { childSortMenu, edgeDrop, shownChildren } from "./childSortUi";
 import { useViewedVersion, viewedSnapshot } from "./viewed";
 import { isTouch } from "./touch";
 import { nodeTap, showOpenButton } from "./treeTap";
+import { isMac } from "./shortcuts";
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 
@@ -51,6 +52,8 @@ export interface TreeActions {
   /** 고정했는지·고정 바꾸기(워크스페이스 노드는 고정하지 않는다) */
   pinned: (node: string) => boolean;
   togglePin: (node: string) => void;
+  /** 「폴더로 쓰기」 켜고 끄기(노드 노트의 folder 속성. 켤 때 노트가 없으면 그때 만든다) */
+  setFolder: (node: VaultNode, on: boolean) => void;
   /** 하위 노트 정렬 고르기(node null 이면 지금 워크스페이스의 맨 위). 부모 노트의 sort 를 적고, 노트가 없으면 만든다 */
   setChildSort: (node: VaultNode | null, sort: ChildSort) => void;
   /** 커스텀 순서 바꾸기: 같은 부모 안에서 path 를 beforePath 앞으로(null 이면 맨 뒤) */
@@ -64,6 +67,21 @@ export function childSortItems(sort: ChildSort | undefined | null, descending: b
   return childSortMenu(sort, descending).map((r) =>
     r === "-" ? r : { label: t(r.label), icon: r.checked ? Check : undefined, disabled: r.disabled || undefined, run: () => pick(r.value) },
   );
+}
+
+/**
+ * 「폴더로 쓰기」 메뉴 항목 — 트리 노드 메뉴와 노트 머리의 노트 메뉴가 같이 쓴다. checked 를 주어 켜짐·꺼짐이
+ * 보조기기에도 전해진다(혼자 켜고 끄는 항목이라 menuitemcheckbox·aria-checked). 고르면 지금과 반대로 바꾼다
+ */
+export function folderMenuItem(on: boolean, disabled: boolean, set: (on: boolean) => void): MenuItem {
+  return {
+    label: t("tree.useAsFolder"),
+    icon: on ? Check : undefined,
+    checked: on,
+    checkKind: "checkbox",
+    disabled: disabled || undefined,
+    run: () => set(!on),
+  };
 }
 
 /** 트리 표시를 바꾸는 것들(모두 선택) */
@@ -95,6 +113,9 @@ type Row =
   | { kind: "node"; node: VaultNode; depth: number; custom: boolean; prev: string | null; next: string | null; canUp: boolean; canDown: boolean }
   | { kind: "attachments"; node: VaultNode; depth: number }
   | { kind: "file"; path: string; owner: VaultNode; depth: number };
+
+/** 이 키 입력·클릭이 Mod(macOS ⌘, 그 밖 Ctrl)를 눌렀는가 */
+const modOf = (e: { metaKey: boolean; ctrlKey: boolean }) => (isMac ? e.metaKey : e.ctrlKey);
 
 const rowKey = (r: Row) => (r.kind === "node" ? r.node.path : r.kind === "attachments" ? `${r.node.path}/\u0000att` : r.path);
 
@@ -302,6 +323,7 @@ export const Tree = forwardRef<
       ...(n.note && !isWs ? [{ label: t("tree.duplicate"), run: () => actions.duplicate(n) }] : []),
       { label: t("tree.changeIcon"), disabled: ro, run: () => actions.pickIcon(n, menuAt()) },
       { label: t("tree.childSort"), disabled: ro, run: () => setSortMenu({ ...menuAt(), node: n }) },
+      ...(isWs ? [] : [folderMenuItem(!!n.folder, ro, (on) => actions.setFolder(n, on))]),
       // 부모가 커스텀일 때만 순서를 바꾼다. 워크스페이스 행의 순서는 workspaceOrder 가 맡는다
       ...(isWs
         ? []
@@ -373,6 +395,14 @@ export const Tree = forwardRef<
       case "Enter":
         if (!row) return;
         e.preventDefault();
+        // 폴더로 쓰는 노트는 Enter 도 펴고 접기, Mod+Enter 는 연다(메뉴 「새 탭에서 열기」 의 키)
+        if (row.kind === "node" && row.node.path.includes("/")) {
+          const how = nodeTap({ touch: false, canExpand: expandable(row.node), hasNote: true, onChevron: false, folder: row.node.folder, mod: modOf(e) });
+          if (how === "toggle") {
+            toggle(row.node.path);
+            break;
+          }
+        }
         activate(row);
         break;
       case "F2":
@@ -621,12 +651,13 @@ export const Tree = forwardRef<
             onDrop={(e) => dropRow(e, r)}
             onClick={(e) => {
               if (renaming === n.path) return;
-              // 화살표를 누르면 펴기·접기만, 이름을 누르면 노트를 연다(터치에서 하위가 있는 노트는 행 전체가 펴기·접기)
+              // 화살표를 누르면 펴기·접기만, 이름을 누르면 노트를 연다(터치에서 하위가 있는 노트·폴더로 쓰는 노트는 행 전체가 펴기·접기,
+              // Mod+클릭은 늘 연다)
               if ((e.target as HTMLElement).closest(".tree-chevron")) {
                 if (canExpand) toggle(n.path);
                 return;
               }
-              if (hasNote && nodeTap({ touch, canExpand, hasNote, onChevron: false }) === "toggle") {
+              if (hasNote && nodeTap({ touch, canExpand, hasNote, onChevron: false, folder: n.folder, mod: modOf(e) }) === "toggle") {
                 setFocused(key);
                 toggle(n.path);
                 return;
@@ -653,6 +684,13 @@ export const Tree = forwardRef<
               <span className="doc-icon" aria-hidden>
                 {emoji}
               </span>
+            ) : n.folder ? (
+              // 폴더로 쓰는 노트: 고른 아이콘(이모지)이 없을 때만 폴더 모양
+              isOpen && canExpand ? (
+                <FolderOpen size={15} strokeWidth={1.75} aria-hidden className="tree-icon" />
+              ) : (
+                <Folder size={15} strokeWidth={1.75} aria-hidden className="tree-icon" />
+              )
             ) : (
               <FileText size={15} strokeWidth={1.75} aria-hidden className="tree-icon" />
             )}

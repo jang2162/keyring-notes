@@ -35,15 +35,27 @@ The big title field at the top of a note is the file name. Edit it and press Ent
 
 ## Use the note tree
 
-- Click a note to open it in a new tab, or go to its tab if it is already open.
+- Click a note to open it in a new tab, or go to its tab if it is already open. A note used as a folder expands or collapses instead (see [Use a note as a folder](#use-a-note-as-a-folder)).
 - Drag and drop to move. Hovering over a collapsed node expands it.
-- Keyboard: ↑↓ move, ←→ collapse and expand, Enter open, F2 rename, Delete delete.
-- The right-click menu has **New child note**, rename, move to another note, duplicate, open in a new tab or the other pane, copy path or link, change icon, **Sort sub-notes**, **Move up** and **Move down**, pin, and delete (with children).
+- Keyboard: ↑↓ move, ←→ collapse and expand, Enter open (`Ctrl/Cmd+Enter` also opens a note used as a folder), F2 rename, Delete delete.
+- The right-click menu has **New child note**, rename, move to another note, duplicate, open in a new tab or the other pane, copy path or link, change icon, **Sort sub-notes**, **Use as folder**, **Move up** and **Move down**, pin, and delete (with children).
 - The toolbar above the tree has **New note**, **Reveal current note**, **Collapse all** and display options (show or hide the "N files" rows, **Sort notes**).
 - The workspace's attachment folder is hidden from the tree.
 - Notes sort by name unless you choose another order (see [Sort child notes](#sort-child-notes)). Inside the daily folder, the newest comes first (configurable) until you choose an order for it. Its sort menu shows this as **Name** and **Descending**.
 
 Renaming, moving or deleting a node handles `A.md` and everything in `A/` in one go: one commit on the server, one journal entry in the app.
+
+## Use a note as a folder
+
+Some notes only hold other notes. Right-click such a note in the tree, or open the note and click **Note menu** (⋯) above it, and choose **Use as folder**. A check mark shows it is on. Choose it again to turn it off.
+
+- Clicking the note's name, or pressing Enter on it, expands or collapses it like the arrow, instead of opening it. This works the same on touch screens.
+- To open the note, choose **Open in this tab** or **Open in a new tab** in its menu, `Ctrl/Cmd`+click it, middle-click it, or press `Ctrl/Cmd+Enter`. On touch screens, tap the arrow button at the right end of its row.
+- A note with nothing to expand (no sub-notes, and no "N files" row shown) opens when you click it.
+- The note shows a folder icon. An icon you picked for the note takes its place.
+- Search, the command palette, links and the path above a note still open it.
+
+The choice is saved in the note (the `folder` field), so every device that uses the vault shows the same thing. Turning it on for a folder without a note creates the note.
 
 ## Sort child notes
 
@@ -80,11 +92,12 @@ Usually only the moved note changes, so two devices can reorder different notes 
 
 ### Fields the app writes
 
-The app keeps the sort in these frontmatter fields. The Properties tab hides them.
+The app keeps the sort and **Use as folder** in these frontmatter fields. The Properties tab hides them.
 
 - `edited`: when the note last changed through Keyring Notes, in UTC. The app writes it when it saves, renames or moves a note, and when an agent writes through MCP or the REST API. Changes made in another editor don't update it.
 - `sort`: how the note sorts its child notes: `modified`, `viewed` or `custom`, or `name-desc`, `modified-asc` or `viewed-asc` for the reverse direction. Choosing **Name** ascending removes the field. Inside the daily folder, which shows newest first by default, it writes `name` instead.
 - `rank`: the note's place in its parent's custom order.
+- `folder`: `true` when the note is used as a folder (see [Use a note as a folder](#use-a-note-as-a-folder)). Turning it off removes the field.
 
 A note without `edited` sorts by its file time. In the desktop and mobile app, that time can differ between devices until the note changes in the app.
 

@@ -75,12 +75,20 @@ export interface MenuItem {
   lead?: ReactNode;
   /** 고른 항목(워크스페이스 등): ✓ 대신 강조 모양 */
   checked?: boolean;
+  /** checked 의 뜻: 무리 중 하나를 고름(radio, 기본 — 워크스페이스 전환) 또는 혼자 켜고 끔(checkbox — 폴더로 쓰기) */
+  checkKind?: "radio" | "checkbox";
   keys?: string;
   run: () => void;
   danger?: boolean;
   disabled?: boolean;
 }
 export type MenuEntry = MenuItem | "-";
+
+/** 메뉴 항목의 ARIA 역할: checked 가 없으면 menuitem, 있으면 checkKind 에 따라 menuitemradio·menuitemcheckbox */
+export function menuItemRole(it: Pick<MenuItem, "checked" | "checkKind">): "menuitem" | "menuitemradio" | "menuitemcheckbox" {
+  if (it.checked === undefined) return "menuitem";
+  return it.checkKind === "checkbox" ? "menuitemcheckbox" : "menuitemradio";
+}
 
 /**
  * 띄우는 메뉴(⋯ 메뉴·오른쪽 클릭 메뉴). at: 화면 좌표. ↑↓ Enter Esc로 다룬다.
@@ -158,7 +166,7 @@ export function Menu({ at, items, onClose, label }: { at: { x: number; y: number
           <button
             key={i}
             type="button"
-            role={it.checked === undefined ? "menuitem" : "menuitemradio"}
+            role={menuItemRole(it)}
             aria-checked={it.checked}
             className={`menu-item${it.danger ? " danger" : ""}${sel === i ? " on" : ""}${it.checked ? " checked" : ""}`}
             disabled={it.disabled}

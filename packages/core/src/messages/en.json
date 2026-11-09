@@ -1358,6 +1358,7 @@
   "tree.sortName": "Name",
   "tree.sortViewed": "Last opened",
   "tree.unpin": "Unpin",
+  "tree.useAsFolder": "Use as folder",
   "update.available": "Keyring Notes {version} is available. You have {current}.",
   "update.availableShort": "New version {version}",
   "update.busy": "An update is already being installed. Quit again when it finishes.",

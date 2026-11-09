@@ -31,6 +31,7 @@ export interface TreeNode {
   icon?: string;
   sort?: ChildSort;
   rank?: string;
+  folder?: true;
   /** 수정 시각(ms): 프런트매터 edited, 없으면 색인의 파일 시각 */
   edited?: number;
 }

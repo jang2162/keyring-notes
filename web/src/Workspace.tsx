@@ -119,7 +119,7 @@ import { DEFAULT_PREFS, setPrefs, usePrefs, type Prefs } from "./prefs";
 import { errorText, toast, toastError, Toasts } from "./toast";
 import { commandKey, formatCombo, keyCapture, matchCommand, type Command } from "./shortcuts";
 import { IconButton, Menu, Resizer, Segmented, type MenuEntry } from "./ui";
-import { childSortItems, invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
+import { childSortItems, folderMenuItem, invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
 import { SettingsModal, KeySettings, type SettingsSection, type WorkspaceOps } from "./Settings";
 import { attemptCloseTopModal, Modal } from "./Modal";
 import {
@@ -202,6 +202,7 @@ import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorks
 import { forgetViewed, markViewed, renameViewed, viewedSnapshot } from "./viewed";
 import {
   childSortWrites,
+  folderWrites,
   fillBlankNote,
   isGeneratedNote,
   planWritable,
@@ -2328,6 +2329,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     await writeNotes([parentNote, ...seeds.map((x) => x.note)], (read) => childSortWrites(parentNote, read(parentNote), sort, seeds, read, descending));
   };
 
+  /** 「폴더로 쓰기」: 노드 노트의 folder(켤 때 노트가 없으면 만든다). 정렬과 같은 길로 써서 열린 노트도 쓴 내용으로 다시 연다 */
+  const setFolder = async (node: VaultNode, on: boolean) => {
+    const note = node.note ?? `${node.path}.md`;
+    await writeNotes([note], (read) => folderWrites(note, read(note), on));
+  };
+
   /** 커스텀 순서 바꾸기: 같은 부모 안에서 path 를 beforePath 앞으로(null 이면 맨 뒤). 보통은 옮긴 노트 하나의 rank 만 바뀐다 */
   const reorderNode = async (path: string, beforePath: string | null) => {
     const parent = findNode(nodeTree, parentOf(path));
@@ -2899,6 +2906,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     pinned: (n) => pins.includes(n),
     togglePin,
     setChildSort: (n, sort) => void setChildSort(n, sort),
+    setFolder: (n, on) => void setFolder(n, on),
     reorder: (p, before) => void reorderNode(p, before),
     moveSibling: (p, dir) => moveSibling(dir, p),
   };
@@ -3413,6 +3421,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   const docNode = doc ? stripMd(doc.path) : "";
   const isWsDoc = !!doc && !doc.path.includes("/");
+  // 노트 메뉴의 「폴더로 쓰기」 는 트리 메뉴와 같은 노드 값(트리 응답의 folder)을 보고 같은 setFolder 로 쓴다
+  const docTreeNode = doc && !isWsDoc ? findNode(nodeTree, docNode) : null;
   const docMenuItems: MenuEntry[] = doc
     ? [
         { label: t("cmd.save"), icon: Pencil, keys: keyOf("save"), disabled: !dirty || doc.generated, run: () => void save() },
@@ -3426,6 +3436,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         ...(docIcon && !doc.generated && !revision ? [{ label: t("title.removeIcon"), run: () => void setIcon(docNode, null) }] : []),
         { label: t("tree.newChild"), icon: FilePlus, disabled: doc.generated, run: () => void createDoc(docNode) },
         { label: t("tree.moveTo"), icon: FolderInput, disabled: doc.generated || isWsDoc, run: () => startMove(docNode, "node") },
+        ...(isWsDoc
+          ? []
+          : [folderMenuItem(!!docTreeNode?.folder, doc.generated || !!revision || !docTreeNode, (on) => docTreeNode && void setFolder(docTreeNode, on))]),
         {
           label: t("tree.duplicate"),
           icon: Copy,
