@@ -20,7 +20,7 @@ export type SyntaxMark =
    * 인용 안 목록은 줄 앞이 "> " 라 칸을 나눌 수 없어 내지 않는다(원문 들여쓰기 그대로)
    */
   | { kind: "listLine"; line: number; depth: number; indentFrom: number; indentTo: number; markTo: number }
-  /** 목록 항목 안 문단의 이어지는 줄(첫 줄이 아닌 줄). 줄 앞 공백을 접고 그 뎁스의 글 시작에 맞춘다 */
+  /** 목록 항목 안 문단에서 표시가 있는 첫 줄이 아닌 줄. 줄 앞 공백을 접고 그 뎁스의 글 시작에 맞춘다 */
   | { kind: "listCont"; line: number; depth: number; indentFrom: number; indentTo: number }
   /** "- [ ] " 전체(글머리부터 표시 뒤 공백까지). line 은 1부터 */
   | { kind: "task"; from: number; to: number; done: boolean; line: number }
@@ -130,9 +130,11 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
         for (let i = lineOf(n.from); i <= lineOf(n.to); i++) quoteDepth.set(i, depth);
         return;
       }
-      if (name === "Paragraph" && n.node.parent?.name === "ListItem" && depth === 0) {
+      // 항목 안 문단(할 일은 Task 가 문단 자리)의 줄 중 표시가 있는 첫 줄을 뺀 나머지 — 이어지는 줄(lazy 포함)과 느슨한 목록의 둘째 이후 문단
+      if ((name === "Paragraph" || name === "Task") && n.node.parent?.name === "ListItem" && depth === 0) {
         const d = listDepth(n.node.parent);
-        for (let i = lineOf(n.from) + 1; i <= lineOf(n.to); i++) {
+        const markLine = lineOf(n.node.parent.from);
+        for (let i = Math.max(lineOf(n.from), markLine + 1); i <= lineOf(n.to); i++) {
           const l = doc.line(i);
           out.push({ kind: "listCont", line: i, depth: d, indentFrom: l.from, indentTo: l.from + /^[ \t]*/.exec(l.text)![0].length });
         }

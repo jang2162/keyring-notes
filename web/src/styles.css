@@ -1308,7 +1308,7 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h1 { font-size: calc(1.6em * 1.6); }
 .editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h2 { font-size: calc(1.35em * 1.35); }
 .editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h3 { font-size: calc(1.18em * 1.18); }
-.cm-fold-marker { display: flex; align-items: center; justify-content: center; height: var(--fold-lh); cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; user-select: none; }
+.cm-fold-marker { display: flex; align-items: center; justify-content: center; height: var(--fold-lh); cursor: pointer; color: var(--muted); font-size: 14px; line-height: inherit; user-select: none; }
 .cm-fold-marker.open { opacity: 0; transition: opacity 0.12s; }
 .editor:hover .cm-fold-marker.open { opacity: 0.55; }
 .cm-fold-marker:hover { color: var(--accent); opacity: 1 !important; }
@@ -1316,7 +1316,13 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 /* 미리보기 단추도 붙은 블록 첫 줄의 높이(1lh)를 받아 그 가운데에 화살표를 둔다 */
 .markdown-body .pv-foldable, .markdown-body .callout-title { --fold-lh: 1lh; }
 .markdown-body .pv-foldable { position: relative; }
-.pv-fold { position: absolute; left: -24px; top: 0; display: flex; align-items: center; justify-content: center; width: 20px; height: var(--fold-lh); padding: 0; border: none !important; background: transparent; color: var(--muted); font-size: 14px; line-height: 1; opacity: 0; transition: opacity 0.12s; }
+.pv-fold { position: absolute; left: -24px; top: 0; display: flex; align-items: center; justify-content: center; width: 20px; height: var(--fold-lh); padding: 0; border: none !important; background: transparent; color: var(--muted); font-size: 14px; line-height: inherit; opacity: 0; transition: opacity 0.12s; }
+/* 폴백: lh 가 없으면 height 가 무효가 되어 화살표 상자가 자기 줄 높이(line-height: inherit → 14px × 1.75)로 돌아간다 — 바꾸기 전과 같은 자리.
+   @property 만 없으면 1lh 가 단추 자신의 줄 높이로 풀려 같은 값이 된다. 미리보기는 lh 가 없을 때 바꾸기 전 위치(top·height)를 되살린다 */
+@supports not (height: 1lh) {
+  .pv-fold { top: 0.15em; height: 1.4em; line-height: 1; }
+  .markdown-body h1 > .pv-fold { top: 0.35em; }
+}
 .markdown-body .pv-foldable:hover > .pv-fold, .markdown-body .callout:hover .pv-fold, .pv-fold:focus-visible, .pv-folded > .pv-fold, .pv-folded .pv-fold { opacity: 0.8; }
 .pv-fold:hover { color: var(--accent); }
 /* 목록은 표시 칸(--li-indent) 바로 왼쪽 */

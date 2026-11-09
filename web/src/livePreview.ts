@@ -53,6 +53,8 @@ class HrWidget extends WidgetType {
 
 /** 뎁스마다 되풀이하는 글머리 점. 미리보기(styles.css 「목록」)의 list-style-type 과 같은 글자다 */
 export const BULLETS = ["•", "◦", "▪"];
+/** 미리보기 CSS 는 6단계까지만 적어 7단계부터 ▪ 로 남는다 — 같게 6단계에서 멈춘다 */
+const bulletIndex = (depth: number) => (Math.min(depth, 6) - 1) % BULLETS.length;
 
 class BulletWidget extends WidgetType {
   constructor(readonly depth: number) {
@@ -64,7 +66,7 @@ class BulletWidget extends WidgetType {
   toDOM() {
     const el = document.createElement("span");
     el.className = "cm-lp-bullet";
-    el.textContent = BULLETS[(this.depth - 1) % BULLETS.length];
+    el.textContent = BULLETS[bulletIndex(this.depth)];
     return el;
   }
   ignoreEvent() {
@@ -162,6 +164,8 @@ const codeTailLine = Decoration.line({ class: "cm-lp-codeblock cm-lp-codetail" }
 const bulletWidgets = BULLETS.map((_, i) => Decoration.replace({ widget: new BulletWidget(i + 1) }));
 /** 목록 줄: 뎁스만큼 들여 쓰고 줄바꿈된 줄은 글 시작에 맞춘다(hanging indent). 너비는 theme 의 --li-indent 칸 */
 const listLine = (depth: number) => Decoration.line({ class: "cm-lp-li", attributes: { style: `--li-depth: ${depth}` } });
+/** 항목 문단의 이어지는 줄: 표시가 없으니 첫 줄을 당기지 않고 줄 전체를 글 시작에 둔다 */
+const listContLine = (depth: number) => Decoration.line({ class: "cm-lp-li cm-lp-li-cont", attributes: { style: `--li-depth: ${depth}` } });
 const listIndent = (cols: number) => Decoration.mark({ class: "cm-lp-li-indent", attributes: { style: `--li-cols: ${cols}` } });
 // inclusive: 칸 끝에 걸친 글머리 위젯, 칸 전체를 바꾸는 체크박스 위젯도 칸 안에 그린다(없으면 위젯이 칸 밖으로 빠진다)
 const listMark = Decoration.mark({ class: "cm-lp-li-mark", inclusive: true });
@@ -238,10 +242,10 @@ function build(view: EditorView): DecorationSet {
     for (const m of syntaxMarks(state, from, to, active)) {
       if (m.kind === "hide") items.push({ from: m.from, to: m.to, deco: hide });
       else if (m.kind === "hr") items.push({ from: m.from, to: m.to, deco: hrWidget, replace: true });
-      else if (m.kind === "bullet") items.push({ from: m.from, to: m.to, deco: bulletWidgets[(m.depth - 1) % bulletWidgets.length], replace: true });
+      else if (m.kind === "bullet") items.push({ from: m.from, to: m.to, deco: bulletWidgets[bulletIndex(m.depth)], replace: true });
       else if (m.kind === "listLine" || m.kind === "listCont") {
         const at = state.doc.line(m.line).from;
-        items.push({ from: at, to: at, deco: listLine(m.depth) });
+        items.push({ from: at, to: at, deco: m.kind === "listLine" ? listLine(m.depth) : listContLine(m.depth) });
         // 공백은 숨기지 않고 정해진 너비의 칸에 담는다 — 커서가 있는 줄에서도 원문을 그 자리에서 고칠 수 있게
         if (m.indentTo > m.indentFrom) items.push({ from: m.indentFrom, to: m.indentTo, deco: listIndent(m.kind === "listLine" ? m.depth - 1 : 0) });
         if (m.kind === "listLine" && m.markTo > m.indentTo) items.push({ from: m.indentTo, to: m.markTo, deco: listMark });
@@ -332,6 +336,7 @@ const theme = EditorView.baseTheme({
     textIndent: "calc(var(--li-depth) * var(--li-indent, 1.75em) * -1)",
   },
   // overflow 를 숨기면 inline-block 의 기준선이 아래 끝으로 내려가 줄 높이가 달라진다 — 넘친 공백은 그냥 둔다
+  ".cm-lp-li-cont": { textIndent: "0" },
   ".cm-lp-li-indent, .cm-lp-li-mark": { display: "inline-block", textIndent: "0", whiteSpace: "pre" },
   ".cm-lp-li-indent": { width: "calc(var(--li-cols) * var(--li-indent, 1.75em))" },
   // 표시는 칸 오른쪽에 붙인다(미리보기의 바깥 표시처럼). 커서가 있는 할 일 줄의 원문 "- [ ] " 처럼 칸보다 길면 칸이 늘어 그 줄 글만 밀린다.

@@ -140,6 +140,17 @@ describe("글머리와 할 일", () => {
     ]);
   });
 
+  it("느슨한 목록의 둘째 문단은 첫 줄부터, 할 일의 이어지는 줄과 줄 앞 공백 없는 lazy 줄도 글 시작에 맞춘다", () => {
+    expect(only(marks("- a\n\n  p2\n  p3"), "listCont")).toEqual([
+      { kind: "listCont", line: 3, depth: 1, indentFrom: 5, indentTo: 7 },
+      { kind: "listCont", line: 4, depth: 1, indentFrom: 10, indentTo: 12 },
+    ]);
+    expect(only(marks("- [ ] a\n  b\nlazy"), "listCont")).toEqual([
+      { kind: "listCont", line: 2, depth: 1, indentFrom: 8, indentTo: 10 },
+      { kind: "listCont", line: 3, depth: 1, indentFrom: 12, indentTo: 12 },
+    ]);
+  });
+
   it("인용 안 목록은 칸을 나누지 않는다(줄 앞이 > 라서)", () => {
     const list = marks("> - a\n>   - b");
     expect(only(list, "listLine")).toEqual([]);
