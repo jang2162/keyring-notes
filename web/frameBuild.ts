@@ -13,7 +13,7 @@ import { FRAME_DIR, frameAssetName, frameSizeErrors, inlineCssFonts, type FrameM
 export interface FrameEntrySpec {
   name: string;
   entry: string;
-  /** 개발 서버에서만(예: D-day 를 iframe 으로 견주는 개발용 위젯) */
+  /** 개발 서버·개발 모드 빌드에서만(예: D-day 를 iframe 으로 견주는 개발용 위젯) */
   dev?: boolean;
   alias?: Record<string, string>;
   /** 묶음과 함께 건넬 CSS 파일(그 안 woff2 는 data: 로) */
@@ -100,10 +100,12 @@ async function buildEntry(root: string, spec: FrameEntrySpec): Promise<Built> {
 export function widgetFrames(entries: FrameEntrySpec[]): Plugin & { modules(): string[] } {
   let root = "";
   let serve = false;
+  /** import.meta.env.DEV 와 같은 판정 — dev 진입은 개발 서버와 개발 모드 빌드(NODE_ENV=development)에만 싣는다 */
+  let dev = false;
   let built: Promise<Built[]> | null = null;
   let last: Built[] = [];
   const runAll = () =>
-    (built ??= Promise.all(entries.filter((e) => serve || !e.dev).map((e) => buildEntry(root, e))).then((b) => {
+    (built ??= Promise.all(entries.filter((e) => dev || !e.dev).map((e) => buildEntry(root, e))).then((b) => {
       last = b;
       return b;
     }));
@@ -113,6 +115,7 @@ export function widgetFrames(entries: FrameEntrySpec[]): Plugin & { modules(): s
     configResolved(c) {
       root = c.root;
       serve = c.command === "serve";
+      dev = !c.isProduction;
     },
     async buildStart() {
       if (serve) return;

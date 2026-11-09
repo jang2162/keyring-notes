@@ -1,0 +1,50 @@
+/** keyring-widget iframe 호스트의 순수 판정(DOM 접착은 mountFrame.ts) */
+
+/** 불러오는 동안의 아래 한도 */
+export const FRAME_MIN_HEIGHT = 48;
+
+/** 전체 화면 = viewport, 아니면 clamp(ceil(px), 48, floor(viewport*0.8)) — 위젯 하나가 화면을 다 덮어 노트 스크롤을 막지 않게 */
+export function frameHeight(px: number, viewport: number, fullscreen: boolean): number {
+  if (fullscreen) return viewport;
+  return Math.min(Math.max(Math.ceil(px), FRAME_MIN_HEIGHT), Math.floor(viewport * 0.8));
+}
+
+/**
+ * 포커스 아웃 판정의 「안」: 앱 activeElement 가 뿌리 안(그 iframe 포함)이거나 relatedTarget 이 뿌리 안.
+ * iframe 으로 포커스가 들어가면 부모 window 에 blur 가 나지만 activeElement 는 그 iframe 이라 안이다.
+ * 창 전체가 포커스를 잃을 때(다른 앱으로)도 activeElement 는 그대로라 안으로 본다.
+ */
+export function frameFocusInside(o: { activeInRoot: boolean; relatedInRoot: boolean }): boolean {
+  return o.activeInRoot || o.relatedInRoot;
+}
+
+/**
+ * iframe 문서는 srcdoc 하나뿐이어야 한다: 첫 load·첫 ready 는 ok, 두 번째부터 kill(위젯이 자기 iframe 을 다른 주소로 옮김).
+ * kill 뒤에는 무엇이든 kill.
+ */
+export function frameGuard(): { load(): "ok" | "kill"; ready(): "ok" | "kill"; killed(): boolean } {
+  let loads = 0;
+  let readies = 0;
+  let dead = false;
+  const check = (n: number) => {
+    if (dead || n > 1) {
+      dead = true;
+      return "kill" as const;
+    }
+    return "ok" as const;
+  };
+  return {
+    load: () => check(++loads),
+    ready: () => check(++readies),
+    killed: () => dead,
+  };
+}
+
+/**
+ * 창 message 하나를 어떻게 볼까: source 가 만들 때 잡아 둔 그 iframe 의 창이 아니면 ignore. 맞는데 origin 이 "null"(srcdoc 샌드박스의
+ * 불투명 출처)이 아니면 문서가 다른 곳으로 옮겨 간 것이라 kill — 옮겨 간 문서가 load·ready 전에 보낸 첫 메시지부터 막는다.
+ */
+export function frameEventAction(e: { sourceIsFrame: boolean; origin: string }): "accept" | "ignore" | "kill" {
+  if (!e.sourceIsFrame) return "ignore";
+  return e.origin === "null" ? "accept" : "kill";
+}

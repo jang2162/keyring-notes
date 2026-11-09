@@ -1,4 +1,5 @@
 import { language, onLanguageChange, t } from "../i18n";
+import { mountFrame } from "./frame/mountFrame";
 import { THEME_TOKEN_NAMES } from "./frame/themeTokens";
 import { widgetMessages } from "./messages";
 import { isFrameEntry, resolveWidgetView, widgetViewChange, type WidgetView } from "./registry";
@@ -192,20 +193,34 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
     };
     const mine = live;
     const entry = v.entry;
-    // iframe 위젯의 호스트는 다음 단계(mountFrame)가 붙인다 — 그때까지는 불러오지 못한 위젯으로 보인다
-    const loaded = isFrameEntry(entry) ? Promise.reject(new Error("frame host is not mounted")) : entry.load();
-    loaded.then(
+    const fail = (key = "kw.loadFailed") => {
+      if (dead || live !== mine) return;
+      mine.stop();
+      live = null;
+      errorBlock(el, body, t(key), opts.onRaw);
+    };
+    if (isFrameEntry(entry)) {
+      // iframe 연결: 세션·ctx·뿌리는 여기 것을 쓰고 DOM 접착은 mountFrame 이 한다
+      const frame = mountFrame(content, {
+        root,
+        entry,
+        session,
+        ctx,
+        file: null,
+        display: v.display,
+        onUpdate: (cb) => void listeners.push(() => cb()),
+        failed: fail,
+      });
+      cleanup = () => frame.destroy();
+      return;
+    }
+    entry.load().then(
       ({ render }) => {
         if (dead || live !== mine) return;
         cleanup = render(content, ctx(), api);
         if (resume?.focus != null) [...root.querySelectorAll<HTMLElement>(FOCUSABLE)][resume.focus]?.focus();
       },
-      () => {
-        if (dead || live !== mine) return;
-        mine.stop();
-        live = null;
-        errorBlock(el, body, t("kw.loadFailed"), opts.onRaw);
-      },
+      () => fail(),
     );
   };
 
