@@ -3,9 +3,9 @@ import { EditorState, Transaction, type TransactionSpec } from "@codemirror/stat
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { history, undo } from "@codemirror/commands";
-import { cellTransactionToMain, selectedCell, shouldDefer } from "./cellEditor";
-import { cellText } from "./tableModel";
-import { editTableRaw, setVirtualCell, tableEditor } from "./tableWidget";
+import { cellTransactionToMain, remapRef, selectedCell, shouldDefer } from "./cellEditor";
+import { cellText, insertColumn, insertRow, parseTable } from "./tableModel";
+import { editTableRaw, setVirtualCell, tableEditor, type CellRef } from "./tableWidget";
 import { mirrored } from "./mirror";
 
 const opts = { linkCandidates: () => [] };
@@ -260,6 +260,45 @@ describe("칸 입력의 실행 취소 묶음은 칸 편집기의 시각을 따�
     let after = s;
     undo({ state: s, dispatch: (tr) => (after = tr.state) });
     expect(after.doc.toString()).toContain("| 2가 |");
+  });
+});
+
+describe("remapRef(바깥 변경이 표 구조를 바꿀 때 — 조합 중에는 본문 선택으로 다시 구하지 않는다)", () => {
+  const model = (s: EditorState) => parseTable(s.doc, T, s.doc.length - "\n\n뒤".length)!;
+
+  it("같은 표 앞에 행이 들어오면 행 번호를 따라간다", () => {
+    const s = state(DOC, DOC.indexOf("| 2") + 3);
+    const ref = selectedCell(s)!;
+    const tr = s.update({ changes: insertRow(model(s), 0), annotations: [mirrored.of(true)] });
+    expect(remapRef(s, tr.state, tr.changes, ref)).toEqual({ table: T, row: 2, col: 1 });
+  });
+
+  it("앞에 열이 들어오면 열 번호를, 표 앞에 글이 들어오면 표 위치를 따라간다", () => {
+    const s = state(DOC, DOC.indexOf("| 2") + 3);
+    const ref = selectedCell(s)!;
+    const col = s.update({ changes: insertColumn(model(s), 0) });
+    expect(remapRef(s, col.state, col.changes, ref)).toMatchObject({ row: 1, col: 2 });
+    const before = s.update({ changes: { from: 0, insert: "새 글\n" } });
+    expect(remapRef(s, before.state, before.changes, ref)).toEqual({ table: T + 4, row: 1, col: 1 });
+  });
+
+  it("다시 구한 ref 로 보낸 조합 글은 원래 셀에 들어간다(다른 행의 셀을 덮지 않는다)", () => {
+    const s = state(DOC, DOC.indexOf("| 2") + 3);
+    let ref: CellRef = selectedCell(s)!;
+    const tr = s.update({ changes: insertRow(model(s), 0), annotations: [mirrored.of(true)] });
+    ref = remapRef(s, tr.state, tr.changes, ref);
+    const typed = cellTr("2", { changes: { from: 1, insert: "가" }, selection: { anchor: 2 }, userEvent: "input.type.compose" });
+    const next = tr.state.update(cellTransactionToMain(tr.state, ref, typed)).state;
+    expect(next.doc.toString()).toContain("| 1 | 2가 |");
+    expect(next.doc.line(5).text).toBe("|  |  |");
+  });
+
+  it("셀이 사라지면(행 지움) 표 위치만 옮긴다", () => {
+    const s = state(DOC, DOC.indexOf("| 2") + 3);
+    const ref = selectedCell(s)!;
+    const m = model(s);
+    const tr = s.update({ changes: { from: m.body[0].from - 1, to: m.body[0].to } });
+    expect(remapRef(s, tr.state, tr.changes, ref)).toEqual(ref);
   });
 });
 

@@ -2,7 +2,17 @@ import { acceptCompletion, autocompletion, completionStatus } from "@codemirror/
 import { defaultKeymap, redo, undo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
-import { Annotation, ChangeSet, EditorSelection, EditorState, Prec, Transaction, type Extension, type TransactionSpec } from "@codemirror/state";
+import {
+  Annotation,
+  ChangeSet,
+  EditorSelection,
+  type ChangeDesc,
+  EditorState,
+  Prec,
+  Transaction,
+  type Extension,
+  type TransactionSpec,
+} from "@codemirror/state";
 import { drawSelection, EditorView, keymap, runScopeHandlers, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { classHighlighter } from "@lezer/highlight";
 import { headingStyle, insertLink, wikilinkSource, wrapSelection } from "./editorCommands";
@@ -135,6 +145,20 @@ export function cellTransactionToMain(main: EditorState, ref: CellRef, tr: Trans
   };
 }
 
+/**
+ * 본문이 바뀐 뒤 열린 셀의 ref(행·열)를 다시 구한다: 바뀌기 전 셀 시작을 변경으로 따라가 그 자리의 셀을 찾는다.
+ * 조합 중에는 sync 가 멈춰 본문 선택으로 다시 구하지 않으므로, 바깥 변경(미러링·합치기)이 같은 표 앞에 행·열을 넣으면
+ * 옛 행·열로 보낸 조합 글이 다른 셀을 덮는다(2차 리뷰 ④). 셀을 못 찾으면(빈 자리 셀, 셀이 지워짐) 표 위치만 옮긴다
+ */
+export function remapRef(before: EditorState, after: EditorState, changes: ChangeDesc, ref: CellRef): CellRef {
+  const table = changes.mapPos(ref.table);
+  const old = modelAt(before, ref.table);
+  const cell = old && rowOf(old, ref.row)?.cells[ref.col];
+  const m = cell ? modelAt(after, table) : null;
+  const at = m && cellAt(m, changes.mapPos(cell!.from, -1));
+  return m && at ? { table: m.from, row: at.row, col: at.col } : { ...ref, table };
+}
+
 const NAV_KEYS = new Set(["Tab", "Shift-Tab", "Enter", "Shift-Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Escape"]);
 
 /** 조합 중이면 이동 키·다시 그리기를 미룬다(조합 중인 글자가 사라지거나 다른 칸으로 튀지 않게 — Review Focus 1) */
@@ -179,7 +203,7 @@ class CellPlugin {
   }
 
   update(u: ViewUpdate) {
-    if (this.cell && u.docChanged) this.cell.ref = { ...this.cell.ref, table: u.changes.mapPos(this.cell.ref.table) };
+    if (this.cell && u.docChanged) this.cell.ref = remapRef(u.startState, u.state, u.changes, this.cell.ref);
     let click: CellClick | undefined;
     for (const tr of u.transactions) for (const e of tr.effects) if (e.is(cellClick)) click = e.value;
     // 표가 화면 밖으로 나갔다 오거나 폭이 바뀌면 CodeMirror 가 표 위젯 DOM 을 새로 만든다 — 칸 편집기가 옛 DOM 에 남으면 다시 연다
@@ -210,7 +234,9 @@ class CellPlugin {
     const sel = selectedCell(this.main.state);
     if (!sel) return this.close();
     const c = this.cell;
-    if (c && c.td.isConnected && c.ref.table === sel.table && c.ref.row === sel.row && c.ref.col === sel.col) {
+    // ref 는 변경을 따라가지만 td 는 화면 자리 그대로다(행이 앞에 들어오면 위젯은 행을 자리 번호로 다시 쓴다) — 자리도 맞아야 그대로 쓴다
+    const sameTd = !!c && c.td.dataset.row === String(sel.row) && c.td.dataset.col === String(sel.col);
+    if (c && c.td.isConnected && sameTd && c.ref.table === sel.table && c.ref.row === sel.row && c.ref.col === sel.col) {
       this.pull(sel);
       if (click) this.placeAt(click);
       return;
