@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ConflictError, LocalVault, MemoryStore, NotFoundError, parseFrontmatter, sha256Hex, SyncEngine, withoutEdited } from "../src/index.js";
+import {
+  conflictCopyPath,
+  ConflictError,
+  LocalVault,
+  MemoryStore,
+  NotFoundError,
+  parseFrontmatter,
+  sha256Hex,
+  SyncEngine,
+  withoutEdited,
+} from "../src/index.js";
 import { FakeServer } from "./fakeServer.js";
 
 async function device(name = "폰") {
@@ -440,5 +450,26 @@ describe("동기화: 기기에서 바꾸거나 지운 첨부", () => {
     await v.remove("W/그림.png", await sha256Hex(b(1)));
     expect((await sync.run()).deletedRemote).toEqual(["W/그림.png"]);
     expect(server.files.has("W/그림.png")).toBe(false);
+  });
+});
+
+describe("conflictCopyPath 확장자", () => {
+  const at = new Date("2026-11-09T09:05:00Z");
+  it("ext 를 주면 그 앞에 넣는다", () => {
+    expect(conflictCopyPath("a/스케치-3f9a.excalidraw.json", "충돌 사본", () => false, at, ".excalidraw.json")).toBe(
+      "a/스케치-3f9a (충돌 사본 20261109-0905).excalidraw.json",
+    );
+  });
+  it("ext 는 대소문자를 가리지 않고 원래 글자를 지킨다", () => {
+    expect(conflictCopyPath("a/X.EXCALIDRAW.JSON", "c", () => false, at, ".excalidraw.json")).toBe("a/X (c 20261109-0905).EXCALIDRAW.JSON");
+  });
+  it("첫 후보가 있으면 번호", () => {
+    const first = "a/스케치-3f9a (충돌 사본 20261109-0905).excalidraw.json";
+    expect(conflictCopyPath("a/스케치-3f9a.excalidraw.json", "충돌 사본", (p) => p === first, at, ".excalidraw.json")).toBe(
+      "a/스케치-3f9a (충돌 사본 20261109-0905 2).excalidraw.json",
+    );
+  });
+  it("ext 없으면 .md", () => {
+    expect(conflictCopyPath("a/n.md", "c", () => false, at)).toBe("a/n (c 20261109-0905).md");
   });
 });

@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { parseWidgetBlock, resolveWidgetState, serializeWidgetBlock, widgetOneLine, withWidgetState, type KeyringWidgetBlock } from "../src/index.js";
+import {
+  parseWidgetBlock,
+  resolveWidgetState,
+  rewriteWidgetFileRefs,
+  serializeWidgetBlock,
+  widgetDataPath,
+  widgetFileRefs,
+  widgetOneLine,
+  withWidgetState,
+  type KeyringWidgetBlock,
+} from "../src/index.js";
 
 function block(body: string): KeyringWidgetBlock {
   const r = parseWidgetBlock(body);
@@ -147,5 +157,101 @@ describe("keyring-widget 판", () => {
     const b = block('{"widget":"a/b@1","display":"inline","editable":false,"state":{"n":1},"x":2}');
     const next = withWidgetState(b, { n: 2 }, 2);
     expect(next).toEqual({ widget: { id: "a/b", version: 2 }, display: "inline", editable: false, state: { n: 2 }, extra: [["x", 2]] });
+  });
+});
+
+describe("데이터 파일 경로(state.file)", () => {
+  const EXT = ".excalidraw.json";
+  it("정규형 볼트 경로이고 ext 로 끝나면 그 값", () => {
+    expect(widgetDataPath({ file: "회의록/스케치-3f9a.excalidraw.json" }, EXT)).toBe("회의록/스케치-3f9a.excalidraw.json");
+    expect(widgetDataPath({ file: "a/B.EXCALIDRAW.JSON" }, EXT)).toBe("a/B.EXCALIDRAW.JSON");
+  });
+  it.each([
+    [{ file: "../밖.excalidraw.json" }],
+    [{ file: "/abs.excalidraw.json" }],
+    [{ file: ".h/x.excalidraw.json" }],
+    [{ file: "a//b.excalidraw.json" }],
+    [{ file: "a\\b.excalidraw.json" }],
+    [{ file: "a/b.json" }],
+    [{ file: ".excalidraw.json" }],
+    [{ file: "" }],
+    [{ file: 1 }],
+    [{}],
+    [null],
+    ["x"],
+  ])("아니면 null: %j", (state) => {
+    expect(widgetDataPath(state, EXT)).toBeNull();
+  });
+  it("ext 없이는 정규형만 본다", () => {
+    expect(widgetDataPath({ file: "a/b.json" })).toBe("a/b.json");
+    expect(widgetDataPath({ file: "../b.json" })).toBeNull();
+  });
+});
+
+describe("widgetFileRefs", () => {
+  const blk = (file: string) => `{"widget": "a/b@1", "state": {"file": ${JSON.stringify(file)}}}`;
+  it("펜스 둘·목록 안 들여쓴 펜스 → 문서 순서, 중복 없음", () => {
+    const c = [
+      "# 제목",
+      "```keyring-widget",
+      blk("x/a.excalidraw.json"),
+      "```",
+      "~~~keyring-widget",
+      blk("x/b.excalidraw.json"),
+      "~~~",
+      "- 항목",
+      "  ```keyring-widget",
+      "  " + blk("x/c.excalidraw.json"),
+      "  ```",
+      "```keyring-widget",
+      blk("x/a.excalidraw.json"),
+      "```",
+    ].join("\n");
+    expect(widgetFileRefs(c)).toEqual(["x/a.excalidraw.json", "x/b.excalidraw.json", "x/c.excalidraw.json"]);
+  });
+  it("여러 줄 블록", () => {
+    const c = '```keyring-widget\n{\n  "widget": "a/b@1",\n  "state": {"file": "x/a.json"}\n}\n```\n';
+    expect(widgetFileRefs(c)).toEqual(["x/a.json"]);
+  });
+  it("다른 펜스·닫히지 않음·깨진 JSON·정규형 아님·프런트매터 안 → 없음", () => {
+    expect(widgetFileRefs("```json\n" + blk("x/a.json") + "\n```\n")).toEqual([]);
+    expect(widgetFileRefs("```keyring-widget\n" + blk("x/a.json") + "\n")).toEqual([]);
+    expect(widgetFileRefs('```keyring-widget\n{"widget": "a/b@1", "state": {"file": "x/a.json"}\n```\n')).toEqual([]);
+    expect(widgetFileRefs("```keyring-widget\n" + blk("../a.json") + "\n```\n")).toEqual([]);
+    expect(widgetFileRefs("---\nx: |\n  ```keyring-widget\n  " + blk("x/a.json") + "\n  ```\n---\n본문\n")).toEqual([]);
+  });
+  it("JSON 이스케이프로 쓴 경로는 풀린 값", () => {
+    const body = String.raw`{"widget": "a/b@1", "state": {"file": "스케치.excalidraw.json"}}`;
+    expect(widgetFileRefs("```keyring-widget\n" + body + "\n```\n")).toEqual(["스케치.excalidraw.json"]);
+  });
+});
+
+describe("rewriteWidgetFileRefs", () => {
+  const FROM = "x/a.excalidraw.json";
+  const TO = "y/b c.excalidraw.json";
+  it("그 문자열만 바꾸고 줄·들여쓰기 그대로", () => {
+    const body = '{\n  "widget": "a/b@1",\n  "state": {"file": "x/a.excalidraw.json", "n": 1}\n}';
+    expect(rewriteWidgetFileRefs(body, FROM, TO)).toEqual({
+      body: '{\n  "widget": "a/b@1",\n  "state": {"file": "y/b c.excalidraw.json", "n": 1}\n}',
+      count: 1,
+    });
+  });
+  it("이스케이프로 쓴 같은 값도 바꾼다", () => {
+    const body = String.raw`{"widget": "a/b@1", "state": {"file": "x/a.excalidraw.json"}}`;
+    expect(rewriteWidgetFileRefs(body, FROM, TO)).toEqual({ body: '{"widget": "a/b@1", "state": {"file": "y/b c.excalidraw.json"}}', count: 1 });
+  });
+  it("state.file 이 from 이 아니면 모르는 키에 있어도 null", () => {
+    const body = '{"widget": "a/b@1", "state": {"file": "z.excalidraw.json"}, "x": {"file": "x/a.excalidraw.json"}}';
+    expect(rewriteWidgetFileRefs(body, FROM, TO)).toBeNull();
+  });
+  it("state.file 이 from 이면 모르는 키의 같은 값도 바꾸고 count 1", () => {
+    const body = '{"widget": "a/b@1", "state": {"file": "x/a.excalidraw.json"}, "x": {"file": "x/a.excalidraw.json"}}';
+    expect(rewriteWidgetFileRefs(body, FROM, TO)).toEqual({
+      body: '{"widget": "a/b@1", "state": {"file": "y/b c.excalidraw.json"}, "x": {"file": "y/b c.excalidraw.json"}}',
+      count: 1,
+    });
+  });
+  it("깨진 JSON → null", () => {
+    expect(rewriteWidgetFileRefs('{"widget": "a/b@1", "state": {"file": "x/a.excalidraw.json"}', FROM, TO)).toBeNull();
   });
 });
