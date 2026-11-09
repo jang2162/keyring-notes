@@ -49,17 +49,25 @@ function insertLink(view: EditorView): boolean {
   return true;
 }
 
-/** 제목: 밑줄 없이 굵게(기본 강조 모양은 밑줄을 긋는다) */
+/** 제목: 밑줄 없이 굵게(기본 강조 모양은 밑줄을 긋는다). 크기는 원문 모드만 headingSizes 로 준다 */
 export const headingStyle = HighlightStyle.define([
   { tag: tags.heading, fontWeight: "700", textDecoration: "none" },
-  { tag: tags.heading1, fontSize: "1.6em" },
-  { tag: tags.heading2, fontSize: "1.35em" },
-  { tag: tags.heading3, fontSize: "1.18em" },
   { tag: tags.link, color: "var(--accent)" },
   { tag: tags.url, color: "var(--muted)" },
   { tag: tags.processingInstruction, color: "var(--muted)" },
   // classHighlighter 에는 취소선 클래스가 없다
   { tag: tags.strikethrough, textDecoration: "line-through" },
+]);
+
+/**
+ * 원문 모드의 제목 글자 크기. Live Preview 는 줄(.cm-lp-h1~h6, livePreview.ts)에 미리보기와 같은 크기를 주므로
+ * 이것을 함께 걸면 배율이 두 번 곱해진다 — Editor.tsx 는 Live 가 꺼졌을 때만 이것을 건다.
+ * 배율은 styles.css 「접기」 의 원문 거터 칸(cm-fold-h1~h3)과 같다
+ */
+export const headingSizes = HighlightStyle.define([
+  { tag: tags.heading1, fontSize: "1.6em" },
+  { tag: tags.heading2, fontSize: "1.35em" },
+  { tag: tags.heading3, fontSize: "1.18em" },
 ]);
 
 export /** `[[` 또는 `![[` 뒤에서 문서·첨부 이름을 제안하고, 고르면 `]]`까지 닫아 준다. */

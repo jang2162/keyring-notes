@@ -2,28 +2,36 @@ import { describe, expect, it } from "vitest";
 import { isMac } from "./shortcuts";
 import { takesPreviewSelectAll } from "./previewSelect";
 
-/** 가짜 DOM 노드: contains 는 자기 자신과 kids(그 아래까지) */
+/** 가짜 DOM 노드: contains 는 자기 자신과 kids(그 아래까지), closest 는 대화상자·메뉴 안이면 그것 */
 interface Fake {
   tagName: string;
   isContentEditable: boolean;
-  closest: () => null;
+  closest: (sel: string) => unknown;
   kids: Fake[];
   contains: (n: unknown) => boolean;
+  ownerDocument?: { querySelector: (sel: string) => unknown };
 }
-const node = (tagName: string, kids: Fake[] = [], editable = false): Fake => {
-  const n: Fake = { tagName, isContentEditable: editable, closest: () => null, kids, contains: (x) => x === n || kids.some((k) => k.contains(x)) };
+const node = (tagName: string, kids: Fake[] = [], editable = false, inDialog = false): Fake => {
+  const n: Fake = {
+    tagName,
+    isContentEditable: editable,
+    closest: () => (inDialog ? {} : null),
+    kids,
+    contains: (x) => x === n || kids.some((k) => k.contains(x)),
+  };
   return n;
 };
 
-// body > section.split-pane(포커스를 받는 칸) > [탭 줄 단추, .preview-pane > [본문 글, 위젯 입력칸, contenteditable]]
+// body > [section.split-pane(포커스를 받는 칸) > [탭 줄 단추, .preview-pane > [본문 글, 위젯 입력칸, contenteditable]], 트리 단추, 대화상자 단추]
 const text = node("P");
 const widgetInput = node("INPUT");
 const editable = node("DIV", [], true);
 const pane = node("DIV", [text, widgetInput, editable]);
 const tabButton = node("BUTTON");
 const section = node("SECTION", [tabButton, pane]);
-const sideButton = node("BUTTON");
-const body = node("BODY", [section, sideButton]);
+const treeButton = node("BUTTON");
+const dialogButton = node("BUTTON", [], false, true);
+const body = node("BODY", [section, treeButton, dialogButton]);
 
 const key = (target: unknown, mods: Partial<KeyboardEvent> = {}) =>
   ({
@@ -55,10 +63,20 @@ describe("미리보기의 전체 선택", () => {
     expect(takes(editable)).toBe(false);
   });
 
-  it("미리보기 바깥의 다른 요소(사이드바·탭 줄 단추), 다른 조합은 기본 동작에 맡긴다", () => {
-    expect(takes(sideButton)).toBe(false);
-    expect(takes(tabButton)).toBe(false);
+  it("트리·노트 탭·보기 탭 단추에 포커스가 있어도 가져온다 — 단추로 노트를 연 직후의 길", () => {
+    expect(takes(treeButton)).toBe(true);
+    expect(takes(tabButton)).toBe(true);
+  });
+
+  it("대화상자·메뉴 안이거나 모달이 열려 있으면 그쪽에 맡긴다", () => {
+    expect(takes(dialogButton)).toBe(false);
+    const behindModal = { ...node("BUTTON"), ownerDocument: { querySelector: (sel: string) => (sel.includes("aria-modal") ? {} : null) } };
+    expect(takes(behindModal)).toBe(false);
+  });
+
+  it("다른 조합, 미리보기가 없는 칸은 기본 동작에 맡긴다", () => {
     expect(takes(section, { shiftKey: true })).toBe(false);
     expect(takes(section, { metaKey: false, ctrlKey: false })).toBe(false);
+    expect(takesPreviewSelectAll(key(section), null)).toBe(false);
   });
 });
