@@ -48,6 +48,13 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
   const fmTo = fm === null ? -1 : doc.line(fm).to;
   const lineOf = (pos: number) => doc.lineAt(pos).number;
   const quoteDepth = new Map<number, number>();
+  /** 줄마다 인용 기호(QuoteMark)의 첫 시작과 마지막 끝. 코드 블록 안 줄의 > 는 코드 글자일 수 있어 노드로만 정한다 */
+  const quoteMarks = new Map<number, { from: number; to: number }>();
+  const quoteMark = (q: { from: number; to: number }) => {
+    const line = lineOf(q.from);
+    const had = quoteMarks.get(line);
+    quoteMarks.set(line, had ? { from: Math.min(had.from, q.from), to: Math.max(had.to, q.to) } : { from: q.from, to: q.to });
+  };
   let depth = 0;
 
   const fenced = (node: SyntaxNode) => {
@@ -81,6 +88,14 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
       const name = n.name;
       // 펼친 프런트매터(커서가 안)의 YAML 도 lezer 는 구분선·목록·할 일로 읽는다 — 종류와 상관없이 건너뛴다
       if (n.from <= fmTo && name !== "Document") return false;
+      if (name === "QuoteMark") {
+        quoteMark(n);
+        return;
+      }
+      if (name === "FencedCode" || name === "CodeBlock") {
+        // 인용 안 코드 블록의 QuoteMark 는 코드 블록의 자식이다
+        for (const q of n.node.getChildren("QuoteMark")) quoteMark(q);
+      }
       if (name === "FencedCode") {
         fenced(n.node);
         return false;
@@ -119,13 +134,12 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
     },
   });
 
-  // 인용 기호는 줄마다 한 덩어리로(">> " 처럼 겹친 것도): 첫 > 부터 마지막 > 뒤 공백 하나까지
+  // 인용 기호는 줄마다 한 덩어리로(">> " 처럼 겹친 것도): 첫 QuoteMark 부터 마지막 QuoteMark 뒤 공백 하나까지
   for (const [line, d] of quoteDepth) {
     out.push({ kind: "quoteLine", line, depth: d });
     if (active.has(line)) continue;
-    const l = doc.line(line);
-    const m = /^(\s*)((?:>\s?)*>)( ?)/.exec(l.text);
-    if (m && m[2]) out.push({ kind: "hide", from: l.from + m[1].length, to: l.from + m[0].length });
+    const q = quoteMarks.get(line);
+    if (q) out.push({ kind: "hide", from: q.from, to: state.sliceDoc(q.to, q.to + 1) === " " ? q.to + 1 : q.to });
   }
   return out;
 }

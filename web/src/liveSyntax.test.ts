@@ -54,6 +54,17 @@ describe("인용", () => {
     expect(only(list, "quoteLine")).toHaveLength(2);
   });
 
+  it("인용 안 코드 블록은 그 줄의 인용 기호까지만 숨기고 > 로 시작하는 코드 글자는 둔다", () => {
+    const list = marks("> ```js\n> a();\n>\n> >b\n> ```");
+    expect(only(list, "hide")).toEqual([
+      { kind: "hide", from: 0, to: 2 },
+      { kind: "hide", from: 8, to: 10 },
+      { kind: "hide", from: 15, to: 16 },
+      { kind: "hide", from: 17, to: 19 },
+      { kind: "hide", from: 22, to: 24 },
+    ]);
+  });
+
   it("콜아웃은 건드리지 않는다(블록 위젯이 그린다)", () => {
     const list = marks("> [!note] 제목\n> 내용");
     expect(only(list, "quoteLine")).toEqual([]);
