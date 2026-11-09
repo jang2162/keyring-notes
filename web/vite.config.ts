@@ -85,7 +85,7 @@ function emojiData(): Plugin {
   };
 }
 
-/** keyring-widget iframe 묶음(/widget-frame/). dev 표시는 개발 서버에서만 — 배포 빌드에는 없다 */
+/** keyring-widget iframe 묶음(/widget-frame/). dev 표시는 import.meta.env.DEV 와 같은 때(개발 서버·NODE_ENV=development 빌드)만 — 배포 빌드에는 없다 */
 const frames = widgetFrames([
   { name: "runtime", entry: "src/widgets/frame/runtimeEntry.ts" },
   { name: "dday", entry: "src/widgets/frame/ddayEntry.ts", dev: true },
