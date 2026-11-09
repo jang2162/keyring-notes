@@ -444,6 +444,18 @@ describe("트리에 정렬·순서·수정 시각", () => {
     expect(v.tree().find((n) => n.path === "W")!.children![0]).toMatchObject({ sort: "custom", icon: "🎍", rank: "k", edited: Date.parse(T) });
   });
 
+  it("폴더로 쓰는 노트(folder: true)는 트리에 folder 를 싣는다", async () => {
+    const store = new MemoryStore();
+    store.touch("keyring-settings.md", KO_SETTINGS);
+    store.touch("W/a.md", "---\nfolder: true\n---\n");
+    store.touch("W/b.md", "비");
+    const v = new LocalVault(store, { author: "노트북" });
+    await v.open();
+    const kids = v.tree().find((n) => n.path === "W")!.children!;
+    expect(kids.find((n) => n.path === "W/a.md")!.folder).toBe(true);
+    expect(kids.find((n) => n.path === "W/b.md")!.folder).toBeUndefined();
+  });
+
   it("저장소가 파일 시각을 모르면(-1) 트리에 시각을 싣지 않고, 기록 날짜도 1970년 전이 되지 않는다", async () => {
     /** 시각을 주지 않는 저장소(앱 저장소가 stat 에서 시각을 못 받은 경우) */
     class NoTime extends MemoryStore {

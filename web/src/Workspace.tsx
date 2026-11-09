@@ -202,6 +202,7 @@ import { addPin, dropWorkspacePins, movePins, pinExists, removePin, restoreWorks
 import { forgetViewed, markViewed, renameViewed, viewedSnapshot } from "./viewed";
 import {
   childSortWrites,
+  folderWrites,
   fillBlankNote,
   isGeneratedNote,
   planWritable,
@@ -2328,6 +2329,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     await writeNotes([parentNote, ...seeds.map((x) => x.note)], (read) => childSortWrites(parentNote, read(parentNote), sort, seeds, read, descending));
   };
 
+  /** 「폴더로 쓰기」: 노드 노트의 folder(켤 때 노트가 없으면 만든다). 정렬과 같은 길로 써서 열린 노트도 쓴 내용으로 다시 연다 */
+  const setFolder = async (node: VaultNode, on: boolean) => {
+    const note = node.note ?? `${node.path}.md`;
+    await writeNotes([note], (read) => folderWrites(note, read(note), on));
+  };
+
   /** 커스텀 순서 바꾸기: 같은 부모 안에서 path 를 beforePath 앞으로(null 이면 맨 뒤). 보통은 옮긴 노트 하나의 rank 만 바뀐다 */
   const reorderNode = async (path: string, beforePath: string | null) => {
     const parent = findNode(nodeTree, parentOf(path));
@@ -2899,6 +2906,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     pinned: (n) => pins.includes(n),
     togglePin,
     setChildSort: (n, sort) => void setChildSort(n, sort),
+    setFolder: (n, on) => void setFolder(n, on),
     reorder: (p, before) => void reorderNode(p, before),
     moveSibling: (p, dir) => moveSibling(dir, p),
   };

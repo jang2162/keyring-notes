@@ -31,6 +31,8 @@ export interface TreeNode {
   sort?: ChildSort;
   /** 커스텀 순서 키(프런트매터 rank, 키 모양인 것만) */
   rank?: string;
+  /** 폴더로 쓰는 노트(프런트매터 folder: true). 아니면 없다 */
+  folder?: true;
   /** 수정 시각(ms): 프런트매터 edited, 없으면 파일 시각 */
   edited?: number;
 }

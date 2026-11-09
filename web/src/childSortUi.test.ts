@@ -5,6 +5,8 @@ import {
   childSortWrites,
   edgeDrop,
   fillBlankNote,
+  folderWrites,
+  isAppField,
   isGeneratedNote,
   planWritable,
   rankWrites,
@@ -246,6 +248,11 @@ describe("막 만든 노트에 템플릿 넣기", () => {
     expect(out.endsWith("템플릿 본문\n")).toBe(true);
   });
 
+  it("폴더로 쓰기(folder)도 템플릿 프런트매터로 옮겨 남긴다", () => {
+    const out = fillBlankNote("---\nfolder: true\nedited: 2026-10-30T09:12:33Z\n---\n", tpl)!;
+    expect(fm(out)).toEqual({ tags: ["tpl"], folder: true });
+  });
+
   it("본문이 있거나 사람이 쓴 속성이 있거나 프런트매터가 없거나 깨졌으면 채우지 않는다(null)", () => {
     expect(fillBlankNote("---\nedited: 2026-10-30T09:12:33Z\n---\n글", tpl)).toBeNull();
     expect(fillBlankNote("---\nicon: 📁\nedited: 2026-10-30T09:12:33Z\n---\n", tpl)).toBeNull();
@@ -390,5 +397,29 @@ describe("순서를 못 바꿀 때의 안내", () => {
   it("워크스페이스 맨 위 노트는 「노트 정렬」, 그 아래는 부모의 「하위 노트 정렬」 을 가리킨다", () => {
     expect(reorderHintKey("W")).toBe("tree.reorderNeedsCustomRoot");
     expect(reorderHintKey("W/P")).toBe("tree.reorderNeedsCustom");
+  });
+});
+
+describe("폴더로 쓰기를 적을 쓰기 목록", () => {
+  it("켜면 folder: true 를 적고, 노트가 없으면 만든다", () => {
+    const [w] = folderWrites("W/A.md", { content: "본문\n", hash: "h" }, true);
+    expect(w).toMatchObject({ path: "W/A.md", baseHash: "h" });
+    expect(fm(w.content)).toEqual({ folder: true });
+    expect(w.content.endsWith("본문\n")).toBe(true);
+    const [made] = folderWrites("W/B.md", null, true);
+    expect(made.baseHash).toBeNull();
+    expect(fm(made.content)).toEqual({ folder: true });
+  });
+
+  it("끄면 folder 를 지우고, 노트가 없거나 내용이 그대로면 쓰지 않는다", () => {
+    const [w] = folderWrites("W/A.md", { content: "---\nfolder: true\nicon: 📁\n---\n본문\n", hash: "h" }, false);
+    expect(fm(w.content)).toEqual({ icon: "📁" });
+    expect(folderWrites("W/B.md", null, false)).toEqual([]);
+    expect(folderWrites("W/C.md", { content: "본문\n", hash: "h" }, false)).toEqual([]);
+    expect(folderWrites("W/D.md", { content: "---\nfolder: true\n---\n본문\n", hash: "h" }, true)).toEqual([]);
+  });
+
+  it("folder 는 앱이 적는 속성이라 속성 패널·개수에서 뺀다", () => {
+    expect(isAppField("folder")).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildNodeTree,
+  noteTreeMeta,
   countNode,
   dailyLookup,
   findNode,
@@ -181,5 +182,24 @@ describe("노드에 정렬·순서·수정 시각", () => {
     expect(a.sort).toBeUndefined();
     expect(a.rank).toBeUndefined();
     expect(a.edited).toBe(5);
+  });
+});
+
+describe("폴더로 쓰기", () => {
+  it("노트 파일 노드의 folder 를 노드로 옮긴다(true 일 때만)", () => {
+    const t = [
+      { name: "A.md", path: "A.md", type: "file", folder: true },
+      { name: "B.md", path: "B.md", type: "file", folder: "true" },
+      { name: "C.md", path: "C.md", type: "file" },
+    ] as unknown as TreeNode[];
+    const [a, b, c] = buildNodeTree(t);
+    expect(a.folder).toBe(true);
+    expect(b.folder).toBeUndefined();
+    expect(c.folder).toBeUndefined();
+  });
+
+  it("프런트매터 folder 는 YAML 불 true 만 싣는다", () => {
+    expect(noteTreeMeta({ folder: true }, null)).toEqual({ folder: true });
+    for (const v of ["true", 1, "yes", false, null]) expect(noteTreeMeta({ folder: v }, null).folder).toBeUndefined();
   });
 });

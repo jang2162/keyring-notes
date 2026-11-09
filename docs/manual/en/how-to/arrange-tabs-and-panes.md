@@ -31,7 +31,7 @@ The path above the note stays on one line. When it is too long, swipe it sideway
 
 On a touch screen, such as a phone or a tablet, a few things work differently. With a mouse, nothing changes, whatever the window width.
 
-- In the tree, tap a note that has sub-notes to expand or collapse it. To open that note, tap the arrow button at the right end of its row. A note without sub-notes opens when you tap it.
+- In the tree, tap a note that has sub-notes to expand or collapse it. To open that note, tap the arrow button at the right end of its row. A note without sub-notes opens when you tap it. A note used as a folder works the same way.
 - Opening a note doesn't bring up the on-screen keyboard. Tap the text to start typing. A note you create with **New note** puts the cursor in its title.
 - The back button closes what is open on top, one thing at a time. That covers dialogs, menus, sheets and windows such as **More**, **Tabs** and the graph, and the drawers. In a dialog, back works like **Cancel**.
 - Back doesn't move between notes. When nothing is open on top, back works as usual in your browser or app. In Settings, back closes Settings and asks first if something would be lost.

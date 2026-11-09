@@ -282,6 +282,19 @@ describe("트리 응답에 정렬·순서·수정 시각", () => {
     expect(kids.find((n) => n.path === "업무/bom.md")).toMatchObject({ sort: "custom", icon: "🎍", rank: "k", edited: Date.parse(T) });
   });
 
+  it("폴더로 쓰는 노트(folder: true)는 트리 응답에 folder 를 싣는다", async () => {
+    await vault.batch(
+      [
+        { op: "write", path: "업무/폴더.md", content: "---\nfolder: true\n---\n", baseHash: null },
+        { op: "write", path: "업무/글.md", content: '---\nfolder: "true"\n---\n', baseHash: null },
+      ],
+      ownerPrincipal,
+    );
+    const kids = (await owner.tree()).find((n) => n.path === "업무")!.children!;
+    expect(kids.find((n) => n.path === "업무/폴더.md")!.folder).toBe(true);
+    expect(kids.find((n) => n.path === "업무/글.md")!.folder).toBeUndefined();
+  });
+
   it("edited 가 있으면 그 시각, 없으면 서버 색인의 파일 시각. sort·rank 는 맞는 값만", async () => {
     const T = "2026-10-30T09:12:33Z";
     const files: Record<string, string> = {

@@ -188,9 +188,9 @@ export class ScopedVault {
     return nodes;
   }
 
-  /** 문서 노드에 색인의 프런트매터(icon·sort·rank·edited)와 파일 시각을 붙인다. edited 가 없으면 색인의 파일 시각 */
+  /** 문서 노드에 색인의 프런트매터(icon·sort·rank·folder·edited)와 파일 시각을 붙인다. edited 가 없으면 색인의 파일 시각 */
   private withMeta(nodes: TreeNode[]): TreeNode[] {
-    const metas = new Map<string, Pick<TreeNode, "icon" | "sort" | "rank" | "edited">>();
+    const metas = new Map<string, Pick<TreeNode, "icon" | "sort" | "rank" | "edited" | "folder">>();
     for (const d of this.index.docs()) metas.set(d.path, noteTreeMeta(d.frontmatter, d.mtime));
     const walk = (ns: TreeNode[]): TreeNode[] =>
       ns.map((n) => (n.type === "dir" ? { ...n, children: walk(n.children ?? []) } : metas.has(n.path) ? { ...n, ...metas.get(n.path) } : n));

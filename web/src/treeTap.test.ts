@@ -19,6 +19,29 @@ describe("nodeTap", () => {
   });
 });
 
+describe("nodeTap — 폴더로 쓰는 노트", () => {
+  const base = { touch: false, canExpand: true, hasNote: true, onChevron: false, folder: true };
+  it("mouse: the name of a folder note toggles", () => {
+    expect(nodeTap(base)).toBe("toggle");
+  });
+  it("touch: a folder note toggles too", () => {
+    expect(nodeTap({ ...base, touch: true })).toBe("toggle");
+  });
+  it("Mod+click opens a folder note", () => {
+    expect(nodeTap({ ...base, mod: true })).toBe("open");
+  });
+  it("Mod+click opens a normal note with children on touch-less mouse too", () => {
+    expect(nodeTap({ ...base, folder: false, mod: true })).toBe("open");
+  });
+  it("a folder note with nothing to expand opens", () => {
+    expect(nodeTap({ ...base, canExpand: false })).toBe("open");
+    expect(nodeTap({ ...base, canExpand: false, touch: true })).toBe("open");
+  });
+  it("the chevron still toggles with Mod held", () => {
+    expect(nodeTap({ ...base, onChevron: true, mod: true })).toBe("toggle");
+  });
+});
+
 describe("showOpenButton", () => {
   it("only for a note with children on touch", () => {
     expect(showOpenButton({ touch: true, canExpand: true, hasNote: true })).toBe(true);

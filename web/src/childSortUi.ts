@@ -2,6 +2,7 @@ import {
   childSortOf,
   defaultDescending,
   EDITED_FIELD,
+  FOLDER_FIELD,
   parseFrontmatter,
   planReorder,
   RANK_FIELD,
@@ -16,13 +17,13 @@ import {
   type VaultNode,
 } from "@keyring-notes/core";
 
-/** 앱이 적는 속성(정렬·순서·수정 시각). 속성 패널과 속성 개수에서 빼 사람이 고치는 속성만 보인다 */
-const APP_FIELDS = new Set([SORT_FIELD, RANK_FIELD, EDITED_FIELD]);
+/** 앱이 적는 속성(정렬·순서·폴더로 쓰기·수정 시각). 속성 패널과 속성 개수에서 빼 사람이 고치는 속성만 보인다 */
+const APP_FIELDS = new Set([SORT_FIELD, RANK_FIELD, FOLDER_FIELD, EDITED_FIELD]);
 export const isAppField = (key: string) => APP_FIELDS.has(key);
 
 /**
  * 앱이 적는 속성만 있고 본문이 빈 노트(앱으로 막 만든 노트는 `edited` 프런트매터가 있다)를 템플릿으로 채운 내용.
- * 그런 노트가 아니면 null — 부르는 쪽은 커서 자리에 넣는다. 정렬·순서(sort·rank)는 템플릿 프런트매터에 옮겨 남기고,
+ * 그런 노트가 아니면 null — 부르는 쪽은 커서 자리에 넣는다. 정렬·순서·폴더로 쓰기(sort·rank·folder)는 템플릿 프런트매터에 옮겨 남기고,
  * 수정 시각은 저장할 때 쓰기 계층이 다시 적으므로 버린다. 예전에는 새 노트가 빈 내용이라 템플릿 프런트매터가 곧 노트의 것이었다
  */
 export function fillBlankNote(current: string, text: string): string | null {
@@ -30,7 +31,7 @@ export function fillBlankNote(current: string, text: string): string | null {
   if (!fm.data || Object.keys(fm.data).some((k) => !isAppField(k))) return null;
   if (current.split("\n").slice(fm.lines).join("\n").trim()) return null;
   let out = text;
-  for (const key of [SORT_FIELD, RANK_FIELD])
+  for (const key of [SORT_FIELD, RANK_FIELD, FOLDER_FIELD])
     if (fm.data[key] !== undefined)
       try {
         out = setFrontmatterField(out, key, fm.data[key]);
@@ -139,6 +140,16 @@ export function childSortWrites(
     if (content !== cur.content) out.push({ path: s.note, content, baseHash: cur.hash });
   }
   return out;
+}
+
+/**
+ * 「폴더로 쓰기」 를 적을 쓰기 목록: 켜면 노트의 folder 를 true 로(노트가 없으면 만든다), 끄면 지운다(노트가 없으면 쓰지 않는다).
+ * 내용이 그대로면 빈 목록. 프런트매터가 깨졌으면 던진다
+ */
+export function folderWrites(note: string, cur: NoteState, on: boolean): NoteWrite[] {
+  if (!cur && !on) return [];
+  const content = setFrontmatterField(cur?.content ?? "", FOLDER_FIELD, on ? true : null);
+  return cur && content === cur.content ? [] : [{ path: note, content, baseHash: cur?.hash ?? null }];
 }
 
 /**
