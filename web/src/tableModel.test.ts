@@ -4,7 +4,6 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import {
   cellAt,
-  cellChangesToDoc,
   cellText,
   compareCells,
   deleteColumn,
@@ -122,24 +121,6 @@ describe("칸 글과 원문 위치", () => {
   it("escapeCellInput: | → \\|, 줄바꿈 → <br>", () => {
     expect(escapeCellInput("x|y\nz")).toBe("x\\|y<br>z");
     expect(escapeCellInput("a\r\nb")).toBe("a<br>b");
-  });
-
-  it("cellChangesToDoc: 칸 글 위치 4(| 뒤)에 넣으면 원문 위치 cell.from + 5", () => {
-    const doc = "| a \\| b | c |\n|---|---|";
-    const m = tableOf(doc);
-    const cell = m.header.cells[0];
-    const text = cellText(cell.raw);
-    const changes = ChangeSet.of({ from: 4, insert: "Q" }, text.length);
-    const specs = cellChangesToDoc(cell, changes);
-    expect(specs).toEqual([{ from: cell.from + 5, to: cell.from + 5, insert: "Q" }]);
-    expect(apply(doc, specs)).toBe("| a \\| Qb | c |\n|---|---|");
-  });
-
-  it("cellChangesToDoc: 친 | 와 줄바꿈은 이스케이프해 넣는다", () => {
-    const doc = "| ab |\n|---|";
-    const cell = tableOf(doc).header.cells[0];
-    const specs = cellChangesToDoc(cell, ChangeSet.of({ from: 1, to: 2, insert: "|\n" }, 2));
-    expect(apply(doc, specs)).toBe("| a\\|<br> |\n|---|");
   });
 });
 

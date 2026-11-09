@@ -1,4 +1,4 @@
-import type { ChangeSet, ChangeSpec, Text } from "@codemirror/state";
+import type { ChangeSpec, Text } from "@codemirror/state";
 import { diffChange } from "./mirror";
 
 /**
@@ -164,19 +164,6 @@ export function rawToTextPos(raw: string, rawPos: number): number {
 /** 칸에 넣을 글: `|` → `\|`, 줄바꿈 → `<br>`(칸에는 줄바꿈을 넣을 수 없다 — GFM 표 관례) */
 export function escapeCellInput(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
-}
-
-/** 칸 편집기의 변경(칸 글 좌표)을 본문 변경으로. 이스케이프에 맞춰 위치를 옮긴다 */
-export function cellChangesToDoc(cell: TableCell, changes: ChangeSet): { from: number; to: number; insert: string }[] {
-  const out: { from: number; to: number; insert: string }[] = [];
-  changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-    out.push({
-      from: cell.from + textToRawPos(cell.raw, fromA),
-      to: cell.from + textToRawPos(cell.raw, toA),
-      insert: escapeCellInput(inserted.toString()),
-    });
-  });
-  return out;
 }
 
 function rowAt(m: TableModel, row: number): TableRow {
