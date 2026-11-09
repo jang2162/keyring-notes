@@ -36,7 +36,7 @@ Live Preview is on by default. Turn it off from the status bar or in Settings â†
 In Live Preview, tables are drawn even when the cursor is in them, and you edit them in place. Tables inside quotes, lists and callouts stay as source.
 
 - Click a cell to edit it. The cell you edit shows its Markdown source, such as `**bold**` or `[[target|alias]]`, with the same `[[` autocomplete and formatting shortcuts as the rest of the note. Other cells stay drawn.
-- A `|` you type is saved as `\|`. A cell can't hold a line break, so `Shift+Enter` inserts `<br>`, and pasted lines are joined with `<br>`.
+- In a cell, type `|` as it is (typing `\|` also works). Either way it's saved as `\|`, and the cell isn't split. A cell can't hold a line break, so `Shift+Enter` inserts `<br>`, and pasted lines are joined with `<br>`.
 - Typing in an empty cell at the end of a short row adds the missing cells to that row.
 - Undo and redo (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`) work across cells and the rest of the note in one history.
 - Only the cells and rows you change are rewritten in the file. The spacing between `|` is left as it was.

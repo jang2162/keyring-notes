@@ -149,6 +149,26 @@ describe("cellTransactionToMain", () => {
     expect(selectedCell(next)).toMatchObject({ row: 1, col: 0, head: 7 });
   });
 
+  it("\\ 다음에 | 를 치면(사람이 \\| 를 직접 침) \\ 를 더하지 않는다 — 셀이 나뉘지 않는다(설계 6.3)", () => {
+    const at = DOC.indexOf("| 1") + 3;
+    let s = state(DOC, at);
+    const ref = selectedCell(s)!;
+    let cs = EditorState.create({ doc: "1", selection: { anchor: 1 } });
+    for (const ch of ["\\", "|"]) {
+      const tr = cs.update({
+        changes: { from: cs.selection.main.head, insert: ch },
+        selection: { anchor: cs.selection.main.head + 1 },
+        userEvent: "input.type",
+      });
+      s = s.update(cellTransactionToMain(s, ref, tr)).state;
+      cs = tr.state;
+    }
+    expect(s.doc.toString()).toContain("| 1\\| | 2 |");
+    const line = s.doc.line(5).text;
+    expect(line).toBe("| 1\\| | 2 |");
+    expect(selectedCell(s)).toMatchObject({ row: 1, col: 0, head: 2 });
+  });
+
   it("칸 끝에 친 공백은 다음 글자와 함께 들어간다(칸 앞뒤 공백은 | 옆 여백이라 공백만으로는 칸 글이 아니다)", () => {
     const at = DOC.indexOf("| 1") + 3;
     let s = state(DOC, at);

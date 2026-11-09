@@ -161,9 +161,14 @@ export function rawToTextPos(raw: string, rawPos: number): number {
   return t;
 }
 
-/** 칸에 넣을 글: `|` → `\|`, 줄바꿈 → `<br>`(칸에는 줄바꿈을 넣을 수 없다 — GFM 표 관례) */
+/**
+ * 칸에 넣을 글: `|` → `\|`, 줄바꿈 → `<br>`(칸에는 줄바꿈을 넣을 수 없다 — GFM 표 관례).
+ * `|` 앞에 연속한 `\` 가 홀수 개면 사람이 `\|` 를 직접 친 것이라 이미 이스케이프돼 있다 — `\` 를 더하면 `\\|` 가 되어
+ * 칸이 나뉘므로 그대로 둔다(설계 6.3). 어떤 입력으로도 칸이 나뉘지 않는다. 앞부분만 보고 정하므로
+ * 앞부분을 이스케이프한 것은 전체를 이스케이프한 것의 앞부분이다(cellPosToRaw 가 기댄다)
+ */
 export function escapeCellInput(text: string): string {
-  return text.replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+  return text.replace(/(\\*)\|/g, (_, bs: string) => (bs.length % 2 ? bs + "|" : bs + "\\|")).replace(/\r?\n/g, "<br>");
 }
 
 function rowAt(m: TableModel, row: number): TableRow {

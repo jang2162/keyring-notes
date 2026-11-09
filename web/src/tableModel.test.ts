@@ -121,6 +121,10 @@ describe("칸 글과 원문 위치", () => {
   it("escapeCellInput: | → \\|, 줄바꿈 → <br>", () => {
     expect(escapeCellInput("x|y\nz")).toBe("x\\|y<br>z");
     expect(escapeCellInput("a\r\nb")).toBe("a<br>b");
+    // | 앞에 연속한 \ 가 홀수 개면 이미 이스케이프된 것(사람이 \| 를 직접 침) — \ 를 더하지 않는다
+    expect(escapeCellInput("1\\|")).toBe("1\\|");
+    expect(escapeCellInput("C:\\\\|")).toBe("C:\\\\\\|");
+    expect(escapeCellInput("a\\\\\\|b|")).toBe("a\\\\\\|b\\|");
   });
 });
 
