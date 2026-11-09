@@ -203,6 +203,9 @@ describe("keyring-widget 의 state.file 은 첨부 링크", () => {
     expect(r?.count).toBe(1);
     expect(r?.content).toBe('```keyring-widget\n{"widget": "a/b@1", "state": {"file": "y/b.excalidraw.json"}}\n```\n');
   });
+  it("기대 대상이 이동 후에 없으면(같은 일괄 쓰기에서 삭제) 그대로 둔다", () => {
+    expect(rewriteLinks(oneLine, "n.md", "n.md", { ...wctx, after: ["n.md"] })).toBeNull();
+  });
   it("linkingDocs 가 가리키는 노트로 센다", () => {
     expect(linkingDocs([{ path: "n.md", content: oneLine }], A, ["n.md", A])).toEqual([{ path: "n.md", count: 1 }]);
   });

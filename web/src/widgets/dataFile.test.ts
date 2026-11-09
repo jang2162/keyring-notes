@@ -74,14 +74,24 @@ class FakeIO implements DataFileIO {
   creates() {
     return this.calls.filter((c) => c.startsWith("create"));
   }
+  /** true 면 다음 read 는 부른 때의 바이트를 쥐고 heldReads 를 풀 때까지 기다린다 */
+  holdNextRead = false;
+  heldReads: (() => void)[] = [];
+  /** 서버처럼 baseHash 가 지금 파일의 해시가 아니면 409 */
+  strict = false;
   async read(path: string) {
     const b = this.files.get(path);
     if (!b) throw new DataFileError("missing");
+    if (this.holdNextRead) {
+      this.holdNextRead = false;
+      return new Promise<Uint8Array>((resolve) => this.heldReads.push(() => resolve(b)));
+    }
     return b;
   }
   async replace(path: string, bytes: Uint8Array, baseHash: string) {
     this.calls.push(`replace ${path} ${dec(bytes)} ${baseHash === h("h0") ? "h0" : baseHash.slice(0, 8)}`);
-    const mode = this.replaceModes.shift() ?? "ok";
+    const cur = this.files.get(path);
+    const mode = this.replaceModes.shift() ?? (this.strict && cur && sha256Sync(cur) !== baseHash ? "conflict" : "ok");
     if (mode === "conflict" || mode === "missing" || mode === "failed") throw new DataFileError(mode);
     const apply = () => {
       this.files.set(path, bytes);
@@ -120,7 +130,7 @@ function track<T>(p: Promise<T>) {
   );
   return r;
 }
-const code = (r: { error?: unknown }) => (r.error instanceof DataFileError ? r.error.code : r.error);
+const codeOf = (r: { error?: unknown }) => (r.error instanceof DataFileError ? r.error.code : r.error);
 
 function statusOf(handle: DataFileHandle) {
   const s: { last: DataFileStatus | null } = { last: null };
@@ -158,7 +168,7 @@ describe("모아 쓰기(자동 저장 켬)", () => {
     expect(w3.done).toBe(false);
     const w4 = track(a.write(enc("b4"), "f".repeat(64)));
     await flush();
-    expect(code(w4)).toBe("conflict");
+    expect(codeOf(w4)).toBe("conflict");
     expect(io.creates()).toEqual([`create a/x (충돌 사본 20261109-0905).excalidraw.json b4`]);
     await clock.advance(1500);
     expect(w3.value).toEqual({ hash: h("b3") });
@@ -319,7 +329,7 @@ describe("덮어쓰지 않는다 — 충돌 사본", () => {
     io.files.set("a/x (충돌 사본 20261109-0905).excalidraw.json", enc("old"));
     const w = track(a.write(enc("b1"), r.hash));
     await clock.advance(1500);
-    expect(code(w)).toBe("conflict");
+    expect(codeOf(w)).toBe("conflict");
     expect(io.creates()).toEqual(["create a/x (충돌 사본 20261109-0905).excalidraw.json b1", "create a/x (충돌 사본 20261109-0905 2).excalidraw.json b1"]);
     expect(s.last?.conflictCopy).toBe("a/x (충돌 사본 20261109-0905 2).excalidraw.json");
     expect(s.last?.stale).toBe(true);
@@ -333,7 +343,7 @@ describe("덮어쓰지 않는다 — 충돌 사본", () => {
     io.replaceModes.push("missing");
     const w = track(a.write(enc("b1"), r.hash));
     await clock.advance(1500);
-    expect(code(w)).toBe("missing");
+    expect(codeOf(w)).toBe("missing");
     expect(io.creates()).toEqual(["create a/x (충돌 사본 20261109-0905).excalidraw.json b1"]);
   });
 
@@ -345,7 +355,7 @@ describe("덮어쓰지 않는다 — 충돌 사본", () => {
     io.replaceModes.push("failed");
     const w = track(a.write(enc("b1"), r.hash));
     await clock.advance(1500);
-    expect(code(w)).toBe("failed");
+    expect(codeOf(w)).toBe("failed");
     expect(s.last?.error).toBe("failed");
     expect(unsavedDataFiles()).toEqual([P]);
     await clock.advance(60000);
@@ -365,7 +375,7 @@ describe("덮어쓰지 않는다 — 충돌 사본", () => {
     const s = statusOf(a);
     const r = track(a.read());
     await flush();
-    expect(code(r)).toBe("missing");
+    expect(codeOf(r)).toBe("missing");
     expect(s.last?.error).toBe("missing");
   });
 });
@@ -389,7 +399,7 @@ async function c1Suite(ctx: ReturnType<typeof setup>) {
     expect(staleB).toBe(1);
     const wb = track(B.write(enc("b1"), hB));
     await flush();
-    expect(code(wb)).toBe("conflict");
+    expect(codeOf(wb)).toBe("conflict");
     expect(io.creates().length).toBe(createsBefore + 1);
     expect(io.replaces().length).toBe(before);
     await clock.advance(1500);
@@ -409,7 +419,7 @@ async function c1Suite(ctx: ReturnType<typeof setup>) {
     await clock.advance(1500);
     const wb = track(B.write(enc("b2"), hB));
     await flush();
-    expect(code(wb)).toBe("conflict");
+    expect(codeOf(wb)).toBe("conflict");
     io.held.shift()!.resolve();
     await flush();
     expect(wa.value).toEqual({ hash: h("a2") });
@@ -430,7 +440,7 @@ async function c1Suite(ctx: ReturnType<typeof setup>) {
     expect(settledB).toBe(1);
     const wb = track(B.write(enc("bb"), hB));
     await flush();
-    expect(code(wb)).toBe("conflict");
+    expect(codeOf(wb)).toBe("conflict");
     const again = await B.read();
     expect(dec(again.bytes)).toBe("a3");
     const wb2 = track(B.write(enc("bb2"), again.hash));
@@ -441,6 +451,114 @@ async function c1Suite(ctx: ReturnType<typeof setup>) {
     await flush();
   }
 }
+
+describe("검문 1 리뷰", () => {
+  it("F1 — read 중 다른 핸들의 쓰기가 내려앉아도 head 가 옛 해시로 돌아가지 않는다", async () => {
+    const { io, open } = setup();
+    io.strict = true;
+    const A = open();
+    const C = open();
+    const h0 = (await A.read()).hash;
+    io.holdNextRead = true;
+    const rc = track(C.read());
+    await flush();
+    track(A.write(enc("a1"), h0));
+    await clock.advance(1500);
+    expect(io.replaces()).toEqual([`replace ${P} a1 h0`]);
+    io.heldReads.shift()!();
+    await flush();
+    expect(dec(rc.value!.bytes)).toBe("a1");
+    expect(rc.value!.hash).toBe(h("a1"));
+    const w2 = track(A.write(enc("a2"), h("a1")));
+    await clock.advance(1500);
+    expect(w2.value).toEqual({ hash: h("a2") });
+    expect(io.creates()).toEqual([]);
+  });
+
+  it("F2 — 쓰는 중에 이어 받은 뒤 409·404 면 이어 받은 최신 바이트로 사본", async () => {
+    for (const code of ["conflict", "missing"] as const) {
+      resetDataFilesForTest();
+      const { io, open } = setup();
+      const A = open();
+      const h0 = (await A.read()).hash;
+      io.replaceModes.push("hold");
+      const w1 = track(A.write(enc("a1"), h0));
+      await clock.advance(1500);
+      const w2 = track(A.write(enc("a2"), h0));
+      io.held.shift()!.reject(new DataFileError(code));
+      await flush();
+      expect(io.creates()).toEqual(["create a/x (충돌 사본 20261109-0905).excalidraw.json a2"]);
+      expect([codeOf(w1), codeOf(w2)]).toEqual([code, code]);
+      expect(unsavedDataFiles()).toEqual([]);
+      await clock.advance(5000);
+      expect(io.replaces()).toHaveLength(1);
+    }
+  });
+
+  it("F3 — 버린 노트의 획은 열어만 둔 다른 노트의 비우기로 저장되지 않는다", async () => {
+    const { io, open } = setup({ autosave: () => false });
+    const a = open("n1.md");
+    open("n2.md");
+    track(a.write(enc("a1"), (await a.read()).hash));
+    discardDataFiles("n1.md");
+    expect(unsavedDataFiles()).toEqual([]);
+    expect(await flushDataFiles("n2.md")).toBe(true);
+    expect(io.replaces()).toEqual([]);
+  });
+
+  it("F3 — 다른 노트도 그 바이트를 만들었으면 남고, 열어 둔 노트의 비우기는 쓴다", async () => {
+    const { io, open } = setup({ autosave: () => false });
+    const a = open("n1.md");
+    const b = open("n2.md");
+    const r = await a.read();
+    track(a.write(enc("a1"), r.hash));
+    const rb = await b.read();
+    track(b.write(enc("b1"), rb.hash));
+    discardDataFiles("n1.md");
+    expect(unsavedDataFiles()).toEqual([P]);
+    const c = open("n3.md");
+    expect(await flushDataFiles("n3.md")).toBe(true);
+    expect(io.replaces()).toEqual([`replace ${P} b1 h0`]);
+    c.release();
+  });
+
+  it("F4 — 수거된 writer 의 release 뒤 늦은 쓰기는 사본이 실패해도 남아 다시 시도된다", async () => {
+    const { io, open } = setup();
+    const A = open();
+    const h0 = (await A.read()).hash;
+    track(A.write(enc("a1"), h0));
+    A.release();
+    await flush();
+    expect(io.replaces()).toEqual([`replace ${P} a1 h0`]);
+    expect(unsavedDataFiles()).toEqual([]);
+    io.createModes.push("failed");
+    const late = track(A.write(enc("a3"), h0));
+    await flush();
+    expect(codeOf(late)).toBe("conflict");
+    expect(unsavedDataFiles()).toEqual([P]);
+    expect(await flushDataFiles()).toBe(true);
+    expect(io.creates()).toEqual(["create a/x (충돌 사본 20261109-0905).excalidraw.json a3", "create a/x (충돌 사본 20261109-0905).excalidraw.json a3"]);
+    expect(unsavedDataFiles()).toEqual([]);
+  });
+
+  it("F4 — 같은 경로에 새 writer 가 있으면 그 writer 의 사본 대기로 보인다", async () => {
+    const { io, open } = setup({ autosave: () => false });
+    const A = open();
+    const h0 = (await A.read()).hash;
+    A.release();
+    const C = open();
+    await C.read();
+    io.createModes.push("failed");
+    const late = track(A.write(enc("a3"), h0));
+    await flush();
+    expect(codeOf(late)).toBe("conflict");
+    let status: DataFileStatus | null = null;
+    C.onStatus((s) => (status = s));
+    expect(status!.unsaved).toBe(true);
+    expect(await flushDataFiles()).toBe(true);
+    expect(io.creates()).toHaveLength(2);
+  });
+});
 
 describe("C1 — 두 핸들이 같은 판에서 시작", () => {
   it("내려앉기 전·쓰는 중·내려앉은 뒤 모두 덮어쓰지 않는다", async () => {
@@ -457,7 +575,7 @@ describe("C1 — 두 핸들이 같은 판에서 시작", () => {
     io.createModes.push("failed");
     const wb = track(B.write(enc("b1"), hB));
     await flush();
-    expect(code(wb)).toBe("conflict");
+    expect(codeOf(wb)).toBe("conflict");
     expect(unsavedDataFiles()).toEqual([P]);
     await clock.advance(1500);
     expect(io.replaces()).toEqual([`replace ${P} a1 h0`]);
@@ -560,7 +678,7 @@ describe("N1 — 다시 붙는 위젯은 사본을 만들지 않는다(끔)", ()
     expect(io.creates()).toEqual([]);
     const late = track(A.write(enc("a3"), h0));
     await flush();
-    expect(code(late)).toBe("conflict");
+    expect(codeOf(late)).toBe("conflict");
     expect(io.creates()).toEqual(["create a/x (충돌 사본 20261109-0905).excalidraw.json a3"]);
   });
 
@@ -572,7 +690,7 @@ describe("N1 — 다시 붙는 위젯은 사본을 만들지 않는다(끔)", ()
     A.release();
     const late = track(A.write(enc("a2"), h0));
     await flush();
-    expect(code(late)).toBe("conflict");
+    expect(codeOf(late)).toBe("conflict");
     expect(io.creates()).toEqual(["create a/x (충돌 사본 20261109-0905).excalidraw.json a2"]);
     expect(await flushDataFiles()).toBe(true);
     expect(io.replaces()).toEqual([`replace ${P} a1 h0`]);

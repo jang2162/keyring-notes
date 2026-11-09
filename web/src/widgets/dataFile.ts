@@ -84,6 +84,8 @@ class Writer {
   contributors = new Set<string>();
   handles = new Set<Handle>();
   timer: unknown = null;
+  /** head·rev 가 바뀔 때마다 오른다 — 늦게 끝난 read 가 그 사이 내려앉은 쓰기를 옛 바이트로 되돌리지 못하게 */
+  gen = 0;
   error: "missing" | "failed" | null = null;
   conflictCopy: string | null = null;
   private drainWaiters = new Set<() => void>();
@@ -157,6 +159,7 @@ class Writer {
       async (r) => {
         const hash = r.hash ?? (await sha256Hex(job.bytes));
         this.head = hash;
+        this.gen++;
         this.inflight = null;
         this.error = null;
         for (const h of job.writers) h.issued.add(hash);
@@ -178,6 +181,7 @@ class Writer {
           this.copies.push(newest.bytes);
           this.error = code === "missing" ? "missing" : null;
           this.rev++;
+          this.gen++;
           this.markOthersStale(null);
           this.settledIfIdle();
           this.changed();
@@ -206,7 +210,7 @@ class Writer {
         const bytes = this.copies[0]!;
         const tried = new Set<string>();
         let made: string | null = null;
-        for (;;) {
+        for (let i = 0; i < 50; i++) {
           const name = conflictCopyPath(this.path, this.opts.conflictLabel(), (p) => tried.has(p), this.opts.now?.() ?? new Date(), this.ext);
           try {
             made = await this.io.create(name, bytes);
@@ -219,7 +223,11 @@ class Writer {
             break;
           }
         }
-        if (made === null) break;
+        if (made === null) {
+          // 남겨 다음 비우기 때 다시 — 원본 경로로는 보내지 않는다
+          this.changed();
+          break;
+        }
         this.copies.shift();
         this.conflictCopy = made;
         if (!this.hasUnsaved()) this.contributors.clear();
@@ -265,11 +273,10 @@ class Writer {
   }
 
   discard(owner: string): void {
-    if (!this.relatesTo(owner) || !this.hasUnsaved()) return;
-    const others = new Set([...this.contributors, ...[...this.handles].map((h) => h.owner)]);
-    others.delete(owner);
-    if (others.size > 0) {
-      // 같은 그림을 다른 노트도 열고 있다 — 그 노트가 이어 비우게 이 노트만 뺀다
+    if (!this.contributors.has(owner) || !this.hasUnsaved()) return;
+    // 계획 R4: 그 바이트를 만든 다른 노트가 있을 때만 남긴다. 열어만 둔 노트는 치지 않는다 — 그 칸은 stale(보기 전용)이라
+    // 버린 획을 본 적이 없고, 남기면 사람이 버린 획이 그 노트의 비우기로 저장된다
+    if ([...this.contributors].some((o) => o !== owner)) {
       this.contributors.delete(owner);
       return;
     }
@@ -281,6 +288,7 @@ class Writer {
     this.error = null;
     // 버린 바이트 위에서 이어 쓰지 않게 모두 다시 읽힌다
     this.rev++;
+    this.gen++;
     this.markOthersStale(null);
     this.settledIfIdle();
     this.changed();
@@ -331,13 +339,17 @@ class Handle implements DataFileHandle {
   async read(): Promise<{ bytes: Uint8Array; hash: string }> {
     const w = this.w;
     await w.waitForDrains(this);
-    let bytes: Uint8Array;
-    let hash: string;
-    const pending = w.latest ?? w.inflight;
-    if (pending && w.head !== null) {
-      bytes = pending.bytes;
-      hash = w.head;
-    } else {
+    let bytes!: Uint8Array;
+    let hash!: string;
+    // 읽는 사이 받아들이거나 내려앉은 쓰기가 생기면(gen) 읽은 것을 버리고 writer 상태로 다시 정한다
+    for (let attempt = 0; ; attempt++) {
+      const pending = w.latest ?? w.inflight;
+      if (pending && w.head !== null) {
+        bytes = pending.bytes;
+        hash = w.head;
+        break;
+      }
+      const gen = w.gen;
       try {
         bytes = await w.io.read(w.path);
       } catch (e) {
@@ -346,14 +358,19 @@ class Handle implements DataFileHandle {
         throw e instanceof DataFileError ? e : new DataFileError("failed");
       }
       hash = await sha256Hex(bytes);
-      // 읽는 사이 받아들인 쓰기가 생겼으면 그 바이트를 준다(같은 판으로 시작하게)
       const now = w.latest ?? w.inflight;
       if (now && w.head !== null) {
         bytes = now.bytes;
         hash = w.head;
-      } else w.head = hash;
-      if (w.error === "missing") w.error = null;
+        break;
+      }
+      if (w.gen === gen || attempt >= 4) {
+        w.head = hash;
+        w.gen++;
+        break;
+      }
     }
+    if (w.error === "missing") w.error = null;
     this.rev = w.rev;
     this.issued = new Set([hash]);
     this.stale = false;
@@ -364,11 +381,14 @@ class Handle implements DataFileHandle {
   write(bytes: Uint8Array, baseHash: string): Promise<{ hash: string }> {
     const w = this.w;
     if (this.isReleased || this.rev !== w.rev || !this.issued.has(baseHash)) {
-      // 다른 판에서 시작한 쓰기 — 원본 경로에는 쓰지 않고 사본으로만(조용히 버리지 않는다)
-      w.copies.push(bytes);
-      w.contributors.add(this.owner);
-      w.changed();
-      return w.makeCopies().then(() => Promise.reject(new DataFileError("conflict")));
+      // 다른 판에서 시작한 쓰기 — 원본 경로에는 쓰지 않고 사본으로만(조용히 버리지 않는다).
+      // 놓아 버린 뒤 writer 가 표에서 수거됐으면 표에 있는 writer(없으면 이 writer 를 다시 올려)에 맡겨야
+      // 사본이 실패해도 unsavedDataFiles 에 보이고 다음 비우기 때 다시 시도된다
+      const target = listedWriter(w);
+      target.copies.push(bytes);
+      target.contributors.add(this.owner);
+      target.changed();
+      return target.makeCopies().then(() => Promise.reject(new DataFileError("conflict")));
     }
     return new Promise((resolve, reject) => {
       const waiter = { resolve, reject };
@@ -428,6 +448,13 @@ class Handle implements DataFileHandle {
 const writers = new Map<string, Writer>();
 const changeListeners = new Set<() => void>();
 let globalOptions: DataFileOptions | null = null;
+
+function listedWriter(w: Writer): Writer {
+  const cur = writers.get(w.path);
+  if (cur) return cur;
+  writers.set(w.path, w);
+  return w;
+}
 
 function notifyChange(): void {
   // 부르는 중 구독을 끊어도 이번 차례는 그대로 돈다
