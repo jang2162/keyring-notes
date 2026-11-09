@@ -6,6 +6,7 @@ import mark from "markdown-it-mark";
 import { LinkIndex, stripComments, type DailyLookup } from "@keyring-notes/core";
 import { api, type TreeNode } from "./api";
 import { t } from "./i18n";
+import { fenceClosed, isKeyringFence, keyringSlotHtml } from "./widgets/slot";
 
 /**
  * DOMPurify 기본 허용 URI에 앱의 첨부 URL을 더한다: 데스크톱·모바일 앱의 파일(asset:), 브라우저 로컬 볼트의 blob:.
@@ -110,6 +111,7 @@ export interface RenderContext {
 
 interface RenderEnv extends RenderContext {
   widgets: string[];
+  keyringWidgets: { body: string; line: number }[];
   lineOffset: number;
   /** 각주 id 앞붙임(임베드한 문서의 각주가 본문 것과 겹치지 않게) */
   docId: string;
@@ -278,9 +280,24 @@ md.renderer.rules.image = (tokens, idx, opts, env, self) => {
   return defaultImage(tokens, idx, opts, env, self);
 };
 
-// ```widget 블록은 자리만 만들고, 실제 위젯은 React가 그 자리에 그린다.
+// ```keyring-widget 의 닫힘은 렌더러가 볼 수 없는 원문 줄로 정한다(닫히지 않은 펜스는 위젯이 아니라 코드 블록)
+md.core.ruler.push("kw_fence", (state: StateCore) => {
+  for (const t of state.tokens) {
+    if (t.type === "fence" && t.map && fenceClosed(state.src, t.map as [number, number], t.markup)) t.meta = { ...t.meta, kwClosed: true };
+  }
+});
+
+// ```widget 블록은 자리만 만들고, 실제 위젯은 React가 그 자리에 그린다. ```keyring-widget 도 같은 방식, 다른 클래스(DocPane.tsx)
 const defaultFence = md.renderer.rules.fence!;
 md.renderer.rules.fence = (tokens, idx, opts, env, self) => {
+  const token = tokens[idx];
+  if (token.map && isKeyringFence(token.info, token.level, token.meta?.kwClosed === true)) {
+    const ctx = ctxOf(env);
+    // 줄 번호는 할 일·접기 줄과 같은 계산(문서 전체 기준, 1부터) — 미리보기 위젯은 이 줄로 숨은 편집기의 블록을 찾는다
+    const line = ctx.lineOffset + token.map[0] + 1;
+    ctx.keyringWidgets.push({ body: token.content.replace(/\n$/, ""), line });
+    return keyringSlotHtml(ctx.keyringWidgets.length - 1, line);
+  }
   const info = tokens[idx].info.trim().split(/\s+/)[0];
   if (info === "widget") {
     const ctx = ctxOf(env);
@@ -503,6 +520,8 @@ export interface Rendered {
   html: string;
   /** 위젯 블록 원문. html 안의 .widget-slot[data-widget=i] 자리와 순서가 같다. */
   widgets: string[];
+  /** ```keyring-widget 본문과 여는 펜스 줄. html 안의 .kw-slot[data-kw=i] 자리와 순서가 같다 */
+  keyringWidgets: { body: string; line: number }[];
 }
 
 export function renderMarkdown(content: string, ctx: RenderContext & { docId?: string; hideFrontmatter?: boolean }): Rendered {
@@ -515,11 +534,11 @@ export function renderMarkdown(content: string, ctx: RenderContext & { docId?: s
     html += `<pre class="frontmatter">${escapeHtml(frontmatter)}</pre>`;
   }
   const lineOffset = content.slice(0, content.length - split.body.length).split("\n").length - 1;
-  const env: RenderEnv = { ...ctx, widgets: [], lineOffset, docId: ctx.docId ?? "d" };
+  const env: RenderEnv = { ...ctx, widgets: [], keyringWidgets: [], lineOffset, docId: ctx.docId ?? "d" };
   html += md.render(body, env as unknown as Record<string, unknown>);
   // DOMPurify 기본 설정(HTML·SVG·MathML, data-* 허용)에 링크 target과 앱 첨부 URL(asset:·blob:)만 더한다.
   // 수식·다이어그램은 여기서는 원문 자리뿐이고, 그린 결과는 enhance.ts에서 따로 정화한다.
-  return { html: DOMPurify.sanitize(html, { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: SAFE_URI }), widgets: env.widgets };
+  return { html: DOMPurify.sanitize(html, { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: SAFE_URI }), widgets: env.widgets, keyringWidgets: env.keyringWidgets };
 }
 
 /**
@@ -527,6 +546,6 @@ export function renderMarkdown(content: string, ctx: RenderContext & { docId?: s
  * 정화는 renderMarkdown 과 같은 설정이다
  */
 export function renderInlineMarkdown(raw: string, ctx: RenderContext): string {
-  const env: RenderEnv = { ...ctx, widgets: [], lineOffset: 0, docId: "lp" };
+  const env: RenderEnv = { ...ctx, widgets: [], keyringWidgets: [], lineOffset: 0, docId: "lp" };
   return DOMPurify.sanitize(md.renderInline(raw, env as unknown as Record<string, unknown>), { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: SAFE_URI });
 }

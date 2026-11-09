@@ -34,7 +34,17 @@ import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, 
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
 import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
-import { endWidgetEdit, widgetEditField, widgetGoneNow } from "./widgets/blockEdit";
+import {
+  endWidgetEdit,
+  nextWidgetBody,
+  rewriteWidgetBlock,
+  setWidgetDraft,
+  setWidgetFocus,
+  startWidgetEdit as startWidgetEditEffect,
+  widgetBlockAtLine,
+  widgetEditField,
+  widgetGoneNow,
+} from "./widgets/blockEdit";
 import { toast } from "./toast";
 
 /** 수정 중이던 위젯 블록이 바깥 변경(다른 칸·동기화)으로 사라지면 한 번 알리고 수정 상태를 걷는다 */
@@ -80,6 +90,14 @@ export interface EditorHandle {
   toggleFoldLine(line: number): void;
   /** 접힌 블록의 첫 줄 번호들 */
   foldedLines(): number[];
+  /** 미리보기 위젯(PreviewKeyringWidget): 그 줄(1부터, 여는 펜스)의 위젯 블록을 트랜잭션 하나로 다시 쓴다. 블록이 없으면 false */
+  writeWidget(line: number, state: unknown, version: number): boolean;
+  startWidgetEdit(line: number, draft: unknown): void;
+  setWidgetDraft(draft: unknown): void;
+  endWidgetEdit(): void;
+  setWidgetFocus(index: number | null): void;
+  /** 수정 중인 위젯(사라지지 않은 것). 미리보기를 다시 그린 뒤 초안·포커스를 이어받는다 */
+  widgetEdit(): { line: number; draft: unknown; focus: number | null } | null;
 }
 
 /** 할 일: 줄이 - [ ]이면 체크를 바꾸고, 목록이면 - [ ]를 붙이고, 아니면 - [ ]로 시작하게 */
@@ -375,6 +393,31 @@ export function Editor({
     if (handle) {
       handle.current = {
         docKey: createdKey,
+        writeWidget(lineNo, state, version) {
+          const b = widgetBlockAtLine(view.state, lineNo);
+          const next = b && nextWidgetBody(b.body, state, version);
+          const spec = b && next !== null ? rewriteWidgetBlock(view.state, b, next) : null;
+          if (!spec) return false;
+          view.dispatch(spec);
+          return true;
+        },
+        startWidgetEdit(lineNo, draft) {
+          const b = widgetBlockAtLine(view.state, lineNo);
+          if (b) view.dispatch({ effects: startWidgetEditEffect.of({ from: b.from, draft }) });
+        },
+        setWidgetDraft(draft) {
+          view.dispatch({ effects: setWidgetDraft.of(draft) });
+        },
+        endWidgetEdit() {
+          if (view.state.field(widgetEditField, false)) view.dispatch({ effects: endWidgetEdit.of(null) });
+        },
+        setWidgetFocus(index) {
+          view.dispatch({ effects: setWidgetFocus.of(index) });
+        },
+        widgetEdit() {
+          const e = view.state.field(widgetEditField, false);
+          return e && !e.gone ? { line: view.state.doc.lineAt(e.from).number, draft: e.draft, focus: e.focus } : null;
+        },
         toggleTask(lineNo, done) {
           if (lineNo < 1 || lineNo > view.state.doc.lines) return;
           const line = view.state.doc.line(lineNo);

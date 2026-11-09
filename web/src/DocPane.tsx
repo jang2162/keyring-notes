@@ -34,6 +34,7 @@ import { editorAutoFocus } from "./editorFocus";
 import { isTouch } from "./touch";
 import { TitleDraft, type TitleHandle, type TitleOutcome } from "./titleEdit";
 import { DRAG_REGION } from "./windowChrome";
+import { PreviewKeyringWidget } from "./widgets/PreviewKeyringWidget";
 
 export interface RevisionView {
   /** 이 과거 판의 문서. 칸이 다른 문서로 바뀌면 버린다 */
@@ -330,6 +331,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   /** 제목 칸의 확정(InlineTitle 이 채운다) */
   const titleHandle = useRef<TitleHandle | null>(null);
   const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
+  const [kwSlots, setKwSlots] = useState<HTMLElement[]>([]);
   /** 접힌 상태가 바뀔 때 올린다(미리보기를 다시 맞춘다) */
   const [foldVersion, setFoldVersion] = useState(0);
   const [refs, setRefs] = useState<SourcesInfo | null>(null);
@@ -478,6 +480,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   // innerHTML이 바뀐 뒤 위젯 자리를 찾아 React 포털로 위젯을 그린다.
   useLayoutEffect(() => {
     setWidgetSlots(Array.from(previewRef.current?.querySelectorAll<HTMLElement>(".widget-slot") ?? []));
+    setKwSlots(Array.from(previewRef.current?.querySelectorAll<HTMLElement>(".kw-slot") ?? []));
   }, [rendered.html, mode]);
 
   /** 빵부스러기: 상위 노드들(누르면 그 노드를 연다) */
@@ -678,6 +681,13 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                       `${i}:${rendered.widgets[i]}`,
                     ),
               )}
+              {kwSlots.map((el, i) => {
+                const w = rendered.keyringWidgets[i];
+                if (!w) return null;
+                // 이력 보기·생성 문서·편집기가 없는 칸에서는 쓰지 않는다(설계 「상태가 바뀌는 길」)
+                const ro = !!revision || !!doc.generated || !handle.current;
+                return createPortal(<PreviewKeyringWidget el={el} body={w.body} line={w.line} readOnly={ro} handle={handle} />, el, `${i}:${w.line}:${w.body}`);
+              })}
               {prefs.backlinksInDoc && !revision && refs && (
                 <References
                   refs={refs}
