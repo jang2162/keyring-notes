@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { bodyStart, frontmatterFold } from "./livePreview";
+import { bodyStart, frontmatterFold, selectBody } from "./livePreview";
 
 const NOTE = "---\nedited: 2026-10-30T09:12:33Z\n---\n";
 const state = (doc: string, anchor = 0) => EditorState.create({ doc, selection: { anchor }, extensions: [frontmatterFold(() => undefined)] });
@@ -54,5 +54,28 @@ describe("맨 앞 커서의 입력이 프런트매터를 깨지 않는다", () =
     expect(bodyStart(state(NOTE + "글"))).toEqual({ at: NOTE.length, prefix: "" });
     expect(bodyStart(state("---\na: 1\n---"))).toEqual({ at: 12, prefix: "\n" });
     expect(bodyStart(state("글"))).toBeNull();
+  });
+});
+
+describe("전체 선택은 본문만 잡는다", () => {
+  const selectAll = (s: EditorState) => {
+    let next: EditorState | null = null;
+    const ran = selectBody({ state: s, dispatch: (tr) => (next = tr.state) });
+    return { ran, sel: next ? [(next as EditorState).selection.main.from, (next as EditorState).selection.main.to] : null };
+  };
+
+  it("막 연 노트·본문의 커서에서 프런트매터 뒤부터 끝까지 고른다", () => {
+    const doc = NOTE + "본문\n둘째 줄";
+    expect(selectAll(state(doc))).toEqual({ ran: true, sel: [NOTE.length, doc.length] });
+    expect(selectAll(state(doc, NOTE.length + 1))).toEqual({ ran: true, sel: [NOTE.length, doc.length] });
+  });
+
+  it("본문이 없으면 선택을 옮기지 않는다(프런트매터를 펼치지 않는다)", () => {
+    expect(selectAll(state("---\na: 1\n---"))).toEqual({ ran: true, sel: null });
+  });
+
+  it("프런트매터가 없거나 원문으로 펼친 프런트매터 안이면 기본 전체 선택에 맡긴다", () => {
+    expect(selectAll(state("본문")).ran).toBe(false);
+    expect(selectAll(state(NOTE + "본문", 5)).ran).toBe(false);
   });
 });

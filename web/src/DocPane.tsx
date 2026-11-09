@@ -21,6 +21,7 @@ import { docKeyOf, type DocEntry } from "./openDocs";
 import { shownModeOf, type ViewMode } from "./panes";
 import type { Prefs } from "./prefs";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
+import { selectPreviewBody, takesPreviewSelectAll } from "./previewSelect";
 import { formatCombo } from "./shortcuts";
 import { tipProps } from "./Tooltip";
 import { crumbNodes } from "./topbar";
@@ -324,6 +325,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   const { doc, conflict } = entry;
   const live = prefs.live;
   const previewRef = useRef<HTMLDivElement>(null);
+  const previewPaneRef = useRef<HTMLDivElement>(null);
   /** 제목 칸의 확정(InlineTitle 이 채운다) */
   const titleHandle = useRef<TitleHandle | null>(null);
   const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
@@ -340,6 +342,18 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   const docDaily: DailyNote | null = dailyOfPath(doc.path, ctx.daily);
   const { propCount, icon: docIcon } = useMemo(() => docMeta(doc.draft), [doc.draft]);
   const shownMode = shownModeOf(mode, { revision: !!revision, narrow: ctx.narrow });
+
+  // 미리보기만 보일 때 전체 선택은 이 칸 본문만(편집기·나란히 보기의 Mod+A 는 편집기가 받는다). 칸이 여럿이면 지금 칸만
+  useEffect(() => {
+    if (!focused || shownMode !== "preview") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!previewRef.current || !takesPreviewSelectAll(e, previewPaneRef.current, document.body)) return;
+      e.preventDefault();
+      selectPreviewBody(previewRef.current);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [focused, shownMode]);
 
   // 문서 끝 백링크(설정을 켰을 때만): 이 칸의 문서 것을 따로 받는다
   useEffect(() => {
@@ -640,7 +654,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
               />
             </div>
           </div>
-          <div className="pane preview-pane" onClick={onPreviewClick}>
+          <div className="pane preview-pane" ref={previewPaneRef} onClick={onPreviewClick}>
             <div className="page">
               {(mode === "preview" || revision) && (
                 <h1 className="inline-title static">
