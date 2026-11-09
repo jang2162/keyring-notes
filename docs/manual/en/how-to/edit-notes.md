@@ -54,7 +54,7 @@ From the line just above or below a table, `↓` or `↑` moves into its first c
 Point at a row or column to show its handle, to the left of the row or above the column. On a touch screen, the handles of the cell you edit stay shown.
 
 - Click a row handle to insert a row above or below, move the row up or down, or delete it. The header row can only get a row below.
-- Click a column handle to insert, move or delete the column, set its alignment, or sort the rows by it. Sorting compares numbers as numbers (`1,000`, `2%`) and puts them before text, and puts empty cells last. It changes the order of rows in the file.
+- Click a column handle to insert, move or delete the column, set its alignment, or sort the rows by it. Sorting compares numbers as numbers (`1,000`, `2%`) and puts them before text. Empty cells go last. It changes the order of rows in the file.
 - Drag a handle to move the row or column. A line shows where it lands. Press Esc to cancel.
 - Each change is undone with one `Ctrl/Cmd+Z`.
 
