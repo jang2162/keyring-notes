@@ -1676,14 +1676,14 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 - 첨부 갱신은 같은 경로에 내용만 바꿔 링크를 지킨다. 삭제는 그 첨부를 가리키는 노트 수를 보여 주고 휴지통으로 보낸다.
 
 **위젯**
-- 기존 ` ```widget ` YAML 블록(query·table·cards·kanban·tasks·chart·plugin)과 레지스트리를 하나로 합친다. 내장 쿼리 위젯도 위젯 id 로 등록하고, 옛 ` ```widget ` 은 읽기만 계속 받는다.
+- 위젯의 블록 형식·실행(인라인/iframe 기준)·상태가 바뀌는 길·데이터 파일은 `docs/superpowers/specs/2026-11-09-keyring-widget-design.md` 가 정본이다. 기존 ` ```widget `(YAML 쿼리 위젯)은 그대로 두고, 두 블록을 한 레지스트리로 합치는 것은 마켓플레이스 설계에서 다룬다.
 - 블록은 엄격한 JSON 이고 예약 키와 위젯 상태를 나눈다. 파싱에 실패하면 원문과 오류를 보인다.
   ```keyring-widget
   {"widget": "keyring/dday@1", "display": "block", "state": {"targetDate": "2026-12-25", "label": "크리스마스"}}
   ```
   `@1` 은 상태 스키마 판이다. 위젯이 `migrate(state, fromVersion)` 을 주면 옛 블록을 올린다.
-- 위젯은 `render(el, { state, editing, display }, api)` 를 구현하고 정리 함수를 돌려준다. `api` 는 `setState(patch)`·`requestEdit()`·`exitEdit()`·`t()`·테마 토큰·`open(path)`. 적용은 에디터 트랜잭션 하나로 블록을 고쳐 실행 취소·자동 저장·동기화가 본문 경로 그대로 돈다.
-- 위젯이 설치되지 않은 볼트에서는 원문 코드 블록과 「설치」 단추를 보인다.
+- 위젯은 `render(el, { state, editing, display }, api)` 를 구현하고 정리 함수를 돌려준다. `api` 는 `setState(patch)`·`requestEdit()`·`exitEdit()`·`t()`·테마 토큰이다(다른 노트를 여는 `open(path)` 는 두지 않는다 — 위젯은 자기 상태만). 적용은 에디터 트랜잭션 하나로 블록을 고쳐 실행 취소·자동 저장·동기화가 본문 경로 그대로 돈다.
+- 위젯이 등록되지 않은 볼트에서는 원문 코드 블록과 찾을 수 없다는 한 줄을 보인다. 「설치」 단추는 마켓플레이스가 생기면 그 자리에 둔다.
 - 지금 플러그인(`/plugins/<이름>.js`, `Widget.tsx` 의 `PluginWidget`)은 앱 창 안에서 그대로 `import()` 된다. 제3자 위젯은 `sandbox="allow-scripts"` iframe(same-origin 없음)에서 돌리고 `postMessage` 로 `api` 를 잇는다. 내장 위젯만 앱 안에서 돈다. 볼트 읽기·네트워크가 필요하면 매니페스트에 권한을 적고 설치할 때 보인다.
 
 **마켓플레이스**
