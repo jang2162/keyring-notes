@@ -21,10 +21,12 @@ describe("미리보기 위젯 자리", () => {
     expect(fenceClosed(src, [0, 3], "```")).toBe(true);
     expect(fenceClosed("```keyring-widget\n{}\n", [0, 3], "```")).toBe(false);
     expect(fenceClosed("```keyring-widget\n{}\n  ````  ", [0, 3], "```")).toBe(true);
-    expect(fenceClosed("````keyring-widget\n{}\n```\n", [0, 4], "````")).toBe(false);
-    expect(fenceClosed("~~~keyring-widget\n{}\n```\n", [0, 4], "~~~")).toBe(false);
+    expect(fenceClosed("````keyring-widget\n{}\n```\n", [0, 3], "````")).toBe(false);
+    expect(fenceClosed("~~~keyring-widget\n{}\n```\n", [0, 3], "~~~")).toBe(false);
     expect(fenceClosed("~~~keyring-widget\n{}\n~~~", [0, 3], "~~~")).toBe(true);
     expect(fenceClosed("```keyring-widget\n```", [0, 2], "```")).toBe(true);
     expect(fenceClosed("```keyring-widget", [0, 1], "```")).toBe(false);
+    // 여는 펜스 줄 자체를 닫는 줄로 보지 않는다
+    expect(fenceClosed("```", [0, 1], "```")).toBe(false);
   });
 });
