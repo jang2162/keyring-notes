@@ -2,8 +2,8 @@ import { language, onLanguageChange, t } from "../i18n";
 import { widgetMessages } from "./messages";
 import { isFrameEntry, resolveWidgetView, widgetViewChange, type WidgetView } from "./registry";
 import { focusOutAction, widgetKeyAction, WidgetSession } from "./session";
-import type { WidgetApi, WidgetContext } from "./types";
-import { widgetT } from "./widgetT";
+import type { WidgetContext } from "./types";
+import { bindWidgetApi } from "./widgetApi";
 
 /**
  * 인라인 위젯의 DOM 접착 — Live Preview(liveWidget.ts)와 미리보기(PreviewKeyringWidget.tsx)가 같이 쓴다.
@@ -133,13 +133,7 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       },
     );
     constructing = false;
-    const api: WidgetApi = {
-      setState: (p) => session.setState(p),
-      requestEdit: () => session.requestEdit(),
-      exitEdit: (apply) => session.exitEdit(apply),
-      t: (k, vars) => widgetT(widgetMessages(v.entry, language()), k, vars),
-      onUpdate: (cb) => void listeners.push(cb),
-    };
+    const api = bindWidgetApi({ session, messages: () => widgetMessages(v.entry, language()), listeners, file: null, fullscreen: null });
 
     // 판정은 핸들러 안이 아니라 마이크로태스크 뒤에 — 엔진에 따라 포커스된 요소를 지우는 처리 중에 blur 가 나
     // 그 순간에는 isConnected 가 아직 true 일 수 있다. 다시 그리기로 빠지는 뿌리의 blur 로 적용하지 않기 위해서다.
