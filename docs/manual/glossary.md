@@ -69,6 +69,7 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | bottom bar · More | 하단 바 · 더 보기 |
 | tab | 탭 |
 | pane | 칸 |
+| table editor · table cell | 표 편집기 · 셀(창의 「칸」 과 구별해 「셀」) |
 | tree | 트리 |
 | command palette | 명령 팔레트 |
 | Quick open | 노트 빠르게 열기 |

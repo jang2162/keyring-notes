@@ -286,7 +286,8 @@ function buildInline(view: EditorView, getCtx: GetCtx): DecorationSet {
       from,
       to,
       enter: (n) => {
-        if (n.name === "FencedCode" || n.name === "CodeBlock" || n.name === "InlineCode" || n.name === "HTMLBlock") {
+        // 표는 표 편집기(tableWidget.ts)가 칸마다 그린다
+        if (n.name === "FencedCode" || n.name === "CodeBlock" || n.name === "InlineCode" || n.name === "HTMLBlock" || n.name === "Table") {
           code.push([n.from, n.to]);
           return false;
         }

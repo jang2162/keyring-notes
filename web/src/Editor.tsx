@@ -1,4 +1,4 @@
-import { autocompletion, completionKeymap, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import {
@@ -11,22 +11,24 @@ import {
   foldedRanges,
   foldGutter,
   foldNodeProp,
-  HighlightStyle,
   syntaxHighlighting,
   syntaxTree,
   unfoldAll,
   unfoldCode,
   unfoldEffect,
 } from "@codemirror/language";
-import { classHighlighter, tags } from "@lezer/highlight";
+import { classHighlighter } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
+import { headingStyle, insertLink, wikilinkSource, wrapSelection } from "./editorCommands";
 import { findLanguage } from "./codeLanguages";
+import { activeCell } from "./cellEditor";
 import { findBar, findKeymap } from "./findBar";
 import { bodyStart, codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
+import { inDrawnTable, type TableOptions } from "./tableWidget";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
@@ -63,45 +65,6 @@ export interface EditorHandle {
   toggleFoldLine(line: number): void;
   /** 접힌 블록의 첫 줄 번호들 */
   foldedLines(): number[];
-}
-
-/** 선택을 기호로 감싼다(이미 감싸여 있으면 벗긴다). 선택이 없으면 기호 사이에 커서 */
-function wrapSelection(view: EditorView, before: string, after = before): boolean {
-  const changes = view.state.changeByRange((r) => {
-    const text = view.state.sliceDoc(r.from, r.to);
-    const outer = view.state.sliceDoc(r.from - before.length, r.to + after.length);
-    if (outer.startsWith(before) && outer.endsWith(after) && outer.length >= before.length + after.length) {
-      return {
-        changes: [
-          { from: r.from - before.length, to: r.from, insert: "" },
-          { from: r.to, to: r.to + after.length, insert: "" },
-        ],
-        range: EditorSelection.range(r.from - before.length, r.to - before.length),
-      };
-    }
-    return {
-      changes: [
-        { from: r.from, insert: before },
-        { from: r.to, insert: after },
-      ],
-      range: EditorSelection.range(r.from + before.length, r.from + before.length + text.length),
-    };
-  });
-  view.dispatch(changes, { scrollIntoView: true, userEvent: "input" });
-  return true;
-}
-
-/** 링크: 선택한 글을 [글](|)로, 선택이 없으면 [[|]] */
-function insertLink(view: EditorView): boolean {
-  const r = view.state.selection.main;
-  if (r.empty) {
-    view.dispatch({ changes: { from: r.from, insert: "[[]]" }, selection: { anchor: r.from + 2 }, userEvent: "input" });
-    return true;
-  }
-  const text = view.state.sliceDoc(r.from, r.to);
-  const insert = `[${text}]()`;
-  view.dispatch({ changes: { from: r.from, to: r.to, insert }, selection: { anchor: r.from + insert.length - 1 }, userEvent: "input" });
-  return true;
 }
 
 /** 할 일: 줄이 - [ ]이면 체크를 바꾸고, 목록이면 - [ ]를 붙이고, 아니면 - [ ]로 시작하게 */
@@ -242,47 +205,6 @@ const foldMarkers = foldGutter({
   },
 });
 
-/** 제목: 밑줄 없이 굵게(기본 강조 모양은 밑줄을 긋는다) */
-const headingStyle = HighlightStyle.define([
-  { tag: tags.heading, fontWeight: "700", textDecoration: "none" },
-  { tag: tags.heading1, fontSize: "1.6em" },
-  { tag: tags.heading2, fontSize: "1.35em" },
-  { tag: tags.heading3, fontSize: "1.18em" },
-  { tag: tags.link, color: "var(--accent)" },
-  { tag: tags.url, color: "var(--muted)" },
-  { tag: tags.processingInstruction, color: "var(--muted)" },
-  // classHighlighter 에는 취소선 클래스가 없다
-  { tag: tags.strikethrough, textDecoration: "line-through" },
-]);
-
-/** `[[` 또는 `![[` 뒤에서 문서·첨부 이름을 제안하고, 고르면 `]]`까지 닫아 준다. */
-function wikilinkSource(get: () => LinkCandidate[]) {
-  return (ctx: CompletionContext): CompletionResult | null => {
-    const m = ctx.matchBefore(/!?\[\[[^\]\n|#[]*$/);
-    if (!m) return null;
-    const open = m.text.indexOf("[[");
-    const embed = m.text.startsWith("!");
-    const from = m.from + open + 2;
-    // 링크는 문서를, 임베드(![[)는 첨부를 먼저 보여 준다.
-    const rank = (c: LinkCandidate) => Number(embed ? !c.attachment : !!c.attachment);
-    const items = [...get()].sort((a, b) => rank(a) - rank(b));
-    return {
-      from,
-      validFor: /^[^\]\n|#[]*$/,
-      options: items.map((c) => ({
-        label: c.label,
-        detail: c.detail,
-        type: c.attachment ? "file" : "text",
-        apply: (view: EditorView, _c: unknown, f: number, to: number) => {
-          const closed = view.state.sliceDoc(to, to + 2) === "]]";
-          const insert = c.label + (closed ? "" : "]]");
-          view.dispatch({ changes: { from: f, to, insert }, selection: { anchor: f + insert.length + (closed ? 2 : 0) } });
-        },
-      })),
-    };
-  };
-}
-
 export function Editor({
   docKey,
   initial,
@@ -326,6 +248,12 @@ export function Editor({
   const callbacks = useRef({ onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
   callbacks.current = { onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
   const showProps = () => callbacks.current.onShowProps?.();
+  /** 표 편집기의 칸 편집기가 본문과 같은 자동완성·첨부 올리기를 쓴다(늘 최신 콜백으로) */
+  const tableOpts: TableOptions = {
+    linkCandidates: () => callbacks.current.linkCandidates(),
+    onFiles: (files) => (callbacks.current.onFiles ? callbacks.current.onFiles(files) : Promise.resolve([])),
+    onSave: () => callbacks.current.onSave(),
+  };
 
   /** 올리는 동안 자리 표시를 넣었다가 링크로 바꾼다(실패하면 지운다) */
   const insertFiles = async (view: EditorView, files: File[], from: number, to: number) => {
@@ -361,10 +289,14 @@ export function Editor({
           markdown({ base: markdownLanguage, codeLanguages: findLanguage, extensions: [{ props: [codeFoldProp] }] }),
           codeFolding({ placeholderText: "…" }),
           foldMarkers,
-          autocompletion({ override: [wikilinkSource(() => callbacks.current.linkCandidates())], icons: false }),
+          autocompletion({
+            // 그린 표 안은 칸 편집기가 자기 자동완성을 띄운다(본문에는 칸에서 친 글이 들어올 뿐이다)
+            override: [(c) => (inDrawnTable(c.state, c.pos) ? null : wikilinkSource(() => callbacks.current.linkCandidates())(c))],
+            icons: false,
+          }),
           EditorView.lineWrapping,
           codeFont(),
-          liveSlot.current.of(liveRef.current ? livePreview(getCtx) : []),
+          liveSlot.current.of(liveRef.current ? livePreview(getCtx, tableOpts) : []),
           EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
@@ -433,6 +365,17 @@ export function Editor({
           view.dispatch({ changes: { from: at, to: at + 1, insert: done ? "x" : " " } });
         },
         insertText(text, opts) {
+          // 표 칸을 고치는 중이면(설계 6.3.2): 한 줄 글은 그 칸의 커서 자리에(ownLine 없이 — 표 칸 안 ![[이미지]] 도 GFM 에서 성립한다),
+          // 여러 줄 글은 칸 편집기를 닫고 표 뒤에 빈 줄을 두고 넣는다(빈 줄 없이 붙이면 GFM 이 그 줄을 표의 행으로 읽는다)
+          const cell = activeCell(view);
+          if (cell && !text.includes("\n")) return cell.insert(text);
+          if (cell) {
+            const end = cell.exitAfterTable();
+            const insert = "\n\n" + text + (end < view.state.doc.length ? "" : "\n");
+            view.dispatch({ changes: { from: end, insert }, selection: { anchor: end + 2 + text.length }, scrollIntoView: true });
+            view.focus();
+            return;
+          }
           let r = view.state.selection.main;
           // 커서가 맨 앞(막 연 문서)이면 프런트매터 뒤에 넣는다 — `---` 앞에 넣으면 프런트매터가 깨진다
           const body = r.empty && r.head === 0 ? bodyStart(view.state) : null;
@@ -563,7 +506,7 @@ export function Editor({
 
   // 편집 중 렌더링 켜고 끄기(에디터를 다시 만들지 않는다)
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview(getCtx) : []) });
+    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview(getCtx, tableOpts) : []) });
   }, [live]);
 
   return <div className={`editor${live ? " live" : ""}${showLines ? " lines" : ""}`} ref={host} />;

@@ -5,6 +5,7 @@ import { liveBlocks, type LiveRenderContext } from "./liveBlocks";
 import { frontmatterEnd, syntaxMarks, toggleTaskAt } from "./liveSyntax";
 import { t } from "./i18n";
 import { isAppField } from "./childSortUi";
+import { tableEditor, type TableOptions } from "./tableWidget";
 
 /**
  * 편집 중 렌더링(Live Preview): 커서가 없는 줄에서는 마크업 기호를 숨기고 모양만 보인다.
@@ -16,7 +17,7 @@ import { isAppField } from "./childSortUi";
  *   코드 블록 → 커서가 블록 밖이면 펜스 줄을 숨기고 머리(언어·복사)를 둔 상자. 안쪽 코드 줄은 원문 그대로라 그 자리에서 고친다
  *
  * 이미지·콜아웃·수식·주석·블록 ID·Mermaid·문서 임베드·각주·HTML 블록은 liveBlocks.ts가 미리보기 렌더러로 그린다.
- * 표는 건드리지 않는다.
+ * 문서 최상위 표는 tableWidget.ts 의 표 편집기가 그린다(table 옵션을 줄 때).
  */
 
 const hide = Decoration.replace({});
@@ -332,9 +333,9 @@ const theme = EditorView.baseTheme({
   },
 });
 
-/** ctx: 블록을 그릴 때 쓸 링크 해석·문서 경로(없으면 기호 숨기기만) */
-export function livePreview(ctx: () => LiveRenderContext | null = () => null): Extension {
-  return [plugin, theme, liveBlocks(ctx)];
+/** ctx: 블록을 그릴 때 쓸 링크 해석·문서 경로(없으면 기호 숨기기만). table: 표 편집기를 켤 때 그 옵션 */
+export function livePreview(ctx: () => LiveRenderContext | null = () => null, table?: TableOptions): Extension {
+  return [plugin, theme, liveBlocks(ctx), table ? tableEditor(ctx, table) : []];
 }
 
 /**

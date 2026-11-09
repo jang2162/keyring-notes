@@ -259,6 +259,7 @@ Press `Ctrl/Cmd+/` to see the full list, and change shortcuts in Settings → **
 | Fold / unfold all | `Ctrl+Alt+[` / `Ctrl+Alt+]` |
 | Bold, italic, link, highlight | `Ctrl/Cmd+B`, `Ctrl/Cmd+I`, `Ctrl/Cmd+K`, `Ctrl/Cmd+Shift+H` |
 | Toggle task | `Ctrl/Cmd+Enter` |
+| Table cell: next / previous cell, cell below, line break | `Tab` / `Shift+Tab`, `Enter`, `Shift+Enter` (see [Edit tables](how-to/edit-notes.md#edit-tables)) |
 
 Shortcuts are ignored while an input method (IME) is composing text.
 

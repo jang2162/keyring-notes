@@ -521,3 +521,12 @@ export function renderMarkdown(content: string, ctx: RenderContext & { docId?: s
   // 수식·다이어그램은 여기서는 원문 자리뿐이고, 그린 결과는 enhance.ts에서 따로 정화한다.
   return { html: DOMPurify.sanitize(html, { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: SAFE_URI }), widgets: env.widgets };
 }
+
+/**
+ * 줄 안 마크다운 한 조각(표 칸 등)을 HTML 로. 블록 규칙 없이 renderInline — 위키링크·굵게·링크·인라인 수식 자리·이미지.
+ * 정화는 renderMarkdown 과 같은 설정이다
+ */
+export function renderInlineMarkdown(raw: string, ctx: RenderContext): string {
+  const env: RenderEnv = { ...ctx, widgets: [], lineOffset: 0, docId: "lp" };
+  return DOMPurify.sanitize(md.renderInline(raw, env as unknown as Record<string, unknown>), { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: SAFE_URI });
+}
