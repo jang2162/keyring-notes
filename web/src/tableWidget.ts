@@ -206,21 +206,7 @@ class TableWidget extends WidgetType {
       if (!td || td.classList.contains("cm-lp-cell-editing")) return;
       // 칸 열기는 본문 선택을 그 칸으로 옮기는 것 하나뿐이다 — 칸 편집기(cellEditor.ts)는 선택을 보고 열린다
       e.preventDefault();
-      const m = tableAtDOM(view, wrap);
-      if (!m) return;
-      const row = Number(td.dataset.row);
-      const col = Number(td.dataset.col);
-      const r = row === 0 ? m.header : m.body[row - 1];
-      const cell = r?.cells[col];
-      // 칸 편집기는 원문(`**굵게**`)을 보이므로 그린 글의 x 좌표는 원문의 다른 글자에 떨어진다 —
-      // 그린 글 끝보다 오른쪽(흔한 「이어 쓰기」)이면 칸 끝, 왼쪽 바깥이면 칸 처음에 둔다. 글 위를 누른 것만 좌표로 잡는다
-      const range = document.createRange();
-      range.selectNodeContents(td);
-      const box = range.getBoundingClientRect();
-      const edge = !box.width || e.clientX >= box.right ? "end" : e.clientX <= box.left ? "start" : null;
-      const click = cellClick.of({ x: e.clientX, y: e.clientY, edge });
-      if (cell) view.dispatch({ selection: { anchor: cell.to }, effects: click });
-      else if (r) view.dispatch({ selection: { anchor: r.from + r.text.trimEnd().length }, effects: [setVirtualCell.of({ table: m.from, row, col }), click] });
+      selectCellAt(view, wrap, td, e.clientX, e.clientY);
     });
     this.render(wrap, view);
     return wrap;
@@ -277,6 +263,53 @@ class TableWidget extends WidgetType {
     return (this.text.split("\n").length - 1) * 30;
   }
 }
+
+/** 그 td 의 셀을 연다: 본문 선택을 그 셀로 옮기고 누른 좌표를 함께 넘긴다(셀 편집기는 선택을 보고 열린다) */
+function selectCellAt(view: EditorView, wrap: HTMLElement, td: HTMLElement, x: number, y: number) {
+  const m = tableAtDOM(view, wrap);
+  if (!m) return;
+  const row = Number(td.dataset.row);
+  const col = Number(td.dataset.col);
+  const r = row === 0 ? m.header : m.body[row - 1];
+  const cell = r?.cells[col];
+  // 칸 편집기는 원문(`**굵게**`)을 보이므로 그린 글의 x 좌표는 원문의 다른 글자에 떨어진다 —
+  // 그린 글 끝보다 오른쪽(흔한 「이어 쓰기」)이면 칸 끝, 왼쪽 바깥이면 칸 처음에 둔다. 글 위를 누른 것만 좌표로 잡는다
+  const range = document.createRange();
+  range.selectNodeContents(td);
+  const box = range.getBoundingClientRect();
+  const edge = !box.width || x >= box.right ? "end" : x <= box.left ? "start" : null;
+  const click = cellClick.of({ x, y, edge });
+  if (cell) view.dispatch({ selection: { anchor: cell.to }, effects: click });
+  else if (r) view.dispatch({ selection: { anchor: r.from + r.text.trimEnd().length }, effects: [setVirtualCell.of({ table: m.from, row, col }), click] });
+}
+
+/**
+ * 표 옆 빈 곳(표 폭이 fit-content 라 줄 오른쪽이 비어 있다)을 누르면 그 높이 행의 끝 셀(왼쪽이면 첫 셀)을 연다.
+ * 그대로 두면 CodeMirror 가 블록 위젯의 앞·끝 자리를 주어, 위쪽 반이면 머리 첫 셀이 열린다
+ */
+const besideTable = EditorView.domEventHandlers({
+  mousedown(e, view) {
+    if (e.button !== 0 || view.state.readOnly || e.target !== view.contentDOM) return false;
+    for (const wrap of view.contentDOM.querySelectorAll<HTMLElement>(".cm-lp-table")) {
+      const w = wrap.getBoundingClientRect();
+      if (e.clientY < w.top || e.clientY > w.bottom || (e.clientX >= w.left && e.clientX <= w.right)) continue;
+      const rows = [...wrap.querySelectorAll<HTMLTableRowElement>("tr")];
+      if (!rows.length) return false;
+      const dist = (tr: HTMLElement) => {
+        const r = tr.getBoundingClientRect();
+        return e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0;
+      };
+      const tr = rows.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+      const td = e.clientX > w.right ? tr.cells[tr.cells.length - 1] : tr.cells[0];
+      if (!td) return false;
+      e.preventDefault();
+      const r = td.getBoundingClientRect();
+      selectCellAt(view, wrap, td, e.clientX > w.right ? r.right : r.left, r.top + r.height / 2);
+      return true;
+    }
+    return false;
+  },
+});
 
 // ── 행·열 손잡이(설계 6.5): 누르면 메뉴, 끌면 옮기기. 마우스를 올린 행·열에 하나씩 둔다(칸마다 두지 않는다 — 수백 칸 표) ──
 
@@ -558,5 +591,5 @@ const theme = EditorView.baseTheme({
 
 /** Live Preview 안에서만 켠다(livePreview 가 부른다) */
 export function tableEditor(getCtx: GetCtx, opts: TableOptions): Extension {
-  return [rawField, virtualField, tableField(getCtx), theme, cellEditing(getCtx, opts)];
+  return [rawField, virtualField, tableField(getCtx), theme, besideTable, cellEditing(getCtx, opts)];
 }
