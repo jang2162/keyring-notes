@@ -82,11 +82,14 @@ export function selectedCell(state: EditorState): (CellRef & { anchor: number; h
   return { table: m.from, row: a.row, col: a.col, anchor: rawToTextPos(cell.raw, anchor - cell.from), head: rawToTextPos(cell.raw, head - cell.from) };
 }
 
-/** 칸 편집기 글의 위치 → 칸 원문 위치. 칸 편집기 글의 앞뒤 공백은 원문에 없으므로 그 안의 위치는 원문 처음·끝으로 붙인다 */
+/**
+ * 칸 편집기 글의 위치 → 칸 원문 위치. 칸 편집기 글의 앞뒤 공백은 원문에 없으므로 그 안의 위치는 원문 처음·끝으로 붙인다.
+ * 원문은 칸 글을 escapeCellInput 한 것이므로 그 위치 앞부분을 이스케이프한 길이가 곧 원문 위치다(줄바꿈 → <br> 도 따른다)
+ */
 export function cellPosToRaw(text: string, p: number): number {
   const lead = text.length - text.trimStart().length;
   const trimmed = text.trim();
-  return textToRawPos(escapeCellInput(trimmed), Math.min(Math.max(p - lead, 0), trimmed.length));
+  return escapeCellInput(trimmed.slice(0, Math.min(Math.max(p - lead, 0), trimmed.length))).length;
 }
 
 /**

@@ -137,6 +137,18 @@ describe("cellTransactionToMain", () => {
     expect(selectedCell(next)).toMatchObject({ row: 1, col: 0, head: 2 });
   });
 
+  it("여러 줄을 붙여 넣으면 <br> 로 들어가고 선택은 마지막 글자 뒤(<br> 가운데가 아니다)", () => {
+    const at = DOC.indexOf("| 1") + 3;
+    const main = state(DOC, at);
+    const sel = selectedCell(main)!;
+    const tr = cellTr("1", { changes: { from: 1, insert: "x\ny" }, selection: { anchor: 4 }, userEvent: "input.paste" });
+    const next = main.update(cellTransactionToMain(main, sel, tr)).state;
+    const doc = next.doc.toString();
+    expect(doc).toContain("| 1x<br>y | 2 |");
+    expect(next.selection.main.head).toBe(doc.indexOf("y | 2") + 1);
+    expect(selectedCell(next)).toMatchObject({ row: 1, col: 0, head: 7 });
+  });
+
   it("칸 끝에 친 공백은 다음 글자와 함께 들어간다(칸 앞뒤 공백은 | 옆 여백이라 공백만으로는 칸 글이 아니다)", () => {
     const at = DOC.indexOf("| 1") + 3;
     let s = state(DOC, at);
