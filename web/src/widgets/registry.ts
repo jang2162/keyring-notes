@@ -8,15 +8,31 @@ import {
 } from "@keyring-notes/core";
 import type { WidgetDefinition, WidgetRender } from "./types";
 
-export interface WidgetEntry {
+/** 언어 → 키 → 글(키는 앞머리 없이, 복수형 "key#one") — 제3자 위젯이 자기 글을 가져온다 */
+export type WidgetMessageTable = Record<string, Record<string, string>>;
+
+/** iframe 에 건넬 코드. url = 앱이 내는 묶음 주소(내장), text = 글 그대로(제3자 — 받기·설치는 마켓플레이스 설계) */
+export type FrameCode = { kind: "url"; js: string; css?: string; fonts?: Record<string, string> } | { kind: "text"; js: string; css?: string };
+
+interface EntryBase {
   def: WidgetDefinition;
   /** 앱과 함께 빌드된 코드인가 — 아니면 isolation 과 상관없이 frame 이다 */
   builtIn: boolean;
-  /** 메시지 앞머리. api.t(k) = t(`${messages}.${k}`) */
-  messages: string;
+  /** 앱 메시지 앞머리(내장 — api.t(k) = 앱 글 `${앞머리}.${k}`) 또는 언어별 표(제3자) */
+  messages: string | WidgetMessageTable;
+}
+
+export interface InlineWidgetEntry extends EntryBase {
   /** 위젯 코드는 처음 쓸 때 불러온다 */
   load(): Promise<{ render: WidgetRender }>;
 }
+
+export interface FrameWidgetEntry extends EntryBase {
+  /** iframe 에 실을 코드. 처음 쓸 때 부른다 */
+  frame(): Promise<FrameCode>;
+}
+
+export type WidgetEntry = InlineWidgetEntry | FrameWidgetEntry;
 
 const entries: WidgetEntry[] = [];
 
@@ -25,10 +41,22 @@ export function effectiveIsolation(e: WidgetEntry): "inline" | "frame" {
   return e.builtIn ? e.def.isolation : "frame";
 }
 
-/** 같은 id 두 번, 그리고 frame 위젯은 거부한다 — 1단계에는 iframe 호스트가 없다(2단계가 연다) */
+export function isFrameEntry(e: WidgetEntry): e is FrameWidgetEntry {
+  return effectiveIsolation(e) === "frame" && typeof (e as Partial<FrameWidgetEntry>).frame === "function";
+}
+
+/**
+ * 거부하는 것: 같은 id, frame 으로 돌 위젯에 frame() 이 없음, inline 위젯에 load() 가 없음,
+ * 제3자가 앱 메시지 앞머리를 씀(앱 글을 읽게 된다), dataFile.ext 가 "." 으로 시작하지 않음
+ */
 export function registerWidget(e: WidgetEntry): void {
-  if (findWidget(e.def.id)) throw new Error(`widget ${e.def.id} is already registered`);
-  if (effectiveIsolation(e) === "frame") throw new Error(`widget ${e.def.id}: frame widgets are not supported yet`);
+  const id = e.def.id;
+  if (findWidget(id)) throw new Error(`widget ${id} is already registered`);
+  if (effectiveIsolation(e) === "frame") {
+    if (typeof (e as Partial<FrameWidgetEntry>).frame !== "function") throw new Error(`widget ${id}: frame widgets need frame()`);
+  } else if (typeof (e as Partial<InlineWidgetEntry>).load !== "function") throw new Error(`widget ${id}: inline widgets need load()`);
+  if (!e.builtIn && typeof e.messages === "string") throw new Error(`widget ${id}: third-party widgets bring their own message table`);
+  if (e.def.dataFile && !e.def.dataFile.ext.startsWith(".")) throw new Error(`widget ${id}: dataFile.ext must start with "."`);
   entries.push(e);
 }
 

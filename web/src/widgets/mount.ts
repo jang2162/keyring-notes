@@ -1,7 +1,9 @@
 import { language, onLanguageChange, t } from "../i18n";
-import { resolveWidgetView, widgetViewChange, type WidgetView } from "./registry";
+import { widgetMessages } from "./messages";
+import { isFrameEntry, resolveWidgetView, widgetViewChange, type WidgetView } from "./registry";
 import { focusOutAction, widgetKeyAction, WidgetSession } from "./session";
 import type { WidgetApi, WidgetContext } from "./types";
+import { widgetT } from "./widgetT";
 
 /**
  * 인라인 위젯의 DOM 접착 — Live Preview(liveWidget.ts)와 미리보기(PreviewKeyringWidget.tsx)가 같이 쓴다.
@@ -135,7 +137,7 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       setState: (p) => session.setState(p),
       requestEdit: () => session.requestEdit(),
       exitEdit: (apply) => session.exitEdit(apply),
-      t: (k, vars) => t(`${v.entry.messages}.${k}`, vars as Parameters<typeof t>[1]),
+      t: (k, vars) => widgetT(widgetMessages(v.entry, language()), k, vars),
       onUpdate: (cb) => void listeners.push(cb),
     };
 
@@ -194,7 +196,10 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       },
     };
     const mine = live;
-    v.entry.load().then(
+    const entry = v.entry;
+    // iframe 위젯의 호스트는 다음 단계(mountFrame)가 붙인다 — 그때까지는 불러오지 못한 위젯으로 보인다
+    const loaded = isFrameEntry(entry) ? Promise.reject(new Error("frame host is not mounted")) : entry.load();
+    loaded.then(
       ({ render }) => {
         if (dead || live !== mine) return;
         cleanup = render(content, ctx(), api);

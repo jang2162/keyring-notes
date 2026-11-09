@@ -1,5 +1,9 @@
 import en from "./messages/en.json" with { type: "json" };
 import ko from "./messages/ko.json" with { type: "json" };
+import { lookup, type Params } from "./lookup.js";
+
+// lookup·interpolate 는 메시지 JSON 을 끌어오지 않는 lookup.ts 에 둔다 — iframe 런타임 묶음이 그것만 import 한다
+export { interpolate, lookup, type Params } from "./lookup.js";
 
 /**
  * 키 기반 메시지 묶음. 공식 언어는 영어(기준)·한국어이고, 둘이 같은 키를 갖는다(빠진 키는 영어로 대신 보인다).
@@ -33,49 +37,6 @@ export const baseKey = (key: string) => key.replace(/#[a-z]+$/, "");
 /** 메시지 안의 끼워 넣기 자리 이름(정렬, 중복 없음) */
 export function placeholders(msg: string): string[] {
   return [...new Set([...msg.matchAll(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g)].map((m) => m[1]))].sort();
-}
-
-export type Params = Record<string, string | number | null | undefined>;
-
-/** 끼워 넣기. 숫자는 그 언어의 숫자 모양으로(count 포함) */
-export function interpolate(msg: string, params: Params | undefined, locale = "en"): string {
-  if (!params) return msg;
-  return msg.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (all, name: string) => {
-    const v = params[name];
-    if (v === undefined || v === null) return all;
-    return typeof v === "number" ? new Intl.NumberFormat(locale).format(v) : String(v);
-  });
-}
-
-const pluralCache = new Map<string, Intl.PluralRules>();
-function pluralOf(locale: string, n: number): string {
-  let r = pluralCache.get(locale);
-  if (!r) {
-    try {
-      r = new Intl.PluralRules(locale);
-    } catch {
-      r = new Intl.PluralRules("en");
-    }
-    pluralCache.set(locale, r);
-  }
-  return r.select(n);
-}
-
-/**
- * 메시지 찾기: 묶음 목록을 앞에서부터(언어팩 → 그 기준 언어 → 영어) 본다. params.count가 숫자면 복수형 키를 먼저.
- * 어디에도 없으면 키를 그대로 돌려준다(빠뜨린 키가 화면에 보이게).
- */
-export function lookup(chain: { messages: Messages; locale: string }[], key: string, params?: Params): string {
-  const count = typeof params?.count === "number" ? params.count : null;
-  for (const { messages, locale } of chain) {
-    if (count !== null) {
-      const form = messages[`${key}#${pluralOf(locale, count)}`] ?? messages[`${key}#other`];
-      if (form !== undefined) return interpolate(form, params, locale);
-    }
-    const m = messages[key];
-    if (m !== undefined) return interpolate(m, params, locale);
-  }
-  return key;
 }
 
 /** 공식 언어로 바로(서버 오류·에이전트 글·CLI) */
