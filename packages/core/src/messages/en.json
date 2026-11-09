@@ -878,6 +878,8 @@
   "outline.unfoldName": "Unfold {name}",
   "palette.commands": "Commands",
   "palette.daily": "There are several daily notes for that day. Pick one to open",
+  "palette.dailyWs": "Workspace for the daily note",
+  "palette.dailyWsHint": "↑↓ select · 1–9 pick · Enter open · Esc close",
   "palette.files": "Open a note by name (Ctrl+Enter: new tab)",
   "palette.filesHint": "↑↓ select · Enter open · Ctrl+Enter new tab · Esc close",
   "palette.hint": "↑↓ select · Enter run · Esc close",

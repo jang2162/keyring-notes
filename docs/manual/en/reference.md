@@ -240,6 +240,7 @@ Press `Ctrl/Cmd+/` to see the full list, and change shortcuts in Settings → **
 | Reopen closed tab | `Alt+Shift+T` (desktop app: `Ctrl/Cmd+Shift+T`) |
 | Previous / next tab | `Alt+[` / `Alt+]` (desktop app: `Ctrl+Shift+Tab` / `Ctrl+Tab`) |
 | Nth tab | `Alt+1` … `Alt+9` (desktop app: `Ctrl/Cmd+1` … `Ctrl/Cmd+9`) |
+| Nth workspace / all workspaces | macOS: `Ctrl+1` … `Ctrl+9` / `Ctrl+0`. Windows and Linux: `Alt+Shift+1` … `Alt+Shift+9` / `Alt+Shift+0`. Workspaces follow the switcher's order, from the 10th on there is no key |
 | Quick open | `Ctrl/Cmd+O` |
 | Command palette | `Ctrl/Cmd+P` |
 | Search | `Ctrl/Cmd+Shift+F` |

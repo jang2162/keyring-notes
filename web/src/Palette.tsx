@@ -44,7 +44,38 @@ export function fuzzyScore(query: string, text: string): number | null {
   return total;
 }
 
-export function Palette({ placeholder, items, onClose, hint }: { placeholder: string; items: PaletteItem[]; onClose: () => void; hint?: string }) {
+/**
+ * 목록 키: ↑↓ 로 옮기고 Enter 로 고른다. numbered 면 1~9 가 그 번째 항목을 바로 고른다(10번째부터는 번호가 없다).
+ * 처리하지 않는 키면 null
+ */
+export function paletteKey(key: string, sel: number, count: number, numbered: boolean): { sel: number } | { choose: number } | null {
+  if (key === "ArrowDown") return { sel: Math.min(sel + 1, count - 1) };
+  if (key === "ArrowUp") return { sel: Math.max(sel - 1, 0) };
+  if (key === "Enter") return { choose: sel };
+  if (numbered && /^[1-9]$/.test(key)) {
+    const i = Number(key) - 1;
+    return i < count ? { choose: i } : null;
+  }
+  return null;
+}
+
+/**
+ * numbered: 짧은 고르기 목록(데일리 워크스페이스 등). 찾기 칸 없이 목록이 키를 받고, 앞 9개에 번호를 붙여 숫자로 고른다 —
+ * 찾기 칸이 있으면 숫자가 칸에 들어가고 터치에서 키보드가 올라온다
+ */
+export function Palette({
+  placeholder,
+  items,
+  onClose,
+  hint,
+  numbered = false,
+}: {
+  placeholder: string;
+  items: PaletteItem[];
+  onClose: () => void;
+  hint?: string;
+  numbered?: boolean;
+}) {
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
@@ -71,26 +102,40 @@ export function Palette({ placeholder, items, onClose, hint }: { placeholder: st
     it.run(alt);
   };
 
-  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSel((s) => Math.min(s + 1, shown.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSel((s) => Math.max(s - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      choose(sel, e.ctrlKey || e.metaKey);
-    }
+  const onKey = (e: KeyboardEvent<HTMLElement>) => {
+    // 번호 목록은 수식키 조합(Alt+숫자 등 앱 단축키)을 가로채지 않는다
+    if (numbered && (e.altKey || ((e.ctrlKey || e.metaKey) && e.key !== "Enter"))) return;
+    const r = paletteKey(e.key, sel, shown.length, numbered);
+    if (!r) return;
+    e.preventDefault();
+    if ("sel" in r) setSel(r.sel);
+    else choose(r.choose, e.ctrlKey || e.metaKey);
   };
 
   return (
     <Modal title={placeholder} label={placeholder} size="palette" hideHead escapeFromInputs onClose={onClose} className="palette">
-      <input autoFocus placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey} aria-label={placeholder} />
-      <ul ref={listRef} role="listbox">
+      {numbered ? (
+        <p className="palette-title">{placeholder}</p>
+      ) : (
+        <input autoFocus placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey} aria-label={placeholder} />
+      )}
+      <ul
+        ref={listRef}
+        role="listbox"
+        {...(numbered
+          ? {
+              tabIndex: 0,
+              "data-autofocus": true,
+              "aria-label": placeholder,
+              "aria-activedescendant": shown[sel] ? `palette-opt-${sel}` : undefined,
+              onKeyDown: onKey,
+            }
+          : {})}
+      >
         {shown.map((it, i) => (
           <li
             key={it.id}
+            id={numbered ? `palette-opt-${i}` : undefined}
             data-i={i}
             role="option"
             aria-selected={i === sel}
@@ -102,6 +147,7 @@ export function Palette({ placeholder, items, onClose, hint }: { placeholder: st
             }}
           >
             <span className="palette-label">
+              {numbered && <kbd className="palette-num">{i < 9 ? i + 1 : ""}</kbd>}
               {it.icon}
               {it.display ?? it.label}
             </span>

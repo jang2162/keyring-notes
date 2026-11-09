@@ -67,6 +67,7 @@ import { CreatedNotes, dropFromNav, hasNodeChildren, isBlankNote, openAnywhere }
 import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
+import { dailyTarget } from "./dailyPick";
 import {
   applyTemplate,
   attachmentDirFor,
@@ -523,7 +524,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   pinsRef.current = pins;
   /** 열어 본 문서 기록(뒤로·앞으로) */
   const nav = useRef<{ list: string[]; i: number }>({ list: [], i: -1 });
-  const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | "search-folder" | null>(null);
+  const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | "daily-ws" | "search-folder" | null>(
+    null,
+  );
   const [moveTarget, setMoveTarget] = useState<{ path: string; kind: "node" | "file" } | null>(null);
   const shared = useVaultSettings();
   const [propStats, setPropStats] = useState<PropertyStat[]>([]);
@@ -1730,21 +1733,30 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  /** 데일리 노트를 다룰 워크스페이스: 지금 워크스페이스(모든 워크스페이스 보기면 지금 문서의 것) */
+  /** 설정 화면이 처음 보일 데일리 워크스페이스: 지금 워크스페이스(모든 워크스페이스 보기면 지금 문서의 것) */
   const dailyWs = allWs ? wsOfPath(doc?.path) : ws;
-  const dailyCfg: DailyConfig | null = dailyWs ? daily.of(dailyWs) : null;
-  /** 데일리 노트 목록(판정 규칙: 경로·이름. 날짜순) */
-  const dailyList = useMemo(() => dailyNotes(resolver.paths, dailyCfg), [resolver, dailyCfg]);
+  /** 같은 날 데일리 노트가 여럿일 때 고르는 목록 */
   const [dailyChoices, setDailyChoices] = useState<DailyNote[]>([]);
+  /** 데일리를 열 곳: 한 워크스페이스 보기는 그것, 모든 워크스페이스 보기는 데일리가 켜진 워크스페이스(둘 이상이면 고른다) */
+  const dailyAt = dailyTarget({ allWs, ws, names: wsNames, hasDaily: (w) => !!daily.of(w) });
+  const dailyOn = dailyAt.kind !== "none";
+  const [dailyWsPick, setDailyWsPick] = useState<{ workspaces: string[]; run: (w: string) => void } | null>(null);
+  /** 데일리를 다룰 워크스페이스를 정해 run(w). w 를 주면(데일리 노트 안 막대처럼 이미 정해진 곳) 그대로 */
+  const withDailyWs = (run: (w: string) => void, w?: string) => {
+    if (w) return run(w);
+    if (dailyAt.kind === "none") return toast(t("daily.off"), { kind: "info" });
+    if (dailyAt.kind === "one") return run(dailyAt.workspace);
+    setDailyWsPick({ workspaces: dailyAt.workspaces, run });
+    setPalette("daily-ws");
+  };
 
   /**
-   * 그날 데일리 노트 열기(지금 워크스페이스). 그날 날짜로 시작하는 노트가 있으면 그것(제목이 붙어 있어도), 둘 이상이면 고르는 목록,
+   * 그날 데일리 노트 열기(워크스페이스 w). 그날 날짜로 시작하는 노트가 있으면 그것(제목이 붙어 있어도), 둘 이상이면 고르는 목록,
    * 없으면 날짜만으로 새로 만들고(템플릿 + 자동 속성) 제목 칸에 커서를 둔다(터치에서는 두지 않는다).
    */
-  const openDailyOn = async (day: Date) => {
+  const openDailyOn = async (day: Date, w: string) => {
     await vaultSettingsReady();
     const s = getVaultSettings();
-    const w = dailyWs;
     const cfg = w ? dailyLookup(s, () => wsNames, uiLang).of(w) : null;
     if (!w || !cfg) return toast(t("daily.off"), { kind: "info" });
     const found = dailyNotes(resolver.paths, cfg).filter((n) => n.ymd === ymd(day));
@@ -1779,16 +1791,19 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     await open(path);
     setFocusedMode((m) => (m === "preview" ? "edit" : m));
   };
-  const openDaily = (offset = 0) => openDailyOn(shiftDays(new Date(), offset));
+  const openDaily = (offset = 0, w?: string) => withDailyWs((x) => void openDailyOn(shiftDays(new Date(), offset), x), w);
 
   /** 바로 앞·뒤 데일리 노트(빠진 날은 건너뛴다). 지금 문서가 데일리 노트가 아니면 오늘 기준 */
   const dailyStep = (dir: -1 | 1) => {
     const cur = docRef.current ? dailyOfPath(docRef.current.path, daily) : null;
     const base = cur?.ymd ?? ymd(new Date());
-    const list = cur ? dailyNotes(resolver.paths, daily.of(workspaceOf(cur.path))) : dailyList;
-    const target = dir < 0 ? [...list].reverse().find((n) => n.ymd < base) : list.find((n) => n.ymd > base);
-    if (target) void open(target.path);
-    else toast(dir < 0 ? t("daily.noPrev") : t("daily.noNext"), { kind: "info", duration: 2500 });
+    const step = (list: DailyNote[]) => {
+      const target = dir < 0 ? [...list].reverse().find((n) => n.ymd < base) : list.find((n) => n.ymd > base);
+      if (target) void open(target.path);
+      else toast(dir < 0 ? t("daily.noPrev") : t("daily.noNext"), { kind: "info", duration: 2500 });
+    };
+    if (cur) return step(dailyNotes(resolver.paths, daily.of(workspaceOf(cur.path))));
+    withDailyWs((w) => step(dailyNotes(resolver.paths, daily.of(w))));
   };
 
   /** 기존 데일리 노트를 지금 형식으로 옮기기(지금 워크스페이스): 계획을 보이고 확인하면 한 번에(한 커밋·한 기록, 링크 자동 갱신) */
@@ -2572,21 +2587,29 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           closeSettings(false);
         })(),
     },
-    ...wsNames
-      .slice(0, 9)
-      .map((w, i) => ({ id: `ws-${i + 1}`, group: g.ws, label: t("cmd.switchWs", { name: w }), run: () => void switchScope({ workspace: w, all: false }) })),
-    { id: "ws-all", group: g.ws, label: allWs ? t("cmd.wsOnlyOne") : t("cmd.wsAll"), run: () => void switchScope({ all: !allWs }) },
+    // 워크스페이스 N번째(전환 메뉴 순서 wsNames, 10번째부터는 키 없음)·모든 워크스페이스. macOS 는 Ctrl+숫자(Cmd+숫자는 N번째 탭),
+    // Windows·Linux 는 Ctrl 이 Mod 라 N번째 탭(앱 Ctrl+숫자·웹 Alt+숫자)과 겹쳐 앱·웹 모두 Alt+Shift+숫자(사용자 결정, ux.md 5차 후속)
+    ...wsNames.slice(0, 9).map((w, i) => ({
+      id: `ws-${i + 1}`,
+      group: g.ws,
+      label: t("cmd.switchWs", { name: w }),
+      keys: `Alt+Shift+${i + 1}`,
+      macKeys: `Ctrl+${i + 1}`,
+      run: () => void switchScope({ workspace: w, all: false }),
+    })),
+    { id: "ws-all", group: g.ws, label: t("cmd.wsAll"), keys: "Alt+Shift+0", macKeys: "Ctrl+0", run: () => void switchScope({ all: true }) },
+    ...(allWs && ws ? [{ id: "ws-one", group: g.ws, label: t("cmd.wsOnlyOne"), run: () => void switchScope({ all: false }) }] : []),
     { id: "new", group: g.doc, label: t("cmd.new"), keys: "Mod+N", webKeys: "Alt+N", run: () => void createDoc() },
     { id: "note-up", group: g.doc, label: t("cmd.noteUp"), keys: "Alt+Shift+ArrowUp", inInputs: false, run: () => moveSibling(-1) },
     { id: "note-down", group: g.doc, label: t("cmd.noteDown"), keys: "Alt+Shift+ArrowDown", inInputs: false, run: () => moveSibling(1) },
-    ...(dailyCfg
+    ...(dailyOn
       ? [
           { id: "daily", group: g.doc, label: t("cmd.daily"), keys: "Mod+Shift+D", run: () => void openDaily(0) },
           { id: "daily-prev", group: g.doc, label: t("cmd.dailyPrev"), run: () => dailyStep(-1) },
           { id: "daily-next", group: g.doc, label: t("cmd.dailyNext"), run: () => dailyStep(1) },
           { id: "daily-yesterday", group: g.doc, label: t("cmd.dailyYesterday"), run: () => void openDaily(-1) },
           { id: "daily-tomorrow", group: g.doc, label: t("cmd.dailyTomorrow"), run: () => void openDaily(1) },
-          { id: "daily-migrate", group: g.doc, label: t("cmd.dailyMigrate"), run: () => void migrateDaily() },
+          { id: "daily-migrate", group: g.doc, label: t("cmd.dailyMigrate"), run: () => withDailyWs((w) => void migrateDaily(w)) },
         ]
       : []),
     { id: "tpl-new", group: g.doc, label: t("cmd.templateNew"), run: () => setPalette("new-from-template") },
@@ -3001,7 +3024,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           onClick={() => showLeft("attachments")}
         />
         <span className="rail-sep" />
-        {dailyCfg && (
+        {dailyOn && (
           <IconButton
             icon={CalendarDays}
             label={t("cmd.daily")}
@@ -3657,7 +3680,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     setCursor: (pane, c) => setCursors((cs) => (cs[pane]?.line === c.line && cs[pane]?.col === c.col ? cs : { ...cs, [pane]: c })),
     setDocMenu,
     dailyStep,
-    openDaily: (offset) => void openDaily(offset),
+    openDaily: (offset, w) => void openDaily(offset, w),
     clearTitleFocus: () => setTitleFocus(null),
     setPendingAnchor,
   };
@@ -3672,7 +3695,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       tabs={allTabs}
       onOpen={(p) => void open(p)}
       onNew={() => void createDoc()}
-      onDaily={dailyCfg ? () => void openDaily(0) : null}
+      onDaily={dailyOn ? () => void openDaily(0) : null}
       onQuick={() => setPalette("files")}
       onSearch={() => showLeft("search")}
       onManage={() => openSettings("workspaces")}
@@ -3821,7 +3844,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }),
     syncError: !!syncStatus?.lastError,
     syncServer: syncStatus?.settings?.server ?? null,
-    dailyOn: !!dailyCfg,
+    dailyOn,
     update: !!newVersion,
   };
   // 누르면 할 일과 아이콘은 id 로 꽂는다(줄·항목의 조건과 글은 moreMenu.ts)
@@ -3855,7 +3878,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       onFiles={() => showLeft("files")}
       onSearch={() => showLeft("search")}
       onNew={() => void createDoc()}
-      onNewHold={dailyCfg ? () => void openDaily(0) : null}
+      onNewHold={dailyOn ? () => void openDaily(0) : null}
       onTabs={() => {
         setDrawer(null);
         if (focusedPane) setTabSheet(focusedPane.id);
@@ -4166,7 +4189,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                       ? t("search.folderPick")
                       : palette === "daily"
                         ? t("palette.daily")
-                        : t("palette.templates", { folder: templateDir || "-" })
+                        : palette === "daily-ws"
+                          ? t("palette.dailyWs")
+                          : t("palette.templates", { folder: templateDir || "-" })
             }
             items={
               palette === "files"
@@ -4185,14 +4210,23 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                             detail: parentOf(n.path),
                             run: (alt: boolean) => void open(n.path, { newTab: alt }),
                           }))
-                        : templatePaths.map((p) => ({
-                            id: p,
-                            label: stemOf(p),
-                            detail: p,
-                            run: () => void (palette === "templates" ? insertTemplate(p) : createFromTemplate(p)),
-                          }))
+                        : palette === "daily-ws"
+                          ? (dailyWsPick?.workspaces ?? []).map((w) => ({
+                              id: w,
+                              label: w,
+                              // 글자 아바타(ws-letter)는 메뉴에서만 꾸며진다 — 여기서는 아이콘이 있을 때만
+                              icon: wsIcon(w) ? wsLead(w) : undefined,
+                              run: () => dailyWsPick?.run(w),
+                            }))
+                          : templatePaths.map((p) => ({
+                              id: p,
+                              label: stemOf(p),
+                              detail: p,
+                              run: () => void (palette === "templates" ? insertTemplate(p) : createFromTemplate(p)),
+                            }))
             }
-            hint={palette === "files" ? t("palette.filesHint") : t("palette.hint")}
+            hint={palette === "files" ? t("palette.filesHint") : palette === "daily-ws" ? t("palette.dailyWsHint") : t("palette.hint")}
+            numbered={palette === "daily-ws"}
             onClose={() => setPalette(null)}
           />
         )}

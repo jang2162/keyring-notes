@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent,
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Columns2, Ellipsis, Eye, ListTree, Pencil, SlidersHorizontal, SmilePlus } from "lucide-react";
 import type { ChangeSet } from "@codemirror/state";
-import { blockRange, dailyOfPath, friendlyDate, headings, parseFrontmatter, stripMd, type DailyLookup, type DailyNote } from "@keyring-notes/core";
+import { blockRange, dailyOfPath, friendlyDate, headings, parseFrontmatter, stripMd, workspaceOf, type DailyLookup, type DailyNote } from "@keyring-notes/core";
 import { api, type CommitInfo, type SourcesInfo } from "./api";
 import { confirmDialog } from "./dialog";
 import { Editor, type EditorHandle, type LinkCandidate } from "./Editor";
@@ -119,7 +119,8 @@ export interface PaneContext {
   setCursor: (pane: string, c: { line: number; col: number }) => void;
   setDocMenu: (at: { x: number; y: number }) => void;
   dailyStep: (dir: -1 | 1) => void;
-  openDaily: (offset?: number) => void;
+  /** w: 그 워크스페이스로(없으면 보기에 따라 — 모든 워크스페이스 보기는 고른다) */
+  openDaily: (offset?: number, w?: string) => void;
   clearTitleFocus: () => void;
   setPendingAnchor: (a: PendingAnchor | null) => void;
 }
@@ -523,7 +524,12 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
         {docDaily && (
           <span className="daily-nav" aria-label={t("daily.nav")}>
             <IconButton icon={ChevronLeft} label={t("cmd.dailyPrev")} onClick={() => ctx.dailyStep(-1)} size={16} />
-            <button type="button" className="daily-nav-date" {...tipProps({ label: t("cmd.daily") })} onClick={() => ctx.openDaily(0)}>
+            <button
+              type="button"
+              className="daily-nav-date"
+              {...tipProps({ label: t("cmd.daily") })}
+              onClick={() => ctx.openDaily(0, workspaceOf(doc.path) ?? undefined)}
+            >
               {friendlyDate(docDaily.date, new Date(), lang)}
             </button>
             <IconButton icon={ChevronRight} label={t("cmd.dailyNext")} onClick={() => ctx.dailyStep(1)} size={16} />

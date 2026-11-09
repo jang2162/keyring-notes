@@ -241,6 +241,7 @@ Keyring Notes 는 Obsidian 과 같은 문법을 읽습니다.
 | 닫은 탭 다시 열기 | `Alt+Shift+T`(데스크톱 앱: `Ctrl/Cmd+Shift+T`) |
 | 이전 / 다음 탭 | `Alt+[` / `Alt+]`(데스크톱 앱: `Ctrl+Shift+Tab` / `Ctrl+Tab`) |
 | N번째 탭 | `Alt+1` … `Alt+9`(데스크톱 앱: `Ctrl/Cmd+1` … `Ctrl/Cmd+9`) |
+| N번째 워크스페이스 / 모든 워크스페이스 | macOS: `Ctrl+1` … `Ctrl+9` / `Ctrl+0`. Windows·Linux: `Alt+Shift+1` … `Alt+Shift+9` / `Alt+Shift+0`. 순서는 전환기와 같고 10번째부터는 키가 없습니다 |
 | 노트 빠르게 열기 | `Ctrl/Cmd+O` |
 | 명령 팔레트 | `Ctrl/Cmd+P` |
 | 검색 | `Ctrl/Cmd+Shift+F` |
