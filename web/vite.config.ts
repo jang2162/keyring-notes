@@ -7,6 +7,7 @@ import react from "@vitejs/plugin-react";
 import { licenseNotices } from "./licenses/plugin.ts";
 import { buildCatalog } from "./src/emojiCatalog.ts";
 import { HAND_WORDS } from "./src/emojiWords.ts";
+import { INLINE_WIDGET_GZIP_LIMIT, inlineWidgetSizes, type BudgetChunk } from "./src/widgetBudget.ts";
 
 /**
  * 이 빌드의 id. 서비스 워커의 캐시 이름(stampServiceWorker)과 화면 번들(define 의 __KEYRING_BUILD__)이 같은 값을 써,
@@ -44,6 +45,29 @@ function stampServiceWorker(): Plugin {
  * 아이콘 고르기 창의 이모지 목록(`virtual:emoji-data`). emojibase-data 의 한·영 원본 두 벌(약 1.6MB)에서 쓰는 칸만 골라 싣는다.
  * 창을 처음 열 때 불러오는 청크가 되고, 위의 지연 자산 목록에도 들어가 오프라인에서도 열린다.
  */
+/**
+ * 인라인 위젯(src/widgets/inline/)의 처음 불러오는 크기(gzip)를 재서 기준을 넘으면 빌드를 떨어뜨린다 — 기준과 이유는 src/widgetBudget.ts.
+ * 리뷰 점검 넷(전역 이벤트·전역 CSS·키 가로채기·자체 실행 취소·DOM 수)은 이 시험이 보지 않는다.
+ */
+function inlineWidgetBudget(): Plugin {
+  return {
+    name: "keyring-inline-widget-budget",
+    apply: "build",
+    generateBundle(_, bundle) {
+      const chunks: BudgetChunk[] = Object.values(bundle).flatMap((c) =>
+        c.type === "chunk" ? [{ fileName: c.fileName, code: c.code, imports: c.imports, isEntry: c.isEntry, facadeModuleId: c.facadeModuleId }] : [],
+      );
+      for (const s of inlineWidgetSizes(chunks)) {
+        if (s.over)
+          this.error(
+            `${s.facade}: ${s.bytes} B gzip > ${INLINE_WIDGET_GZIP_LIMIT} B — 인라인 기준을 넘는다(설계 「인라인/iframe 기준」). 줄이거나 isolation: "frame" 으로`,
+          );
+        this.info(`inline widget ${s.facade}: ${s.bytes} B gzip (limit ${INLINE_WIDGET_GZIP_LIMIT})`);
+      }
+    },
+  };
+}
+
 function emojiData(): Plugin {
   const id = "virtual:emoji-data";
   const require = createRequire(import.meta.url);
@@ -60,7 +84,7 @@ function emojiData(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), stampServiceWorker(), emojiData(), licenseNotices()],
+  plugins: [react(), stampServiceWorker(), emojiData(), licenseNotices(), inlineWidgetBudget()],
   define: { __KEYRING_BUILD__: JSON.stringify(BUILD) },
   // 시험에서 styles.css 만 CSS 처리를 켠다 — 끈 기본값에서는 styles.css?raw 가 빈 글이다(themeColor.test.ts 가 --bg 를 읽는다)
   test: { css: { include: [/styles\.css/] } },
