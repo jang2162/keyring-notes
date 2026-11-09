@@ -169,7 +169,7 @@
   export function rawToTextPos(raw: string, rawPos: number): number;
   export function escapeCellInput(text: string): string;         // "|" → "\|", "\n" → "<br>"
   /** 칸 편집기의 변경(칸 글 좌표)을 본문 변경으로. 이스케이프에 맞춰 위치를 옮긴다 */
-  export function cellChangesToDoc(cell: TableCell, changes: ChangeSet): ChangeSpec[];
+  export function cellChangesToDoc(cell: TableCell, changes: ChangeSet): ChangeSpec[]; // 2차 리뷰에서 걷음 — 셀 → 본문은 cellTransactionToMain(Task 7)이 한다
   /** row: 0 = 머리, 1.. = 본문. 칸이 모자란 행이면 칸을 붙이는 변경과 붙인 뒤의 칸 위치 */
   export function ensureCell(m: TableModel, row: number, col: number): { changes: ChangeSpec[]; at: number };
   export function cellAt(m: TableModel, pos: number): { row: number; col: number } | null; // pos 가 한 칸 구간 안(양끝 포함)인가
@@ -183,7 +183,7 @@
   - 프런트매터 뒤(`"---\nx: 1\n---\n| a |\n|---|"`)와 끝 줄바꿈 없는 표 → `to` 가 문서 끝.
   - `cellText("a \\| b")` → `"a | b"`, `textToRawPos("a \\| b", 3)` → 4, `rawToTextPos(같은, 5)` → 4.
   - `escapeCellInput("x|y\nz")` → `"x\\|y<br>z"`.
-  - `cellChangesToDoc`: 칸 `"a \| b"` 에서 칸 글 위치 4(`|` 뒤)에 `"Q"` 를 넣는 ChangeSet → 문서 위치는 `cell.from + 5`.
+  - (걷음) `cellChangesToDoc`: 칸 `"a \| b"` 에서 칸 글 위치 4(`|` 뒤)에 `"Q"` 를 넣는 ChangeSet → 문서 위치는 `cell.from + 5`.
   - `ensureCell(m, 1, 1)`(모자란 행) → 행 끝에 `" |"`(outerPipes 면 `"  |"` 꼴, 기존 모양을 따름)을 붙이는 변경과 새 칸 위치.
   - `cellAt`: 칸 구간 밖(`|` 위)이면 null.
 - [ ] **Step 2: 실패 확인** — `pnpm exec vitest run src/tableModel.test.ts`.
@@ -269,7 +269,7 @@
 - Test: `web/src/cellEditor.test.ts`
 
 **Interfaces:**
-- Consumes: Task 4 `cellAt`·`cellChangesToDoc`·`textToRawPos`·`rawToTextPos`, Task 6 `tableEditor`.
+- Consumes: Task 4 `cellAt`·`textToRawPos`·`rawToTextPos`, Task 6 `tableEditor`.
 - Produces:
   ```ts
   /** 본문 선택이 한 칸 안이면 그 칸(표 from, row, col)과 칸 글 좌표의 선택. 여러 칸·표 밖에 걸치면 null */
