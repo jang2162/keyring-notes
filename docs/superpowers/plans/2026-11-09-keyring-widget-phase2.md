@@ -38,7 +38,7 @@
   - core 의 링크 처리(`rewriteLinks` 와 그것을 쓰는 `linkingDocs`, `analyze().links`)는 **어느 `keyring-widget` 펜스든** `state.file` 을 본다(위젯 정의는 web 에 있어 core 는 모른다 — `state.file` 은 데이터 파일 위젯이 쓰는 예약 이름으로 친다). 펜스 판정은 `rewriteLinks` 의 지금 펜스 규칙(0~3칸 들여쓰기, 닫힌 것)이라 1단계의 「최상위 펜스만 위젯」 보다 넓다 — 목록 안 블록의 경로도 고쳐진다(놓치면 조용히 파일을 잃고, 넓게 잡아 손해 보는 경우는 없다). 고칠 때는 본문을 다시 직렬화하지 않고 `"file": "<값>"` 문자열만 바꾼다(들여쓰기·사람이 쓴 모양 보존). **고칠지는 `state.file` 이 옮긴 경로일 때만 정하고**, 그때 본문 안에서 값이 같은 `"file"` 문자열은 모두 고친다(같은 첨부를 가리키는 다른 키가 옛 경로로 남지 않게). 셈은 펜스마다 1(`widgetFileRefs` 와 같은 범위).
   - `lintVault` 는 링크를 `resolveLink`(대소문자 무시·끝 일치)로 풀므로, `state.file` 이 없는 경로인데 끝이 같은 다른 파일이 있으면 깨진 링크로 잡히지 않는다 — 알려진 한계로 Task 2 시험 주석과 사용자 문서에 적는다(위젯 자체는 정확한 경로만 읽고 「파일을 찾을 수 없습니다」 를 보인다).
   - 데이터 파일 쓰기가 충돌로 끝날 때와 **쓰는 중 파일이 없어졌을 때(404)도** 같은 충돌 사본을 둔다(그린 것을 잃지 않게). **네트워크·오프라인·5xx(`failed`) 와 사본 만들기 실패는 바이트를 지우지 않고** 「저장하지 못함」 으로 남겨 다음 쓰기·비우기 때 다시 시도한다(서버 볼트에서 오프라인이면 그림은 저장되지 않는다 — 노트의 IndexedDB 오프라인 편집과 다르다는 것을 사용자 문서에 적는다).
-  - 같은 파일을 두 위젯(같은 노트 두 칸, 두 노트)이 열면 쓰기 담당은 경로마다 하나(`DataFileWriter`)이고, **위젯마다 자기가 마지막으로 읽거나 쓴 해시**를 기준으로 삼으며 **쓰지 않은 바이트(pending)에는 주인 핸들이 있다**. 다른 핸들의 pending 이 있거나 쓰는 중일 때 들어온 쓰기, 옛 기준의 쓰기는 충돌(덮어쓰지 않음, 사본). 쓰기를 **받아들이는 순간**(내려앉을 때가 아니라) 다른 핸들의 기준을 무효로 하고 `onStale` 을 보내, 그 핸들은 다시 읽는다(리뷰 C1).
+  - 같은 파일을 두 위젯(같은 노트 두 칸, 두 노트)이 열면 쓰기 담당은 경로마다 하나(`DataFileWriter`)이고, **writer 의 판(rev — 받아들인 쓰기마다 오른다)** 으로 가른다: 위젯은 자기가 마지막으로 읽었거나 받아들여진 판과 writer 의 판이 같을 때만 쓸 수 있고, 아니면 충돌(덮어쓰지 않음, 사본). 쓰기를 **받아들이는 순간**(내려앉을 때가 아니라) 다른 위젯은 stale 이 되어 보기 전용으로 바뀌고, 그 경로의 쓰기가 모두 내려앉은 뒤 **한 번** 다시 읽는다(리뷰 C1, 재리뷰 N4). 주인 핸들은 두지 않는다 — 사라진 위젯이 남긴 바이트는 그 뒤 읽은 위젯이 이어 쓴다. 다시 붙는 위젯은 사라지는 위젯의 drain 이 끝난 뒤 읽는다(재리뷰 N1). 거절된 쓰기의 바이트는 원본 경로에 쓰지 않고 「사본 대기」 로만 둔다(재리뷰 N2).
   - 자동 저장 끔: 비우기는 `Mod+S`(앱 「저장」 명령), 창 닫기·새로 고침 「저장하고 닫기」, 그리고 **탭 닫기·노트 바꾸기**(코디네이터 결정 — 위). 화면 밖으로 스크롤되거나 미리보기가 다시 그려져 위젯이 잠깐 사라질 때는 쓰지 않고 writer 에 남는다(같은 노트의 위젯이 곧 다시 붙어 그 바이트를 읽고 「저장하지 않은 그림」 을 보인다). 자동 저장 켬: 위젯 포커스 아웃·사라짐·`visibilitychange`(hidden)·`beforeunload`·창 닫기 때 비운다. 닫기 묻는 동안(`closeHold`)은 writer 타이머도 쉰다.
   - 전체 화면은 iframe 을 옮기지 않고 위젯 감싸개에 `popover="manual"` + `showPopover()`(top layer)로 한다 — DOM 에서 iframe 을 옮기면 엔진이 문서를 다시 불러오고, `position: fixed` 는 조상의 `transform`·`contain` 에 갇힐 수 있다. `popover` 속성은 **전체 화면에 들어갈 때만 달고 나올 때 뗀다**(달려 있으면 닫힌 동안 UA 스타일이 `display: none` 을 건다). Popover API 가 없는 엔진(Safari 17 전 — `tauri.conf.json` 에 `minimumSystemVersion` 이 없어 옛 macOS 의 WKWebView 가 있을 수 있다)은 `"showPopover" in HTMLElement.prototype` 로 보고 `position: fixed` 겹침 클래스로 대신한다. `WidgetContext` 에 `fullscreen?: boolean` 을 더한다(위젯이 높이를 정하게). 전체 화면 단추는 위젯 머리(호스트 몫)에 `display: block` 위젯만.
   - Esc 순서: iframe 안에서 위젯이 `preventDefault` 하지 않은 Esc(조합 중 아님 — 1단계 `widgetKeyAction`) → 부모로. 부모는 **전체 화면이면 닫기만**, 아니면 `session.escape()`(수정 중이면 초안 버림).
@@ -56,7 +56,7 @@
 
 - iframe: `sandbox="allow-scripts"` 만(**`allow-same-origin`·`allow-popups`·`allow-forms` 없음**), `srcdoc` 만(`src` 없음), `allow` 속성 없음. srcdoc 안 meta CSP 는 정확히 `default-src 'none'; script-src <해시> blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:`.
 - iframe 은 URL 로 아무것도 받지 않는다(코드·CSS·글꼴은 부모가 건넨다). CDN 금지 — 기기 볼트·데스크톱 앱·오프라인에서 돈다.
-- 부모가 받는 메시지는 **자기가 만든 iframe 의 `contentWindow`(만들 때 잡아 둔 WindowProxy — iframe 이 DOM 에서 빠지면 `iframe.contentWindow` 는 `null` 이 된다)에서 온 것**이고 `kw === "kw1"`, `id === 그 인스턴스 id`, 모양 검사(`parseFrameMsg`)를 통과한 것만. iframe 쪽도 `e.source === parent` 인 것만.
+- 부모가 받는 메시지는 **자기가 만든 iframe 의 `contentWindow`(만들 때 잡아 둔 WindowProxy — iframe 이 DOM 에서 빠지면 `iframe.contentWindow` 는 `null` 이 된다)에서 온 것**이고, **`e.origin === "null"`(srcdoc 샌드박스는 불투명 출처)이어야 한다 — 같은 창에서 온 메시지인데 출처가 `"null"` 이 아니면 문서가 다른 곳으로 옮겨 간 것이라 그 자리에서 kill**(재리뷰 N3 — 옮겨 간 문서가 `load`·`ready` 전에 보낸 첫 메시지부터 막는다), 그리고 `kw === "kw1"`, `id === 그 인스턴스 id`, 모양 검사(`parseFrameMsg`)를 통과한 것만. iframe 쪽도 `e.source === parent` 인 것만.
 - iframe 문서는 srcdoc 하나뿐이어야 한다: 두 번째 `load` 나 두 번째 `ready` 가 오면 부모는 iframe 을 지우고 오류(`kw.frameNavigated`)를 보이며 그 인스턴스에 더 답하지 않는다(리뷰 C2).
 - 부모 CSP: 서버 `APP_CSP` 와 `tauri.conf.json` `security.csp` 의 `script-src` 가 `'self' <WIDGET_FRAME_SCRIPT_HASH> blob:` 을 담는다. 다른 지시어는 바꾸지 않는다.
 - 데이터 파일 쓰기 = 첨부 교체 API 하나(`api.replaceAttachment(path, blob, baseHash)` — 서버 `PUT /api/attachment?path=&baseHash=`, 기기 볼트 `vault.replaceFile` 해시 검사). 새 파일 = `api.uploadAttachment`. 읽기 = `api.readBytes` + `sha256Hex`. 노트 실행 취소에 들어가지 않는다. **덮어쓰지 않는다**(409 → 사본).
@@ -70,16 +70,16 @@
 
 ## Review Focus
 
-1. **미리보기 칸에서 그리는 중에 다른 칸·동기화가 노트를 고침, 또는 긴 노트에서 그림 블록을 스크롤해 화면 밖으로 보냈다 돌아옴** — 미리보기는 다시 마운트되고 CodeMirror 는 먼 줄의 위젯 DOM 을 치웠다 다시 만들어, 둘 다 iframe 이 새로 만들어진다(약 5MB 코드를 다시 건네고 파싱, 화면 위치·Excalidraw 실행 취소 기록을 잃는다 — 사용자 문서에 적는다). **iframe 에서 이미 떠난 바이트까지는** 잃지 않는다: 사라지는 iframe 이 보낸 `fileWrite` 는 잡아 둔 WindowProxy 로 받아 핸들에 넘기고, 쓰지 않은 바이트는 writer 에 남아 새 iframe 이 읽는다. 아직 iframe 안 `onChange` 에서 보내지 않은 마지막 순간의 획은 잃을 수 있다. (Task 4: writer 가 위젯보다 오래 산다, Task 8: 사라진 뒤 1초 동안 `fileWrite` 만 받음, Task 11 확인)
+1. **미리보기 칸에서 그리는 중에 다른 칸·동기화가 노트를 고침, 또는 긴 노트에서 그림 블록을 스크롤해 화면 밖으로 보냈다 돌아옴** — 미리보기는 다시 마운트되고 CodeMirror 는 먼 줄의 위젯 DOM 을 치웠다 다시 만들어, 둘 다 iframe 이 새로 만들어진다(약 5MB 코드를 다시 건네고 파싱, 화면 위치·Excalidraw 실행 취소 기록을 잃는다 — 사용자 문서에 적는다). **iframe 에서 이미 떠난 바이트까지는** 잃지 않는다: 사라지는 iframe 이 보낸 `fileWrite` 는 잡아 둔 WindowProxy 로 받아 핸들에 넘기고, 쓰지 않은 바이트는 writer 에 남아 새 iframe 이 읽는다. 아직 iframe 안 `onChange` 에서 보내지 않은 마지막 순간의 획은 잃을 수 있다. 다시 붙은 위젯의 획은 사본 없이 이어서 쓰인다(주인 없음, drain 이 끝난 뒤 읽기). (Task 4: writer 가 위젯보다 오래 산다·N1 시험, Task 8: 사라진 뒤 1초 동안 `fileWrite` 만 받음, Task 11 확인)
 2. **창·앱 닫기, PWA 「새로 고침」, 탭 닫기, 노트 바꾸기 직전 1.5초 안에 그은 획** — 탭 닫기·노트 바꾸기는 설정과 상관없이 비우고 실패하면 묻는다. 창 닫기·새로 고침은 닫기 물음에 「저장하지 않은 그림」 이 들고 「저장하고 닫기」 가 쓴다. 노트는 깨끗하고 그림만 남았어도 지킴이 켜진다(writer 표 바뀜 구독). 데스크톱 앱(WKWebView)은 `beforeunload` 가 없어 닫기 지킴이 유일한 길이다. (Task 4: `flushDataFiles`·`unsavedDataFiles`·`onDataFilesChange`, Task 9: `guarded`·`closeWindowSafely`·`reloadSafely`·`closeTab`·`warn`, Task 11 확인)
-3. **같은 그림을 두 칸에 열고 번갈아 그림** — A 의 획이 아직 쓰이기 전(타이머 대기·쓰는 중)에 B 가 그려도, 쓴 뒤에 B 가 옛 기준으로 그려도 조용히 덮어쓰지 않는다: 늦게 온 쪽이 충돌 사본이 되고 다시 읽는다. (Task 4 시험)
+3. **같은 그림을 두 칸에 열고 번갈아 그림** — A 가 그리는 순간 B 는 보기 전용(「다른 칸에서 고치는 중」)이 되고 A 의 쓰기가 내려앉은 뒤 한 번 다시 읽는다. 그 사이 B 가 그린 것(전환 직전)은 조용히 덮어쓰지 않고 충돌 사본이 된다. B 칸 iframe 이 A 의 획마다 다시 만들어지지 않는다. (Task 4 시험, Task 9)
 4. **iframe 안 Excalidraw 글 상자에서 한글 조합 중 Esc·Enter, 전체 화면에서 Esc** — 조합 중 키는 부모로 가지 않고, Excalidraw 가 처리한 Esc(글 편집 끝·선택 해제)는 전체 화면을 닫지 않으며, 처리하지 않은 Esc 만 닫는다. (Task 6: 런타임 키 시험, Task 11 확인 — Chromium·WebKit)
 5. **iframe 으로 포커스가 들어갈 때** — 부모 `window` 의 `blur` 가 나 노트 자동 저장(`Workspace` 의 창 blur 저장)이 돈다. 위젯 수정이 끝나거나(포커스 아웃 오판) 데이터 파일이 비워지는 일은 없어야 한다(앱 `document.activeElement` 가 그 iframe 이면 안이다). 창 전체가 포커스를 잃을 때(다른 앱으로)도 안으로 본다. (Task 8: `frameFocusInside` 시험, Task 11 확인)
 6. **오프라인에서 처음 그림 위젯을 엶(SW 캐시 전)** — 「위젯을 불러오지 못했습니다」 와 원문 블록이 보이고 노트는 그대로다. 한 번 연 뒤에는 오프라인에서도 열린다(SW 의 쓸 때 캐시) — 단 SW 캐시는 빌드마다 새것이고 바로 앞 빌드 하나만 남으므로(`sw.js` `staleCaches`) 앱이 두 번 업데이트되면 다시 받아야 한다. 서버 볼트에서 오프라인이면 그림을 저장하지 못하고 「저장하지 못함」 으로 남는다. (Task 4: `failed` 는 바이트 유지, Task 7: `/widget-frame/` 이 index.html 대체를 받지 않음, Task 11 확인)
 7. **iframe 안에서 `Mod+S`** — 브라우저 「페이지 저장」 이 뜨지 않고 노트 저장과 그림 비우기가 함께 돈다. (Task 6 런타임 키 시험, Task 9 연결, Task 11 확인)
 8. **블록을 원문으로 고쳐 `state.file` 을 `../밖.json`·`/abs.json`·`.hidden/x.excalidraw.json`·다른 확장자로 바꿈** — 위젯은 그 경로를 읽거나 쓰지 않고 오류 한 줄과 원문을 보이며, 원래 파일도 건드리지 않는다. (Task 1 시험, Task 9)
 9. **그림을 열기만 하고 닫음** — 파일·커밋이 바뀌지 않는다(Excalidraw 가 처음 그릴 때도 `onChange` 를 부르고, srcdoc 의 `source` 가 `"null"` 이다). (Task 10: `SceneGate` 시험, Task 11 확인)
-10. **제3자 위젯이 `location.href = "https://…"` 로 자기 iframe 을 옮김** — 부모가 iframe 을 지우고 오류를 보이며, 옮겨 간 문서의 `ready`·`fileRead` 에 답하지 않는다. (Task 8: `frameGuard` 시험, Task 11 확인)
+10. **제3자 위젯이 `location.href = "https://…"` 로 자기 iframe 을 옮김** — 부모가 iframe 을 지우고 오류를 보이며, 옮겨 간 문서의 메시지(출처가 `"null"` 이 아님 — `ready` 전의 `fileRead` 포함)에 답하지 않는다. (Task 8: `frameEventAction`·`frameGuard` 시험, Task 11 확인)
 
 ---
 
@@ -106,7 +106,7 @@
 
 - [ ] **Step 1: 실패하는 시험** — `keyringWidget.test.ts`:
   - `widgetDataPath({ file: "회의록/스케치-3f9a.excalidraw.json" }, ".excalidraw.json")` → 그 값. `".EXCALIDRAW.JSON"` 로 끝나도 값. `{ file: "../밖.excalidraw.json" }`·`"/abs.excalidraw.json"`·`".h/x.excalidraw.json"`·`"a//b.excalidraw.json"`·`"a\\b.excalidraw.json"`·`"a/b.json"`·`".excalidraw.json"`·`{ file: 1 }`·`{}`·`null`·`"x"` → null. ext 없이 `{ file: "a/b.json" }` → 그 값.
-  - `widgetFileRefs`: 펜스 둘(` ```keyring-widget ` 와 `~~~keyring-widget`)·목록 안 2칸 들여쓴 펜스 하나 → 세 경로 순서대로. 같은 경로 두 번 → 하나. ` ```json ` 펜스의 `"file"`, 닫히지 않은 펜스, 깨진 JSON, `state.file` 이 정규형이 아님, 프런트매터 안 → 없음. 본문의 경로를 JSON 이스케이프로 쓴 것 — 시험 코드의 문자열 리터럴로 `String.raw` + "`{\"widget\": \"a/b@1\", \"state\": {\"file\": \"\\uc2a4\\ucf00\\uce58.excalidraw.json\"}}`" 처럼 백슬래시가 글자 그대로 남게 쓴다 → 풀린 값 `"스케치.excalidraw.json"`.
+  - `widgetFileRefs`: 펜스 둘(` ```keyring-widget ` 와 `~~~keyring-widget`)·목록 안 2칸 들여쓴 펜스 하나 → 세 경로 순서대로. 같은 경로 두 번 → 하나. ` ```json ` 펜스의 `"file"`, 닫히지 않은 펜스, 깨진 JSON, `state.file` 이 정규형이 아님, 프런트매터 안 → 없음. 본문의 경로를 JSON 이스케이프로 쓴 것 — 시험 코드에 `` String.raw`{"widget": "a/b@1", "state": {"file": "\uc2a4\ucf00\uce58.excalidraw.json"}}` `` 처럼 쓴다(`String.raw` 안에서는 따옴표를 이스케이프하지 않는다 — `\"` 를 쓰면 백슬래시가 남아 JSON 이 깨진다. `\uXXXX` 의 백슬래시만 글자 그대로 남는다, 재리뷰 N7) → 풀린 값 `"스케치.excalidraw.json"`.
   - `rewriteWidgetFileRefs('{\n  "widget": "a/b@1",\n  "state": {"file": "x/a.excalidraw.json", "n": 1}\n}', "x/a.excalidraw.json", "y/b c.excalidraw.json")` → `count` 1, 결과는 원문에서 그 문자열만 `"y/b c.excalidraw.json"` 으로 바뀐 글(줄·들여쓰기 그대로). 이스케이프로 쓴 같은 값(위와 같이 `String.raw`)도 바꾼다. `state.file` 이 다른 값이고 모르는 키 `"x": {"file": "x/a.excalidraw.json"}` 에만 있으면 null(고치지도 세지도 않는다). `state.file` 이 from 이고 모르는 키에도 같은 값이 있으면 둘 다 바뀌고 `count` 1.
   - `sync.test.ts`: `conflictCopyPath("a/스케치-3f9a.excalidraw.json", "충돌 사본", () => false, new Date("2026-11-09T09:05:00Z"), ".excalidraw.json")` → `"a/스케치-3f9a (충돌 사본 20261109-0905).excalidraw.json"`. `exists` 가 첫 후보에 true → `… 20261109-0905 2).excalidraw.json`. ext 를 주지 않은 기존 `.md` 경우는 그대로(기존 시험 통과).
 - [ ] **Step 2: 실패 확인** — `cd packages/core && pnpm exec vitest run test/keyringWidget.test.ts test/sync.test.ts` → FAIL.
@@ -181,13 +181,17 @@
     create(path: string, bytes: Uint8Array): Promise<string>;                    // 만든 경로. 이미 있으면 "exists"
   }
   export class DataFileError extends Error { constructor(readonly code: "missing" | "conflict" | "exists" | "failed") }
-  export interface DataFileStatus { saving: boolean; unsaved: boolean; conflictCopy: string | null; error: "missing" | "failed" | null }
+  export interface DataFileStatus { saving: boolean; unsaved: boolean; stale: boolean; conflictCopy: string | null; error: "missing" | "failed" | null }
   export interface DataFileHandle {             // 위젯 하나가 쥐는 것
-    read(): Promise<{ bytes: Uint8Array; hash: string }>;   // writer 에 쓰지 않은 바이트가 있으면 그것(hash 는 마지막으로 내려앉은 해시). 이 핸들의 기준을 그 해시로
-    write(bytes: Uint8Array, baseHash: string): Promise<{ hash: string }>; // 모아 쓰고 그 쓰기가 끝나면 풀린다
+    /** 같은 writer 의 drain 중인 핸들이 모두 release 될 때까지 기다린 뒤(최대 FRAME_DRAIN_MS — 이 파일의 상수), 받아들인 것 중 가장 새 바이트(쓰는 중·쓰지 않은 것 포함, 없으면 파일).
+     *  hash 는 마지막으로 내려앉은 해시. 이 핸들의 판(rev)을 writer.rev 로, 계보(issued)를 {hash} 로 다시 잡고 stale 을 끈다 */
+    read(): Promise<{ bytes: Uint8Array; hash: string }>;
+    write(bytes: Uint8Array, baseHash: string): Promise<{ hash: string }>; // 모아 쓰고 그 바이트가 내려앉으면 풀린다
     onStatus(cb: (s: DataFileStatus) => void): () => void;
-    onStale(cb: () => void): () => void;       // 다른 핸들의 쓰기가 받아들여졌다 — 이 핸들은 다시 읽어야 한다
-    release(): void;                           // 위젯이 사라짐: 자동 저장 켬이면 바로 비우기, 끔이면 바이트를 남긴다
+    onStale(cb: () => void): () => void;       // 다른 핸들의 쓰기가 받아들여졌다 — 한 번만(다시 read 할 때까지)
+    onSettled(cb: () => void): () => void;     // 이 writer 에 쓰는 중·쓰지 않은 바이트가 없어졌다(내려앉음·버림) — stale 핸들이 다시 읽을 때
+    drain(): void;                             // 위젯이 사라지는 중(iframe 이 이미 보낸 fileWrite 를 받는 동안). 쓰기는 계속 받는다
+    release(): void;                           // 위젯이 사라짐: 자동 저장 켬이면 바로 비우기, 끔이면 바이트를 남긴다. 받아들이는 규칙에 주인은 없으므로 남은 바이트는 다음에 read 한 핸들이 이어 쓴다
   }
   export interface DataFileOptions {
     autosave(): boolean; delay(): number; conflictLabel(): string;
@@ -196,42 +200,54 @@
   }
   /** owner: 이 위젯이 든 노트 경로 — 탭 닫기·노트 바꾸기에서 그 노트의 그림만 비우려고 */
   export function openDataFile(path: string, ext: string, owner: string, io: DataFileIO, opts: DataFileOptions): DataFileHandle;
-  export function flushDataFiles(owner?: string): Promise<boolean>;  // 쓰지 않은 것을 지금(자동 저장 설정 무관). owner 를 주면 그 노트가 연 것만. 남은 것이 없으면 true
-  export function discardDataFiles(owner: string): void;             // 그 노트가 연 writer 의 쓰지 않은 바이트를 버린다(탭 닫기에서 「버리기」)
-  export function unsavedDataFiles(): string[];                      // 쓰지 않은 바이트가 남은 경로(쓰는 중 포함)
-  export function onDataFilesChange(cb: () => void): () => void;     // unsavedDataFiles() 가 바뀔 수 있을 때마다(받아들임·내려앉음·실패·버림) — useSyncExternalStore 용
+  export function flushDataFiles(owner?: string): Promise<boolean>;  // 쓰지 않은 것과 사본 대기를 지금(자동 저장 설정 무관). owner 를 주면 그 노트가 연 것만. 남은 것이 없으면 true
+  export function discardDataFiles(owner: string): void;             // 그 노트의 쓰지 않은 바이트·사본 대기를 버린다(탭 닫기에서 「버리기」)
+  export function renameDataFileOwner(from: string, to: string): void; // 노트 이동·이름 바꾸기(폴더 이동이면 from 이 앞머리인 owner 모두) — 리뷰 N6
+  export function unsavedDataFiles(): string[];                      // 쓰지 않은 바이트(쓰는 중 포함)나 사본 대기가 남은 경로
+  export function onDataFilesChange(cb: () => void): () => void;     // unsavedDataFiles() 가 바뀔 수 있을 때마다(받아들임·내려앉음·실패·버림·사본) — useSyncExternalStore 용
   export function createDataFile(io: DataFileIO, dir: string, stem: string, ext: string, initial: Uint8Array, rand?: () => string): Promise<string>;
   export function dataFileStem(name: string): string;  // uploadFiles 와 같은 글자 거르기([\\/:*?"<>|#^[\]] → 공백, trim)
   export function setDataFileOptions(o: DataFileOptions): void;   // Workspace 가 한 번 건다(Task 9)
   export function dataFileOptions(): DataFileOptions;              // 건 것, 없으면 기본(켬·1500·영어 "conflict copy"·held false)
   export function resetDataFilesForTest(): void;
   ```
-  규칙(리뷰 C1·I4 반영):
-  - 경로마다 writer 하나(모듈 표). writer 는 `head`(마지막으로 내려앉은 해시), `pending`(쓰지 않은 바이트와 **주인 핸들**), `inflight`(쓰는 중 바이트와 주인), 주인 노트 집합(`owners` — pending 이 생긴 핸들들의 owner)을 가진다. 핸들이 없고 pending·inflight 도 없으면 표에서 지운다.
-  - 핸들마다 `base`(자기가 마지막으로 읽거나 쓴 해시, 무효면 `null`).
-  - `write(bytes, baseHash)` 를 **받는** 조건: `baseHash === handle.base`, 그리고 pending 과 inflight 의 주인이 없거나 이 핸들. 받으면 pending = `{ bytes, owner: handle }`(마지막 것만), **이 순간 다른 핸들 전부의 `base` 를 `null` 로 하고 `onStale`**. 받지 못하면 그 바이트로 충돌 사본을 만들고 `DataFileError("conflict")` — 다른 핸들의 pending 은 그대로다.
+  규칙(리뷰 C1·I4, 재리뷰 N1·N2·N4·N6):
+  - 경로마다 writer 하나(모듈 표). writer 는 `head`(마지막으로 내려앉은 해시), **`rev`(받아들인 쓰기마다 1 씩 오르는 판)**, `latest`(받아들인 가장 새 바이트 — 쓰는 중이거나 쓰지 않은 것), `inflight`, `copies`(사본 대기 — 경로 없이 바이트만, 원본 경로에는 절대 쓰지 않는다), 노트 집합 `owners`(쓰지 않은 바이트·사본 대기를 만든 핸들들의 owner)를 가진다. 핸들이 없고 쓰는 중·쓰지 않은 것·사본 대기가 없으면 표에서 지운다.
+  - 핸들마다 `rev`(자기가 마지막으로 read 했거나 받아들여진 때의 writer.rev)와 `issued`(자기에게 준 해시들 — read 결과와 자기 쓰기가 내려앉은 해시).
+  - `write(bytes, baseHash)` 를 **받는** 조건은 둘: `handle.rev === writer.rev`(그 사이 다른 핸들의 쓰기가 받아들여지지 않았다), `issued` 에 `baseHash` 가 있다. **주인 핸들은 없다** — 놓아 버린(`release`) 핸들이 남긴 바이트는 그 뒤 `read()` 한 핸들이 그 바이트 위에서 이어 쓴다(N1). 받으면 `latest = bytes`, `writer.rev++`, `handle.rev = writer.rev`, **이 순간 다른 핸들 전부 stale**(처음 한 번 `onStale`, `status.stale`). 받지 못하면 그 바이트를 `copies` 에 넣어 사본 만들기를 하고 `DataFileError("conflict")` — `latest`·`inflight` 는 건드리지 않는다.
   - 자동 저장 켬이면 받을 때마다 타이머를 `delay()` 로 다시 걸고, 불릴 때 `held()` 면 쓰지 않고 다시 건다. 끔이면 걸지 않는다(`unsaved` true).
-  - 한 번에 쓰기 하나 — 쓰는 중에 같은 주인이 보낸 것은 다음 pending. 내려앉으면 `head`·주인 핸들의 `base` 를 새 해시(`hash ?? sha256Hex(bytes)`)로, 그 바이트까지 기다리던 약속을 그 해시로 푼다.
-  - `replace` 가 409·404 → 충돌 사본 `create(conflictCopyPath(path, conflictLabel(), 써 본 이름에 있음, now(), ext), 바이트)`(`exists` 면 다음 이름) → `status.conflictCopy`, 기다리던 약속은 `"conflict"`/`"missing"` 으로 거절, pending·inflight 비움, 모든 핸들 `base = null`.
-  - `replace` 가 `failed`(네트워크·오프라인·5xx), 또는 사본 `create` 가 `exists` 말고 실패 → **바이트를 지우지 않는다**: pending 으로 되돌리고 `status.error = "failed"`, 기다리던 약속은 `"failed"` 로 거절, 다음 `write`·`flushDataFiles` 때 다시 시도(타이머로 혼자 되풀이하지 않는다). `flushDataFiles()` 는 false, `unsavedDataFiles()` 에 남는다.
+  - 한 번에 쓰기 하나 — 쓰는 중에 받아들인 것은 내려앉은 뒤 새 `head` 로 이어 쓴다. 내려앉으면 `head` 를 새 해시(`hash ?? sha256Hex(bytes)`)로, 그 바이트까지 기다리던 약속을 그 해시로 풀고 그 해시를 쓴 핸들의 `issued` 에 넣는다. 쓰는 중·쓰지 않은 것이 없어지면 `onSettled`(stale 핸들의 호스트는 이때 **한 번** 다시 그린다 — N4).
+  - `replace` 가 409·404 → 그 바이트를 `copies` 로 옮겨 사본 만들기, 기다리던 약속은 `"conflict"`/`"missing"` 으로 거절, `latest` 비움, `rev++` 하고 모든 핸들 stale(다시 읽게).
+  - 사본 만들기: `create(conflictCopyPath(path, conflictLabel(), 써 본 이름에 있음, now(), ext), 바이트)`(`exists` 면 다음 이름) → 성공이면 `copies` 에서 빼고 `status.conflictCopy`. **`exists` 말고 실패하면 `copies` 에 남겨** 다음 `flushDataFiles` 때 다시 시도한다(N2 — 거절된 바이트는 pending 으로 되돌리지 않는다. 되돌리면 다른 핸들의 바이트를 갈아 치워 C1 이 다시 열린다).
+  - `replace` 가 `failed`(네트워크·오프라인·5xx) → **바이트를 지우지 않는다**: `latest` 로 남기고 `status.error = "failed"`, 기다리던 약속은 `"failed"` 로 거절, 다음 `write`·`flushDataFiles` 때 다시 시도(타이머로 혼자 되풀이하지 않는다). `rev` 는 그대로 — 같은 위젯이 이어 그리면 받는다.
+  - `flushDataFiles()` 는 `latest` 를 쓰고 `copies` 를 다시 만들어 본다. 하나라도 남으면 false. `unsavedDataFiles()` 는 `latest`·`inflight`·`copies` 가 있는 경로.
+  - `read()` 는 같은 writer 에 `drain()` 했지만 아직 `release()` 안 한 핸들이 있으면 그것들이 release 될 때까지(최대 `FRAME_DRAIN_MS`) 기다린다 — 사라지는 iframe 의 늦은 바이트가 먼저 받아들여져, 다시 붙는 위젯이 그 위에서 시작한다(미리보기 다시 그리기·화면 밖 스크롤에서 사본이 생기지 않게, N1). 전체 화면은 iframe 을 다시 만들지 않아 핸들이 그대로다.
 
 - [ ] **Step 1: 실패하는 시험** — 가짜 `io`(호출을 적고, 해시는 `sha256Hex`), 가짜 타이머:
-  - 자동 저장 켬, 지연 1500: `read` → `write(b1, h0)`·`write(b2, h0)` → 1499ms 에 `replace` 없음, 1500ms 에 `replace(path, b2, h0)` 한 번, 두 약속 모두 `{ hash: h(b2) }`. 그 뒤 `write(b3, h(b2))` 는 받는다, `write(b4, h0)` 은 `"conflict"`(사본 `create`).
+  - 자동 저장 켬, 지연 1500: `read` → `write(b1, h0)`·`write(b2, h0)` → 1499ms 에 `replace` 없음, 1500ms 에 `replace(path, b2, h0)` 한 번, 두 약속 모두 `{ hash: h(b2) }`. 그 뒤 `write(b3, h(b2))` 는 받는다, `write(b4, "f".repeat(64))`(준 적 없는 해시) 은 `"conflict"`(사본 `create`).
   - 쓰는 중(`replace` 가 아직 안 풀림)에 같은 핸들이 `write(b3, h0)` → 받고, 첫 쓰기가 끝난 뒤 `replace(path, b3, h(b2))`.
   - `held()` 가 true 인 동안 1500ms 가 지나도 `replace` 없음, false 가 된 뒤 다음 지연에 한 번.
-  - 끔: `write` 뒤 아무리 지나도 `replace` 없음, `status.unsaved` true, `unsavedDataFiles()` 에 경로. `release()` 뒤에도 남는다. 같은 경로를 다시 `openDataFile` → `read()` 가 그 바이트. `flushDataFiles()` → `replace` 한 번, true, `unsaved` false.
+  - 끔: `write` 뒤 아무리 지나도 `replace` 없음, `status.unsaved` true, `unsavedDataFiles()` 에 경로. `flushDataFiles()` → `replace` 한 번, true, `unsaved` false.
   - 켬: `release()` → 바로 `replace`(타이머를 기다리지 않음). 핸들이 없고 쓴 것이 끝나면 표에서 빠진다(`unsavedDataFiles()` 빈 배열).
-  - owner: 노트 `n1.md`·`n2.md` 의 핸들이 각자 다른 경로에 쓰지 않은 바이트를 둠(끔) → `flushDataFiles("n1.md")` 는 n1 의 경로만 `replace`. `discardDataFiles("n2.md")` → n2 경로가 `unsavedDataFiles()` 에서 빠지고 `replace` 없음.
-  - `onDataFilesChange`: 받아들임·내려앉음·`failed`·버림마다 불린다.
+  - owner: 노트 `n1.md`·`n2.md` 의 핸들이 각자 다른 경로에 쓰지 않은 바이트를 둠(끔) → `flushDataFiles("n1.md")` 는 n1 의 경로만 `replace`. `discardDataFiles("n2.md")` → n2 경로가 `unsavedDataFiles()` 에서 빠지고 `replace` 없음. `renameDataFileOwner("n1.md", "m/n1.md")` 뒤 `flushDataFiles("m/n1.md")` 가 n1 의 경로를 쓴다, `renameDataFileOwner("a", "b")` 는 `a/x.md` owner 를 `b/x.md` 로.
+  - `onDataFilesChange`: 받아들임·내려앉음·`failed`·버림·사본마다 불린다.
   - `replace` 가 409: `create` 가 `"a/x (충돌 사본 20261109-0905).excalidraw.json"` 과 쓰지 않은 바이트로 불림, `status.conflictCopy` 그 경로, 약속 `"conflict"`. 첫 이름이 `"exists"` 면 ` 2)` 이름. 404 → 같은 사본, `"missing"`.
-  - `replace` 가 `failed`: 약속 `"failed"`, `status.error` `"failed"`, `unsavedDataFiles()` 에 남음, 시간이 지나도 `replace` 다시 없음, `flushDataFiles()` → 다시 `replace`(이번엔 성공) → true. 사본 `create` 가 `failed` → 바이트가 남고 `flushDataFiles()` 가 false.
-  - **두 핸들 A·B — 내려앉기 전(C1)**: 둘 다 `read`(h0). A 가 `write(a1, h0)`(타이머 대기) → 그 순간 B 의 `onStale` 한 번. B 가 `write(b1, h0)` → `replace` 없이 B 바이트로 사본 `create`, `"conflict"`. 1500ms 뒤 `replace(path, a1, h0)` — A 의 바이트가 그대로 쓰인다.
-  - **A 가 쓰는 중(C1)**: A 의 `replace` 가 아직 안 풀린 동안 B 가 `write(b1, h0)` → 사본, `"conflict"`, A 의 쓰기는 그대로 끝난다.
-  - **내려앉은 뒤**: A 가 쓰고 내려앉음 → B 가 `write(bb, h0)` → `replace` 없이 사본, `"conflict"`. B 가 `read()` 한 뒤의 `write(bb2, head)` 는 받는다.
+  - `replace` 가 `failed`: 약속 `"failed"`, `status.error` `"failed"`, `unsavedDataFiles()` 에 남음, 시간이 지나도 `replace` 다시 없음, 같은 핸들의 다음 `write` 는 받는다(사본 없음), `flushDataFiles()` → 다시 `replace`(이번엔 성공) → true.
+  - **C1 — 두 핸들 A·B 가 같은 판에서 시작**: 둘 다 `read`(h0).
+    - 내려앉기 전: A 가 `write(a1, h0)`(타이머 대기) → 그 순간 B 의 `onStale` 한 번. B 가 `write(b1, h0)` → `replace` 없이 B 바이트로 사본 `create`, `"conflict"`. 1500ms 뒤 `replace(path, a1, h0)` — A 의 바이트가 그대로 쓰인다.
+    - 쓰는 중: A 의 `replace` 가 아직 안 풀린 동안 B 가 `write(b1, h0)` → 사본, `"conflict"`, A 의 쓰기는 그대로 끝난다.
+    - 내려앉은 뒤: A 가 쓰고 내려앉음 → B 의 `onSettled` 한 번 → B 가 `write(bb, h0)` 하면 사본, `"conflict"`. B 가 `read()` 한 뒤의 `write(bb2, head)` 는 받는다.
+  - **N2 — 거절된 쓰기의 사본이 실패**(오프라인): 위 「내려앉기 전」 에서 B 의 사본 `create` 가 `failed` → `copies` 에 남고 `unsavedDataFiles()` 에 경로, **A 의 `replace(path, a1, h0)` 는 그대로**(B 바이트는 원본 경로로 가지 않는다), `flushDataFiles()` → 사본 `create` 를 다시 해 성공하면 true. A 의 409 뒤 사본이 실패해도 같다(원본 경로에 다시 쓰지 않는다).
+  - **N1 — 다시 붙는 위젯(사본이 생기지 않는다)**, 끔에서:
+    - 화면 밖 스크롤: A `write(a1, h0)` → A `release()` → 같은 경로 C `openDataFile`·`read()` → 바이트 `a1`, 해시 h0 → C `write(c1, h0)` 받음(`create` 0회) → `flushDataFiles()` 가 `c1` 을 쓴다.
+    - 미리보기 다시 그리기(drain): A `write(a1, h0)` → A `drain()` → C `read()` 시작(아직 안 풀림) → A 의 늦은 `write(a2, h0)` 받음 → A `release()` → C 의 `read()` 가 `a2` 로 풀림 → C `write(c1, h0)` 받음(`create` 0회). A 가 `FRAME_DRAIN_MS` 안에 release 하지 않아도 그 시간 뒤 C 의 `read()` 가 풀린다.
+    - 전체 화면(핸들 그대로): A 가 `write` 를 연달아 다섯 번 → 모두 받음, `create` 0회.
+    - 세 경우 모두 그 뒤 위 C1 세 시험을 같은 writer 로 다시 돌려도 통과한다(주인 없음이 C1 을 열지 않는다 — 다른 판에서 시작한 핸들은 여전히 거절).
+  - **N4**: A 가 다섯 번 받아들여지는 동안 B 의 `onStale` 은 한 번, `onSettled` 는 내려앉은 뒤 한 번.
   - `read` 가 없는 파일 → `"missing"`.
   - `createDataFile(io, "회의록/_첨부", "스케치", ".excalidraw.json", init, 차례로 "3f9a","0001")` → 첫 `create` 가 `"exists"` 면 `"회의록/_첨부/스케치-0001.excalidraw.json"`. `dataFileStem("a/b:c")` → `"a b c"`.
 - [ ] **Step 2: 실패 확인** — `cd web && pnpm exec vitest run src/widgets/dataFile.test.ts` → FAIL.
-- [ ] **Step 3: 구현**.
+- [ ] **Step 3: 구현** — `FRAME_DRAIN_MS` 는 Task 8 의 `layout.ts` 가 아니라 여기서 정의하고 Task 8 이 가져다 쓴다(값 1000).
 - [ ] **Step 4: 통과 확인** — 같은 명령 → PASS, web 전체·`pnpm typecheck`.
 - [ ] **Step 5: 커밋** — `git add web/src/widgets/dataFile.ts web/src/widgets/dataFile.test.ts` → `feat(web): keyring-widget 데이터 파일 쓰기 — 모아 쓰기·비우기·충돌 사본`
 
@@ -240,7 +256,7 @@
 ### Task 5: web — 레지스트리를 iframe 위젯으로 넓힌다(코드 원천·제3자 글 자리)
 
 **Files:**
-- Modify: `web/src/widgets/types.ts`(`dataFile` 모양, `WidgetContext.fullscreen?`), `web/src/widgets/registry.ts`, `web/src/i18n.ts`(`messageChain()`), `packages/core/src/i18n.ts`(`lookup`·`interpolate`·`pluralOf` 를 옮기고 다시 내보냄), `packages/core/package.json`(`exports` 에 `"./lookup": { "keyring-source": "./src/lookup.ts", "types": "./dist/lookup.d.ts", "default": "./dist/lookup.js" }`)
+- Modify: `web/src/widgets/types.ts`(`dataFile` 모양, `WidgetContext.fullscreen?`), `web/src/widgets/registry.ts`, `web/src/i18n.ts`(`messageChain()`), `packages/core/src/i18n.ts`(`lookup`·`interpolate`·`pluralOf` 를 옮기고 다시 내보냄 — `pluralOf` 는 지금 내부 함수라 `lookup.ts` 에서 함께 옮긴다), `packages/core/package.json`(`exports` 에 `"./lookup": { "keyring-source": "./src/lookup.ts", "types": "./dist/lookup.d.ts", "default": "./dist/lookup.js" }`)
 - Create: `packages/core/src/lookup.ts`(메시지 JSON 을 import 하지 않는다), `web/src/widgets/widgetT.ts`(React·`web/src/i18n.ts` 를 부르지 않는다 — 런타임 묶음이 쓴다), `web/src/widgets/messages.ts`, `web/src/widgets/frame/protocol.ts`
 - Test: `web/src/widgets/registry.test.ts`, `web/src/widgets/messages.test.ts`, `web/src/widgets/frame/protocol.test.ts`, core `packages/core/test/i18n.test.ts`(그대로 통과)
 
@@ -400,16 +416,18 @@
   export function frameFocusInside(o: { activeInRoot: boolean; relatedInRoot: boolean }): boolean;
   /** iframe 문서가 srcdoc 하나뿐인지 지킨다(리뷰 C2): 첫 load·첫 ready 는 "ok", 두 번째부터 "kill". kill 뒤에는 무엇이든 "kill" */
   export function frameGuard(): { load(): "ok" | "kill"; ready(): "ok" | "kill"; killed(): boolean };
-  export const FRAME_DRAIN_MS = 1000; // 지운 iframe 이 이미 보낸 fileWrite 를 받아 줄 시간(리뷰 I2)
+  /** 창 message 하나를 어떻게 볼까(재리뷰 N3): source 가 잡아 둔 win 이 아니면 ignore, 맞는데 origin 이 "null" 이 아니면 kill, 아니면 accept */
+  export function frameEventAction(e: { sourceIsFrame: boolean; origin: string }): "accept" | "ignore" | "kill";
+  // FRAME_DRAIN_MS(1000) 는 Task 4 dataFile.ts 의 것을 쓴다 — 지운 iframe 이 이미 보낸 fileWrite 를 받아 줄 시간(리뷰 I2)
   // source.ts
   export function resolveFrameCode(c: FrameCode, get: { text(url: string): Promise<string>; bytes(url: string): Promise<ArrayBuffer> }): Promise<{ js: string; css: string; fonts: Record<string, ArrayBuffer> }>;
   // mountFrame.ts — mount.ts 가 부른다(세션·ctx·listeners·뿌리는 mount 가 만든 것)
   export function mountFrame(content: HTMLElement, o: { root: HTMLElement; entry: FrameWidgetEntry; session: WidgetSession; ctx(): WidgetContext;
     file: DataFileHandle | null; display: "block" | "inline"; onUpdate(cb: () => void): void; failed(): void }): { destroy(): void };
   ```
-  접착: `iframe.sandbox = "allow-scripts"`, `srcdoc = frameSrcdoc()`, 인스턴스 id = `crypto.randomUUID()`. iframe 을 붙인 직후 `const win = iframe.contentWindow` 를 잡아 두고, `window` `message` 는 `e.source === win` 인 것만 `parseFrameMsg(e.data, id)` → `host.receive`(DOM 에서 빠진 뒤 `iframe.contentWindow` 는 `null` 이라 그것과 비교하면 전송 중 메시지를 버린다 — 리뷰 I2). **자기 탐색(C2):** `iframe` 의 `load` 마다, 그리고 `ready` 마다 `frameGuard()` 에 묻고 `"kill"` 이면(FrameHost 의 `navigated()` 도 같은 길) 리스너를 떼고 iframe 을 지운 뒤 위젯 자리에 `kw.frameNavigated` + 원문 — 그 뒤 그 인스턴스에는 어떤 메시지에도 답하지 않는다(파일 핸들은 `release`). 코드는 `resolveFrameCode(virtual 표의 runtime)` + `resolveFrameCode(await entry.frame())`(실패 → `failed()` → mount 의 `kw.loadFailed` + 원문). 높이 `frameHeight(px, innerHeight, fullscreen)`, `resize` 에 다시 잰다. 포커스 아웃: 뿌리 `focusout`(마이크로태스크 뒤, 1단계와 같은 길)과 `blurred()` 둘 다 `focusOutAction({ rootConnected: root.isConnected, relatedInside: frameFocusInside(…) })` 가 `"apply"` 일 때 `session.focusOut()`. 테마·언어 바뀜은 mount 의 `onUpdate` 로 `host.update()`. 전체 화면(`display: "block"` 만): 위젯 머리에 단추, 감싸개 `popover="manual"`·`showPopover()`/`hidePopover()`, 켜고 끌 때 `host.update()`(ctx.fullscreen)·높이 다시 재기, 감싸개 `keydown` Esc → `exit`. `save()` → `window.dispatchEvent(new Event("keyring:save"))`(Task 9 가 받는다). `destroy` → iframe 을 지우고, `FRAME_DRAIN_MS` 동안은 `win` 에서 온 `fileWrite` **만** 받아 파일 핸들에 넘긴 뒤(답은 보내지 않는다) 리스너를 떼고 핸들을 `release`. 전체 화면: `popover` 속성은 들어갈 때 달고 나올 때 뗀다(달려 있으면 닫힌 동안 `display: none`), `"showPopover" in HTMLElement.prototype` 이 거짓이면 `.kw-frame-wrap.kw-fixed`(`position: fixed; inset: 0`) 로 대신한다(리뷰 M2).
+  접착: `iframe.sandbox = "allow-scripts"`, `srcdoc = frameSrcdoc()`, 인스턴스 id = `crypto.randomUUID()`. iframe 을 붙인 직후 `const win = iframe.contentWindow` 를 잡아 두고, `window` `message` 는 `frameEventAction({ sourceIsFrame: e.source === win, origin: e.origin })` 가 accept 인 것만 `parseFrameMsg(e.data, id)` → `host.receive`(kill 이면 아래 자기 탐색과 같은 길)(DOM 에서 빠진 뒤 `iframe.contentWindow` 는 `null` 이라 그것과 비교하면 전송 중 메시지를 버린다 — 리뷰 I2). **자기 탐색(C2):** `iframe` 의 `load` 마다, 그리고 `ready` 마다 `frameGuard()` 에 묻고 `"kill"` 이면(FrameHost 의 `navigated()` 도 같은 길) 리스너를 떼고 iframe 을 지운 뒤 위젯 자리에 `kw.frameNavigated` + 원문 — 그 뒤 그 인스턴스에는 어떤 메시지에도 답하지 않는다(파일 핸들은 `release`). 코드는 `resolveFrameCode(virtual 표의 runtime)` + `resolveFrameCode(await entry.frame())`(실패 → `failed()` → mount 의 `kw.loadFailed` + 원문). 높이 `frameHeight(px, innerHeight, fullscreen)`, `resize` 에 다시 잰다. 포커스 아웃: 뿌리 `focusout`(마이크로태스크 뒤, 1단계와 같은 길)과 `blurred()` 둘 다 `focusOutAction({ rootConnected: root.isConnected, relatedInside: frameFocusInside(…) })` 가 `"apply"` 일 때 `session.focusOut()`. 테마·언어 바뀜은 mount 의 `onUpdate` 로 `host.update()`. 전체 화면(`display: "block"` 만): 위젯 머리에 단추, 감싸개 `popover="manual"`·`showPopover()`/`hidePopover()`, 켜고 끌 때 `host.update()`(ctx.fullscreen)·높이 다시 재기, 감싸개 `keydown` Esc → `exit`. `save()` → `window.dispatchEvent(new Event("keyring:save"))`(Task 9 가 받는다). `destroy` → 파일 핸들 `drain()`, iframe 을 지우고, `FRAME_DRAIN_MS` 동안은 `win` 에서 온 `fileWrite` **만** 받아 파일 핸들에 넘긴 뒤(답은 보내지 않는다) 리스너를 떼고 핸들을 `release`. 전체 화면: `popover` 속성은 들어갈 때 달고 나올 때 뗀다(달려 있으면 닫힌 동안 `display: none`), `"showPopover" in HTMLElement.prototype` 이 거짓이면 `.kw-frame-wrap.kw-fixed`(`position: fixed; inset: 0`) 로 대신한다(리뷰 M2).
 
-- [ ] **Step 1: 실패하는 시험** — `frameGuard()`: `load()` "ok", `ready()` "ok", 다시 `load()` "kill", 그 뒤 `ready()` "kill"·`killed()` true. 새 guard 에서 `ready()` 두 번 → 둘째 "kill". `frameHeight(300, 1000, false)` 300, `(900, 1000, false)` 800, `(10, 1000, false)` 48, `(300.2, 1000, false)` 301, `(300, 1000, true)` 1000. `frameFocusInside` 넷. `resolveFrameCode({ kind: "text", js: "x" }, …)` → `{ js: "x", css: "", fonts: {} }`(받기 없음), `{ kind: "url", js: "/a.js", css: "/a.css", fonts: { "E/a.woff2": "/f/a.woff2" } }` → 세 번 받아 채움, 하나라도 실패 → 거절.
+- [ ] **Step 1: 실패하는 시험** — `frameEventAction({ sourceIsFrame: false, origin: "null" })` ignore, `({ sourceIsFrame: true, origin: "https://x" })` kill, `({ sourceIsFrame: true, origin: "null" })` accept. `frameGuard()`: `load()` "ok", `ready()` "ok", 다시 `load()` "kill", 그 뒤 `ready()` "kill"·`killed()` true. 새 guard 에서 `ready()` 두 번 → 둘째 "kill". `frameHeight(300, 1000, false)` 300, `(900, 1000, false)` 800, `(10, 1000, false)` 48, `(300.2, 1000, false)` 301, `(300, 1000, true)` 1000. `frameFocusInside` 넷. `resolveFrameCode({ kind: "text", js: "x" }, …)` → `{ js: "x", css: "", fonts: {} }`(받기 없음), `{ kind: "url", js: "/a.js", css: "/a.css", fonts: { "E/a.woff2": "/f/a.woff2" } }` → 세 번 받아 채움, 하나라도 실패 → 거절.
 - [ ] **Step 2: 실패 확인** → FAIL.
 - [ ] **Step 3: 구현** — 위 「접착」. messages 에 `kw.frameNavigated`("The widget tried to leave its page and was stopped"/"위젯이 다른 페이지로 이동하려 해 멈췄습니다").
 - [ ] **Step 4: 통과 확인** — web 전체·`pnpm typecheck`·`cd packages/core && pnpm exec vitest run test/i18n.test.ts`.
@@ -439,18 +457,19 @@
   // Workspace.tsx 안
   const unsavedFiles = useSyncExternalStore(onDataFilesChange, () => unsavedDataFiles().join("\0")); // 모듈 표가 바뀌면 다시 그려 지킴을 다시 계산(리뷰 I3)
   ```
-  호스트 규칙: `dataFile` 위젯이면 — `history` → 위젯 대신 `kw.historyNoFile` + 경로(파일을 읽지 않는다). `widgetDataPath(state, ext)` null → `kw.badFile` + 원문. 첫 `read` 가 `missing` → `kw.fileMissing` + 경로(만들지 않는다). 머리: 끔이고 `unsaved` → `kw.unsavedDrawing`, `conflictCopy` → 알림 `kw.fileConflict`(경로, 「열기」 동작) 후 위젯을 다시 그린다(다시 읽기). `onStale` → 쓰지 않은 것이 없으면 다시 그린다. 블록의 `state.file` 이 바뀐 바깥 변경 → 다시 그린다. 포커스 아웃(수정 끝과 같은 판정) → 켬이면 그 핸들의 writer 를 비운다. `destroy` → `release()`(자동 저장 끔이면 바이트는 writer 에 남는다 — 화면 밖 스크롤·미리보기 다시 그리기로 곧 다시 붙는 경우. 탭 닫기·노트 바꾸기는 아래 Workspace 가 먼저 비운다).
+  호스트 규칙: `dataFile` 위젯이면 — `history` → 위젯 대신 `kw.historyNoFile` + 경로(파일을 읽지 않는다). `widgetDataPath(state, ext)` null → `kw.badFile` + 원문. 첫 `read` 가 `missing` → `kw.fileMissing` + 경로(만들지 않는다). 머리: 끔이고 `unsaved` → `kw.unsavedDrawing`, `conflictCopy` → 알림 `kw.fileConflict`(경로, 「열기」 동작) 후 위젯을 다시 그린다(다시 읽기). `onStale` → 머리에 `kw.fileStale`, `ctx.readOnly` 를 true 로 `update`(Excalidraw 는 보기 전용 — 이 위젯이 쓰면 어차피 거절되므로 그리지 못하게), 다시 그리지 않는다. `onSettled` 이고 stale 이면 **한 번** 다시 그린다(다시 읽기 — 재리뷰 N4: 받아들임마다 iframe 을 새로 만들지 않는다). 블록의 `state.file` 이 바뀐 바깥 변경 → 다시 그린다. 포커스 아웃(수정 끝과 같은 판정) → 켬이면 그 핸들의 writer 를 비운다. `destroy` → `release()`(자동 저장 끔이면 바이트는 writer 에 남는다 — 화면 밖 스크롤·미리보기 다시 그리기로 곧 다시 붙는 경우. 탭 닫기·노트 바꾸기는 아래 Workspace 가 먼저 비운다).
   Workspace 연결(빠짐없이):
   - 「위젯 넣기」 의 `dataFile` 위젯 → `createDataFile(apiDataFileIO(api), attachmentDirFor(getVaultSettings(), wsOfPath(doc.path), uiLang), dataFileStem(name), ext, initial())` 성공 뒤 `widgetInsertText(def, { ...def.defaultState(), file })`(실패 → `toastError`, 넣지 않음), 그 뒤 `vaultChanged()`·`refreshTree()`.
   - `save()`(Mod+S·명령)와 `keyring:save` 이벤트 → 노트 저장 + `flushDataFiles()`.
   - **`closeTab`(코디네이터 결정, `Workspace.tsx:1239` 선례)**: 노트 `flush([path])` 다음에 다른 칸에 그 노트가 열려 있지 않으면 `await flushDataFiles(path)` — 자동 저장 설정과 상관없이. false 면 노트처럼 `confirmDialog(t("kw.discardDrawingClose", { name }), t("tab.discardCloseButton"))` → 취소면 닫지 않음, 버리기면 `discardDataFiles(path)` 후 닫는다. 노트 버림 물음과 같이 떠야 하면 한 번만 묻는다(둘 다 실패면 노트 문구 하나로).
-  - **노트 바꾸기**(`open` 이 칸의 지금 탭을 다른 노트로 바꿀 때, 그 노트가 다른 칸에 없으면): 같은 `flushDataFiles(옛 경로)` → 실패면 같은 물음, 취소면 바꾸지 않는다.
+  - **노트 바꾸기**(`open` 이 칸의 지금 탭을 다른 노트로 바꿀 때 — `Workspace.tsx` `open` 의 `replaced` 자리, 그 노트가 다른 칸에 없으면): 같은 `flushDataFiles(옛 경로)` → 실패면 같은 물음, 취소면 바꾸지 않는다. 노트 초안은 지금처럼 저장소에 남기므로 이것은 노트 선례가 아니라 코디네이터 결정의 새 규칙이다 — 코드 주석에 그렇게 적는다.
+  - **노트 이동·이름 바꾸기**(Workspace 가 열린 문서의 경로를 바꾸는 자리 — `docsRef`·탭 경로를 옮기는 곳): `renameDataFileOwner(옛 경로, 새 경로)`(폴더 이동이면 폴더 경로로). 안 하면 `closeTab` 이 새 경로로 비우려 해 그 노트의 그림이 남는다(재리뷰 N6).
   - `visibilitychange` hidden → (켬일 때) `flushDataFiles()`.
   - 닫기 지킴: `guarded = closeGuarded({ desktop: canCloseWindow(), dirtyDocs: dirtyPaths(docs).length, unsavedFiles: unsavedFiles ? unsavedFiles.split("\0").length : 0 })`. `closeWindowSafely` 의 `dirty` 에 `unsavedDataFiles()`, `save` 에 `flushDataFiles()`.
   - **`reloadSafely`(PWA 「새로 고침」, 리뷰 I3)**: `dirty` 에 `unsavedDataFiles()`, `save` 에 `flushDataFiles()`.
   - **`beforeunload` `warn`**: 조건에 `unsavedDataFiles().length`, 켬이면 `void flushDataFiles()` 도 부른다.
   - `openDataFile` 옵션: `autosave`·`delay` 는 `getPrefs()`, `conflictLabel` 은 `vaultText(vaultLang()).conflictCopy`, **`held` 는 `() => savesHeld(closeHold.current)`**(리뷰 M11 — 닫기 묻는 동안 그림도 쓰지 않는다). 옵션 객체는 Workspace 가 `setDataFileOptions(o)` 로 한 번 걸고, 호스트는 `openDataFile(path, ext, owner, apiDataFileIO(api), dataFileOptions())` 로 연다 — 위젯 호스트는 Workspace 를 모른다.
-  messages: `kw.historyNoFile`("Drawings are not shown in history view: {path}"/"이력 보기에서는 그림을 보이지 않습니다: {path}"), `kw.badFile`("The widget's data file path is invalid"/"위젯의 데이터 파일 경로가 올바르지 않습니다"), `kw.fileMissing`("File not found: {path}"/"파일을 찾을 수 없습니다: {path}"), `kw.unsavedDrawing`("Unsaved drawing"/"저장하지 않은 그림"), `kw.fileConflict`("This file was changed elsewhere. Your version was saved as {path}"/"다른 곳에서 이 파일이 바뀌었습니다. 고친 내용은 {path} 로 저장했습니다"), `kw.fileFailed`("Couldn't save the file"/"파일을 저장하지 못했습니다"), `kw.discardDrawingClose`("Couldn't save the drawing in {name}. Close without saving it?"/"{name} 의 그림을 저장하지 못했습니다. 저장하지 않고 닫을까요?").
+  messages: `kw.historyNoFile`("Drawings are not shown in history view: {path}"/"이력 보기에서는 그림을 보이지 않습니다: {path}"), `kw.badFile`("The widget's data file path is invalid"/"위젯의 데이터 파일 경로가 올바르지 않습니다"), `kw.fileMissing`("File not found: {path}"/"파일을 찾을 수 없습니다: {path}"), `kw.unsavedDrawing`("Unsaved drawing"/"저장하지 않은 그림"), `kw.fileConflict`("This file was changed elsewhere. Your version was saved as {path}"/"다른 곳에서 이 파일이 바뀌었습니다. 고친 내용은 {path} 로 저장했습니다"), `kw.fileFailed`("Couldn't save the file"/"파일을 저장하지 못했습니다"), `kw.fileStale`("Being edited in another pane — it will reload when saved"/"다른 칸에서 고치는 중입니다 — 저장되면 다시 읽습니다"), `kw.discardDrawingClose`("Couldn't save the drawing in {name}. Close without saving it?"/"{name} 의 그림을 저장하지 못했습니다. 저장하지 않고 닫을까요?").
 
 - [ ] **Step 1: 실패하는 시험** — `widgetInsertText(def, { file: "a/b.x.json" })` 의 본문 `state` 가 그것. `apiDataFileIO`: 가짜 api 의 `ApiError(409)` → `DataFileError("conflict")`(replace)·`("exists")`(create), `ApiError(404)` → `"missing"`, 그 밖 → `"failed"`; `replace` 는 `Blob` 으로 넘긴다. `closeGuarded({ desktop: true, dirtyDocs: 0, unsavedFiles: 1 })` true, `desktop: false` → false, 둘 다 0 → false. `closeWindow.test.ts` 의 `reloadAfterSaving`·`closeWindowSafely` 시험에 「노트는 깨끗하고 `dirty` 가 그림 경로만 줌」 → 묻고 `save` 가 불린다(지금 함수가 `dirty` 를 그대로 쓰는지 고정).
 - [ ] **Step 2: 실패 확인** → FAIL.
@@ -477,7 +496,7 @@
   export const EMPTY_SCENE: string; // {"type":"excalidraw","version":2,"source":"keyring-notes","elements":[],"appState":{},"files":{}}
   export function parseScene(bytes: Uint8Array): { elements: unknown[]; appState: object; files: object } | null; // 깨지면 null
   /** 열기만 해서는 쓰지 않게(리뷰 I1): 처음 불러온 장면의 직렬화를 기준선으로 두고, onChange 마다 값싼 열쇠(장면 판 + files 키)로 먼저 거른 뒤에만 직렬화한다 */
-  export function sceneKey(sceneVersion: number, fileIds: string[]): string;           // `${sceneVersion}:${정렬한 fileIds.join(",")}`
+  export function sceneKey(sceneVersion: number, fileIds: string[], appState: Record<string, unknown>): string; // `${sceneVersion}:${정렬한 fileIds.join(",")}:${JSON.stringify(내보내는 appState 값을 키 순서로)}` — 배경색·격자만 바꿔도 저장되게(재리뷰 N5)
   export class SceneGate {
     constructor(baselineKey: string, baselineText: string);
     /** 열쇠가 기준과 같으면 serialize 를 부르지 않고 null. 다르면 serialize() 하고 글이 기준과 같으면 열쇠만 옮기고 null, 다르면 그 글(기준을 그것으로 옮긴다) */
@@ -486,10 +505,10 @@
   // fontShim.ts — frame.tsx 의 첫 import. window.FontFace 를 감싸 src 글에 "fonts/<rel>.woff2" 가 있고 setFonts 로 받은 표에 있으면 ArrayBuffer 로 만든다
   export function installFontShim(lookup: (rel: string) => ArrayBuffer | undefined): void;
   ```
-  `frame.tsx`: `window.EXCALIDRAW_ASSET_PATH = "/"`(주소는 끝내 쓰지 않는다 — 글꼴은 shim 이 바이트로), `window.EXCALIDRAW_EXPORT_SOURCE = "keyring-notes"`(srcdoc 에서 `location.origin` 은 `"null"` 이라 이것이 없으면 `source` 가 파일마다 달라진다). `keyringWidgetRegister(render)`: `api.file.read()` → `parseScene`(null → 위젯 안 오류 한 줄, 쓰지 않음) → `<Excalidraw initialData …>`(`viewModeEnabled = !ctx.editable || ctx.readOnly`, 테마·언어는 ctx, `UIOptions` 로 불러오기·파일 저장 숨김). 불러온 뒤 첫 `onChange` 에서 그 장면으로 `new SceneGate(sceneKey(getSceneVersion(elements), Object.keys(files)), serializeAsJSON(…))` 을 만든다(쓰지 않는다). 그 뒤 `onChange` 마다 `gate.next(sceneKey(…), () => serializeAsJSON(elements, appState, files, "local"))` 가 글을 주면 `api.file.write(utf8(글), base)` 하고 풀린 해시를 `base` 로(거절이면 그리기를 멈추고 호스트가 다시 그리기를 기다린다). 리뷰 M3: `UIOptions.canvasActions` 에서 이미지 내보내기(`saveAsImage`·`export`)를 끄고, `onLinkOpen` 은 `event.preventDefault()` 만(링크로 iframe 이 옮겨 가지 않게 — C2). 높이: `ctx.fullscreen ? "100vh" : "480px"`. 자체 실행 취소는 Excalidraw 것.
+  `frame.tsx`: `window.EXCALIDRAW_ASSET_PATH = "/"`(주소는 끝내 쓰지 않는다 — 글꼴은 shim 이 바이트로), `window.EXCALIDRAW_EXPORT_SOURCE = "keyring-notes"`(srcdoc 에서 `location.origin` 은 `"null"` 이라 이것이 없으면 `source` 가 파일마다 달라진다). `keyringWidgetRegister(render)`: `api.file.read()` → `parseScene`(null → 위젯 안 오류 한 줄, 쓰지 않음) → `<Excalidraw initialData …>`(`viewModeEnabled = !ctx.editable || ctx.readOnly`, 테마·언어는 ctx, `UIOptions` 로 불러오기·파일 저장 숨김). 기준선은 첫 `onChange` 가 아니라 **불러온 장면**으로 만든다(첫 onChange 가 사용자의 획이면 그 획이 기준선이 되어 쓰이지 않는다 — 재리뷰 N5): `restore(parseScene 결과, null, null)` 의 elements·appState·files 로 `new SceneGate(sceneKey(getSceneVersion(elements), Object.keys(files), 내보내는 appState), serializeAsJSON(elements, appState, files, "local"))`. 「내보내는 appState」 는 `serializeAsJSON(…, "local")` 이 싣는 appState 키(최소 `viewBackgroundColor`·`gridSize`·`gridStep`·`gridModeEnabled` — 구현자가 0.18.1 소스에서 목록을 확인해 상수로 둔다). 그 뒤 `onChange` 마다 `gate.next(sceneKey(…), () => serializeAsJSON(elements, appState, files, "local"))` 가 글을 주면 `api.file.write(utf8(글), base)` 하고 풀린 해시를 `base` 로(거절이면 그리기를 멈추고 호스트가 다시 그리기를 기다린다). 리뷰 M3: `UIOptions.canvasActions` 에서 이미지 내보내기(`saveAsImage`·`export`)를 끄고, `onLinkOpen` 은 `event.preventDefault()` 만(링크로 iframe 이 옮겨 가지 않게 — C2). 높이: `ctx.fullscreen ? "100vh" : "480px"`. 자체 실행 취소는 Excalidraw 것.
   라이선스: `@excalidraw/excalidraw` 는 패키지에 LICENSE·author 가 없다 → `HOLDERS` 에 원저장소 LICENSE 의 저작권자(github.com/excalidraw/excalidraw `LICENSE` 를 보고 적는다). 실은 글꼴 파일마다 `kind: "bundled"`, `via: "@excalidraw/excalidraw"`, 전문 `web/licenses/bundled/`(글꼴마다 라이선스를 원저장소에서 확인 — OFL-1.1 이 많다). `dist/prod/*.js` 에 소스맵이 없으므로 미리 묶인 남의 코드가 있는지 직접 본다(가이드 「묶임 검사」).
 
-- [ ] **Step 1: 실패하는 시험** — `parseScene(utf8(EMPTY_SCENE))` → 빈 elements, `parseScene(utf8("{"))` null, `parseScene(utf8('{"type":"x"}'))` null(type 이 excalidraw 아님). `SceneGate`: `new SceneGate("1:", "T")` 에 `next("1:", f)` → null 이고 `f` 를 부르지 않는다(**열고 아무것도 안 하면 쓰기 0회**), `next("2:", () => "T")` → null(글이 같음 — 선택만 바뀐 경우), `next("3:", () => "U")` → `"U"`, 다시 `next("3:", f)` → null. `sceneKey(5, ["b", "a"])` → `"5:a,b"`. `excalidrawDef` 값이 위와 같고 `widgetInsertText(excalidrawDef, { file: "a/스케치-3f9a.excalidraw.json" })` 본문이 `parseWidgetBlock` ok, `widgetDataPath(그 state, ".excalidraw.json")` 가 그 경로.
+- [ ] **Step 1: 실패하는 시험** — `parseScene(utf8(EMPTY_SCENE))` → 빈 elements, `parseScene(utf8("{"))` null, `parseScene(utf8('{"type":"x"}'))` null(type 이 excalidraw 아님). `SceneGate`: `new SceneGate("1:", "T")` 에 `next("1:", f)` → null 이고 `f` 를 부르지 않는다(**열고 아무것도 안 하면 쓰기 0회**), `next("2:", () => "T")` → null(글이 같음 — 선택만 바뀐 경우), `next("3:", () => "U")` → `"U"`, 다시 `next("3:", f)` → null. `sceneKey(5, ["b", "a"], { viewBackgroundColor: "#fff" })` → `'5:a,b:{"viewBackgroundColor":"#fff"}'`, appState 만 다르면 키가 다르다. `excalidrawDef` 값이 위와 같고 `widgetInsertText(excalidrawDef, { file: "a/스케치-3f9a.excalidraw.json" })` 본문이 `parseWidgetBlock` ok, `widgetDataPath(그 state, ".excalidraw.json")` 가 그 경로.
 - [ ] **Step 2: 실패 확인** → FAIL.
 - [ ] **Step 3: 구현과 등록** — `registerBuiltins` 에 `{ def: excalidrawDef, builtIn: true, messages: "kw.excalidraw", frame: async () => ({ kind: "url", ...frames.excalidraw }) }`.
 - [ ] **Step 4: 통과 확인** — web 전체·`pnpm typecheck`. `cd web && pnpm build` → `widget-frame excalidraw: N B gzip` 한 줄(2,097,152 보다 작다 — 실험 값 약 1.6MB), `dist/widget-frame/` 에 js·css·글꼴(Xiaolai 없음), `licenses.txt` 에 `@excalidraw/excalidraw`·`roughjs`·`jotai` 등과 글꼴 줄, 빌드가 고지 누락으로 멈추지 않는다. 인라인 크기 시험(1단계)은 그대로 D-day 만 잰다.
@@ -505,7 +524,7 @@
 
 - [ ] **Step 1: 문서** — 쓰기 전에 `docs/guideline/public-docs/02-manual.md`·`03-i18n.md`·`04-style.md` 를 읽는다.
 - [ ] **Step 2: 루트 검증** — `pnpm test`(core 256·web 799·server 239 보다 늘었는지), `pnpm typecheck`, `pnpm build`(크기 줄), `pnpm fmt:check`, `pnpm lint`.
-- [ ] **Step 3: 브라우저 확인(Chromium·WebKit 둘 다)** — 시험 서버(임시 `KEYRING_DATA`, 다른 포트, `docs/guides/development.md`)를 Chromium(neo 또는 Playwright)과 Playwright webkit 으로. 하나씩: 「위젯 넣기」 → Excalidraw → 첨부 폴더에 `스케치-xxxx.excalidraw.json`, 그리기 → 1.5초 뒤 파일 한 번 바뀜(git 커밋 수), 계속 그리면 멈춘 뒤 한 번, 전체 화면 들어가고(그리던 것 그대로 — iframe 을 다시 만들지 않음) Esc 로 닫힘, 글 상자 편집 중 Esc 는 전체 화면을 닫지 않음, 한글 글 상자 조합 중 Esc·Enter, iframe 안 `Mod+S`(페이지 저장 대화상자 없음), 자동 저장 끔 → 「저장하지 않은 그림」 → `Mod+S`, 끔 상태로 탭 닫고 다시 열기(그린 것 남음), 같은 노트 두 칸에서 번갈아 그리기(충돌 사본 알림·덮어쓰지 않음), 다른 창에서 같은 파일을 첨부 「내용 바꾸기」 뒤 이 창에서 그리기 → 충돌 사본, 첨부 이동 → 블록 경로 바뀜·위젯 그대로, 첨부 삭제 확인창의 「가리키는 노트」, 파일을 지움 → 「파일을 찾을 수 없습니다」, 블록 `state.file` 을 `../x.excalidraw.json` 으로 → 오류 한 줄, 이력 보기 → 안내와 경로, 미리보기 칸에서 그리는 중 다른 칸이 노트를 고침(그린 것 남음), 테마·언어 바꾸기, 390px·터치 그리기, `?local`(기기 볼트), 서비스 워커 오프라인(처음 열기 전 → 불러오지 못함과 원문 / 연 뒤 → 열림), `keyring/dday-frame`(개발 서버)과 인라인 D-day 의 보기·수정·포커스 아웃 적용·Esc 버림·`Mod+Z` 한 번이 같음(동작만). 열고 아무것도 안 하고 닫기 → 파일·커밋 그대로. 자동 저장 끔에서 그린 뒤 탭 닫기 → 그림이 저장된다(실패를 흉내 낼 수 있으면 — 서버를 끈 서버 볼트 — 버림 물음이 뜬다). 노트는 깨끗하고 그림만 저장 안 됨(끔) → PWA 「새로 고침」 물음에 든다. 긴 노트에서 그림을 화면 밖으로 스크롤했다 돌아옴 → 그린 것 남음. 같은 iframe 안 복사·붙여넣기, 요소 링크 누름(옮겨 가지 않음). iframe 격리: 개발자 도구에서 iframe 문맥으로 `parent.document`·`localStorage`·`document.cookie`·`fetch("/api/tree")`·`new Image().src = "https://example.com/x"` 가 모두 막히는지, **`location.href = "https://example.com"` → 부모가 iframe 을 지우고 「위젯이 다른 페이지로 이동하려 해 멈췄습니다」 를 보이며 더 답하지 않는지**(C2).
+- [ ] **Step 3: 브라우저 확인(Chromium·WebKit 둘 다)** — 시험 서버(임시 `KEYRING_DATA`, 다른 포트, `docs/guides/development.md`)를 Chromium(neo 또는 Playwright)과 Playwright webkit 으로. 하나씩: 「위젯 넣기」 → Excalidraw → 첨부 폴더에 `스케치-xxxx.excalidraw.json`, 그리기 → 1.5초 뒤 파일 한 번 바뀜(git 커밋 수), 계속 그리면 멈춘 뒤 한 번, 전체 화면 들어가고(그리던 것 그대로 — iframe 을 다시 만들지 않음) Esc 로 닫힘, 글 상자 편집 중 Esc 는 전체 화면을 닫지 않음, 한글 글 상자 조합 중 Esc·Enter, iframe 안 `Mod+S`(페이지 저장 대화상자 없음), 자동 저장 끔 → 「저장하지 않은 그림」 → `Mod+S`, 끔 상태로 탭 닫고 다시 열기(그린 것 남음), 같은 노트 두 칸에서 번갈아 그리기(충돌 사본 알림·덮어쓰지 않음), 다른 창에서 같은 파일을 첨부 「내용 바꾸기」 뒤 이 창에서 그리기 → 충돌 사본, 첨부 이동 → 블록 경로 바뀜·위젯 그대로, 첨부 삭제 확인창의 「가리키는 노트」, 파일을 지움 → 「파일을 찾을 수 없습니다」, 블록 `state.file` 을 `../x.excalidraw.json` 으로 → 오류 한 줄, 이력 보기 → 안내와 경로, 미리보기 칸에서 그리는 중 다른 칸이 노트를 고침(그린 것 남음), 테마·언어 바꾸기, 390px·터치 그리기, `?local`(기기 볼트), 서비스 워커 오프라인(처음 열기 전 → 불러오지 못함과 원문 / 연 뒤 → 열림), `keyring/dday-frame`(개발 서버)과 인라인 D-day 의 보기·수정·포커스 아웃 적용·Esc 버림·`Mod+Z` 한 번이 같음(동작만). 열고 아무것도 안 하고 닫기 → 파일·커밋 그대로. 자동 저장 끔에서 그린 뒤 탭 닫기 → 그림이 저장된다(실패를 흉내 낼 수 있으면 — 서버를 끈 서버 볼트 — 버림 물음이 뜬다). 노트는 깨끗하고 그림만 저장 안 됨(끔) → PWA 「새로 고침」 물음에 든다. 긴 노트에서 그림을 화면 밖으로 스크롤했다 돌아옴 → 그린 것 남음, 그 뒤 획을 그어도 충돌 사본이 생기지 않음(끔·켬 둘 다 — 첨부 폴더 파일 수). 미리보기 칸에서 그리는 중 다른 칸에서 한 글자 → 같은 확인. 같은 그림 두 칸: A 에서 그리는 동안 B 는 「다른 칸에서 고치는 중」·보기 전용, A 가 저장된 뒤 B 가 한 번만 다시 뜸(획마다 다시 뜨지 않음). 노트 이름을 바꾼 뒤 그 탭을 닫기(끔) → 그림이 저장된다. 같은 iframe 안 복사·붙여넣기, 요소 링크 누름(옮겨 가지 않음). iframe 격리: 개발자 도구에서 iframe 문맥으로 `parent.document`·`localStorage`·`document.cookie`·`fetch("/api/tree")`·`new Image().src = "https://example.com/x"` 가 모두 막히는지, **`location.href = "https://example.com"` → 부모가 iframe 을 지우고 「위젯이 다른 페이지로 이동하려 해 멈췄습니다」 를 보이며 더 답하지 않는지**(C2).
 - [ ] **Step 4: 데스크톱 앱(WKWebView, Tauri 커스텀 스킴)** — 격리(CSP·`__TAURI_INTERNALS__`·IPC)는 Task 8 Step 6 에서 이미 봤다. 여기서는 Excalidraw 로: 뜨고 그리기·저장·전체 화면(Popover 또는 대체 겹침)이 되는지, 앱 CSP 위반 콘솔이 없는지, 창 닫기(`Mod+Q`)에 쓰지 않은 그림(끔)이 물음에 드는지, 노트는 깨끗하고 그림만 남았을 때도 지킴이 켜지는지. 못 보면 못 본 것으로 적는다.
 - [ ] **Step 5: 띄운 서버·탭·앱을 끈다** — `띄운 것/끈 것` 줄을 보고에 적는다.
 - [ ] **Step 6: 커밋** — `git add docs/manual/en/how-to/use-widgets.md docs/manual/ko/how-to/use-widgets.md docs/manual/en/reference.md docs/manual/ko/reference.md docs/guides/development.md CHANGELOG.md` → `문서: keyring-widget 2단계 — iframe 위젯·Excalidraw·데이터 파일`
@@ -531,7 +550,8 @@
 | 데이터 파일 만들기(첨부 위치·이름) | 4(`createDataFile`), 9(넣기) |
 | `api.file` 은 그 블록의 `state.file` 만, 경로 검사(정규형) | 1, 9 |
 | 쓰기 = 첨부 교체 API(서버 PUT·기기 해시 검사) | 4, 9(`apiDataFileIO`) |
-| 쓰는 시점(자동 저장 규칙, 포커스 아웃·탭 닫기·노트 바꾸기·`visibilitychange`·앱 닫기 전 비우기, 끔이면 「저장하지 않은 그림」 + `Mod+S`; 탭 닫기·노트 바꾸기는 설정 무관 비우기·실패면 물음 — 코디네이터) | 4(owner·held·onDataFilesChange), 9(closeTab·open·reloadSafely·warn) |
+| 쓰는 시점(자동 저장 규칙, 포커스 아웃·탭 닫기·노트 바꾸기·`visibilitychange`·앱 닫기 전 비우기, 끔이면 「저장하지 않은 그림」 + `Mod+S`; 탭 닫기·노트 바꾸기는 설정 무관 비우기·실패면 물음 — 코디네이터) | 4(owner·held·onDataFilesChange·renameDataFileOwner), 9(closeTab·open·이동·reloadSafely·warn) |
+| 두 위젯·다시 붙는 위젯에서 덮어쓰지 않고 사본도 남발하지 않음(판·drain·사본 대기·stale 보기 전용) | 4(C1·N1·N2·N4 시험), 9 |
 | 열기만으로 파일이 바뀌지 않음(anti-goal) | 10(`SceneGate`) |
 | 해시 충돌 알림·덮어쓰지 않음(+ 충돌 사본 — 코디네이터 결정) | 4, 9 |
 | 파일 없음 → 「파일을 찾을 수 없습니다」, 만들지 않음 | 4, 9 |
