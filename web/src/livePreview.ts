@@ -1,6 +1,6 @@
 import { syntaxTree } from "@codemirror/language";
-import { EditorState, StateField, Transaction, type Extension, type Range, type TransactionSpec } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { EditorState, Prec, StateField, Transaction, type Extension, type Range, type StateCommand, type TransactionSpec } from "@codemirror/state";
+import { Decoration, EditorView, keymap, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { liveBlocks, type LiveRenderContext } from "./liveBlocks";
 import { frontmatterEnd, syntaxMarks, toggleTaskAt } from "./liveSyntax";
 import { t } from "./i18n";
@@ -466,6 +466,21 @@ const keepFrontmatter = EditorState.transactionFilter.of((tr): Transaction | Tra
   };
 });
 
+/**
+ * 전체 선택(Mod-a)을 본문만으로 줄인다. 기본 전체 선택은 0 부터 잡아 접힌 프런트매터를 펼치고 복사에도 속성이 섞인다.
+ * 원문 보기로 펼친 프런트매터 안에 커서가 있으면 문서 전체를 고르는 기본 동작에 맡긴다(속성 원문을 고치는 중이다)
+ */
+export const selectBody: StateCommand = ({ state, dispatch }) => {
+  const body = bodyStart(state);
+  if (!body) return false;
+  const sel = state.selection.main;
+  if (sel.from < body.at && !(sel.empty && sel.head === 0)) return false;
+  // 본문이 없으면 고를 것이 없다 — 닫는 줄 끝의 커서도 프런트매터를 펼치므로 선택을 옮기지 않는다
+  if (body.prefix) return true;
+  dispatch(state.update({ selection: { anchor: body.at, head: state.doc.length }, userEvent: "select" }));
+  return true;
+};
+
 function buildFold(state: EditorState): DecorationSet {
   const end = frontmatterEnd(state);
   if (end === null) return Decoration.none;
@@ -501,5 +516,5 @@ export function frontmatterFold(onProps: () => void): Extension {
       return true;
     },
   });
-  return [foldField, foldTheme, click, keepFrontmatter];
+  return [foldField, foldTheme, click, keepFrontmatter, Prec.high(keymap.of([{ key: "Mod-a", run: selectBody }]))];
 }

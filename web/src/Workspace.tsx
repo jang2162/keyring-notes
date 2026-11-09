@@ -86,6 +86,7 @@ import {
   moveNodePath,
   nodeFiles,
   officialLangOf,
+  orderRootNodes,
   orderWorkspaces,
   parentNode,
   planDailyMigration,
@@ -703,7 +704,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     () => buildNodeTree(tree, { hidden: (p, type) => isVaultSettingsPath(p) || (type === "dir" && attachDirs.has(p)) }),
     [tree, attachDirs],
   );
-  const viewNodes = useMemo(() => (allWs ? nodeTree : (findNode(nodeTree, ws)?.children ?? [])), [nodeTree, allWs, ws]);
+  // 모든 워크스페이스 보기의 루트는 전환 메뉴와 같은 순서(설정의 워크스페이스 순서, 나머지는 이름순)
+  const viewNodes = useMemo(() => (allWs ? orderRootNodes(nodeTree, wsNames) : (findNode(nodeTree, ws)?.children ?? [])), [nodeTree, allWs, ws, wsNames]);
   const wsNode = (name: string) => findNode(nodeTree, name);
 
   const linkCandidates = useMemo<LinkCandidate[]>(() => {
@@ -2816,7 +2818,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (!moveTarget) return [];
     const { path, kind } = moveTarget;
     const here = parentOf(path);
-    const targets = flattenNodes(allWs ? nodeTree : wsNode(ws) ? [wsNode(ws)!] : []).map((n) => n.path);
+    const targets = flattenNodes(allWs ? orderRootNodes(nodeTree, wsNames) : wsNode(ws) ? [wsNode(ws)!] : []).map((n) => n.path);
     return targets
       .filter((f) => f !== here && !(kind === "node" && (f === path || f.startsWith(path + "/"))))
       .map((f) => ({
@@ -2825,7 +2827,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         run: () => void (kind === "node" ? moveNodeTo(path, join(f, path.split("/").pop()!)) : moveAttachment(path, join(f, path.split("/").pop()!))),
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moveTarget, nodeTree, allWs, ws]);
+  }, [moveTarget, nodeTree, allWs, ws, wsNames]);
 
   /** 검색 폴더 필터로 고를 노드(지금 범위의 트리 안, 하위가 있는 것). 고르면 검색 칸으로 돌아간다 */
   const searchFolderItems: PaletteItem[] = useMemo(

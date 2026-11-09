@@ -8,6 +8,8 @@ import {
   mergeSettingsObjects,
   moveNodePath,
   nodeFiles,
+  orderRootNodes,
+  orderWorkspaces,
   parseVaultSettings,
   resolveLink,
   rewriteLinks,
@@ -83,6 +85,21 @@ describe("노드 짝짓기", () => {
     expect(workspaceOf("업무.md")).toBe("업무");
     expect(workspaceOf("keyring-settings.md")).toBeNull();
     expect(workspaceOf("루트그림.png")).toBeNull();
+  });
+});
+
+describe("모든 워크스페이스 보기의 루트 순서", () => {
+  const files = ["가.md", "나/a.md", "다.md", "라.md"];
+  it("전환 메뉴 순서(설정의 워크스페이스 순서, 나머지는 이름순)를 따른다", () => {
+    const nodes = buildNodeTree(tree(files));
+    const s = { ...parseVaultSettings(null), workspaceOrder: ["다", "나"] };
+    const names = orderWorkspaces(s, workspacesOf(tree(files)));
+    expect(names).toEqual(["다", "나", "가", "라"]);
+    expect(orderRootNodes(nodes, names).map((n) => n.path)).toEqual(names);
+  });
+  it("순서에 없는 노드는 받은 순서대로 뒤에 둔다", () => {
+    const nodes = buildNodeTree(tree(files));
+    expect(orderRootNodes(nodes, ["라"]).map((n) => n.path)).toEqual(["라", "가", "나", "다"]);
   });
 });
 

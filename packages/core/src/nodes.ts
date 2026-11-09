@@ -184,6 +184,21 @@ export function workspacesOf(tree: TreeNode[]): string[] {
   return [...out].sort((a, b) => a.localeCompare(b, "ko"));
 }
 
+/**
+ * 볼트 루트 노드(워크스페이스)를 names 순서로 늘어놓은 새 배열. names 는 전환 메뉴가 쓰는 순서(orderWorkspaces)다.
+ * names 에 없는 노드는 받은 순서 그대로 뒤에 둔다
+ */
+export function orderRootNodes(nodes: VaultNode[], names: readonly string[]): VaultNode[] {
+  const rank = (n: VaultNode) => {
+    const i = names.indexOf(n.path);
+    return i < 0 ? names.length : i;
+  };
+  return nodes
+    .map((n, i) => ({ n, i }))
+    .sort((a, b) => rank(a.n) - rank(b.n) || a.i - b.i)
+    .map((x) => x.n);
+}
+
 /** 하위 노드까지 센 수(삭제 확인용): 노드 노트·하위 노드 수와 첨부 수 */
 export function countNode(node: VaultNode): { nodes: number; attachments: number } {
   let nodes = 0;
