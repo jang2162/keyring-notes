@@ -167,7 +167,7 @@ export function escapeCellInput(text: string): string {
 }
 
 /** 칸 편집기의 변경(칸 글 좌표)을 본문 변경으로. 이스케이프에 맞춰 위치를 옮긴다 */
-export function cellChangesToDoc(cell: TableCell, changes: ChangeSet): ChangeSpec[] {
+export function cellChangesToDoc(cell: TableCell, changes: ChangeSet): { from: number; to: number; insert: string }[] {
   const out: { from: number; to: number; insert: string }[] = [];
   changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
     out.push({

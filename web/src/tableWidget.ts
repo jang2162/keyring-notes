@@ -9,6 +9,7 @@ import { t } from "./i18n";
 import type { LiveRenderContext } from "./liveBlocks";
 import { frontmatterEnd } from "./liveSyntax";
 import { renderInlineMarkdown } from "./markdown";
+import { cellEditing } from "./cellEditor";
 import { cellText, parseTable, type TableModel } from "./tableModel";
 import { Menu, type MenuEntry } from "./ui";
 
@@ -21,6 +22,15 @@ import { Menu, type MenuEntry } from "./ui";
 export interface TableOptions {
   linkCandidates: () => LinkCandidate[];
   onFiles?: (files: File[]) => Promise<string[]>;
+  /** 칸 편집기 안의 Mod-s(본문 키맵은 칸 안의 키를 받지 않는다) */
+  onSave?: () => void;
+}
+
+/** 표 from·행(0 = 머리)·열 */
+export interface CellRef {
+  table: number;
+  row: number;
+  col: number;
 }
 
 type GetCtx = () => LiveRenderContext | null;
@@ -58,6 +68,27 @@ const rawField = StateField.define<number[]>({
     });
   },
 });
+
+/**
+ * 칸이 모자란 행의 빈 자리 칸을 연다. 문서에 그 칸이 없어 본문 선택을 칸 안에 둘 수 없으므로,
+ * 선택을 그 행 끝에 두고 이 표시로 「그 자리의 빈 칸」 임을 기억한다. 칸에 글을 치면 그때 행에 칸을 붙인다(설계 6.3)
+ */
+export const setVirtualCell = StateEffect.define<CellRef>({ map: (v, m) => ({ ...v, table: m.mapPos(v.table) }) });
+
+export const virtualField = StateField.define<(CellRef & { pos: number }) | null>({
+  create: () => null,
+  update(v, tr) {
+    for (const e of tr.effects) if (e.is(setVirtualCell)) return { ...e.value, pos: tr.state.selection.main.head };
+    if (!v) return v;
+    const next = tr.docChanged ? { ...v, table: tr.changes.mapPos(v.table), pos: tr.changes.mapPos(v.pos) } : v;
+    const sel = tr.state.selection;
+    // 선택이 그 자리를 떠나면 풀린다(그 칸에 글을 쳐 진짜 칸이 생긴 때도 커서가 칸 안으로 옮겨 풀린다)
+    return sel.ranges.length === 1 && sel.main.empty && sel.main.head === next.pos ? next : null;
+  },
+});
+
+/** 칸을 눌러 열 때 그 화면 좌표(칸 편집기가 그 자리에 커서를 둔다) */
+export const cellClick = StateEffect.define<{ x: number; y: number }>();
 
 /** 그릴 표의 범위. 원문 모드 표는 뺀다 */
 export function tableRanges(state: EditorState): { from: number; to: number }[] {
@@ -122,12 +153,28 @@ class TableWidget extends WidgetType {
       wrap.append(menu);
     }
     wrap.addEventListener("mousedown", (e) => {
-      const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-wikilink], a[href]");
+      const target = e.target as HTMLElement;
+      const a = target.closest<HTMLAnchorElement>("a[data-wikilink], a[href]");
       const ctx = this.getCtx();
       if (a && ctx?.onLink && a.dataset.wikilink) {
         e.preventDefault();
         ctx.onLink(a, e.ctrlKey || e.metaKey);
+        return;
       }
+      if (a || e.button !== 0 || view.state.readOnly) return;
+      const td = target.closest<HTMLElement>("td, th");
+      if (!td || td.classList.contains("cm-lp-cell-editing")) return;
+      // 칸 열기는 본문 선택을 그 칸으로 옮기는 것 하나뿐이다 — 칸 편집기(cellEditor.ts)는 선택을 보고 열린다
+      e.preventDefault();
+      const m = tableAtDOM(view, wrap);
+      if (!m) return;
+      const row = Number(td.dataset.row);
+      const col = Number(td.dataset.col);
+      const r = row === 0 ? m.header : m.body[row - 1];
+      const cell = r?.cells[col];
+      const click = cellClick.of({ x: e.clientX, y: e.clientY });
+      if (cell) view.dispatch({ selection: { anchor: cell.to }, effects: click });
+      else if (r) view.dispatch({ selection: { anchor: r.from + r.text.trimEnd().length }, effects: [setVirtualCell.of({ table: m.from, row, col }), click] });
     });
     this.render(wrap, view);
     return wrap;
@@ -161,13 +208,13 @@ class TableWidget extends WidgetType {
       for (let c = 0; c < m.columns; c++) {
         const cell = tr.cells[c];
         const raw = row.cells[c]?.raw ?? "";
-        cell.dataset.row = String(r);
-        cell.dataset.col = String(c);
-        cell.style.textAlign = ALIGN[m.align[c] ?? ""] ?? "";
+        // 바뀐 것만 쓴다 — 칸마다 매번 쓰면 수백 칸 표에서 타이핑마다 스타일 계산이 다시 돈다
+        const align = ALIGN[m.align[c] ?? ""] ?? "";
+        if (cell.dataset.row !== String(r)) cell.dataset.row = String(r);
+        if (cell.dataset.col !== String(c)) cell.dataset.col = String(c);
+        if (cell.style.textAlign !== align) cell.style.textAlign = align;
         if (cell.classList.contains("cm-lp-cell-editing") || cell.dataset.raw === raw) continue;
-        cell.dataset.raw = raw;
-        if (ctx) cell.innerHTML = renderInlineMarkdown(cellText(raw), { resolver: ctx.resolver, docPath: ctx.docPath });
-        else cell.textContent = cellText(raw);
+        paintCell(cell, raw, ctx);
         painted = true;
       }
     });
@@ -180,6 +227,13 @@ class TableWidget extends WidgetType {
   get estimatedHeight() {
     return (this.text.split("\n").length - 1) * 30;
   }
+}
+
+/** 칸을 그린 HTML 로(칸 원문은 data-raw 에 두어 같으면 다시 그리지 않는다) */
+export function paintCell(td: HTMLElement, raw: string, ctx: LiveRenderContext | null) {
+  td.dataset.raw = raw;
+  if (ctx) td.innerHTML = renderInlineMarkdown(cellText(raw), { resolver: ctx.resolver, docPath: ctx.docPath });
+  else td.textContent = cellText(raw);
 }
 
 /** ui.tsx 의 Menu 를 document.body 에 띄운다(편집기 위젯은 React 밖이다) */
@@ -239,6 +293,5 @@ const theme = EditorView.baseTheme({
 
 /** Live Preview 안에서만 켠다(livePreview 가 부른다) */
 export function tableEditor(getCtx: GetCtx, opts: TableOptions): Extension {
-  void opts;
-  return [rawField, tableField(getCtx), theme];
+  return [rawField, virtualField, tableField(getCtx), theme, cellEditing(getCtx, opts)];
 }
