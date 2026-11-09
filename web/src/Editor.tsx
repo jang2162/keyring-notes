@@ -20,7 +20,7 @@ import {
 import { classHighlighter } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
-import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
+import { drawSelection, EditorView, highlightActiveLine, keymap, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { headingSizes, headingStyle, insertLink, wikilinkSource, wrapSelection } from "./editorCommands";
 import { findLanguage } from "./codeLanguages";
@@ -34,6 +34,31 @@ import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, 
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
 import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
+import {
+  endWidgetEdit,
+  insertWidgetBlock,
+  nextWidgetBody,
+  rewriteWidgetBlock,
+  setWidgetDraft,
+  setWidgetFocus,
+  startWidgetEdit as startWidgetEditEffect,
+  widgetBlockAtLine,
+  widgetEditField,
+  widgetGoneNow,
+} from "./widgets/blockEdit";
+import { toast } from "./toast";
+
+/** 수정 중이던 위젯 블록이 바깥 변경(다른 칸·동기화)으로 사라지면 한 번 알리고 수정 상태를 걷는다 */
+const widgetGoneNotice = ViewPlugin.define((view) => ({
+  update(u: ViewUpdate) {
+    if (!u.transactions.some(widgetGoneNow)) return;
+    toast(t("kw.blockGone"), { kind: "warn" });
+    // 업데이트 안에서는 dispatch 할 수 없다
+    queueMicrotask(() => {
+      if (view.state.field(widgetEditField, false)?.gone) view.dispatch({ effects: endWidgetEdit.of(null) });
+    });
+  },
+}));
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -66,6 +91,16 @@ export interface EditorHandle {
   toggleFoldLine(line: number): void;
   /** 접힌 블록의 첫 줄 번호들 */
   foldedLines(): number[];
+  /** 미리보기 위젯(PreviewKeyringWidget): 그 줄(1부터, 여는 펜스)의 위젯 블록을 트랜잭션 하나로 다시 쓴다. 블록이 없으면 false */
+  writeWidget(line: number, state: unknown, version: number): boolean;
+  /** 위젯 넣기: 블록 글(펜스 포함)을 자기 줄로 넣고 커서를 블록 다음 줄에 둔다(Live Preview 가 곧바로 위젯으로 그리게) */
+  insertWidget(text: string): void;
+  startWidgetEdit(line: number, draft: unknown): void;
+  setWidgetDraft(draft: unknown): void;
+  endWidgetEdit(): void;
+  setWidgetFocus(index: number | null): void;
+  /** 수정 중인 위젯(사라지지 않은 것). 미리보기를 다시 그린 뒤 초안·포커스를 이어받는다 */
+  widgetEdit(): { line: number; draft: unknown; base: unknown; owner: string; focus: number | null } | null;
 }
 
 /** 할 일: 줄이 - [ ]이면 체크를 바꾸고, 목록이면 - [ ]를 붙이고, 아니면 - [ ]로 시작하게 */
@@ -299,6 +334,9 @@ export function Editor({
           EditorView.lineWrapping,
           codeFont(),
           liveSlot.current.of(liveRef.current ? livePreview(getCtx, tableOpts) : syntaxHighlighting(headingSizes)),
+          // liveSlot 밖: Live Preview 를 끈 칸·미리보기만 보는 칸에서도 미리보기 위젯이 이 필드로 수정 중 초안을 둔다
+          widgetEditField,
+          widgetGoneNotice,
           EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
@@ -358,6 +396,43 @@ export function Editor({
     if (handle) {
       handle.current = {
         docKey: createdKey,
+        insertWidget(text) {
+          const r = view.state.selection.main;
+          // 커서가 맨 앞(막 연 문서)이면 프런트매터 뒤에 넣는다 — insertText 와 같다
+          const body = r.empty && r.head === 0 ? bodyStart(view.state) : null;
+          if (body) {
+            if (body.prefix) view.dispatch({ changes: { from: body.at, insert: body.prefix } });
+            view.dispatch({ selection: { anchor: body.at + body.prefix.length } });
+          }
+          const spec = insertWidgetBlock(view.state, text);
+          if (spec) view.dispatch(spec);
+          view.focus();
+        },
+        writeWidget(lineNo, state, version) {
+          const b = widgetBlockAtLine(view.state, lineNo);
+          const next = b && nextWidgetBody(b.body, state, version);
+          const spec = b && next !== null ? rewriteWidgetBlock(view.state, b, next) : null;
+          if (!spec) return false;
+          view.dispatch(spec);
+          return true;
+        },
+        startWidgetEdit(lineNo, draft) {
+          const b = widgetBlockAtLine(view.state, lineNo);
+          if (b) view.dispatch({ effects: startWidgetEditEffect.of({ from: b.from, draft, owner: "preview" }) });
+        },
+        setWidgetDraft(draft) {
+          view.dispatch({ effects: setWidgetDraft.of(draft) });
+        },
+        endWidgetEdit() {
+          if (view.state.field(widgetEditField, false)) view.dispatch({ effects: endWidgetEdit.of(null) });
+        },
+        setWidgetFocus(index) {
+          view.dispatch({ effects: setWidgetFocus.of(index) });
+        },
+        widgetEdit() {
+          const e = view.state.field(widgetEditField, false);
+          return e && !e.gone ? { line: view.state.doc.lineAt(e.from).number, draft: e.draft, base: e.base, owner: e.owner, focus: e.focus } : null;
+        },
         toggleTask(lineNo, done) {
           if (lineNo < 1 || lineNo > view.state.doc.lines) return;
           const line = view.state.doc.line(lineNo);

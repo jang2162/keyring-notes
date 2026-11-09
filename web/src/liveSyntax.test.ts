@@ -181,6 +181,15 @@ describe("코드 블록", () => {
     expect(only(marks(doc, [2]), "fenceHead")).toEqual([]);
   });
 
+  it("최상위 keyring-widget 블록은 건드리지 않는다(liveBlocks 가 그린다) — 인용 안은 코드 상자 그대로", () => {
+    const top = marks("```keyring-widget\n{}\n```\n\n뒤", [5]);
+    expect(only(top, "fenceHead")).toEqual([]);
+    expect(only(top, "codeLine")).toEqual([]);
+    const quoted = marks("> ```keyring-widget\n> {}\n> ```\n\n뒤", [5]);
+    expect(only(quoted, "fenceHead")).toHaveLength(1);
+    expect(only(quoted, "codeLine")).toHaveLength(1);
+  });
+
   it("Mermaid 는 건드리지 않는다(liveBlocks 가 그린다)", () => {
     const list = marks("```mermaid\ngraph TD\n```");
     expect(list.filter((m) => m.kind === "fenceHead" || m.kind === "fenceTail" || m.kind === "codeLine")).toEqual([]);

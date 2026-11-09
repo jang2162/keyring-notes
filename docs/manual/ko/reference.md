@@ -180,6 +180,27 @@ limit: 50
 
 위젯도 권한 계층을 지나므로 에이전트가 같은 쿼리(MCP `query`)를 돌려도 읽을 수 있는 노트만 나옵니다.
 
+### keyring-widget 블록
+
+노트 안 위젯은 언어를 `keyring-widget` 으로 단 코드 블록 안의 JSON 객체 하나입니다. JSON 은 엄격해야 합니다. 주석, 끝 쉼표, 따옴표 없는 키를 쓸 수 없습니다.
+
+````markdown
+```keyring-widget
+{"widget": "keyring/dday@1", "display": "inline", "state": {"targetDate": "2026-12-25", "label": "Christmas"}}
+```
+````
+
+| 키 | 설명 |
+| --- | --- |
+| `widget` | `<id>@<판>`. 예: `keyring/dday@1`. 판은 상태 형식의 판입니다 |
+| `display` | `block`(본문 폭) 또는 `inline`(내용 폭). 없으면 위젯이 정한 값 |
+| `editable` | `false` 면 위젯이 블록을 바꾸지 않습니다. 없으면 `true` |
+| `state` | 위젯의 상태. 필드는 위젯마다 다릅니다. 없으면 위젯의 기본 상태로 시작합니다 |
+
+앱이 블록을 다시 쓸 때는 키를 `widget`, `display`, `editable`, `state` 순서로 쓰고, 다른 키는 그 뒤에 둡니다. 블록 전체가 80자 안이면 한 줄로 씁니다. 넘으면 키마다 한 줄씩 두 칸 들여쓰고, `state` 도 펼칩니다. 손으로 쓴 블록은 앱이 다시 쓰기 전까지 모양을 그대로 둡니다.
+
+블록의 판이 위젯보다 새것이면 원문과 「이 위젯의 새 판이 필요합니다」 가 보입니다. 옛 판은 그릴 때 올려 보이고, 파일은 다음에 고친 내용을 적용할 때 바뀝니다.
+
 ## 웹훅 이벤트
 
 웹훅은 JSON `{event, id, time, data}` 를 헤더 `X-Keyring-Signature: sha256=<HMAC-SHA256(secret, 본문)>` 과 함께 POST 합니다.

@@ -29,7 +29,11 @@ describe("메시지 키", () => {
     for (const f of files(path.join(root, "web/src"))) {
       const s = readFileSync(f, "utf8");
       const rel = path.relative(root, f);
-      for (const m of s.matchAll(/\bt\(\s*"([A-Za-z0-9_.]+)"/g)) need(m[1], rel);
+      // api.t(…) 같은 메서드 호출은 빼고 따로 본다
+      for (const m of s.matchAll(/(?<![.\w])t\(\s*"([A-Za-z0-9_.]+)"/g)) need(m[1], rel);
+      // 내장 인라인 위젯(widgets/inline/<이름>.ts)의 api.t("k") 는 kw.<이름>.k — builtins.ts 가 그 앞머리로 등록한다
+      const inline = /widgets\/inline\/([a-z0-9-]+)\.tsx?$/.exec(rel.split(path.sep).join("/"));
+      for (const m of s.matchAll(/\bapi\.t\(\s*"([A-Za-z0-9_.]+)"/g)) need(inline ? `kw.${inline[1]}.${m[1]}` : m[1], rel);
       // 메시지 키를 값으로 넘기는 곳(설정 줄 이름·설명, 묶음 이름)
       for (const m of s.matchAll(/\b(?:label|hint|keywords)[=:]\s*"([a-z][A-Za-z]*\.[A-Za-z0-9_.]+)"/g)) need(m[1], rel);
     }

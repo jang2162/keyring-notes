@@ -8,6 +8,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 - Live Preview draws horizontal rules, quotes, bullets, to-dos, code blocks, images between words (`![text](url)`) and HTML blocks. Click a to-do's checkbox to check it without moving the cursor. Code blocks hide their fence lines, show the language and a **Copy** button, and keep the code editable in place.
 - Tables in Live Preview are edited in place. Click a cell to edit its Markdown with `[[` autocomplete and formatting shortcuts, move between cells with `Tab`, `Enter` and the arrow keys, and use the row and column handles to insert, move, delete, align and sort, or drag to move. Only the cells and rows you change are rewritten in the file, and undo works across cells and the note. **Edit as Markdown** in the table's **⋯** menu shows the table as source.
+- Note widgets: small apps inside a note that keep their state in a `keyring-widget` block. **Insert widget** in the command palette adds the built-in **D-day** widget. Click a widget to edit it in Live Preview or the preview, click outside to apply, or press `Esc` to discard. One undo reverts the change.
 - Code blocks are colored by language in the editor and the preview, with the same colors in the light and dark themes. Short language names such as `py`, `sh`, `yml`, `rs` and `kt` work too.
 
 ### Changed

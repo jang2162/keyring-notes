@@ -7,6 +7,7 @@ export * from "./errors.js";
 export * from "./frontmatter.js";
 export * from "./hash.js";
 export * from "./i18n.js";
+export * from "./keyringWidget.js";
 export * from "./links.js";
 export * from "./local.js";
 export * from "./markdown.js";
