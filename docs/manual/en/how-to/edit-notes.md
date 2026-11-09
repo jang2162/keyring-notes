@@ -49,7 +49,7 @@ In Live Preview, tables are drawn even when the cursor is in them, and you edit 
 | `↑` `↓` | Cell above or below. Past the first or last row, the line before or after the table |
 | `Esc` | Stop editing and move to the line after the table |
 
-From the line just above or below a table, `↓` or `↑` moves into its first cell. While an input method (IME) is composing text, `Tab` and `Enter` only finish the text. Press them again to move.
+From the line just above or below a table, `↓` or `↑` moves into the table. `→` at the end of the line above moves into the first cell, and `←` at the start of the line below moves into the last cell. Clicking the empty space beside a table opens the nearest cell in that row. While an input method (IME) is composing text, `Tab` and `Enter` only finish the text. Press them again to move.
 
 Point at a row or column to show its handle, to the left of the row or above the column. On a touch screen, the handles of the cell you edit stay shown.
 
