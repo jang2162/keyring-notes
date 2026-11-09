@@ -42,6 +42,9 @@ pnpm dev:web         # 웹: http://localhost:5173 (API 는 프록시)
 KEYRING_DATA=<임시 폴더> KEYRING_PORT=<빈 포트> pnpm start
 ```
 
+- `pnpm dev:web` 은 8787 의 API 에만 붙는다(`web/vite.config.ts` 의 프록시가 고정). 다른 포트로 띄운 시험 서버로 화면을 볼 때는 `pnpm --filter @keyring-notes/web build` 뒤 서버가 내주는 화면을 쓴다(웹을 다시 빌드하면 새로고침으로 반영된다).
+- 시험 볼트에 노트를 직접 넣을 때는 `<KEYRING_DATA>/vault/<워크스페이스>/` 아래에 둔다. 볼트 맨 위 항목은 워크스페이스로 읽혀 노트로 열리지 않는다.
+
 ## 안드로이드 에뮬레이터로 웹 앱 보기
 
 설치한 웹 앱(PWA)·오프라인 동작은 에뮬레이터의 Chrome 에서 본다. 시험 서버는 위처럼 임시 `KEYRING_DATA` 와 빈 포트로 띄우고, 비밀번호는 `KEYRING_DATA=<임시 폴더> KEYRING_PASSWORD=<비밀번호> pnpm --filter @keyring-notes/server keyring passwd` 로 넣는다. AVD 이름(`Medium_Phone`)은 이 머신의 예시다 — `emulator -list-avds` 로 본다.
