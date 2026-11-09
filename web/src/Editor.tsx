@@ -36,6 +36,7 @@ import { lineNumberGutter } from "./lineSelect";
 import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
 import {
   endWidgetEdit,
+  insertWidgetBlock,
   nextWidgetBody,
   rewriteWidgetBlock,
   setWidgetDraft,
@@ -92,6 +93,8 @@ export interface EditorHandle {
   foldedLines(): number[];
   /** 미리보기 위젯(PreviewKeyringWidget): 그 줄(1부터, 여는 펜스)의 위젯 블록을 트랜잭션 하나로 다시 쓴다. 블록이 없으면 false */
   writeWidget(line: number, state: unknown, version: number): boolean;
+  /** 위젯 넣기: 블록 글(펜스 포함)을 자기 줄로 넣고 커서를 블록 다음 줄에 둔다(Live Preview 가 곧바로 위젯으로 그리게) */
+  insertWidget(text: string): void;
   startWidgetEdit(line: number, draft: unknown): void;
   setWidgetDraft(draft: unknown): void;
   endWidgetEdit(): void;
@@ -393,6 +396,18 @@ export function Editor({
     if (handle) {
       handle.current = {
         docKey: createdKey,
+        insertWidget(text) {
+          const r = view.state.selection.main;
+          // 커서가 맨 앞(막 연 문서)이면 프런트매터 뒤에 넣는다 — insertText 와 같다
+          const body = r.empty && r.head === 0 ? bodyStart(view.state) : null;
+          if (body) {
+            if (body.prefix) view.dispatch({ changes: { from: body.at, insert: body.prefix } });
+            view.dispatch({ selection: { anchor: body.at + body.prefix.length } });
+          }
+          const spec = insertWidgetBlock(view.state, text);
+          if (spec) view.dispatch(spec);
+          view.focus();
+        },
         writeWidget(lineNo, state, version) {
           const b = widgetBlockAtLine(view.state, lineNo);
           const next = b && nextWidgetBody(b.body, state, version);

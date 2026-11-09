@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseWidgetBlock } from "@keyring-notes/core";
 import {
+  widgetPaletteItems,
   effectiveIsolation,
   findWidget,
   registerWidget,
@@ -131,5 +132,21 @@ describe("widgetViewChange", () => {
     expect(widgetViewChange(v("{"), v('{"widget":"t/x@2"}'))).toBe("remount");
     expect(widgetViewChange(v("{"), v("[]"))).toBe("remount");
     expect(widgetViewChange(v('{"widget":"t/x@2"}'), v('{"widget":"t/x@2","display":"block"}'))).toBe("remount");
+  });
+});
+
+describe("widgetPaletteItems", () => {
+  it("언어별 이름·id·넣기", () => {
+    resetWidgetsForTest();
+    const A = entry({ id: "t/a", title: { en: "X", ko: "엑스" } });
+    const B = entry({ id: "t/b", title: { en: "Y" } });
+    registerWidget(A);
+    registerWidget(B);
+    const got: string[] = [];
+    const items = widgetPaletteItems("ko", (text) => got.push(text));
+    expect(items.map((i) => i.label)).toEqual(["엑스", "Y"]);
+    expect(items.map((i) => i.detail)).toEqual(["t/a", "t/b"]);
+    items[0]!.run();
+    expect(got).toEqual([widgetInsertText(A.def)]);
   });
 });

@@ -51,6 +51,16 @@ export function widgetInsertText(def: WidgetDefinition): string {
   return "```" + KEYRING_WIDGET_LANG + "\n" + body + "\n```";
 }
 
+/** 명령 팔레트 「위젯 넣기」 목록. 이름은 화면 언어, 없으면 영어, 없으면 id */
+export function widgetPaletteItems(lang: string, insert: (text: string) => void): { id: string; label: string; detail: string; run: () => void }[] {
+  return entries.map((e) => ({
+    id: e.def.id,
+    label: e.def.title[lang] ?? e.def.title.en ?? e.def.id,
+    detail: e.def.id,
+    run: () => insert(widgetInsertText(e.def)),
+  }));
+}
+
 export type WidgetView =
   | { kind: "widget"; entry: WidgetEntry; block: KeyringWidgetBlock; state: unknown; editable: boolean; display: "block" | "inline" }
   | { kind: "error"; key: string; vars?: Record<string, string> };

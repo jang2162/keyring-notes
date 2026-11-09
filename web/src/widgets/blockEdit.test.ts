@@ -17,6 +17,7 @@ import {
   widgetEditField,
   widgetGoneNow,
   widgetResume,
+  insertWidgetBlock,
 } from "./blockEdit";
 
 function state(doc: string, opts: { anchor?: number; readOnly?: boolean } = {}) {
@@ -344,5 +345,62 @@ describe("widgetResume — 다시 붙는 위젯이 이어받을 것", () => {
     expect(widgetResume(edit, "live", false)).toBeNull();
     expect(widgetResume({ ...edit, gone: true }, "live", true)).toBeNull();
     expect(widgetResume(null, "live", true)).toBeNull();
+  });
+});
+
+describe("insertWidgetBlock — 위젯 넣기", () => {
+  const B = '```keyring-widget\n{"widget": "a/b@1"}\n```';
+  const ins = (doc: string, anchor: number, head = anchor, readOnly = false) => {
+    const s0 = EditorState.create({
+      doc,
+      selection: { anchor, head },
+      extensions: [markdown({ base: markdownLanguage }), widgetEditField, EditorState.readOnly.of(readOnly)],
+    });
+    const spec = insertWidgetBlock(s0, B);
+    if (!spec) return null;
+    const s1 = apply(s0, spec).state;
+    const blocks = widgetBlocks(s1);
+    const sel = s1.doc.lineAt(s1.selection.main.head).number;
+    const b = blocks[0];
+    return {
+      doc: s1.doc.toString(),
+      head: s1.selection.main.head,
+      blocks: blocks.length,
+      outside: !!b && (sel < s1.doc.lineAt(b.from).number || sel > s1.doc.lineAt(b.to).number),
+    };
+  };
+
+  it("줄 끝에서: 자기 줄로 넣고 선택은 닫는 펜스 다음 빈 줄", () => {
+    const r = ins("abc", 3)!;
+    expect(r.doc).toBe("abc\n" + B + "\n");
+    expect(r.head).toBe(r.doc.length);
+    expect(r).toMatchObject({ blocks: 1, outside: true });
+  });
+
+  it("줄 가운데서: 둘로 가르고 선택은 뒷줄 처음", () => {
+    const r = ins("ab", 1)!;
+    expect(r.doc).toBe("a\n" + B + "\nb");
+    expect(r.head).toBe(r.doc.length - 1);
+    expect(r).toMatchObject({ blocks: 1, outside: true });
+  });
+
+  it("줄바꿈 바로 앞: 줄바꿈을 겹쳐 넣지 않는다", () => {
+    const r = ins("a\nb", 1)!;
+    expect(r.doc).toBe("a\n" + B + "\nb");
+    expect(r.head).toBe(r.doc.length - 1);
+    expect(r).toMatchObject({ blocks: 1, outside: true });
+  });
+
+  it("빈 문서", () => {
+    const r = ins("", 0)!;
+    expect(r.doc).toBe(B + "\n");
+    expect(r.head).toBe(r.doc.length);
+    expect(r).toMatchObject({ blocks: 1, outside: true });
+  });
+
+  it("고른 글은 바꾼다, 읽기 전용이면 null", () => {
+    const r = ins("aXXb", 1, 3)!;
+    expect(r.doc).toBe("a\n" + B + "\nb");
+    expect(ins("abc", 3, 3, true)).toBeNull();
   });
 });

@@ -171,3 +171,21 @@ export function widgetGoneNow(tr: Transaction): boolean {
   const after = tr.state.field(widgetEditField, false);
   return !!after?.gone && !before?.gone;
 }
+
+/**
+ * 위젯 넣기: 고른 글(커서) 자리에 블록을 자기 줄로 넣고, 선택은 닫는 펜스 **다음** 줄 처음에 둔다 —
+ * 커서가 블록 줄 밖이라 Live Preview 가 막 넣은 블록을 원문이 아니라 위젯으로 그린다. 읽기 전용이면 null
+ */
+export function insertWidgetBlock(state: EditorState, text: string): TransactionSpec | null {
+  if (state.readOnly) return null;
+  const { from, to } = state.selection.main;
+  const before = from > 0 && state.sliceDoc(from - 1, from) !== "\n" ? "\n" : "";
+  // 뒤에 이미 줄바꿈이 있으면 겹쳐 넣지 않는다. 문서 끝이면 빈 줄을 하나 만들어 커서를 둔다
+  const after = to < state.doc.length && state.sliceDoc(to, to + 1) === "\n" ? "" : "\n";
+  return {
+    changes: { from, to, insert: before + text + after },
+    selection: { anchor: from + before.length + text.length + 1 },
+    scrollIntoView: true,
+    userEvent: "input.widget",
+  };
+}

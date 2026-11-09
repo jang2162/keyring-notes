@@ -135,7 +135,8 @@ import {
 import { DocIcon, IconLookup, IconPicker } from "./IconPicker";
 import { getFolds, moveFolds, onFoldsChange, resolveFolds } from "./folds";
 import { FileViewer } from "./Aside";
-import { fmtDateTime, fmtNumber, missingPack, t, timeAgo, useLang } from "./i18n";
+import { fmtDateTime, fmtNumber, language, missingPack, t, timeAgo, useLang } from "./i18n";
+import { widgetPaletteItems } from "./widgets/registry";
 import { tipProps } from "./Tooltip";
 import { AttachmentList } from "./Attachments";
 import { mirrorTargets } from "./mirror";
@@ -526,9 +527,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   pinsRef.current = pins;
   /** 열어 본 문서 기록(뒤로·앞으로) */
   const nav = useRef<{ list: string[]; i: number }>({ list: [], i: -1 });
-  const [palette, setPalette] = useState<"files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | "daily-ws" | "search-folder" | null>(
-    null,
-  );
+  const [palette, setPalette] = useState<
+    "files" | "commands" | "templates" | "new-from-template" | "move" | "daily" | "daily-ws" | "search-folder" | "widgets" | null
+  >(null);
   const [moveTarget, setMoveTarget] = useState<{ path: string; kind: "node" | "file" } | null>(null);
   const shared = useVaultSettings();
   const [propStats, setPropStats] = useState<PropertyStat[]>([]);
@@ -2679,6 +2680,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     ...(doc && !doc.generated
       ? [
           { id: "tpl-insert", group: g.doc, label: t("cmd.templateInsert"), run: () => setPalette("templates") },
+          { id: "widget-insert", group: g.doc, label: t("cmd.widgetInsert"), run: () => setPalette("widgets") },
           { id: "save", group: g.doc, label: t("cmd.save"), keys: "Mod+S", run: () => void save() },
           { id: "rename", group: g.doc, label: t("common.rename"), keys: "F2", inInputs: false, run: () => focusTitle(doc.path) },
           { id: "icon", group: g.doc, label: docIcon ? t("title.changeIcon") : t("title.addIcon"), run: () => openIconPicker(stripMd(doc.path)) },
@@ -4261,7 +4263,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                         ? t("palette.daily")
                         : palette === "daily-ws"
                           ? t("palette.dailyWs")
-                          : t("palette.templates", { folder: templateDir || "-" })
+                          : palette === "widgets"
+                            ? t("palette.widgets")
+                            : t("palette.templates", { folder: templateDir || "-" })
             }
             items={
               palette === "files"
@@ -4288,12 +4292,15 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                               icon: wsIcon(w) ? wsLead(w) : undefined,
                               run: () => dailyWsPick?.run(w),
                             }))
-                          : templatePaths.map((p) => ({
-                              id: p,
-                              label: stemOf(p),
-                              detail: p,
-                              run: () => void (palette === "templates" ? insertTemplate(p) : createFromTemplate(p)),
-                            }))
+                          : palette === "widgets"
+                            ? // insertText(…, { ownLine }) 는 커서를 닫는 펜스 줄 끝에 두어 막 넣은 블록이 원문으로 보이므로 쓰지 않는다
+                              widgetPaletteItems(language(), (text) => editorHandle.current?.insertWidget(text))
+                            : templatePaths.map((p) => ({
+                                id: p,
+                                label: stemOf(p),
+                                detail: p,
+                                run: () => void (palette === "templates" ? insertTemplate(p) : createFromTemplate(p)),
+                              }))
             }
             hint={palette === "files" ? t("palette.filesHint") : palette === "daily-ws" ? t("palette.dailyWsHint") : t("palette.hint")}
             numbered={palette === "daily-ws"}
