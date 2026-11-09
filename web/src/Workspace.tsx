@@ -2223,7 +2223,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /** 첨부 하나 지우기: 가리키는 노트 수·이름을 보이고 확인받는다(서버는 휴지통으로, 기기 볼트는 되돌리기 알림만) */
   const deleteAttachment = async (path: string) => {
-    const refs = await api.backlinks(path).catch(() => []);
+    const refs = await api.backlinks(path).catch(() => null);
     if (!(await confirmDialog(attachmentDeleteText(path.split("/").pop()!, refs, appMode.local), t("common.delete")))) return;
     try {
       const data = await api.readBytes(path);

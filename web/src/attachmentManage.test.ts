@@ -1,7 +1,9 @@
+import type { TrashItem } from "@keyring-notes/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { attachmentDeleteText, extOf, REF_LIST_MAX, sameKind } from "./attachmentManage";
 import { setLanguage } from "./i18n";
 import { bumpRawVersion, rawVersion, versioned } from "./rawVersion";
+import { trashHeadName, trashOthers } from "./trashView";
 
 beforeEach(() => setLanguage("en"));
 
@@ -72,5 +74,28 @@ describe("교체 뒤 첨부 주소", () => {
     expect(window.dispatchEvent).toHaveBeenCalled();
     // 주소에 ? 가 없으면(앱의 파일 URL) ?v= 로
     expect(versioned("asset://localhost/W/교체.png", path)).toBe("asset://localhost/W/교체.png?v=1");
+  });
+});
+
+describe("첨부 삭제 확인 글: 조회 실패", () => {
+  it("가리키는 노트를 못 읽었으면 「없음」 이 아니라 확인하지 못했다고", () => {
+    const s = attachmentDeleteText("a.png", null, false);
+    expect(s).toContain("Couldn't check which notes link");
+    expect(s).not.toContain("No notes link");
+  });
+});
+
+describe("휴지통 줄 제목", () => {
+  const item = (o: Partial<TrashItem>): TrashItem => ({ id: "x", date: "", author: "", node: null, notes: [], attachments: [], lost: 0, ...o });
+  it("첨부만 지운 줄은 노드가 있어도 첨부 이름, 여럿이면 나머지를 「외 N개」 로", () => {
+    expect(trashHeadName(item({ node: "W/Embed", attachments: ["W/Embed/red.png"] }))).toBe("W/Embed/red.png");
+    expect(trashOthers(item({ node: "W/Embed", attachments: ["W/Embed/red.png"] }))).toBe(0);
+    expect(trashOthers(item({ node: "W/Embed", attachments: ["W/Embed/a.png", "W/Embed/b.png"] }))).toBe(1);
+  });
+  it("노트가 든 줄은 예전대로(노드, 없으면 첫 노트, 노드 없는 여러 노트는 외 N개)", () => {
+    expect(trashHeadName(item({ node: "W/N", notes: ["W/N.md", "W/N/c.md"], attachments: ["W/N/x.png"] }))).toBe("W/N");
+    expect(trashOthers(item({ node: "W/N", notes: ["W/N.md", "W/N/c.md"] }))).toBe(0);
+    expect(trashHeadName(item({ notes: ["W/a.md", "X/b.md"] }))).toBe("W/a");
+    expect(trashOthers(item({ notes: ["W/a.md", "X/b.md"] }))).toBe(1);
   });
 });

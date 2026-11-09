@@ -5,7 +5,7 @@ import path from "node:path";
 import { AccessPolicy, atLeast } from "./access.js";
 import type { ConfigStore } from "./config.js";
 import { serverText } from "./lang.js";
-import { PathError } from "./paths.js";
+import { normalizeVaultPath, PathError } from "./paths.js";
 import { cleanMessage, hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
 
 /**
@@ -103,7 +103,7 @@ export class ReviewQueue {
       id,
       agent: agent.name,
       agentEmail: agent.email,
-      message: cleanMessage(message ?? "").trim() || this.vault.text().commit.proposal(preview.length),
+      message: cleanMessage(message ?? "").trim() || this.defaultMessage(ops, preview.length),
       createdAt: new Date().toISOString(),
       status: "pending",
       ops: stored,
@@ -185,6 +185,14 @@ export class ReviewQueue {
 
   async pendingCount(): Promise<number> {
     return (await this.list({ status: "pending" })).length;
+  }
+
+  /** 메시지 없는 제안의 커밋 제목: 첨부 하나 쓰기는 그 동작(「첨부 교체: …」 등), 나머지는 「변경 N건」 */
+  private defaultMessage(ops: Op[], files: number): string {
+    const T = this.vault.text().commit;
+    const op = ops.length === 1 ? ops[0] : null;
+    if (op?.op === "put") return op.baseHash === undefined ? T.attach(normalizeVaultPath(op.path)) : T.replaceAttachment(normalizeVaultPath(op.path));
+    return T.proposal(files);
   }
 
   /** 승인: 저장해 둔 연산을 그대로(같은 baseHash로) 적용한다. 그 사이 문서가 바뀌었으면 충돌로 거부된다. */

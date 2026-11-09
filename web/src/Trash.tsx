@@ -7,14 +7,10 @@ import { renderMarkdown, type LinkResolver } from "./markdown";
 import { Modal } from "./Modal";
 import { errorText, toast, toastError } from "./toast";
 import { parentOf, stemOf } from "./Tree";
+import { trashHeadName, trashOthers } from "./trashView";
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 const isNote = (p: string) => /\.md$/i.test(p);
-
-/** 줄의 머리 이름: 노드, 없으면 첫 노트(.md 없이), 첨부만 지운 줄은 첫 첨부 */
-export function trashHeadName(item: TrashItem): string {
-  return item.node ?? (item.notes[0] ?? item.attachments[0] ?? "").replace(/\.md$/i, "");
-}
 
 /** 되살린 뒤 열 노트: 노드 노트, 없으면 처음 되살린 노트(만든 경로) */
 function headTarget(item: TrashItem, restored: [string, string][]): [string, string] | null {
@@ -153,8 +149,9 @@ export function TrashPanel({
                     fmtDateTime(item.date),
                     !appMode.local && item.author,
                     children > 0 && t("trash.children", { count: children }),
-                    !item.node && many && t("trash.others", { count: shown.length - 1 }),
-                    item.attachments.length > 0 && t("trash.attachments", { count: item.attachments.length }),
+                    trashOthers(item) > 0 && t("trash.others", { count: trashOthers(item) }),
+                    // 첨부만 지운 줄은 머리와 「외 N개」 가 이미 첨부를 센다
+                    !filesOnly && item.attachments.length > 0 && t("trash.attachments", { count: item.attachments.length }),
                   ]
                     .filter(Boolean)
                     .join(" · ")}

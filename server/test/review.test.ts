@@ -10,7 +10,7 @@ import type { Ingestor } from "../src/ingest.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { ReviewQueue } from "../src/review.js";
 import { ScopedVault } from "../src/scoped.js";
-import type { Vault } from "../src/vault.js";
+import { hashContent, type Vault } from "../src/vault.js";
 import type { Wiki } from "../src/wiki.js";
 import { agentPrincipal, openVault, ownerPrincipal, tempDir } from "./helpers.js";
 
@@ -94,6 +94,24 @@ describe("변경 검토 대기열", () => {
     expect((await owner.search("고침")).map((h) => h.path)).toContain("업무/경제/wiki/금리.md"); // 인덱스도 갱신
     expect((await agent.myProposals()).map((x) => x.status)).toEqual(["approved"]);
     await expect(review.approve(p.id, "me")).rejects.toThrow(/이미 처리/);
+  });
+
+  it("에이전트의 첨부 교체도 제안으로 쌓이고, 승인하면 같은 경로에 교체(「첨부 교체」 커밋), 그 사이 바뀌었으면 덮지 않는다", async () => {
+    const p = "업무/경제/wiki/그림.png";
+    const h = (b: number[]) => hashContent(Buffer.from(b));
+    await owner.batch([{ op: "put", path: p, data: new Uint8Array([1]) }]);
+    const res = await agent.replaceAttachment(p, new Uint8Array([2]), h([1]));
+    expect(res.pending?.proposal).toMatch(/^[0-9a-f]{16}$/);
+    expect([...(await owner.readRaw(p)).data]).toEqual([1]);
+    const ok = await review.approve(res.pending!.proposal, "me");
+    expect(ok.status).toBe("approved");
+    expect([...(await owner.readRaw(p)).data]).toEqual([2]);
+    expect(git("log", "-1", "--format=%an|%s")).toBe(`wiki-work|${vault.text().commit.replaceAttachment(p)}`);
+    // 그 사이 소유자가 먼저 바꾸면 승인은 충돌로 거부되고 소유자의 내용 그대로
+    const again = await agent.replaceAttachment(p, new Uint8Array([3]), h([2]));
+    await owner.replaceAttachment(p, new Uint8Array([4]), h([2]));
+    await expect(review.approve(again.pending!.proposal, "me")).rejects.toThrow();
+    expect([...(await owner.readRaw(p)).data]).toEqual([4]);
   });
 
   it("그 사이 문서가 바뀌면 stale로 표시되고, 승인은 충돌로 거부된다", async () => {

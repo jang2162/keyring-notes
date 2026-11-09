@@ -15,11 +15,13 @@ export const sameKind = (path: string, fileName: string) => extOf(path) === extO
 
 /**
  * 첨부 삭제 확인 글: 묻는 말, 그 첨부를 가리키는 노트 수와 이름(위키링크·마크다운 링크·임베드 — 백링크),
- * 되살리는 길(서버는 휴지통, 기기 볼트는 알림의 되돌리기)
+ * 되살리는 길(서버는 휴지통, 기기 볼트는 알림의 되돌리기). refs 가 null 이면 조회하지 못한 것
  */
-export function attachmentDeleteText(name: string, refs: { path: string; title: string }[], local: boolean): string {
+export function attachmentDeleteText(name: string, refs: { path: string; title: string }[] | null, local: boolean): string {
   const lines = [t("file.deleteAsk", { name }), ""];
-  if (refs.length === 0) lines.push(t("file.deleteNoRefs"));
+  // 조회가 실패했으면(연결 끊김 등) 「없다」 고 하지 않는다 — 없다고 믿고 지우면 링크가 깨진다
+  if (refs === null) lines.push(t("file.deleteRefsUnknown"));
+  else if (refs.length === 0) lines.push(t("file.deleteNoRefs"));
   else {
     lines.push(t("file.deleteRefs", { count: refs.length }));
     for (const r of refs.slice(0, REF_LIST_MAX)) lines.push(`• ${r.title}`);

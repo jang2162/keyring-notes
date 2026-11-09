@@ -226,3 +226,45 @@ describe("기기 볼트 ↔ 서버: 기기에서 바꾼·지운 첨부", { timeo
     expect(item).toMatchObject({ notes: [], attachments: ["W/그림.png"] });
   });
 });
+
+describe("교체를 모르는 옛 서버와 동기화", { timeout: 20_000 }, () => {
+  it("PUT /api/attachment 가 없으면(라우트 없음 404) 오류가 아니라 attachment-unsupported 로 건너뛰고 서버는 그대로", async () => {
+    const { owner, fetchFn } = env;
+    await owner.batch([{ op: "put", path: "W/그림.png", data: bytes(1) }]);
+    // 옛 서버: 그 라우트가 없어 Hono 기본 404(본문 글자)
+    const old = ((url: string | URL | Request, init?: RequestInit) =>
+      init?.method === "PUT" && String(url).includes("/api/attachment")
+        ? Promise.resolve(new Response("404 Not Found", { status: 404 }))
+        : fetchFn(url, init)) as typeof fetch;
+    const paired = await pairDevice("http://localhost/", "correct horse", "노트북", old);
+    const local = new LocalVault(new MemoryStore(), { author: "노트북" });
+    await local.open();
+    const sync = new SyncEngine(local, new HttpRemote(paired.server, paired.token, old));
+    await sync.run();
+    await local.replaceFile("W/그림.png", bytes(2), await sha256Hex(bytes(1)));
+    const r = await sync.run();
+    expect(r.errors).toEqual([]);
+    expect(r.skipped).toEqual([{ path: "W/그림.png", reason: "attachment-unsupported" }]);
+    expect([...(await owner.readRaw("W/그림.png")).data]).toEqual([1]);
+  });
+
+  it("목록을 받은 뒤 서버에서 지워졌으면(파일 없음 404) attachment-changed 로 건너뛴다", async () => {
+    const { owner, fetchFn } = env;
+    await owner.batch([{ op: "put", path: "W/그림.png", data: bytes(1) }]);
+    const paired = await pairDevice("http://localhost/", "correct horse", "노트북", fetchFn);
+    const local = new LocalVault(new MemoryStore(), { author: "노트북" });
+    await local.open();
+    const remote = new HttpRemote(paired.server, paired.token, fetchFn);
+    const sync = new SyncEngine(local, remote);
+    await sync.run();
+    await local.replaceFile("W/그림.png", bytes(2), await sha256Hex(bytes(1)));
+    const real = remote.replaceRaw.bind(remote);
+    remote.replaceRaw = async (p, d, base) => {
+      await owner.delete(p, h(bytes(1)));
+      return real(p, d, base);
+    };
+    const r = await sync.run();
+    expect(r.errors).toEqual([]);
+    expect(r.skipped).toEqual([{ path: "W/그림.png", reason: "attachment-changed" }]);
+  });
+});

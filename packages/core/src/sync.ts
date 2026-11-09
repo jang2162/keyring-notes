@@ -65,9 +65,13 @@ export interface SyncReport {
   /**
    * 이번에 건너뛴 것(다음 동기화에서 다시 본다). reason: attachment-taken(같은 이름의 첨부가 서버에 생김),
    * attachment-changed(지우거나 교체하는 사이 서버에서 바뀜), attachment-local(기기와 서버가 둘 다 바꾼 첨부는 보내지 않음),
+   * attachment-unsupported(서버가 첨부 교체를 모르는 옛 판이라 기기에서 바꾼 첨부를 보내지 못함),
    * local-changed(받는 사이 기기에서 바뀜), settings-changed(설정 파일을 합치는 사이 서버에서 또 바뀜)
    */
-  skipped: { path: string; reason: "attachment-taken" | "attachment-changed" | "attachment-local" | "local-changed" | "settings-changed" }[];
+  skipped: {
+    path: string;
+    reason: "attachment-taken" | "attachment-changed" | "attachment-local" | "attachment-unsupported" | "local-changed" | "settings-changed";
+  }[];
   errors: { path: string; message: string }[];
 }
 
@@ -87,6 +91,9 @@ export function conflictCopyPath(path: string, label: string, exists: (p: string
     if (!exists(p)) return p;
   }
 }
+
+/** 상대 서버가 첨부 교체(PUT /api/attachment)를 모른다 — 이 기능 전의 서버. 동기화 안에서만 쓴다 */
+export class ReplaceUnsupportedError extends Error {}
 
 /** 연결 자체가 안 됨(오프라인·서버 꺼짐). 이때는 동기화를 멈추고 다음에 다시 한다. */
 function isNetworkFailure(e: unknown): boolean {
@@ -278,8 +285,11 @@ export class SyncEngine {
                 base[path] = (await this.remote.replaceRaw(path, data, S)).hash;
                 report.pushed.push(path);
               } catch (e) {
-                if (!(e instanceof ConflictError)) throw e;
-                report.skipped.push({ path, reason: "attachment-changed" });
+                // 목록을 받은 뒤 서버에서 바뀌었거나 지워졌다
+                if (e instanceof ConflictError || e instanceof NotFoundError) report.skipped.push({ path, reason: "attachment-changed" });
+                // 옛 서버: 오류가 아니라 보내지 못한 것으로 알린다(서버를 올리면 다음 동기화에 보낸다)
+                else if (e instanceof ReplaceUnsupportedError) report.skipped.push({ path, reason: "attachment-unsupported" });
+                else throw e;
               }
               continue;
             }
@@ -457,6 +467,9 @@ export class HttpRemote implements RemoteVault {
       body: data as Uint8Array<ArrayBuffer>,
     });
     const body = (await res.json().catch(() => ({}))) as RemoteErrorBody & { hash?: string };
+    // 교체를 모르는 옛 서버는 라우트가 없어 오류 코드 없는 404·405 를 준다(있는 서버의 「파일 없음」 404 에는 code 가 있다)
+    if (method === "PUT" && (res.status === 405 || (res.status === 404 && !body.code))) throw new ReplaceUnsupportedError();
+    if (res.status === 404) throw new NotFoundError(body.code ?? "file_missing", body.params);
     if (res.status === 409) throw new ConflictError(body.currentHash ?? null, body.code ?? undefined, body.params);
     if (res.status === 401) throw new UnauthorizedError(body.code ?? undefined, body.params);
     if (!res.ok) {
