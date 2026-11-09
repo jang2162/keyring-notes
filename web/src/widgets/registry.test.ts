@@ -86,6 +86,25 @@ describe("resolveWidgetView", () => {
     expect(resolveWidgetView('{"widget":"t/x@2"}')).toMatchObject({ kind: "widget", state: { n: 0 } });
   });
 
+  it("state 가 없으면 migrate 를 부르지 않는다", () => {
+    registerWidget(entry({ id: "t/m", version: 2, defaultState: () => ({ d: "" }), migrate: (st) => ({ d: (st as { d: string }).d.trim() }) }));
+    expect(resolveWidgetView('{"widget":"t/m@1"}')).toMatchObject({ kind: "widget", state: { d: "" } });
+  });
+
+  it("migrate·defaultState 가 던지면 예외 대신 오류 보기", () => {
+    registerWidget(entry({ id: "t/m", version: 2, migrate: (st) => ({ d: (st as { d: string }).d.trim() }) }));
+    expect(resolveWidgetView('{"widget":"t/m@1","state":{"d":1}}')).toEqual({ kind: "error", key: "kw.migrateFailed" });
+    registerWidget(
+      entry({
+        id: "t/d",
+        defaultState: () => {
+          throw new Error("x");
+        },
+      }),
+    );
+    expect(resolveWidgetView('{"widget":"t/d@1"}')).toEqual({ kind: "error", key: "kw.migrateFailed" });
+  });
+
   it("오류 종류마다 글 키", () => {
     expect(resolveWidgetView("{")).toEqual({ kind: "error", key: "kw.errorJson" });
     expect(resolveWidgetView("[]")).toEqual({ kind: "error", key: "kw.errorNotObject" });

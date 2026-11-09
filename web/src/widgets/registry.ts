@@ -71,10 +71,16 @@ export function resolveWidgetView(body: string): WidgetView {
   const { block } = r;
   const entry = findWidget(block.widget.id);
   if (!entry) return { kind: "error", key: "kw.notFound", vars: { id: block.widget.id } };
-  const resolved = resolveWidgetState(block, entry.def);
-  if (resolved.kind === "tooNew") return { kind: "error", key: "kw.tooNew" };
-  // state 가 없으면 그릴 때만 기본값을 쓴다 — 파일은 적용 때만 바뀐다
-  const state = block.state === undefined ? entry.def.defaultState() : resolved.state;
+  let state: unknown;
+  try {
+    const resolved = resolveWidgetState(block, entry.def);
+    if (resolved.kind === "tooNew") return { kind: "error", key: "kw.tooNew" };
+    // state 가 없으면 그릴 때만 기본값을 쓴다 — 파일은 적용 때만 바뀐다
+    state = block.state === undefined ? entry.def.defaultState() : resolved.state;
+  } catch {
+    // 위젯 코드(migrate·defaultState)가 던져도 그 칸의 그리기를 깨지 않는다 — 원문과 오류 한 줄로 고칠 길을 남긴다
+    return { kind: "error", key: "kw.migrateFailed" };
+  }
   return { kind: "widget", entry, block, state, editable: block.editable ?? true, display: block.display ?? entry.def.display };
 }
 

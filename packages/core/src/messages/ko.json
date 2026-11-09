@@ -741,6 +741,7 @@
   "kw.errorJson": "위젯 블록이 올바른 JSON 이 아닙니다",
   "kw.errorNoWidget": "위젯 블록에 \"widget\" 키가 없습니다",
   "kw.errorNotObject": "위젯 블록은 JSON 객체여야 합니다",
+  "kw.migrateFailed": "위젯 상태를 읽지 못했습니다",
   "kw.notFound": "위젯 {id} 를 찾을 수 없습니다",
   "kw.tooNew": "이 위젯의 새 판이 필요합니다",
   "lang.missingPack": "이 기기에 \"{id}\" 언어팩이 없어 기준 언어로 보입니다. 설정 → 언어에서 불러오세요.",

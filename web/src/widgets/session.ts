@@ -22,6 +22,8 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 export class WidgetSession {
   private base: unknown;
   private draft: unknown = undefined;
+  /** 수정을 시작한 때(또는 이어받은 때)의 상태 — 「바뀌었는가」의 기준. base 는 바깥 변경을 따라가므로 기준이 될 수 없다 */
+  private editStart: unknown = undefined;
   private isEditing = false;
   private editable: boolean;
   private readonly readOnly: boolean;
@@ -37,6 +39,10 @@ export class WidgetSession {
     if (init.resumeDraft !== undefined && this.canChange()) {
       this.isEditing = true;
       this.draft = init.resumeDraft;
+      this.editStart = init.state;
+    } else if (init.resumeDraft !== undefined) {
+      // 고칠 수 없게 된 블록(editable false·읽기 전용)은 이어받지 않는다 — 필드에 수정 상태가 남으면 원문으로 고칠 길이 막힌다
+      this.host.endEdit();
     }
   }
 
@@ -74,6 +80,7 @@ export class WidgetSession {
     if (!this.canChange() || this.isEditing) return;
     this.isEditing = true;
     this.draft = this.base;
+    this.editStart = this.base;
     this.host.startEdit(this.draft);
     this.notify();
   }
@@ -83,8 +90,10 @@ export class WidgetSession {
     const draft = this.draft;
     this.isEditing = false;
     this.draft = undefined;
-    // 바꾼 것이 없으면 쓰지 않는다 — 누르거나 포커스가 오가기만 해서는 파일이 바뀌면 안 된다
-    if (apply && !same(draft, this.base) && this.host.write(draft)) this.base = draft;
+    // 시작 때와 같은 초안은 쓰지 않는다 — 누르거나 포커스가 오가기만 해서는 파일이 바뀌면 안 되고,
+    // 그사이 바깥 변경이 들어왔다면 옛 상태를 써서 그것을 되돌리게 된다. 바꾼 초안은 바깥 변경 위에 쓴다(블록이 원자 단위)
+    if (apply && !same(draft, this.editStart) && this.host.write(draft)) this.base = draft;
+    this.editStart = undefined;
     this.host.endEdit();
     this.notify();
   }

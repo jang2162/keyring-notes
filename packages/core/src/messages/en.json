@@ -756,6 +756,7 @@
   "kw.errorJson": "The widget block is not valid JSON",
   "kw.errorNoWidget": "The widget block has no \"widget\" key",
   "kw.errorNotObject": "The widget block must be a JSON object",
+  "kw.migrateFailed": "Couldn't read this widget's state",
   "kw.notFound": "Widget {id} not found",
   "kw.tooNew": "This widget needs a newer version",
   "lang.missingPack": "The language pack \"{id}\" is not on this device, so the base language is shown. Import it in Settings → Language.",

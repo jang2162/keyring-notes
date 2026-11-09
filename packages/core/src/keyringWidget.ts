@@ -68,14 +68,22 @@ export function parseWidgetBlock(body: string): WidgetBlockParse {
   return { ok: true, block: out };
 }
 
-/** `": "`·`", "` 꼴 한 줄 JSON */
+function oneLine(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(oneLine).join(", ")}]`;
+  if (value !== null && typeof value === "object")
+    return `{${Object.entries(value)
+      .map(([k, v]) => `${JSON.stringify(k)}: ${oneLine(v)}`)
+      .join(", ")}}`;
+  return JSON.stringify(value);
+}
+
+/**
+ * `": "`·`", "` 꼴 한 줄 JSON. 먼저 JSON.stringify 로 값을 정규화한다 — toJSON(Date 등)·undefined·함수를
+ * 여러 줄 꼴(JSON.stringify)과 똑같이 다뤄야 80자 경계를 넘나들어도 같은 상태가 같은 값으로 저장된다.
+ */
 export function widgetOneLine(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map((v) => widgetOneLine(v === undefined ? null : v)).join(", ")}]`;
-  if (value !== null && typeof value === "object") {
-    const items = Object.entries(value).filter(([, v]) => v !== undefined && typeof v !== "function");
-    return `{${items.map(([k, v]) => `${JSON.stringify(k)}: ${widgetOneLine(v)}`).join(", ")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
+  const json = JSON.stringify(value);
+  return json === undefined ? "null" : oneLine(JSON.parse(json));
 }
 
 const ONE_LINE_MAX = 80;
@@ -85,7 +93,8 @@ function entriesOf(block: KeyringWidgetBlock): [string, unknown][] {
   if (block.display !== undefined) items.push(["display", block.display]);
   if (block.editable !== undefined) items.push(["editable", block.editable]);
   if (block.state !== undefined) items.push(["state", block.state]);
-  return items.concat(block.extra);
+  // JSON.stringify 가 객체에서 버리는 값(undefined·함수·심볼)은 두 꼴 모두 키째 뺀다
+  return items.concat(block.extra).filter(([, v]) => JSON.stringify(v) !== undefined);
 }
 
 /**
@@ -105,7 +114,8 @@ export type ResolvedWidgetState = { kind: "ok"; state: unknown; migrated: boolea
 export function resolveWidgetState(block: KeyringWidgetBlock, def: { version: number; migrate?(state: unknown, from: number): unknown }): ResolvedWidgetState {
   const from = block.widget.version;
   if (from > def.version) return { kind: "tooNew" };
-  if (from < def.version && def.migrate) return { kind: "ok", state: def.migrate(block.state, from), migrated: true };
+  // state 가 없으면 올릴 것이 없다 — 그릴 때는 호스트가 defaultState() 를 쓴다
+  if (from < def.version && def.migrate && block.state !== undefined) return { kind: "ok", state: def.migrate(block.state, from), migrated: true };
   // 판이 낮은데 migrate 가 없으면 호환으로 본다 — 다음 적용 때 위젯 판으로 쓴다(설계 「블록 형식」).
   return { kind: "ok", state: block.state, migrated: false };
 }

@@ -100,6 +100,25 @@ describe("keyring-widget 블록 직렬화", () => {
   });
 });
 
+describe("keyring-widget 직렬화 — JSON 의미", () => {
+  it("한 줄 꼴과 여러 줄 꼴이 같은 값(toJSON)을 쓴다", () => {
+    const d = new Date(Date.UTC(2026, 11, 25));
+    const short = serializeWidgetBlock(withWidgetState(block('{"widget":"a/b@1"}'), { d }, 1));
+    expect(short).toBe('{"widget": "a/b@1", "state": {"d": "2026-12-25T00:00:00.000Z"}}');
+    const long = serializeWidgetBlock(withWidgetState(block('{"widget":"a/b@1"}'), { d, pad: "x".repeat(60) }, 1));
+    expect(JSON.parse(long).state.d).toBe("2026-12-25T00:00:00.000Z");
+  });
+
+  it("JSON 이 버리는 값은 두 꼴 모두 같게 버린다", () => {
+    const st = { f: () => 1, u: undefined, a: [undefined, () => 1, NaN], s: Symbol("x") };
+    const short = serializeWidgetBlock(withWidgetState(block('{"widget":"a/b@1"}'), st, 1));
+    expect(short).toBe('{"widget": "a/b@1", "state": {"a": [null, null, null]}}');
+    expect(JSON.parse(short).state).toEqual(JSON.parse(JSON.stringify(st)));
+    // 바깥 층 값이 JSON 으로 없는 값이면 키째 빠진다(JSON.stringify 와 같이)
+    expect(serializeWidgetBlock(withWidgetState(block('{"widget":"a/b@1"}'), () => 1, 1))).toBe('{"widget": "a/b@1"}');
+  });
+});
+
 describe("keyring-widget 판", () => {
   const b1 = block('{"widget":"a/b@1","state":{"n":1}}');
 
@@ -115,6 +134,13 @@ describe("keyring-widget 판", () => {
   it("같은 판은 그대로, 높은 판은 tooNew", () => {
     expect(resolveWidgetState(b1, { version: 1, migrate: () => "no" })).toEqual({ kind: "ok", state: { n: 1 }, migrated: false });
     expect(resolveWidgetState(block('{"widget":"a/b@3"}'), { version: 2 })).toEqual({ kind: "tooNew" });
+  });
+
+  it("state 가 없으면 migrate 를 부르지 않는다", () => {
+    let called = 0;
+    const def = { version: 2, migrate: () => (called++, { x: 1 }) };
+    expect(resolveWidgetState(block('{"widget":"a/b@1"}'), def)).toEqual({ kind: "ok", state: undefined, migrated: false });
+    expect(called).toBe(0);
   });
 
   it("withWidgetState 는 상태와 판만 바꾼다", () => {

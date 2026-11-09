@@ -264,6 +264,60 @@ describe("수정 중 위치 따라가기", () => {
     expect(widgetGoneNow(apply(tr2.state, {}))).toBe(false);
   });
 
+  it("한 번 사라진 블록은 되살아나도 gone 그대로", () => {
+    let { s } = editing();
+    const b = widgetBlocks(s)[0]!;
+    const closeLine = s.doc.lineAt(b.to);
+    // 닫는 펜스를 지우면 닫히지 않은 블록 — 위젯 블록이 아니다
+    s = apply(s, external({ changes: { from: closeLine.from, to: closeLine.to } })).state;
+    expect(s.field(widgetEditField)!.gone).toBe(true);
+    s = apply(s, external({ changes: { from: closeLine.from, insert: "```" } })).state;
+    expect(widgetBlockAt(s, s.field(widgetEditField)!.from)).not.toBeNull();
+    expect(s.field(widgetEditField)!.gone).toBe(true);
+  });
+
+  it("수정 시작 효과는 뒤 spec 의 변경을 따라 옮겨진다(그 자리 바로 앞에 넣은 글 뒤로)", () => {
+    const s = state(DOC);
+    const tr = s.update({ effects: startWidgetEdit.of({ from: FROM, draft: {} }) }, { changes: { from: FROM, insert: "새 줄\n" } });
+    expect(tr.state.field(widgetEditField)).toMatchObject({ from: FROM + 4, gone: false });
+  });
+
+  describe("덜 파싱된 트리", () => {
+    // EditorState 는 처음에 앞 3000자만 파싱하고, 변경마다 그 끝까지만 더 파싱한다 — 뒤의 블록은 트리에 아직 없다
+    const PAD = "줄\n\n".repeat(4000);
+    const BIG = PAD + "```keyring-widget\n{}\n```\n";
+    const BFROM = PAD.length;
+    function partial() {
+      const s = EditorState.create({ doc: BIG, extensions: [markdown({ base: markdownLanguage }), widgetEditField] });
+      return s.update({ effects: startWidgetEdit.of({ from: BFROM, draft: {} }) }).state;
+    }
+
+    it("트리가 그 자리까지 오지 않았으면 gone 으로 치지 않는다", () => {
+      let s = partial();
+      s = s.update(external({ changes: { from: 0, insert: "x" } })).state;
+      expect(widgetBlockAt(s, s.field(widgetEditField)!.from)).toBeNull();
+      expect(s.field(widgetEditField)!.gone).toBe(false);
+    });
+
+    it("파싱이 따라오면 그때 판정한다", () => {
+      let s = partial();
+      s = s.update(external({ changes: { from: BFROM, to: BIG.length } })).state;
+      expect(s.field(widgetEditField)!.gone).toBe(false);
+      ensureSyntaxTree(s, s.doc.length, 5000);
+      const tr = s.update({});
+      expect(tr.state.field(widgetEditField)!.gone).toBe(true);
+      expect(widgetGoneNow(tr)).toBe(true);
+    });
+
+    it("파싱이 따라와도 블록이 있으면 gone 이 아니다", () => {
+      let s = partial();
+      s = s.update(external({ changes: { from: 0, insert: "x" } })).state;
+      ensureSyntaxTree(s, s.doc.length, 5000);
+      s = s.update({}).state;
+      expect(s.field(widgetEditField)).toMatchObject({ from: BFROM + 1, gone: false });
+    });
+  });
+
   it("바뀐 것이 없으면 같은 객체", () => {
     const { s } = editing();
     const tr = apply(s, {});

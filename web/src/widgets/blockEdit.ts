@@ -1,6 +1,6 @@
 import { StateEffect, StateField, type EditorState, type StateEffectType, type Transaction, type TransactionSpec } from "@codemirror/state";
 import { isolateHistory } from "@codemirror/commands";
-import { syntaxTree } from "@codemirror/language";
+import { syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { KEYRING_WIDGET_LANG, parseWidgetBlock, serializeWidgetBlock, withWidgetState } from "@keyring-notes/core";
 import { frontmatterEnd } from "../liveSyntax";
 
@@ -120,10 +120,13 @@ export const widgetEditField: StateField<WidgetEdit | null> = StateField.define<
   create: () => null,
   update(value, tr) {
     let v = value;
-    if (v && tr.docChanged) {
-      const from = tr.changes.mapPos(v.from, 1);
-      // 효과보다 먼저 옮긴다: 같은 트랜잭션의 효과 자리는 바뀐 뒤 문서 기준이다
-      const gone = v.gone || widgetBlockAt(tr.state, from) === null;
+    // 트리가 바뀐 것도 본다: 문서 변경 때 덜 파싱돼 미뤄 둔 판정을 파싱이 따라온 뒤에 한다
+    if (v && (tr.docChanged || (!v.gone && syntaxTree(tr.startState) !== syntaxTree(tr.state)))) {
+      const from = tr.docChanged ? tr.changes.mapPos(v.from, 1) : v.from;
+      // 효과보다 먼저 옮긴다: 같은 트랜잭션의 효과 자리는 바뀐 뒤 문서 기준이다.
+      // 한 번 gone 이면 되살아나도 그대로 — 알림·초안 버림은 한 번뿐이다.
+      // 트리가 문서 끝까지 파싱되지 않았으면 null 은 「아직 모름」이라 gone 으로 치지 않는다(큰 노트·미리보기만 보는 칸의 숨은 편집기)
+      const gone = v.gone || (widgetBlockAt(tr.state, from) === null && syntaxTreeAvailable(tr.state));
       if (from !== v.from || gone !== v.gone) v = { ...v, from, gone };
     }
     for (const e of tr.effects) {

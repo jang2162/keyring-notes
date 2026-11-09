@@ -139,6 +139,25 @@ describe("수정 모드", () => {
     expect(of("write")).toEqual([["write", { n: 2, m: 0 }]]);
   });
 
+  it("초안을 바꾸지 않았으면 바깥 변경 뒤 포커스 아웃이 쓰지 않는다(바깥 변경을 되돌리지 않는다)", () => {
+    const { s, of } = session({ state: { n: 1 } });
+    s.requestEdit();
+    s.external({ n: 5 }, true);
+    s.focusOut();
+    expect(of("write")).toEqual([]);
+    expect(s.state).toEqual({ n: 5 });
+  });
+
+  it("바꿨다 시작 상태로 되돌린 초안도 바깥 변경 뒤 쓰지 않는다", () => {
+    const { s, of } = session({ state: { n: 1 } });
+    s.requestEdit();
+    s.setState({ n: 2 });
+    s.setState({ n: 1 });
+    s.external({ n: 5 }, true);
+    s.focusOut();
+    expect(of("write")).toEqual([]);
+  });
+
   it("보기 모드 바깥 변경은 상태만 바꾼다", () => {
     const { s, of } = session();
     s.external({ n: 5 }, true);
@@ -169,6 +188,15 @@ describe("수정 모드", () => {
     expect(s.editing).toBe(false);
     s.focusOut();
     expect(of("write")).toEqual([]);
+  });
+
+  it("resumeDraft 가 있어도 고칠 수 없으면 수정 상태를 남기지 않는다", () => {
+    for (const init of [{ editable: false }, { readOnly: true }]) {
+      const { s, of } = session({ ...init, resumeDraft: { n: 4 } });
+      expect(s.editing).toBe(false);
+      expect(of("endEdit")).toHaveLength(1);
+      expect(of("write")).toEqual([]);
+    }
   });
 
   it("resumeDraft 로 이어받으면 시작을 다시 부르지 않는다", () => {
