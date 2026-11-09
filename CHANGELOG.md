@@ -7,12 +7,13 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 ### Added
 
 - Live Preview draws horizontal rules, quotes, bullets, to-dos, code blocks, images between words (`![text](url)`) and HTML blocks. Click a to-do's checkbox to check it without moving the cursor. Code blocks hide their fence lines, show the language and a **Copy** button, and keep the code editable in place.
-- The preview colors code blocks by language, with the same colors as the editor in the light and dark themes.
+- Code blocks are colored by language in the editor and the preview, with the same colors in the light and dark themes. Short language names such as `py`, `sh`, `yml`, `rs` and `kt` work too.
 
 ### Changed
 
 - The rail button for the attachments panel is now **Files**, and the button for the note tree is now **Notes**, on the rail and the bottom bar. The panel title, its filter, the **Files in the tree** setting and the "N files" row under each note in the tree use the new name too.
 - The button at the top right of the right panel now collapses the panel, with a panel icon instead of ✕.
+- In the editor, `**bold**`, `*italic*` and `~~strikethrough~~` text now look bold, italic and struck through, and `[ ]` markers, code fence language names and HTML tags are colored.
 
 ## [0.11.0] - 2026-11-01
 

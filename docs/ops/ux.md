@@ -1548,15 +1548,21 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 - 코드 블록은 커서가 블록 밖이면 여는·닫는 펜스 줄을 숨기고 머리(언어 이름·「복사」)를 둔다. 안쪽 줄은 문서 글 그대로라 그 자리에서 고친다. 커서가 블록 안이면 펜스 원문. 「복사」 는 안쪽 코드만. Mermaid 는 기존 위젯, 들여쓴 코드 블록은 상자만.
 - 줄 안 `![글](주소)`: 볼트 상대 경로는 미리보기와 같은 해석(문서 기준 경로 → resolver → `rawUrl`), `http(s)` 는 그대로. `SAFE_URI` 에 걸리거나 못 찾은 파일은 원문으로 둔다(미리보기는 못 찾아도 깨진 그림을 그린다).
 - HTML 블록은 미리보기 렌더러로 그린다. 주석 하나뿐인 블록(붙여넣기 업로드 자리 표시 `<!-- … -->`)은 그리지 않는다.
-- 코드 언어별 색: 미리보기도 편집기와 같은 lezer 파서(`@codemirror/language-data` 지연 청크)로 `tok-*` 클래스를 칠하고, 편집 화면은 `defaultHighlightStyle` 대신 `classHighlighter` 를 쓴다. 색은 `styles.css` 의 `--tok-*` 밝은·어두운 토큰.
+- 코드 언어별 색: 미리보기도 편집기와 같은 lezer 파서(`@codemirror/language-data` 지연 청크)로 `tok-*` 클래스를 칠하고, 편집 화면은 `syntaxHighlighting(classHighlighter)` 를 쓴다. 색은 `styles.css` 의 `--tok-*` 밝은·어두운 토큰. 전에 있던 `defaultHighlightStyle, { fallback: true }` 는 다른 하이라이터(`headingStyle`)가 있어 한 번도 쓰이지 않았다 — 편집 화면은 코드를 칠한 적이 없다(1차 리뷰가 `highlightingFor` 로 확인).
+- 편집 화면 모양이 넓게 바뀐다(받아들임, 설계 9절). `classHighlighter` 가 코드만이 아니라 본문 원문에도 클래스를 달아 처음 생기는 모양이다. 사라진 색은 없다.
+  - 코드 블록 안 코드에 언어별 색이 처음 생긴다.
+  - `**굵게**`·`*기울임*` 이 실제로 굵게·기울게 보인다(전에는 기호만 숨고 글은 평범했다). 취소선 `~~…~~` 도 줄이 그어진다.
+  - 원문으로 보이는 `[ ]` 표시(`tok-atom`)와 펜스 언어 이름(`tok-labelName`)이 숫자 색(파랑)이 된다.
+  - HTML 태그·주석에 색이 생긴다.
+- 언어 별칭(사용자): `language-data` 에 없는 흔한 짧은 이름(`py`·`rs`·`kt`·`ps1`·`md`·`golang`·`hs`·`h`·`hpp`·`mjs` 등)을 `web/src/codeLanguages.ts` 의 표 하나로 찾고, 편집 화면(`markdown({ codeLanguages: findLanguage })`)과 미리보기(`highlightPieces`)가 함께 쓴다. 표에 없으면 `matchLanguageName(…, true)` 그대로.
 
 ### 정한 것(워커 — 설계에 없던 판단)
 
 - 판정은 `web/src/liveSyntax.ts` 의 순수 함수(`syntaxMarks`·`toggleTaskAt`)로 떼었다. `frontmatterEnd` 와 콜아웃 정규식(`CALLOUT_LINE`)은 계획의 「`livePreview.ts` 에서 export」 대신 `liveSyntax.ts` 로 옮겼다 — `livePreview.ts` 가 `liveSyntax.ts` 를 읽으므로 거꾸로 읽으면 순환 import 가 된다.
-- 끝낸 할 일 글은 꾸미지 않는다. 설계는 「미리보기의 `task-item` 모양(흐림·취소선)을 따른다」 인데, 미리보기의 `task-item` 에는 흐림·취소선이 없어 미리보기 쪽을 따랐다.
+- 끝낸 할 일 글은 꾸미지 않는다. 미리보기의 `task-item` 에 흐림·취소선이 없어 미리보기 쪽을 따랐다(1차 리뷰 뒤 사용자 확인, 설계 4절도 고쳤다).
 - 펜스 머리·꼬리는 줄 전체가 아니라 펜스 기호부터 줄 끝까지를 바꾼다. 최상위 블록에서는 같고, 목록 안 펜스에서 글머리를 지우지 않는다.
-- 코드 언어 이름은 `LanguageDescription.matchLanguageName(languages, 이름, true)` 그대로라 별칭이 없는 ` ```py ` 는 칠하지 않는다(편집 화면도 같다). `python`·`js`·`ts`·`typescript` 는 칠한다.
-- 편집 화면의 취소선은 `classHighlighter` 에 클래스가 없어 `headingStyle` 에 `tags.strikethrough` 를 더했다.
+- 별칭 표에 `text`·`txt`·`plain`·`plaintext` 를 「칠하지 않음」 으로 넣었다. `matchLanguageName` 의 느슨한 찾기는 세 글자 넘는 별칭을 이름 안 어디서든 찾아 ` ```text ` 를 LaTeX(`tex`)로 칠한다(편집 화면도 같았다).
+- 편집 화면의 취소선: `classHighlighter` 에는 취소선 클래스가 없어 `headingStyle` 에 `tags.strikethrough` 를 더했다. 무엇을 되살린 것이 아니다 — 전에도 편집 화면에는 취소선이 없었고(fallback 이 쓰이지 않았다), 새로 생긴 모양이다.
 
 ### 확인한 것
 
