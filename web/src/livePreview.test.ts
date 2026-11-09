@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
+import { defaultKeymap } from "@codemirror/commands";
+import { keymap } from "@codemirror/view";
 import { bodyStart, frontmatterFold, selectBody } from "./livePreview";
 
 const NOTE = "---\nedited: 2026-10-30T09:12:33Z\n---\n";
@@ -77,5 +79,14 @@ describe("전체 선택은 본문만 잡는다", () => {
   it("프런트매터가 없거나 원문으로 펼친 프런트매터 안이면 기본 전체 선택에 맡긴다", () => {
     expect(selectAll(state("본문")).ran).toBe(false);
     expect(selectAll(state(NOTE + "본문", 5)).ran).toBe(false);
+  });
+
+  it("frontmatterFold 의 Mod-a 가 기본 키맵(selectAll)보다 먼저 걸린다", () => {
+    const s = EditorState.create({ doc: NOTE, extensions: [keymap.of(defaultKeymap), frontmatterFold(() => undefined)] });
+    const first = s
+      .facet(keymap)
+      .flat()
+      .find((b) => b.key === "Mod-a");
+    expect(first?.run).toBe(selectBody);
   });
 });

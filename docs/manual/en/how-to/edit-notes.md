@@ -27,7 +27,7 @@ Live Preview is on by default. Turn it off from the status bar or in Settings �
 - Code is colored by language, with the same colors in the editor and the preview. Short names such as ` ```py `, ` ```sh `, and ` ```yml ` work too.
 - Embeds, callouts, math, Mermaid diagrams, footnotes, images between words (`![text](url)`) and HTML blocks are drawn as in the preview. Comments `%%…%%` and block IDs `^id` are hidden.
 - Move the cursor to a line, or click a drawn block, to see its source. Tables stay drawn and are edited in place. See [Edit tables](#edit-tables).
-- Leading frontmatter folds into one line, "N properties — see the right panel · Show source". `Ctrl/Cmd+A` selects the body only, in the source editor too and in the preview. To select the frontmatter as well, click **Show source** first.
+- Leading frontmatter folds into one line, "N properties — see the right panel · Show source". `Ctrl/Cmd+A` selects the body only, without the frontmatter. It works the same with Live Preview off. In the preview, including the preview side of **Side by side**, it selects the note body without the title or the side panels. To select the frontmatter too, click **Show source** first and press `Ctrl/Cmd+A` there.
 
 `Ctrl/Cmd+E` switches between editing and preview. The supported syntax is listed in [Reference](../reference.md#markdown-syntax).
 

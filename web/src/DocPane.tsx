@@ -343,11 +343,11 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   const { propCount, icon: docIcon } = useMemo(() => docMeta(doc.draft), [doc.draft]);
   const shownMode = shownModeOf(mode, { revision: !!revision, narrow: ctx.narrow });
 
-  // 미리보기만 보일 때 전체 선택은 이 칸 본문만(편집기·나란히 보기의 Mod+A 는 편집기가 받는다). 칸이 여럿이면 지금 칸만
+  // 미리보기가 보일 때(미리보기·나란히 보기) 전체 선택은 이 칸 미리보기 본문만. 편집기에 포커스가 있으면 편집기가 받는다(selectBody). 칸이 여럿이면 지금 칸만
   useEffect(() => {
-    if (!focused || shownMode !== "preview") return;
+    if (!focused || shownMode === "edit") return;
     const onKey = (e: KeyboardEvent) => {
-      if (!previewRef.current || !takesPreviewSelectAll(e, previewPaneRef.current, document.body)) return;
+      if (!previewRef.current || !takesPreviewSelectAll(e, previewPaneRef.current)) return;
       e.preventDefault();
       selectPreviewBody(previewRef.current);
     };
