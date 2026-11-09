@@ -97,6 +97,15 @@ export function tableRanges(state: EditorState): { from: number; to: number }[] 
   return topTables(state).filter((tb) => !raw.some((p) => tb.from <= p && p <= tb.to));
 }
 
+/**
+ * pos 가 그린 표 안인가. 표 편집기가 꺼져 있으면(Live Preview 끔) false.
+ * 칸에서 친 글은 본문 트랜잭션(input.type)으로 들어오므로 본문의 자동완성도 함께 열린다 — 본문 쪽은 이것으로 끈다(Editor.tsx)
+ */
+export function inDrawnTable(state: EditorState, pos: number): boolean {
+  if (state.field(rawField, false) === undefined) return false;
+  return tableRanges(state).some((x) => x.from <= pos && pos <= x.to);
+}
+
 /** 위젯 안에서 쓰는, 표 글만으로 읽은 모델(위치는 표 처음 기준 0부터) */
 export function modelOfText(text: string): TableModel | null {
   return parseTable(Text.of(text.split("\n")), 0, text.length);

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
-import { editTableRaw, tableEditor, tableRanges } from "./tableWidget";
+import { editTableRaw, inDrawnTable, tableEditor, tableRanges } from "./tableWidget";
 
 const opts = { linkCandidates: () => [] };
 function state(doc: string, anchor = 0, readOnly = false) {
@@ -63,5 +63,20 @@ describe("tableRanges", () => {
   it("문서 끝 줄바꿈 없는 표, 표 바로 앞의 --- 구분선", () => {
     const doc = "---\n\n| a |\n|---|";
     expect(tableRanges(state(doc))).toEqual([{ from: doc.indexOf("| a"), to: doc.length }]);
+  });
+});
+
+describe("inDrawnTable: 본문 자동완성을 그린 표 안에서 끈다(칸에서 친 글이 본문 트랜잭션으로 들어오므로)", () => {
+  it("그린 표 안이면 true, 밖이면 false", () => {
+    const s = state(DOC);
+    expect(inDrawnTable(s, FROM + 3)).toBe(true);
+    expect(inDrawnTable(s, 0)).toBe(false);
+  });
+  it("원문으로 편집 중인 표와 표 편집기가 꺼진 상태(Live Preview 끔)는 false", () => {
+    const raw = state(DOC).update({ effects: editTableRaw.of(FROM), selection: { anchor: FROM } }).state;
+    expect(inDrawnTable(raw, FROM + 3)).toBe(false);
+    const off = EditorState.create({ doc: DOC, extensions: [markdown({ base: markdownLanguage })] });
+    ensureSyntaxTree(off, DOC.length, 5000);
+    expect(inDrawnTable(off, FROM + 3)).toBe(false);
   });
 });
