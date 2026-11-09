@@ -71,10 +71,17 @@ export function childSortItems(sort: ChildSort | undefined | null, descending: b
 
 /**
  * 「폴더로 쓰기」 메뉴 항목 — 트리 노드 메뉴와 노트 머리의 노트 메뉴가 같이 쓴다. checked 를 주어 켜짐·꺼짐이
- * 보조기기에도 전해진다(menuitemradio·aria-checked). 고르면 지금과 반대로 바꾼다
+ * 보조기기에도 전해진다(혼자 켜고 끄는 항목이라 menuitemcheckbox·aria-checked). 고르면 지금과 반대로 바꾼다
  */
 export function folderMenuItem(on: boolean, disabled: boolean, set: (on: boolean) => void): MenuItem {
-  return { label: t("tree.useAsFolder"), icon: on ? Check : undefined, checked: on, disabled: disabled || undefined, run: () => set(!on) };
+  return {
+    label: t("tree.useAsFolder"),
+    icon: on ? Check : undefined,
+    checked: on,
+    checkKind: "checkbox",
+    disabled: disabled || undefined,
+    run: () => set(!on),
+  };
 }
 
 /** 트리 표시를 바꾸는 것들(모두 선택) */

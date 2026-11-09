@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { setLanguage } from "./i18n";
 import { folderMenuItem } from "./Tree";
+import { menuItemRole } from "./ui";
 
 describe("「폴더로 쓰기」 메뉴 항목", () => {
   beforeEach(() => setLanguage("ko"));
@@ -11,6 +12,7 @@ describe("「폴더로 쓰기」 메뉴 항목", () => {
     const it = folderMenuItem(true, false, (on) => (got = on));
     expect(it).toMatchObject({ label: "폴더로 쓰기", checked: true, icon: Check });
     expect(it.disabled).toBeUndefined();
+    expect(menuItemRole(it)).toBe("menuitemcheckbox");
     it.run();
     expect(got).toBe(false);
   });
@@ -19,6 +21,7 @@ describe("「폴더로 쓰기」 메뉴 항목", () => {
     let got: boolean | null = null;
     const it = folderMenuItem(false, false, (on) => (got = on));
     expect(it.checked).toBe(false);
+    expect(menuItemRole(it)).toBe("menuitemcheckbox");
     expect(it.icon).toBeUndefined();
     it.run();
     expect(got).toBe(true);
@@ -26,5 +29,13 @@ describe("「폴더로 쓰기」 메뉴 항목", () => {
 
   it("못 바꾸는 노트면 꺼진 항목", () => {
     expect(folderMenuItem(false, true, () => undefined).disabled).toBe(true);
+  });
+});
+
+describe("메뉴 항목의 역할", () => {
+  it("checked 가 없으면 menuitem, checkKind 없이 checked 면 menuitemradio(워크스페이스 전환)", () => {
+    expect(menuItemRole({})).toBe("menuitem");
+    expect(menuItemRole({ checked: true })).toBe("menuitemradio");
+    expect(menuItemRole({ checked: false, checkKind: "checkbox" })).toBe("menuitemcheckbox");
   });
 });
