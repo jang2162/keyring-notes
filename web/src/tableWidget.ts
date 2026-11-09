@@ -89,7 +89,7 @@ export const virtualField = StateField.define<(CellRef & { pos: number }) | null
 });
 
 /** 칸을 눌러 열 때 그 화면 좌표(칸 편집기가 그 자리에 커서를 둔다) */
-export const cellClick = StateEffect.define<{ x: number; y: number }>();
+export const cellClick = StateEffect.define<{ x: number; y: number; edge: "start" | "end" | null }>();
 
 /** 그릴 표의 범위. 원문 모드 표는 뺀다 */
 export function tableRanges(state: EditorState): { from: number; to: number }[] {
@@ -139,17 +139,22 @@ class TableWidget extends WidgetType {
       menu.addEventListener("click", (e) => {
         e.preventDefault();
         const r = menu.getBoundingClientRect();
-        openMenu({ x: r.right, y: r.bottom + 2 }, [
-          {
-            label: t("table.editRaw"),
-            run: () => {
-              const m = tableAtDOM(view, wrap);
-              if (!m) return;
-              view.dispatch({ effects: editTableRaw.of(m.from), selection: { anchor: m.from }, scrollIntoView: true });
-              view.focus();
+        openMenu(
+          { x: r.right, y: r.bottom + 2 },
+          [
+            {
+              label: t("table.editRaw"),
+              run: () => {
+                const m = tableAtDOM(view, wrap);
+                if (!m) return;
+                view.dispatch({ effects: editTableRaw.of(m.from), selection: { anchor: m.from }, scrollIntoView: true });
+                view.focus();
+              },
             },
-          },
-        ]);
+          ],
+          t("table.menu"),
+          () => refocus(view, wrap),
+        );
       });
       wrap.append(menu);
       attachHandles(view, wrap);
@@ -174,7 +179,13 @@ class TableWidget extends WidgetType {
       const col = Number(td.dataset.col);
       const r = row === 0 ? m.header : m.body[row - 1];
       const cell = r?.cells[col];
-      const click = cellClick.of({ x: e.clientX, y: e.clientY });
+      // 칸 편집기는 원문(`**굵게**`)을 보이므로 그린 글의 x 좌표는 원문의 다른 글자에 떨어진다 —
+      // 그린 글 끝보다 오른쪽(흔한 「이어 쓰기」)이면 칸 끝, 왼쪽 바깥이면 칸 처음에 둔다. 글 위를 누른 것만 좌표로 잡는다
+      const range = document.createRange();
+      range.selectNodeContents(td);
+      const box = range.getBoundingClientRect();
+      const edge = !box.width || e.clientX >= box.right ? "end" : e.clientX <= box.left ? "start" : null;
+      const click = cellClick.of({ x: e.clientX, y: e.clientY, edge });
       if (cell) view.dispatch({ selection: { anchor: cell.to }, effects: click });
       else if (r) view.dispatch({ selection: { anchor: r.from + r.text.trimEnd().length }, effects: [setVirtualCell.of({ table: m.from, row, col }), click] });
     });
@@ -288,7 +299,14 @@ function menuOf(view: EditorView, wrap: HTMLElement, items: MenuAction[], label:
     last = g;
     entries.push({ label: t(it.key), danger: /Delete/.test(it.key), run: () => act(view, wrap, it.action) });
   }
-  openMenu(at, entries, label);
+  openMenu(at, entries, label, () => refocus(view, wrap));
+}
+
+/** 메뉴가 가져간 포커스를 돌려준다: 칸 편집기가 열려 있으면 그 칸, 아니면 본문(안 그러면 이어서 친 글이 사라진다) */
+function refocus(view: EditorView, wrap: HTMLElement) {
+  const cell = wrap.querySelector<HTMLElement>(".cm-lp-cell-editing .cm-content");
+  if (cell) cell.focus();
+  else view.focus();
 }
 
 /**
@@ -408,13 +426,14 @@ export function paintCell(td: HTMLElement, raw: string, ctx: LiveRenderContext |
 }
 
 /** ui.tsx 의 Menu 를 document.body 에 띄운다(편집기 위젯은 React 밖이다) */
-export function openMenu(at: { x: number; y: number }, items: MenuEntry[], label?: string) {
+export function openMenu(at: { x: number; y: number }, items: MenuEntry[], label?: string, onClosed?: () => void) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   const close = () => {
     root.unmount();
     host.remove();
+    onClosed?.();
   };
   root.render(createElement(Menu, { at, items, label, onClose: close }));
 }

@@ -2,7 +2,7 @@ import { acceptCompletion, autocompletion, completionStatus } from "@codemirror/
 import { defaultKeymap, redo, undo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
-import { Annotation, ChangeSet, EditorSelection, EditorState, Prec, Text, Transaction, type Extension, type TransactionSpec } from "@codemirror/state";
+import { Annotation, ChangeSet, EditorSelection, EditorState, Prec, Transaction, type Extension, type TransactionSpec } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, runScopeHandlers, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { classHighlighter } from "@lezer/highlight";
 import { headingStyle, insertLink, wikilinkSource, wrapSelection } from "./editorCommands";
@@ -12,7 +12,6 @@ import { codeFont } from "./livePreview";
 import { diffChange } from "./mirror";
 import {
   cellAt,
-  cellChangesToDoc,
   cellText,
   ensureCell,
   escapeCellInput,
@@ -48,6 +47,7 @@ import {
  */
 
 type GetCtx = () => LiveRenderContext | null;
+type CellClick = { x: number; y: number; edge: "start" | "end" | null };
 
 /** 칸 편집기에서 온 본문 트랜잭션 */
 const fromCell = Annotation.define<boolean>();
@@ -82,6 +82,13 @@ export function selectedCell(state: EditorState): (CellRef & { anchor: number; h
   return { table: m.from, row: a.row, col: a.col, anchor: rawToTextPos(cell.raw, anchor - cell.from), head: rawToTextPos(cell.raw, head - cell.from) };
 }
 
+/** 칸 편집기 글의 위치 → 칸 원문 위치. 칸 편집기 글의 앞뒤 공백은 원문에 없으므로 그 안의 위치는 원문 처음·끝으로 붙인다 */
+export function cellPosToRaw(text: string, p: number): number {
+  const lead = text.length - text.trimStart().length;
+  const trimmed = text.trim();
+  return textToRawPos(escapeCellInput(trimmed), Math.min(Math.max(p - lead, 0), trimmed.length));
+}
+
 /**
  * 칸 편집기 트랜잭션 → 본문 트랜잭션. 바뀐 자리만 바꾸고(칸 전체 바꾸기가 아니다) userEvent·시각을 그대로 옮겨,
  * 칸에서 친 글자도 본문 history() 의 같은 묶음 규칙으로 묶인다(설계 6.3 실행 취소).
@@ -101,23 +108,22 @@ export function cellTransactionToMain(main: EditorState, ref: CellRef, tr: Trans
     cell = { from: e.at, to: e.at, raw: "" };
   }
   const base = cell;
-  const startText = tr.startState.doc.toString();
-  let specs = cellChangesToDoc(base, tr.changes);
-  // 칸 편집기가 본문과 어긋났으면(조합 중 다른 칸에서 같은 칸을 고친 경우 등) 위치 대응을 믿지 않고 칸 전체를 바꾼다
-  if (startText !== cellText(base.raw)) specs = [{ from: base.from, to: base.to, insert: escapeCellInput(tr.state.doc.toString()) }];
-  let changes = ChangeSet.of(specs, pre ? pre.newLength : main.doc.length);
+  // 칸 편집기의 새 글을 원문으로 바꿔 지금 칸 원문과의 차이만 보낸다. 바뀐 자리가 그대로 나오므로 연달아 친 글자는
+  // 본문 history 의 묶음 규칙(이웃한 변경)대로 묶인다. 앞뒤 공백은 | 옆 여백이라 칸 글이 아니다 — 끝에 친 공백은
+  // 다음 글자와 함께 들어간다(공백만으로는 문서를 바꾸지 않는다)
+  const next = tr.state.doc.toString();
+  const d = diffChange(base.raw, escapeCellInput(next.trim()));
+  let changes = ChangeSet.of(d ? [{ from: base.from + d.from, to: base.from + d.to, insert: d.insert }] : [], pre ? pre.newLength : main.doc.length);
   if (pre) changes = pre.compose(changes);
-  const local = ChangeSet.of(
-    specs.map((s) => ({ from: s.from - base.from, to: s.to - base.from, insert: s.insert })),
-    base.raw.length,
-  );
-  const newRaw = local.apply(Text.of([base.raw])).toString();
-  const pos = (p: number) => base.from + textToRawPos(newRaw, p);
+  const pos = (p: number) => base.from + cellPosToRaw(next, p);
   const sel = tr.newSelection.main;
   const userEvent = tr.annotation(Transaction.userEvent);
+  // 본문 선택이 이미 이 칸을 떠났으면(조합 중 다른 칸을 누른 뒤 조합이 확정된 경우) 바뀐 글만 보낸다 — 선택까지 보내면 누른 칸 대신 이 칸으로 되돌아온다
+  const here = selectedCell(main);
+  const mine = !!here && here.table === ref.table && here.row === ref.row && here.col === ref.col;
   return {
     changes,
-    selection: EditorSelection.single(pos(sel.anchor), pos(sel.head)),
+    ...(mine ? { selection: EditorSelection.single(pos(sel.anchor), pos(sel.head)) } : {}),
     annotations: [
       fromCell.of(true),
       Transaction.time.of(tr.annotation(Transaction.time) ?? Date.now()),
@@ -171,7 +177,7 @@ class CellPlugin {
 
   update(u: ViewUpdate) {
     if (this.cell && u.docChanged) this.cell.ref = { ...this.cell.ref, table: u.changes.mapPos(this.cell.ref.table) };
-    let click: { x: number; y: number } | undefined;
+    let click: CellClick | undefined;
     for (const tr of u.transactions) for (const e of tr.effects) if (e.is(cellClick)) click = e.value;
     // 표가 화면 밖으로 나갔다 오거나 폭이 바뀌면 CodeMirror 가 표 위젯 DOM 을 새로 만든다 — 칸 편집기가 옛 DOM 에 남으면 다시 연다
     const lost = !!this.cell && !this.cell.td.isConnected;
@@ -179,7 +185,7 @@ class CellPlugin {
   }
 
   /** 본문 갱신이 DOM 에 반영된 뒤에 맞춘다(플러그인 update 때는 표 위젯 DOM 이 아직 옛것이다) */
-  schedule(click?: { x: number; y: number }) {
+  schedule(click?: CellClick) {
     if (click) this.click = click;
     if (this.queued) return;
     this.queued = true;
@@ -190,11 +196,11 @@ class CellPlugin {
       this.sync(c);
     });
   }
-  private click: { x: number; y: number } | undefined;
+  private click: CellClick | undefined;
   /** 칸 편집기에 포커스가 있었는가(DOM 이 떼어지면 blur 없이 사라지므로 따로 기억한다) */
   private cellFocused = false;
 
-  sync(click?: { x: number; y: number }) {
+  sync(click?: CellClick) {
     if (this.destroyed) return;
     // 조합 중에는 아무것도 바꾸지 않는다 — compositionend 뒤에 다시 맞춘다
     if (this.cell?.view.composing) return;
@@ -231,7 +237,7 @@ class CellPlugin {
     return null;
   }
 
-  private open(sel: CellRef & { anchor: number; head: number }, focus: boolean, click?: { x: number; y: number }) {
+  private open(sel: CellRef & { anchor: number; head: number }, focus: boolean, click?: CellClick) {
     const td = this.findTd(sel);
     const raw = this.rawOf(sel);
     if (!td || raw === null) return;
@@ -250,8 +256,12 @@ class CellPlugin {
     if (focus) view.focus();
   }
 
-  private placeAt(click: { x: number; y: number }) {
+  private placeAt(click: CellClick) {
     const v = this.cell?.view;
+    if (v && click.edge) {
+      v.dispatch({ selection: { anchor: click.edge === "end" ? v.state.doc.length : 0 } });
+      return;
+    }
     // 칸 여백(글 위·아래)을 눌러도 가장 가까운 글자 자리로
     const p = v?.posAtCoords(click, false);
     if (v && p != null) v.dispatch({ selection: { anchor: p } });
@@ -263,13 +273,17 @@ class CellPlugin {
     const raw = this.rawOf(c.ref);
     if (raw === null) return;
     const cur = c.view.state.doc.toString();
-    const d = diffChange(cur, cellText(raw));
+    const text = cellText(raw);
+    // 앞뒤 공백만 다르면 같은 글이다(칸 끝에 막 친 공백을 지우지 않는다)
+    const target = cur.trim() === text ? cur : text;
+    const d = diffChange(cur, target);
     const s = c.view.state.selection.main;
-    const len = cellText(raw).length;
-    const anchor = Math.min(sel.anchor, len);
-    const head = Math.min(sel.head, len);
-    if (!d && s.anchor === anchor && s.head === head) return;
-    c.view.dispatch({ changes: d ?? [], selection: { anchor, head }, annotations: syncAnn.of(true) });
+    const rawPos = (p: number) => textToRawPos(raw, p);
+    // 칸 편집기의 선택이 본문 선택과 같은 원문 자리를 가리키면 그대로 둔다
+    if (!d && cellPosToRaw(cur, s.anchor) === rawPos(sel.anchor) && cellPosToRaw(cur, s.head) === rawPos(sel.head)) return;
+    const lead = target.length - target.trimStart().length;
+    const clamp = (p: number) => Math.min(p + lead, target.length);
+    c.view.dispatch({ changes: d ?? [], selection: { anchor: clamp(sel.anchor), head: clamp(sel.head) }, annotations: syncAnn.of(true) });
   }
 
   /** 칸 → 본문. 칸 편집기에도 바로 적용한다 — 조합(IME) 중인 글자를 본문에서 되받아 다시 그리면 조합이 끊긴다 */

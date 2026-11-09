@@ -137,6 +137,27 @@ describe("cellTransactionToMain", () => {
     expect(selectedCell(next)).toMatchObject({ row: 1, col: 0, head: 2 });
   });
 
+  it("칸 끝에 친 공백은 다음 글자와 함께 들어간다(칸 앞뒤 공백은 | 옆 여백이라 공백만으로는 칸 글이 아니다)", () => {
+    const at = DOC.indexOf("| 1") + 3;
+    let s = state(DOC, at);
+    const ref = selectedCell(s)!;
+    let cs = EditorState.create({ doc: "1", selection: { anchor: 1 } });
+    for (const ch of [" ", "b"]) {
+      const tr = cs.update({
+        changes: { from: cs.selection.main.head, insert: ch },
+        selection: { anchor: cs.selection.main.head + 1 },
+        userEvent: "input.type",
+      });
+      s = s.update(cellTransactionToMain(s, ref, tr)).state;
+      cs = tr.state;
+    }
+    expect(s.doc.toString()).toContain("| 1 b | 2 |");
+    expect(selectedCell(s)).toMatchObject({ row: 1, col: 0, head: 3 });
+    let undone = s;
+    undo({ state: s, dispatch: (t) => (undone = t.state) });
+    expect(undone.doc.toString()).toBe(DOC);
+  });
+
   it("선택만 바뀐 것도 본문 선택으로", () => {
     const at = DOC.indexOf("\\|") + 2;
     const main = state(DOC, at);
@@ -145,6 +166,20 @@ describe("cellTransactionToMain", () => {
     const next = main.update(cellTransactionToMain(main, sel, tr)).state;
     expect(next.doc.toString()).toBe(DOC);
     expect(selectedCell(next)).toMatchObject({ row: 0, col: 0, head: 5 });
+  });
+
+  it("본문 선택이 이미 다른 칸으로 갔으면(조합 중 다른 칸을 누름) 바뀐 글만 보내고 선택은 건드리지 않는다", () => {
+    // 조합 중 글자(가)는 이미 본문에 들어가 있다 — 조합 단계마다 칸 편집기가 본문으로 보낸다
+    const doc = DOC.replace("| 1 |", "| 1가 |");
+    const at = doc.indexOf("| 1가") + 4;
+    const main = state(doc, at);
+    const ref = selectedCell(main)!;
+    const elsewhere = doc.indexOf("| 2") + 3;
+    const moved = main.update({ selection: { anchor: elsewhere } }).state;
+    const tr = cellTr("1가", { changes: { from: 1, to: 2, insert: "각" }, selection: { anchor: 2 }, userEvent: "input.type.compose" });
+    const next = moved.update(cellTransactionToMain(moved, ref, tr)).state;
+    expect(next.doc.toString()).toContain("| 1각 | 2 |");
+    expect(selectedCell(next)).toMatchObject({ row: 1, col: 1 });
   });
 
   it("모자란 칸에 치면 행에 칸을 붙이고 그 안에 넣는다(트랜잭션 하나)", () => {
