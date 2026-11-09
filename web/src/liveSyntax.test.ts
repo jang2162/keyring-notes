@@ -94,6 +94,12 @@ describe("글머리와 할 일", () => {
     expect(back.doc.toString()).toBe("- [x] 할 일\n- [ ] 끝");
   });
 
+  it("펼친 프런트매터(커서가 안)의 YAML 목록은 글머리·할 일로 그리지 않는다", () => {
+    const list = marks("---\ntags:\n  - a\n  - [ ] b\n---\n\n- c", [2]);
+    expect(only(list, "task")).toEqual([]);
+    expect(only(list, "bullet")).toEqual([{ kind: "bullet", from: 31, to: 32 }]);
+  });
+
   it("할 일이 아닌 줄은 null", () => {
     expect(toggleTaskAt(state("- a\n글"), 1)).toBeNull();
     expect(toggleTaskAt(state("- a\n글"), 9)).toBeNull();

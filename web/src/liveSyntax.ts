@@ -79,6 +79,8 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
     to,
     enter: (n) => {
       const name = n.name;
+      // 펼친 프런트매터(커서가 안)의 YAML 도 lezer 는 구분선·목록·할 일로 읽는다 — 종류와 상관없이 건너뛴다
+      if (n.from <= fmTo && name !== "Document") return false;
       if (name === "FencedCode") {
         fenced(n.node);
         return false;
@@ -89,7 +91,7 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
       }
       if (name === "HTMLBlock" || name === "Table" || name === "CommentBlock") return false;
       if (name === "HorizontalRule") {
-        if (n.from > fmTo && !active.has(lineOf(n.from))) out.push({ kind: "hr", from: n.from, to: n.to });
+        if (!active.has(lineOf(n.from))) out.push({ kind: "hr", from: n.from, to: n.to });
         return false;
       }
       if (name === "Blockquote") {
