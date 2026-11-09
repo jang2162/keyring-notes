@@ -54,6 +54,13 @@ describe("인용", () => {
     expect(only(list, "quoteLine")).toHaveLength(2);
   });
 
+  it("따로 떨어진 인용은 각각 첫 단계다", () => {
+    expect(only(marks("> a\n\nb\n\n> c"), "quoteLine")).toEqual([
+      { kind: "quoteLine", line: 1, depth: 1 },
+      { kind: "quoteLine", line: 5, depth: 1 },
+    ]);
+  });
+
   it("인용 안 코드 블록은 그 줄의 인용 기호까지만 숨기고 > 로 시작하는 코드 글자는 둔다", () => {
     const list = marks("> ```js\n> a();\n>\n> >b\n> ```");
     expect(only(list, "hide")).toEqual([
