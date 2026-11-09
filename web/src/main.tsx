@@ -10,7 +10,9 @@ import { SOLO } from "./soloWindow";
 import { watchTrafficLights } from "./windowChrome";
 import "./styles.css";
 import { t } from "./i18n";
+import { registerBuiltins } from "./widgets/builtins";
 
+registerBuiltins();
 const root = createRoot(document.getElementById("root")!);
 watchTrafficLights();
 
