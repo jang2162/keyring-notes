@@ -260,6 +260,7 @@ Keyring Notes 는 Obsidian 과 같은 문법을 읽습니다.
 | 모두 접기 / 펴기 | `Ctrl+Alt+[` / `Ctrl+Alt+]` |
 | 굵게, 기울임, 링크, 형광펜 | `Ctrl/Cmd+B`, `Ctrl/Cmd+I`, `Ctrl/Cmd+K`, `Ctrl/Cmd+Shift+H` |
 | 할 일 체크 | `Ctrl/Cmd+Enter` |
+| 표 셀: 다음 / 이전 셀, 아래 셀, 줄바꿈 | `Tab` / `Shift+Tab`, `Enter`, `Shift+Enter`([표 편집](how-to/edit-notes.md#표-편집) 참고) |
 
 한글처럼 입력기(IME)로 글자를 조합하는 중에는 단축키를 받지 않습니다.
 

@@ -26,10 +26,41 @@ Live Preview is on by default. Turn it off from the status bar or in Settings �
 - Code blocks hide their fence lines and show the language and a **Copy** button. **Copy** copies only the code inside. The code stays as text, so you edit it in place. Move the cursor into the block to see the fences.
 - Code is colored by language, with the same colors in the editor and the preview. Short names such as ` ```py `, ` ```sh `, and ` ```yml ` work too.
 - Embeds, callouts, math, Mermaid diagrams, footnotes, images between words (`![text](url)`) and HTML blocks are drawn as in the preview. Comments `%%…%%` and block IDs `^id` are hidden.
-- Move the cursor to a line, or click a drawn block, to see its source. Tables are shown as source.
+- Move the cursor to a line, or click a drawn block, to see its source. Tables stay drawn and are edited in place. See [Edit tables](#edit-tables).
 - Leading frontmatter folds into one line, "N properties — see the right panel · Show source".
 
 `Ctrl/Cmd+E` switches between editing and preview. The supported syntax is listed in [Reference](../reference.md#markdown-syntax).
+
+## Edit tables
+
+In Live Preview, tables are drawn even when the cursor is in them, and you edit them in place. Tables inside quotes, lists and callouts stay as source.
+
+- Click a cell to edit it. The cell you edit shows its Markdown source, such as `**bold**` or `[[target|alias]]`, with the same `[[` autocomplete and formatting shortcuts as the rest of the note. Other cells stay drawn.
+- A `|` you type is saved as `\|`. A cell can't hold a line break, so `Shift+Enter` inserts `<br>`, and pasted lines are joined with `<br>`.
+- Typing in an empty cell at the end of a short row adds the missing cells to that row.
+- Undo and redo (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`) work across cells and the rest of the note in one history.
+- Only the cells and rows you change are rewritten in the file. The spacing between `|` is left as it was.
+
+| Key | In a cell |
+| --- | --- |
+| `Tab` / `Shift+Tab` | Next / previous cell. `Tab` in the last cell adds a row |
+| `Enter` | Cell below. In the last row, adds a row |
+| `←` `→` | At the start or end of the cell's text, the cell to the left or right |
+| `↑` `↓` | Cell above or below. Past the first or last row, the line before or after the table |
+| `Esc` | Stop editing and move to the line after the table |
+
+From the line just above or below a table, `↓` or `↑` moves into its first cell. While an input method (IME) is composing text, `Tab` and `Enter` only finish the text. Press them again to move.
+
+Point at a row or column to show its handle, to the left of the row or above the column. On a touch screen, the handles of the cell you edit stay shown.
+
+- Click a row handle to insert a row above or below, move the row up or down, or delete it. The header row can only get a row below.
+- Click a column handle to insert, move or delete the column, set its alignment, or sort the rows by it. Sorting compares numbers as numbers (`1,000`, `2%`) and puts empty cells last. It changes the order of rows in the file.
+- Drag a handle to move the row or column. A line shows where it lands. Press Esc to cancel.
+- Each change is undone with one `Ctrl/Cmd+Z`.
+
+The **⋯** button at the table's top right has **Edit as Markdown**. It shows that table as source until the cursor leaves it, so you can fix a table whose shape is broken.
+
+When the find bar or a search result goes to text in a table, that cell opens with the text selected. Matches in other cells aren't highlighted until you go to them.
 
 ## Links and embeds
 
