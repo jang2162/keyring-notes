@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
+import { StateField, type EditorState, type Extension, type Range, type Transaction } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { enhance } from "./enhance";
 import { renderMarkdown, vaultRelative, type LinkResolver } from "./markdown";
@@ -7,6 +7,8 @@ import { api } from "./api";
 import { t } from "./i18n";
 import { CALLOUT_LINE } from "./liveSyntax";
 import { inlineImageUrl, isCommentBlock } from "./liveImage";
+import { widgetBlockAt, widgetBlockOfNode, widgetEditField } from "./widgets/blockEdit";
+import { KeyringBlockWidget } from "./widgets/liveWidget";
 
 /**
  * Live Preview에서 8단계 형식을 그린다. 커서(선택)가 그 블록 밖에 있을 때만 그리고, 들어가면 원문을 보인다.
@@ -124,6 +126,7 @@ function findBlocks(state: EditorState): Block[] {
         code.push([n.from, n.to]);
         const info = /^\s*(`{3,}|~{3,})\s*([\w-]*)/.exec(doc.lineAt(n.from).text)?.[2];
         if (info === "mermaid") out.push({ from: doc.lineAt(n.from).from, to: doc.lineAt(n.to).to, kind: "mermaid" });
+        else if (widgetBlockOfNode(state, n.node)) out.push({ from: doc.lineAt(n.from).from, to: doc.lineAt(n.to).to, kind: "keyring-widget" });
         return false;
       }
       if (n.name === "HTMLBlock") {
@@ -184,26 +187,56 @@ function findBlocks(state: EditorState): Block[] {
   return out.sort((a, b) => a.from - b.from);
 }
 
+/** 시험용: 블록으로 그릴 범위 */
+export function liveBlockRanges(state: EditorState): { from: number; to: number; kind: string }[] {
+  return findBlocks(state);
+}
+
+/** 커서가 블록 줄에 걸치면 원문. 단 수정 중인 위젯 블록은 커서가 걸쳐도 그린다(수정 모드가 원문으로 바뀌지 않게) */
+export function shouldDrawBlock(lines: [number, number], active: Set<number>, editing: boolean): boolean {
+  if (editing) return true;
+  for (let n = lines[0]; n <= lines[1]; n++) if (active.has(n)) return false;
+  return true;
+}
+
 function buildBlocks(state: EditorState, getCtx: GetCtx): DecorationSet {
   if (!getCtx()) return Decoration.none;
   const active = activeLines(state);
+  const edit = state.field(widgetEditField, false);
   const ranges: Range<Decoration>[] = [];
   for (const b of findBlocks(state)) {
     const a = state.doc.lineAt(b.from).number;
     const z = state.doc.lineAt(b.to).number;
-    let hit = false;
-    for (let n = a; n <= z && !hit; n++) hit = active.has(n);
-    if (hit) continue;
-    const widget = b.kind === "comment" ? new HiddenBlock(z - a + 1) : new BlockWidget(state.sliceDoc(b.from, b.to), b.kind, b.from, getCtx);
+    const editing = b.kind === "keyring-widget" && !!edit && !edit.gone && edit.from === b.from;
+    if (!shouldDrawBlock([a, z], active, editing)) continue;
+    const widget =
+      b.kind === "comment"
+        ? new HiddenBlock(z - a + 1)
+        : b.kind === "keyring-widget"
+          ? new KeyringBlockWidget(widgetBlockAt(state, b.from)?.body ?? "", b.from)
+          : new BlockWidget(state.sliceDoc(b.from, b.to), b.kind, b.from, getCtx);
     ranges.push(Decoration.replace({ widget, block: true }).range(b.from, b.to));
   }
   return Decoration.set(ranges, true);
 }
 
+/**
+ * 장식을 다시 계산할 트랜잭션. 위젯 수정 시작·끝은 효과만 있는 트랜잭션이라 문서·선택·트리 조건만으로는 놓친다 —
+ * 필드가 바뀌지 않으면 같은 객체를 돌려주므로(blockEdit.ts) 참조 비교로 충분하다
+ */
+export function blockFieldNeedsUpdate(tr: Transaction): boolean {
+  return (
+    tr.docChanged ||
+    !!tr.selection ||
+    syntaxTree(tr.state) !== syntaxTree(tr.startState) ||
+    tr.startState.field(widgetEditField, false) !== tr.state.field(widgetEditField, false)
+  );
+}
+
 function blockField(getCtx: GetCtx) {
   return StateField.define<DecorationSet>({
     create: (state) => buildBlocks(state, getCtx),
-    update: (deco, tr) => (tr.docChanged || tr.selection || syntaxTree(tr.state) !== syntaxTree(tr.startState) ? buildBlocks(tr.state, getCtx) : deco),
+    update: (deco, tr) => (blockFieldNeedsUpdate(tr) ? buildBlocks(tr.state, getCtx) : deco),
     provide: (f) => EditorView.decorations.from(f),
   });
 }

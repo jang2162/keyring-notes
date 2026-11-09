@@ -1,3 +1,4 @@
+import { widgetBlockOfNode } from "./widgets/blockEdit";
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState, TransactionSpec } from "@codemirror/state";
 
@@ -78,8 +79,8 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
     if (!open) return;
     const info = node.getChild("CodeInfo");
     const lang = info ? (state.sliceDoc(info.from, info.to).trim().split(/\s+/)[0] ?? "") : "";
-    // Mermaid 는 liveBlocks 가 그린 다이어그램으로 바꾼다
-    if (lang === "mermaid") return;
+    // Mermaid·위젯 블록은 liveBlocks 가 그린 것으로 바꾼다(인용·목록 안 펜스는 위젯이 아니라 코드 상자 그대로)
+    if (lang === "mermaid" || widgetBlockOfNode(state, node)) return;
     const close = marks.length > 1 ? marks[marks.length - 1] : null;
     const head = lineOf(open.from);
     const tail = close ? lineOf(close.from) : lineOf(node.to);

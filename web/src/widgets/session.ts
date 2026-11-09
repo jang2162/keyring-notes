@@ -25,7 +25,7 @@ export class WidgetSession {
   /** 수정을 시작한 때(또는 이어받은 때)의 상태 — 「바뀌었는가」의 기준. base 는 바깥 변경을 따라가므로 기준이 될 수 없다 */
   private editStart: unknown = undefined;
   private isEditing = false;
-  private editable: boolean;
+  private isEditable: boolean;
   private readonly readOnly: boolean;
 
   constructor(
@@ -33,7 +33,7 @@ export class WidgetSession {
     private readonly host: SessionHost,
   ) {
     this.base = init.state;
-    this.editable = init.editable;
+    this.isEditable = init.editable;
     this.readOnly = init.readOnly;
     // 이어받기: 초안은 이미 편집기 필드에 있으므로 startEdit 을 다시 부르지 않는다
     if (init.resumeDraft !== undefined && this.canChange()) {
@@ -54,8 +54,13 @@ export class WidgetSession {
     return this.isEditing;
   }
 
+  /** 블록의 editable(바깥 변경을 따라간다) */
+  get editable(): boolean {
+    return this.isEditable;
+  }
+
   private canChange() {
-    return this.editable && !this.readOnly;
+    return this.isEditable && !this.readOnly;
   }
 
   private notify() {
@@ -113,7 +118,7 @@ export class WidgetSession {
   /** 바깥에서 블록이 바뀜. 수정 중이면 초안은 지키고(적용 때 바깥 변경 위에 쓴다), 비교 기준만 옮긴다 */
   external(state: unknown, editable: boolean): void {
     this.base = state;
-    this.editable = editable;
+    this.isEditable = editable;
     if (this.isEditing && !this.canChange()) {
       this.isEditing = false;
       this.draft = undefined;

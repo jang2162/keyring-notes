@@ -20,7 +20,7 @@ import {
 import { classHighlighter } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
-import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
+import { drawSelection, EditorView, highlightActiveLine, keymap, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { headingSizes, headingStyle, insertLink, wikilinkSource, wrapSelection } from "./editorCommands";
 import { findLanguage } from "./codeLanguages";
@@ -34,7 +34,20 @@ import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, 
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
 import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
-import { widgetEditField } from "./widgets/blockEdit";
+import { endWidgetEdit, widgetEditField, widgetGoneNow } from "./widgets/blockEdit";
+import { toast } from "./toast";
+
+/** 수정 중이던 위젯 블록이 바깥 변경(다른 칸·동기화)으로 사라지면 한 번 알리고 수정 상태를 걷는다 */
+const widgetGoneNotice = ViewPlugin.define((view) => ({
+  update(u: ViewUpdate) {
+    if (!u.transactions.some(widgetGoneNow)) return;
+    toast(t("kw.blockGone"), { kind: "warn" });
+    // 업데이트 안에서는 dispatch 할 수 없다
+    queueMicrotask(() => {
+      if (view.state.field(widgetEditField, false)?.gone) view.dispatch({ effects: endWidgetEdit.of(null) });
+    });
+  },
+}));
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -302,6 +315,7 @@ export function Editor({
           liveSlot.current.of(liveRef.current ? livePreview(getCtx, tableOpts) : syntaxHighlighting(headingSizes)),
           // liveSlot 밖: Live Preview 를 끈 칸·미리보기만 보는 칸에서도 미리보기 위젯이 이 필드로 수정 중 초안을 둔다
           widgetEditField,
+          widgetGoneNotice,
           EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
