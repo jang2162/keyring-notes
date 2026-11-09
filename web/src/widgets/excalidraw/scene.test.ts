@@ -53,3 +53,34 @@ describe("Excalidraw 장면", () => {
     expect(r.ok && widgetDataPath(r.block.state, ".excalidraw.json")).toBe("a/스케치-3f9a.excalidraw.json");
   });
 });
+
+import { escapeIsNoop } from "./scene";
+
+describe("escapeIsNoop — Excalidraw 가 Esc 로 할 일이 없을 때만 전체 화면을 닫는다", () => {
+  const idle = {
+    selectedElementIds: {},
+    editingTextElement: null,
+    activeTool: { type: "selection" },
+    openMenu: null,
+    openPopup: null,
+    openDialog: null,
+    contextMenu: null,
+    newElement: null,
+    multiElement: null,
+  };
+  it("아무것도 고르지 않고 선택 도구면 true", () => {
+    expect(escapeIsNoop(idle)).toBe(true);
+    expect(escapeIsNoop({ ...idle, selectedElementIds: { a: false } })).toBe(true);
+  });
+  it("고른 것·글 편집·다른 도구·열린 메뉴·그리는 중이면 false", () => {
+    expect(escapeIsNoop({ ...idle, selectedElementIds: { a: true } })).toBe(false);
+    expect(escapeIsNoop({ ...idle, editingTextElement: { id: "t" } })).toBe(false);
+    expect(escapeIsNoop({ ...idle, activeTool: { type: "rectangle" } })).toBe(false);
+    expect(escapeIsNoop({ ...idle, openMenu: "canvas" })).toBe(false);
+    expect(escapeIsNoop({ ...idle, openPopup: "fontFamily" })).toBe(false);
+    expect(escapeIsNoop({ ...idle, openDialog: { name: "help" } })).toBe(false);
+    expect(escapeIsNoop({ ...idle, contextMenu: { items: [] } })).toBe(false);
+    expect(escapeIsNoop({ ...idle, newElement: { id: "n" } })).toBe(false);
+    expect(escapeIsNoop({ ...idle, multiElement: { id: "m" } })).toBe(false);
+  });
+});

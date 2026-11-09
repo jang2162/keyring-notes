@@ -61,3 +61,14 @@ export class SceneGate {
     return text;
   }
 }
+
+/**
+ * Excalidraw 는 할 일이 없는 Esc 도 preventDefault 해 런타임의 「처리하지 않은 Esc → 부모(전체 화면 닫기)」 길이 열리지 않는다.
+ * 그래서 Esc 가 Excalidraw 에 할 일(선택 해제·글 편집 끝·도구 되돌리기·메뉴 닫기·그리던 것 끝)이 없을 때만 위젯이 직접 전체 화면을 닫는다
+ */
+export function escapeIsNoop(s: Record<string, unknown>): boolean {
+  const selected = s.selectedElementIds as Record<string, boolean> | undefined;
+  if (selected && Object.values(selected).some(Boolean)) return false;
+  if ((s.activeTool as { type?: string } | undefined)?.type !== "selection") return false;
+  return [s.editingTextElement, s.openMenu, s.openPopup, s.openDialog, s.contextMenu, s.newElement, s.multiElement].every((v) => v === null || v === undefined);
+}

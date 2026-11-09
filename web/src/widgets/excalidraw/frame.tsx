@@ -2,7 +2,7 @@ import { installFontShim } from "./fontShim";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { WidgetApi, WidgetContext, WidgetRender } from "../types";
-import { parseScene, SceneGate, sceneKey } from "./scene";
+import { escapeIsNoop, parseScene, SceneGate, sceneKey } from "./scene";
 
 /**
  * 내장 위젯 Excalidraw 의 iframe 묶음(IIFE — web/frameBuild.ts). 런타임이 먼저 돌고 이 묶음이 keyringWidgetRegister 를 부른다.
@@ -74,9 +74,18 @@ async function start(el: HTMLElement, first: WidgetContext, api: WidgetApi, onCt
   let stopped = false;
   const enc = new TextEncoder();
 
+  // Excalidraw 가 Esc 를 처리하기 전(capture)에 상태를 보고, 할 일이 없는 Esc 면 전체 화면을 닫는다(escapeIsNoop)
+  let excalidrawApi: { getAppState(): object } | null = null;
+  let fullscreen = !!first.fullscreen;
+  const onEsc = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || e.isComposing || e.keyCode === 229 || !fullscreen || !api.toggleFullscreen || !excalidrawApi) return;
+    if (escapeIsNoop(excalidrawApi.getAppState() as Record<string, unknown>)) api.toggleFullscreen();
+  };
+  window.addEventListener("keydown", onEsc, true);
+
   function App() {
     const [c, setC] = useState(first);
-    useEffect(() => onCtx(setC), []);
+    useEffect(() => onCtx((n) => ((fullscreen = !!n.fullscreen), setC(n))), []);
     const readOnly = !c.editable || c.readOnly;
     return (
       <div style={{ height: c.fullscreen ? "100vh" : "480px" }}>
@@ -94,6 +103,7 @@ async function start(el: HTMLElement, first: WidgetContext, api: WidgetApi, onCt
           UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: false } }}
           // 요소 링크로 iframe 이 다른 곳으로 옮겨 가지 않게(옮기면 부모가 위젯을 멈춘다)
           onLinkOpen={(_el, e) => e.preventDefault()}
+          excalidrawAPI={(a) => (excalidrawApi = a)}
           onChange={(elements, appState, files) => {
             if (stopped || readOnly) return;
             const text = gate.next(sceneKey(getSceneVersion(elements), Object.keys(files), appState as unknown as Record<string, unknown>), () =>
@@ -117,7 +127,10 @@ async function start(el: HTMLElement, first: WidgetContext, api: WidgetApi, onCt
       <App />
     </StrictMode>,
   );
-  return () => root.unmount();
+  return () => {
+    window.removeEventListener("keydown", onEsc, true);
+    root.unmount();
+  };
 }
 
 const render: WidgetRender = (el, ctx, api) => {
@@ -127,7 +140,14 @@ const render: WidgetRender = (el, ctx, api) => {
   let dead = false;
   void start(el, ctx, api, (cb) => {
     listeners.add(cb);
-  }).then((c) => (dead ? c() : (cleanup = c)));
+  }).then(
+    (c) => (dead ? c() : (cleanup = c)),
+    // 묶음·장면 오류로 그리지 못하면 조용히 빈칸으로 두지 않는다
+    (e) => {
+      console.error(e);
+      if (!dead) line(el, api.t("failed"));
+    },
+  );
   return () => {
     dead = true;
     cleanup?.();

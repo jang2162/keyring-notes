@@ -8,10 +8,14 @@ export function installFontShim(lookup: (rel: string) => ArrayBuffer | undefined
   const Orig = window.FontFace;
   function Shimmed(family: string, source: string | BufferSource, descriptors?: FontFaceDescriptors): FontFace {
     if (typeof source === "string") {
-      for (const m of source.matchAll(FONT_RE)) {
-        const bytes = lookup(m[1]!);
+      const rels = [...source.matchAll(FONT_RE)].map((m) => m[1]!);
+      for (const rel of rels) {
+        const bytes = lookup(rel);
         if (bytes) return new Orig(family, bytes, descriptors);
       }
+      // 싣지 않은 글꼴(Excalifont·Liberation·Xiaolai — vite.config.ts 의 fontsSkip): 주소(CDN)로 받으러 가지 않게 없는 local() 로 만든다.
+      // 그 글꼴로 쓴 글은 시스템 글꼴로 보인다
+      if (rels.length) return new Orig(family, "local('keyring-font-not-bundled')", descriptors);
     }
     return new Orig(family, source, descriptors);
   }

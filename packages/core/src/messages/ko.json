@@ -751,6 +751,7 @@
   "kw.errorNoWidget": "위젯 블록에 \"widget\" 키가 없습니다",
   "kw.errorNotObject": "위젯 블록은 JSON 객체여야 합니다",
   "kw.excalidraw.badScene": "그림 파일을 읽을 수 없습니다",
+  "kw.excalidraw.failed": "그림을 열지 못했습니다",
   "kw.excalidraw.noFile": "이 그림에는 데이터 파일이 없습니다",
   "kw.excalidraw.readFailed": "그림을 읽지 못했습니다",
   "kw.exitFullscreen": "전체 화면 닫기",

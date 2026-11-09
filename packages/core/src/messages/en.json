@@ -766,6 +766,7 @@
   "kw.errorNoWidget": "The widget block has no \"widget\" key",
   "kw.errorNotObject": "The widget block must be a JSON object",
   "kw.excalidraw.badScene": "This drawing file can't be read",
+  "kw.excalidraw.failed": "Couldn't open the drawing",
   "kw.excalidraw.noFile": "This drawing has no data file",
   "kw.excalidraw.readFailed": "Couldn't read the drawing",
   "kw.exitFullscreen": "Exit full screen",

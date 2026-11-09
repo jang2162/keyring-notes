@@ -48,9 +48,12 @@ async function buildEntry(root: string, spec: FrameEntrySpec): Promise<Built> {
     configFile: false,
     root,
     logLevel: "warn",
+    // 묶음은 늘 배포판 — 바깥이 개발 모드(개발 서버·NODE_ENV=development 빌드)여도 JSX 를 jsxDEV 로 바꾸지 않게 mode 와 development 를 함께 고정한다
+    // (React 는 위 define 으로 배포판이 실려 jsxDEV 가 없다 — 그러면 위젯이 아무것도 그리지 않는다)
+    mode: "production",
     define: { "process.env.NODE_ENV": '"production"' },
     // configFile: false 라 웹 설정의 plugin-react 가 없다 — .tsx 진입의 JSX 를 여기서 정한다
-    oxc: { jsx: { runtime: "automatic", importSource: "react" } },
+    oxc: { jsx: { runtime: "automatic", importSource: "react", development: false } },
     resolve: { conditions: ["keyring-source", ...defaultClientConditions], alias: spec.alias },
     build: {
       write: false,
