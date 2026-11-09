@@ -1,5 +1,5 @@
 import type { EditorState } from "@codemirror/state";
-import { insertRow, parseTable, splitRow, type TableModel } from "./tableModel";
+import { cellAt, insertRow, parseTable, splitRow, type TableCell, type TableModel } from "./tableModel";
 import { tableRanges } from "./tableWidget";
 
 /**
@@ -66,4 +66,32 @@ export function enterTableFrom(state: EditorState, lineNo: number, dir: "up" | "
   if (!m) return null;
   const row = dir === "down" ? m.header : (m.body[m.body.length - 1] ?? m.header);
   return row.cells[0]?.from ?? null;
+}
+
+/** cells 가운데 pos 에 가장 가까운 것의 번호(같으면 앞) */
+function nearest(cells: TableCell[], pos: number): number {
+  let best = 0;
+  let dist = Infinity;
+  cells.forEach((c, i) => {
+    const d = pos < c.from ? c.from - pos : pos > c.to ? pos - c.to : 0;
+    if (d < dist) [best, dist] = [i, d];
+  });
+  return best;
+}
+
+/**
+ * 본문 커서가 그린 표 안이면서 어느 셀에도 들지 않는 자리(| 위·뒤, 구분 줄)면 옮길 셀 자리. 셀 안이면 null(설계 6.2).
+ * 같은 행의 가장 가까운 셀로 — 셀 앞이면 셀 처음, 뒤면 셀 끝. 구분 줄은 머리 행의 같은 열 셀 끝.
+ * 그래서 앞 줄 끝에서 →(표 처음)는 머리 첫 셀 처음, 뒤 줄 처음에서 ←(표 끝)는 마지막 행 마지막 셀 끝이 된다(↑↓ 와 같은 진입)
+ */
+export function snapToCell(m: TableModel, pos: number): number | null {
+  if (pos < m.from || pos > m.to || cellAt(m, pos)) return null;
+  if (pos >= m.delim.from && pos <= m.delim.to) {
+    const cells = m.header.cells;
+    return cells[Math.min(nearest(m.delim.cells, pos), cells.length - 1)].to;
+  }
+  const row = [m.header, ...m.body].find((r) => pos >= r.from && pos <= r.to);
+  if (!row?.cells.length) return null;
+  const c = row.cells[nearest(row.cells, pos)];
+  return pos < c.from ? c.from : c.to;
 }

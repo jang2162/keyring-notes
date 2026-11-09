@@ -3,7 +3,7 @@ import { EditorState, Text } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { parseTable } from "./tableModel";
-import { enterTableFrom, exitTarget, navigate, newRowSpec } from "./tableNav";
+import { enterTableFrom, exitTarget, navigate, newRowSpec, snapToCell } from "./tableNav";
 import { tableEditor } from "./tableWidget";
 
 const T = "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |";
@@ -94,5 +94,32 @@ describe("enterTableFrom: 본문에서 ↓·↑ 로 표에 들어가기", () => 
   it("표와 붙지 않은 줄이나 반대 방향은 null", () => {
     expect(enterTableFrom(state, 1, "up")).toBeNull();
     expect(enterTableFrom(state, 6, "down")).toBeNull();
+  });
+});
+
+describe("snapToCell(셀 밖 자리 → 가장 가까운 셀)", () => {
+  const at = (s: string, i = 0) => {
+    let k = -1;
+    for (let n = 0; n <= i; n++) k = T.indexOf(s, k + 1);
+    return k;
+  };
+  it("셀 안이면 null(그대로 둔다)", () => {
+    expect(snapToCell(m, at("a"))).toBeNull();
+    expect(snapToCell(m, at("a") + 1)).toBeNull();
+  });
+  it("표 처음(머리 앞 |)은 머리 첫 셀 처음, 표 끝(마지막 | 뒤)은 마지막 행 마지막 셀 끝", () => {
+    expect(snapToCell(m, 0)).toBe(at("a"));
+    expect(snapToCell(m, T.length)).toBe(at("4") + 1);
+  });
+  it("| 위·셀 사이 공백은 같은 행의 가까운 셀로", () => {
+    expect(snapToCell(m, at("| b"))).toBe(at("a") + 1);
+    expect(snapToCell(m, at("| b") + 1)).toBe(at("b"));
+    expect(snapToCell(m, at("1") - 2)).toBe(at("1"));
+  });
+  it("구분 줄은 머리 행의 같은 열 셀 끝", () => {
+    const delim = T.indexOf("|---");
+    expect(snapToCell(m, delim)).toBe(at("a") + 1);
+    expect(snapToCell(m, delim + "|---|-".length)).toBe(at("b") + 1);
+    expect(snapToCell(m, delim + "|---|---|".length)).toBe(at("b") + 1);
   });
 });

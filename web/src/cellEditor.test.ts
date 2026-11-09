@@ -5,7 +5,7 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { history, undo } from "@codemirror/commands";
 import { cellTransactionToMain, remapRef, selectedCell, shouldDefer } from "./cellEditor";
 import { cellText, insertColumn, insertRow, parseTable } from "./tableModel";
-import { editTableRaw, setVirtualCell, tableEditor, type CellRef } from "./tableWidget";
+import { editTableRaw, setVirtualCell, tableEditor, virtualField, type CellRef } from "./tableWidget";
 import { mirrored } from "./mirror";
 
 const opts = { linkCandidates: () => [] };
@@ -97,9 +97,10 @@ describe("selectedCell", () => {
     let s = state(doc, 0);
     s = s.update({ effects: setVirtualCell.of({ table: 0, row: 1, col: 1 }), selection: { anchor: end } }).state;
     expect(selectedCell(s)).toEqual({ table: 0, row: 1, col: 1, anchor: 0, head: 0 });
-    // 다른 곳으로 커서를 옮기면 풀린다
+    // 다른 곳으로 커서를 옮기면 풀린다(표 처음 0 은 셀 밖이라 머리 첫 셀로 옮겨진다)
     s = s.update({ selection: { anchor: 0 } }).state;
-    expect(selectedCell(s)).toBeNull();
+    expect(s.field(virtualField)).toBeNull();
+    expect(selectedCell(s)).toMatchObject({ row: 0, col: 0 });
   });
 
   it("다른 칸(미러링)이 표 앞에 글을 넣어도 같은 글자 자리", () => {
@@ -299,6 +300,43 @@ describe("remapRef(바깥 변경이 표 구조를 바꿀 때 — 조합 중에�
     const m = model(s);
     const tr = s.update({ changes: { from: m.body[0].from - 1, to: m.body[0].to } });
     expect(remapRef(s, tr.state, tr.changes, ref)).toEqual(ref);
+  });
+});
+
+describe("본문 커서는 그린 표의 셀 밖에 놓이지 않는다(설계 6.2)", () => {
+  const doc = "앞\n| a | b |\n|---|---|\n| 1 | 2 |\n\n뒤";
+  const from = doc.indexOf("| a");
+  const to = doc.indexOf("\n\n뒤");
+
+  it("뒤 빈 줄 처음에서 ←(앞 줄 끝 = 표 끝)이면 마지막 행 마지막 셀 끝으로 — 친 글은 그 셀에 들어간다", () => {
+    const s = state(doc, to + 1).update({ selection: { anchor: to }, userEvent: "select" }).state;
+    expect(s.selection.main.head).toBe(doc.indexOf("2") + 1);
+    expect(selectedCell(s)).toMatchObject({ row: 1, col: 1, head: 1 });
+  });
+
+  it("앞 줄 끝에서 →(표 처음)이면 머리 첫 셀 처음으로", () => {
+    const s = state(doc, from - 1).update({ selection: { anchor: from }, userEvent: "select" }).state;
+    expect(s.selection.main.head).toBe(doc.indexOf("a"));
+    expect(selectedCell(s)).toMatchObject({ row: 0, col: 0, head: 0 });
+  });
+
+  it("| 뒤·구분 줄에 떨어진 커서도 셀 안으로", () => {
+    expect(state(doc, 0).update({ selection: { anchor: doc.indexOf("| 2") + 1 } }).state.selection.main.head).toBe(doc.indexOf("2"));
+    expect(selectedCell(state(doc, 0).update({ selection: { anchor: doc.indexOf("|---") } }).state)).toMatchObject({ row: 0, col: 0 });
+  });
+
+  it("셀 안·표 밖·범위 선택·빈 자리 셀·원문으로 편집은 그대로 둔다", () => {
+    const inCell = doc.indexOf("1") + 1;
+    expect(state(doc, 0).update({ selection: { anchor: inCell } }).state.selection.main.head).toBe(inCell);
+    expect(state(doc, 0).update({ selection: { anchor: to + 1 } }).state.selection.main.head).toBe(to + 1);
+    const range = state(doc, 0).update({ selection: { anchor: 0, head: doc.length } }).state.selection.main;
+    expect([range.anchor, range.head]).toEqual([0, doc.length]);
+    const short = "| a | b |\n|---|---|\n| x |";
+    const v = state(short, 0).update({ selection: { anchor: short.length }, effects: setVirtualCell.of({ table: 0, row: 1, col: 1 }) }).state;
+    expect(v.selection.main.head).toBe(short.length);
+    expect(selectedCell(v)).toMatchObject({ row: 1, col: 1 });
+    const raw = state(doc, 0).update({ selection: { anchor: from }, effects: editTableRaw.of(from) }).state;
+    expect(raw.selection.main.head).toBe(from);
   });
 });
 

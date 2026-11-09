@@ -32,7 +32,7 @@ import {
   type TableModel,
   type TableRow,
 } from "./tableModel";
-import { enterTableFrom, exitTarget, navigate, newRowSpec, type NavKey } from "./tableNav";
+import { enterTableFrom, exitTarget, navigate, newRowSpec, snapToCell, type NavKey } from "./tableNav";
 import {
   cellClick,
   paintCell,
@@ -526,10 +526,30 @@ function enterFromBody(dir: "up" | "down") {
   };
 }
 
+/**
+ * 본문 커서는 그린 표의 셀 밖에 놓이지 않는다(설계 6.2): ←/→·클릭·실행 취소가 커서를 | 뒤나 구분 줄에 두면
+ * 셀 편집기가 열리지 않고, 거기서 친 글은 그려지지 않는 셀이 되어 화면에서 사라진다. 그런 빈 커서를 가장 가까운 셀로 옮긴다.
+ * 셀 안의 선택(찾기·gotoLine — 설계 6.3.1)·범위 선택·빈 자리 셀(setVirtualCell)은 그대로 둔다. 원문으로 편집하는 표는 그린 표가 아니다
+ */
+const keepCursorInCells = EditorState.transactionFilter.of((tr) => {
+  if (!tr.selection || tr.state.readOnly) return tr;
+  const sel = tr.state.selection;
+  if (sel.ranges.length !== 1 || !sel.main.empty) return tr;
+  if (tr.effects.some((e) => e.is(setVirtualCell))) return tr;
+  const head = sel.main.head;
+  const v = tr.state.field(virtualField, false);
+  if (v && v.pos === head) return tr;
+  const tb = tableRanges(tr.state).find((x) => x.from <= head && head <= x.to);
+  const m = tb && parseTable(tr.state.doc, tb.from, tb.to);
+  const to = m ? snapToCell(m, head) : null;
+  return to === null ? tr : [tr, { selection: { anchor: to }, sequential: true }];
+});
+
 /** 표 편집기(tableWidget.ts 의 tableEditor)가 함께 켠다 */
 export function cellEditing(getCtx: GetCtx, opts: TableOptions): Extension {
   return [
     ViewPlugin.define((view) => new CellPlugin(view, getCtx, opts)),
+    keepCursorInCells,
     Prec.high(
       keymap.of([
         { key: "ArrowDown", run: enterFromBody("down") },
