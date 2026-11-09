@@ -27,6 +27,7 @@ import { findLanguage } from "./codeLanguages";
 import { findBar, findKeymap } from "./findBar";
 import { bodyStart, codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
+import type { TableOptions } from "./tableWidget";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
@@ -326,6 +327,11 @@ export function Editor({
   const callbacks = useRef({ onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps });
   callbacks.current = { onChange, onChanges, onSave, linkCandidates, onFiles, onCursor, onBlur, onShowProps };
   const showProps = () => callbacks.current.onShowProps?.();
+  /** 표 편집기의 칸 편집기가 본문과 같은 자동완성·첨부 올리기를 쓴다(늘 최신 콜백으로) */
+  const tableOpts: TableOptions = {
+    linkCandidates: () => callbacks.current.linkCandidates(),
+    onFiles: (files) => (callbacks.current.onFiles ? callbacks.current.onFiles(files) : Promise.resolve([])),
+  };
 
   /** 올리는 동안 자리 표시를 넣었다가 링크로 바꾼다(실패하면 지운다) */
   const insertFiles = async (view: EditorView, files: File[], from: number, to: number) => {
@@ -364,7 +370,7 @@ export function Editor({
           autocompletion({ override: [wikilinkSource(() => callbacks.current.linkCandidates())], icons: false }),
           EditorView.lineWrapping,
           codeFont(),
-          liveSlot.current.of(liveRef.current ? livePreview(getCtx) : []),
+          liveSlot.current.of(liveRef.current ? livePreview(getCtx, tableOpts) : []),
           EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
@@ -563,7 +569,7 @@ export function Editor({
 
   // 편집 중 렌더링 켜고 끄기(에디터를 다시 만들지 않는다)
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview(getCtx) : []) });
+    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview(getCtx, tableOpts) : []) });
   }, [live]);
 
   return <div className={`editor${live ? " live" : ""}${showLines ? " lines" : ""}`} ref={host} />;

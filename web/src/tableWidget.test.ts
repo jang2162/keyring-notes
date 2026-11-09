@@ -1,0 +1,67 @@
+import { describe, expect, it } from "vitest";
+import { EditorState } from "@codemirror/state";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { ensureSyntaxTree } from "@codemirror/language";
+import { editTableRaw, tableEditor, tableRanges } from "./tableWidget";
+
+const opts = { linkCandidates: () => [] };
+function state(doc: string, anchor = 0, readOnly = false) {
+  const s = EditorState.create({
+    doc,
+    selection: { anchor },
+    extensions: [markdown({ base: markdownLanguage }), tableEditor(() => null, opts), EditorState.readOnly.of(readOnly)],
+  });
+  ensureSyntaxTree(s, doc.length, 5000);
+  return s;
+}
+
+const DOC = "앞\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n뒤";
+const FROM = DOC.indexOf("| a");
+const TO = DOC.indexOf("\n\n뒤");
+
+describe("tableRanges", () => {
+  it("최상위 표 하나 → 표 줄 전체", () => {
+    expect(tableRanges(state(DOC))).toEqual([{ from: FROM, to: TO }]);
+  });
+
+  it("커서가 표 안이어도 그린다", () => {
+    expect(tableRanges(state(DOC, FROM + 2))).toEqual([{ from: FROM, to: TO }]);
+  });
+
+  it("인용·목록 안의 표는 그리지 않는다", () => {
+    expect(tableRanges(state("> | a |\n> |---|"))).toEqual([]);
+    expect(tableRanges(state("- x\n\n  | a |\n  |---|"))).toEqual([]);
+  });
+
+  it("프런트매터 안은 표로 보지 않는다", () => {
+    // lezer 는 프런트매터를 모르므로 그 안에 빈 줄로 떨어진 표 꼴을 표로 읽는다
+    const doc = "---\na: 1\n\n| k |\n|---|\n\nb: 2\n---\n\n| a |\n|---|";
+    expect(tableRanges(state(doc))).toEqual([{ from: doc.lastIndexOf("| a |"), to: doc.length }]);
+  });
+
+  it("원문으로 편집을 고르면 그 표만 빠지고, 커서가 표 밖으로 나가면 다시 그린다", () => {
+    const two = DOC + "\n\n| x |\n|---|";
+    let s = state(two);
+    expect(tableRanges(s)).toHaveLength(2);
+    s = s.update({ effects: editTableRaw.of(FROM), selection: { anchor: FROM } }).state;
+    expect(tableRanges(s).map((r) => r.from)).toEqual([two.indexOf("| x")]);
+    // 표 안에서 움직이고 고쳐도 원문 그대로
+    s = s.update({ selection: { anchor: FROM + 3 } }).state;
+    s = s.update({ changes: { from: FROM + 2, insert: "Z" }, selection: { anchor: FROM + 3 } }).state;
+    expect(tableRanges(s)).toHaveLength(1);
+    // 표 앞에 글을 넣어도 원문 표시는 표를 따라간다
+    s = s.update({ changes: { from: 0, insert: "앞앞" }, selection: { anchor: FROM + 5 } }).state;
+    expect(tableRanges(s)).toHaveLength(1);
+    s = s.update({ selection: { anchor: 0 } }).state;
+    expect(tableRanges(s)).toHaveLength(2);
+  });
+
+  it("읽기 전용이어도 그린다", () => {
+    expect(tableRanges(state(DOC, 0, true))).toEqual([{ from: FROM, to: TO }]);
+  });
+
+  it("문서 끝 줄바꿈 없는 표, 표 바로 앞의 --- 구분선", () => {
+    const doc = "---\n\n| a |\n|---|";
+    expect(tableRanges(state(doc))).toEqual([{ from: doc.indexOf("| a"), to: doc.length }]);
+  });
+});
