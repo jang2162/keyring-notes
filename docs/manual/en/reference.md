@@ -200,6 +200,8 @@ When the app rewrites a block, it writes the keys in the order `widget`, `displa
 
 If the block's version is newer than the widget, the source is shown with "This widget needs a newer version". An older version is upgraded when shown, and the file is updated the next time you apply a change.
 
+A widget that keeps its data in a file, such as the Excalidraw sketch, has only `state.file` in its state: the file's path from the vault root, such as `"Work/_attachments/sketch-3f9a.excalidraw.json"`. The path must already be in normal form (no `..`, no leading `/`, no hidden folders, no empty parts, no backslashes) and end with the widget's extension. Otherwise the widget shows "The widget's data file path is invalid" and doesn't read or write any file. The path counts as an attachment link: moving or renaming the file updates it, and the file's delete dialog lists the note.
+
 ## Webhook events
 
 Webhooks POST JSON `{event, id, time, data}` with the header `X-Keyring-Signature: sha256=<HMAC-SHA256(secret, body)>`.
