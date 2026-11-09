@@ -1,4 +1,9 @@
+import { widgetDataPath } from "@keyring-notes/core";
+import { api as vaultApi } from "../api";
 import { language, onLanguageChange, t } from "../i18n";
+import { toast } from "../toast";
+import { DataFileError, dataFileOptions, openDataFile, type DataFileHandle, type DataFileStatus } from "./dataFile";
+import { apiDataFileIO } from "./dataFileIo";
 import { mountFrame } from "./frame/mountFrame";
 import { THEME_TOKEN_NAMES } from "./frame/themeTokens";
 import { widgetMessages } from "./messages";
@@ -22,7 +27,14 @@ export interface MountOptions {
   edit: { start(draft: unknown): void; draft(draft: unknown): void; focus(index: number | null): void; end(): void };
   /** 있으면 머리에 「원문으로 편집」(Live Preview). 오류 블록을 누를 때도 쓴다 */
   onRaw?: () => void;
+  /** 이력 보기 — 데이터 파일 위젯은 그 판의 파일을 그리지 않는다(지금 그림을 옛 노트에 보이면 속인다 — 설계 「데이터 파일」) */
+  history?: boolean;
+  /** 이 위젯이 든 노트 경로 — 데이터 파일 쓰기의 주인(탭 닫기·노트 바꾸기에서 그 노트의 그림만 비운다) */
+  owner: string;
 }
+
+/** 데이터 파일 충돌 사본 알림의 「열기」 — Workspace 가 받아 그 첨부를 연다 */
+export const OPEN_PATH_EVENT = "keyring:open-path";
 
 export interface Resume {
   draft: unknown;
@@ -46,6 +58,18 @@ function readTheme(): Record<string, string> {
 }
 
 const FOCUSABLE = "input, textarea, select, button, [tabindex]";
+
+/** 원문 없이 안내 한 줄(이력 보기의 데이터 파일 위젯) */
+function noticeBlock(el: HTMLElement, message: string) {
+  const box = document.createElement("div");
+  box.className = "kw-notice";
+  box.textContent = message;
+  el.replaceChildren(box);
+}
+
+/** state.file 의 원래 글(오류·안내에 보일 것) */
+const rawFile = (state: unknown): string =>
+  state !== null && typeof state === "object" && typeof (state as { file?: unknown }).file === "string" ? (state as { file: string }).file : "";
 
 function errorBlock(el: HTMLElement, body: string, message: string, onRaw?: () => void) {
   const box = document.createElement("div");
@@ -86,6 +110,15 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       return;
     }
     const v = view;
+    const df = v.entry.def.dataFile;
+    let file: DataFileHandle | null = null;
+    let filePath: string | null = null;
+    if (df) {
+      if (opts.history) return noticeBlock(el, t("kw.historyNoFile", { path: rawFile(v.state) }));
+      filePath = widgetDataPath(v.state, df.ext);
+      if (filePath === null) return errorBlock(el, body, t("kw.badFile"), opts.onRaw);
+      file = openDataFile(filePath, df.ext, opts.owner, apiDataFileIO(vaultApi), dataFileOptions());
+    }
     const root = document.createElement("div");
     root.className = `kw-root kw-display-${v.display}`;
     // 뿌리가 포커스를 받을 수 있어야 Esc·focusout 을 뿌리에서 받는다
@@ -101,10 +134,16 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       head.append(raw);
       root.append(head);
     }
+    // 데이터 파일 상태 한 줄(저장하지 않은 그림·다른 칸에서 고치는 중·저장하지 못함)
+    const status = document.createElement("div");
+    status.className = "kw-file-status";
+    status.hidden = true;
+    if (file) root.append(status);
     const content = document.createElement("div");
     content.className = "kw-content";
     root.append(content);
     el.replaceChildren(root);
+    let stale = false;
 
     let theme = readTheme();
     const listeners: ((ctx: WidgetContext) => void)[] = [];
@@ -115,7 +154,8 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       display: v.display,
       lang: language(),
       theme,
-      readOnly: opts.readOnly,
+      // 다른 칸의 쓰기가 받아들여진 동안은 보기 전용 — 이 위젯이 써도 어차피 거절되므로 그리지 못하게
+      readOnly: opts.readOnly || stale,
     });
     const fire = () => {
       const c = ctx();
@@ -135,7 +175,68 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       },
     );
     constructing = false;
-    const api = bindWidgetApi({ session, messages: () => widgetMessages(v.entry, language()), listeners, file: null, fullscreen: null });
+    // 위젯에 건네는 파일: 첫 읽기가 「없음」 이면 그 자리를 「파일을 찾을 수 없습니다」 로 바꾼다(새로 만들지 않는다)
+    let firstRead = true;
+    const widgetFile: DataFileHandle | null = file && {
+      ...file,
+      read: () => {
+        const first = firstRead;
+        firstRead = false;
+        return file!.read().catch((e) => {
+          if (first && e instanceof DataFileError && e.code === "missing") queueMicrotask(() => fail("kw.fileMissing", { path: filePath! }));
+          throw e;
+        });
+      },
+      write: (b, h) => file!.write(b, h),
+      onStatus: (cb) => file!.onStatus(cb),
+      onStale: (cb) => file!.onStale(cb),
+      onSettled: (cb) => file!.onSettled(cb),
+      drain: () => file!.drain(),
+      release: () => file!.release(),
+      flush: () => file!.flush(),
+    };
+    const api = bindWidgetApi({ session, messages: () => widgetMessages(v.entry, language()), listeners, file: widgetFile, fullscreen: null });
+    // 포커스가 위젯 밖으로 나가면(수정 끝과 같은 판정) 자동 저장 켬일 때 그 그림을 비운다
+    const fileFocusOut = () => {
+      if (file && dataFileOptions().autosave()) void file.flush();
+    };
+    // 사본 경로는 writer 에 남는다 — 구독할 때 곧바로 오는 첫 상태의 것은 기준으로만 두고, 그 뒤 새로 생긴 것만 알린다
+    let lastCopy: string | null | undefined = undefined;
+    const offStatus = file?.onStatus((st: DataFileStatus) => {
+      const line = stale
+        ? t("kw.fileStale")
+        : st.error === "failed"
+          ? t("kw.fileFailed")
+          : st.unsaved && !dataFileOptions().autosave()
+            ? t("kw.unsavedDrawing")
+            : "";
+      status.textContent = line;
+      status.hidden = !line;
+      if (lastCopy === undefined) {
+        lastCopy = st.conflictCopy;
+        return;
+      }
+      if (!st.conflictCopy || st.conflictCopy === lastCopy) return;
+      const copy = st.conflictCopy;
+      lastCopy = copy;
+      toast(t("kw.fileConflict", { path: copy }), {
+        kind: "warn",
+        duration: 10000,
+        action: { label: t("common.open"), run: () => window.dispatchEvent(new CustomEvent(OPEN_PATH_EVENT, { detail: copy })) },
+      });
+      // 원본을 다시 읽는다(블록은 원본을 계속 가리킨다)
+      queueMicrotask(() => restart());
+    });
+    const offStale = file?.onStale(() => {
+      stale = true;
+      status.textContent = t("kw.fileStale");
+      status.hidden = false;
+      fire();
+    });
+    // 다른 칸의 쓰기가 다 내려앉으면 한 번만 다시 그린다(다시 읽기) — 받아들임마다 iframe 을 새로 만들지 않는다
+    const offSettled = file?.onSettled(() => {
+      if (stale) queueMicrotask(() => restart());
+    });
 
     // 판정은 핸들러 안이 아니라 마이크로태스크 뒤에 — 엔진에 따라 포커스된 요소를 지우는 처리 중에 blur 가 나
     // 그 순간에는 isConnected 가 아직 true 일 수 있다. 다시 그리기로 빠지는 뿌리의 blur 로 적용하지 않기 위해서다.
@@ -146,7 +247,14 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       queueMicrotask(() => {
         if (dead || live?.root !== root || !session.editing) return;
         const relatedInside = (!!related && root.contains(related)) || root.contains(document.activeElement);
-        if (focusOutAction({ rootConnected: root.isConnected, relatedInside }) === "apply") session.focusOut();
+        if (focusOutAction({ rootConnected: root.isConnected, relatedInside }) !== "apply") return;
+        session.focusOut();
+      });
+      // 데이터 파일은 수정 모드와 상관없이 위젯 밖으로 나가면 비운다
+      queueMicrotask(() => {
+        if (dead || live?.root !== root || !file) return;
+        const relatedInside = (!!related && root.contains(related)) || root.contains(document.activeElement);
+        if (focusOutAction({ rootConnected: root.isConnected, relatedInside }) === "apply") fileFocusOut();
       });
     };
     const onFocusIn = (e: FocusEvent) => {
@@ -187,17 +295,29 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
         themeObserver.disconnect();
         media.removeEventListener("change", onTheme);
         listeners.length = 0;
+        offStatus?.();
+        offStale?.();
+        offSettled?.();
         cleanup?.();
         cleanup = null;
+        // iframe 위젯은 mountFrame 이 drain 한 뒤 놓는다(지운 iframe 이 이미 보낸 쓰기를 받으려고). 인라인만 여기서 곧바로 놓는다
+        if (file && !frameOwnsFile) file.release();
       },
     };
+    let frameOwnsFile = false;
     const mine = live;
     const entry = v.entry;
-    const fail = (key = "kw.loadFailed") => {
+    const fail = (key = "kw.loadFailed", vars?: Record<string, string>) => {
       if (dead || live !== mine) return;
       mine.stop();
       live = null;
-      errorBlock(el, body, t(key), opts.onRaw);
+      errorBlock(el, body, t(key, vars), opts.onRaw);
+    };
+    /** 같은 블록으로 다시 그린다(데이터 파일 다시 읽기) */
+    const restart = () => {
+      if (dead || live !== mine) return;
+      stopLive();
+      start(null);
     };
     if (isFrameEntry(entry)) {
       // iframe 연결: 세션·ctx·뿌리는 여기 것을 쓰고 DOM 접착은 mountFrame 이 한다
@@ -206,11 +326,13 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
         entry,
         session,
         ctx,
-        file: null,
+        file: widgetFile,
         display: v.display,
         onUpdate: (cb) => void listeners.push(() => cb()),
-        failed: fail,
+        failed: (key) => fail(key),
+        focusOut: fileFocusOut,
       });
+      frameOwnsFile = true;
       cleanup = () => frame.destroy();
       return;
     }
@@ -236,7 +358,10 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       if (dead || next === body) return;
       const nextView = resolveWidgetView(next);
       body = next;
-      if (live && widgetViewChange(view, nextView) === "external" && nextView.kind === "widget") {
+      // 같은 위젯이어도 데이터 파일 경로가 바뀌면 다른 그림이다 — 다시 그린다
+      const fileChanged =
+        view.kind === "widget" && nextView.kind === "widget" && !!nextView.entry.def.dataFile && rawFile(view.state) !== rawFile(nextView.state);
+      if (live && !fileChanged && widgetViewChange(view, nextView) === "external" && nextView.kind === "widget") {
         view = nextView;
         live.session.external(nextView.state, nextView.editable);
         return;

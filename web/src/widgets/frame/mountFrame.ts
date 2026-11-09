@@ -55,6 +55,8 @@ export function mountFrame(
     onUpdate(cb: () => void): void;
     /** 그 자리를 오류로 바꾼다 — key 가 없으면 kw.loadFailed */
     failed(key?: string): void;
+    /** 포커스가 위젯 밖으로 나감(수정 모드와 상관없이 — 데이터 파일 비우기) */
+    focusOut?(): void;
   },
 ): { destroy(): void } {
   const id = crypto.randomUUID();
@@ -124,9 +126,11 @@ export function mountFrame(
 
   const checkFocusOut = () =>
     queueMicrotask(() => {
-      if (dead || !o.session.editing) return;
+      if (dead) return;
       const inside = frameFocusInside({ activeInRoot: o.root.contains(document.activeElement), relatedInRoot: false });
-      if (focusOutAction({ rootConnected: o.root.isConnected, relatedInside: inside }) === "apply") o.session.focusOut();
+      if (focusOutAction({ rootConnected: o.root.isConnected, relatedInside: inside }) !== "apply") return;
+      if (o.session.editing) o.session.focusOut();
+      o.focusOut?.();
     });
 
   const removeFrame = () => {

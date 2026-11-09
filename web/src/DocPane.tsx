@@ -34,6 +34,7 @@ import { editorAutoFocus } from "./editorFocus";
 import { isTouch } from "./touch";
 import { TitleDraft, type TitleHandle, type TitleOutcome } from "./titleEdit";
 import { DRAG_REGION } from "./windowChrome";
+import { flushDataFiles } from "./widgets/dataFile";
 import { PreviewKeyringWidget } from "./widgets/PreviewKeyringWidget";
 
 export interface RevisionView {
@@ -646,7 +647,11 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 initial={doc.draft}
                 onChange={(draft, key) => ctx.onDraft(doc.path, draft, key)}
                 onChanges={(changes, key) => ctx.onChanges(pane, doc.path, changes, key)}
-                onSave={() => void ctx.save(doc.path)}
+                onSave={() => {
+                  // 편집기의 Mod+S: 노트와 그림(데이터 파일)을 함께
+                  void ctx.save(doc.path);
+                  void flushDataFiles();
+                }}
                 linkCandidates={() => ctx.linkCandidates}
                 handle={handle}
                 onFiles={(files) => ctx.uploadFiles(files, doc.path)}
@@ -686,7 +691,11 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                 if (!w) return null;
                 // 이력 보기·생성 문서·편집기가 없는 칸에서는 쓰지 않는다(설계 「상태가 바뀌는 길」)
                 const ro = !!revision || !!doc.generated || !handle.current;
-                return createPortal(<PreviewKeyringWidget el={el} body={w.body} line={w.line} readOnly={ro} handle={handle} />, el, `${i}:${w.line}:${w.body}`);
+                return createPortal(
+                  <PreviewKeyringWidget el={el} body={w.body} line={w.line} readOnly={ro} history={!!revision} owner={doc.path} handle={handle} />,
+                  el,
+                  `${i}:${w.line}:${w.body}`,
+                );
               })}
               {prefs.backlinksInDoc && !revision && refs && (
                 <References

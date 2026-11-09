@@ -20,6 +20,11 @@ export function closeWindowCommands(desktop: boolean, c: Pick<Command, "group" |
   return desktop ? [{ id: "close-window", keys: "Mod+Shift+W", ...c }] : [];
 }
 
+/** 이 창의 닫기 지킴을 켤까: 데스크톱 앱에서 저장 안 한 노트나 keyring-widget 그림(데이터 파일)이 하나라도 있으면 */
+export function closeGuarded(o: { desktop: boolean; dirtyDocs: number; unsavedFiles: number }): boolean {
+  return o.desktop && o.dirtyDocs + o.unsavedFiles > 0;
+}
+
 /** 저장 안 한 변경이 있을 때의 답: 저장하고 닫기 / 저장하지 않고 닫기 (취소는 null) */
 export type CloseChoice = "save" | "discard";
 

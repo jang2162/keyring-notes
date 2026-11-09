@@ -762,3 +762,17 @@ describe("새 파일", () => {
     expect(dataFileStem(" #스케치^ ")).toBe("스케치");
   });
 });
+
+describe("핸들의 flush — 포커스 아웃 때 그 그림만 비운다", () => {
+  it("그 writer 만 쓰고 다른 경로는 남긴다", async () => {
+    const Q = "b/y.excalidraw.json";
+    const { io, open } = setup({ autosave: () => false }, { [P]: "h0", [Q]: "q0" });
+    const a = open("n.md", P);
+    const b = open("n.md", Q);
+    track(a.write(enc("a1"), (await a.read()).hash));
+    track(b.write(enc("q1"), (await b.read()).hash));
+    expect(await a.flush()).toBe(true);
+    expect(io.replaces()).toEqual([`replace ${P} a1 h0`]);
+    expect(unsavedDataFiles()).toEqual([Q]);
+  });
+});

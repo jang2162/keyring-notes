@@ -87,6 +87,12 @@ describe("레지스트리", () => {
     registerWidget({ def: entry({ id: "t/e", isolation: "frame", dataFile: df(".x.json") }).def, builtIn: true, messages: "kw.test", frame });
   });
 
+  it("widgetInsertText 에 상태를 주면 그것으로(데이터 파일 경로)", () => {
+    const text = widgetInsertText(X.def, { file: "a/b.x.json" });
+    const r = parseWidgetBlock(text.split("\n").slice(1, -1).join("\n"));
+    expect(r.ok && r.block.state).toEqual({ file: "a/b.x.json" });
+  });
+
   it("widgetInsertText", () => {
     const text = widgetInsertText(X.def);
     expect(text).toBe('```keyring-widget\n{"widget": "t/x@2", "display": "inline", "state": {"n": 0}}\n```');

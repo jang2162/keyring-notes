@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   canCloseWindow,
   closeAskHandler,
+  closeGuarded,
   closeWindowCommands,
   closeWindowSafely,
   dropAutosaves,
@@ -384,8 +385,8 @@ describe("Workspace 배선", () => {
   });
 
   it("자동 저장 타이머·창 blur·숨김·편집기 이탈 저장은 묻는 동안과 닫는 중 모두 멈춘다", () => {
-    // 자동 저장 타이머(fire), 창 blur·숨김(go), 편집기 이탈 저장 — 셋 모두 savesHeld 로 검사한다
-    expect(workspaceSrc.match(/savesHeld\(closeHold\.current\)/g)).toHaveLength(3);
+    // 자동 저장 타이머(fire), 창 blur·숨김(go), 편집기 이탈 저장, 그림(데이터 파일)의 held 옵션과 숨김 비우기 — 다섯 모두 savesHeld 로 검사한다
+    expect(workspaceSrc.match(/savesHeld\(closeHold\.current\)/g)).toHaveLength(5);
     expect(workspaceSrc).not.toMatch(/askingClose/);
   });
 
@@ -403,5 +404,43 @@ describe("unsavedSummary", () => {
 
   it("넘으면 앞의 셋만 들고 몇 개인지 알린다", () => {
     expect(unsavedSummary(["a.md", "b.md", "c.md", "d.md"], stem)).toEqual({ names: '"a", "b", "c"', count: 4, more: true });
+  });
+});
+
+describe("keyring-widget 그림도 닫기 지킴에 든다", () => {
+  it("closeGuarded: 데스크톱에서 노트나 그림 하나라도 저장 안 됐으면 켠다", () => {
+    expect(closeGuarded({ desktop: true, dirtyDocs: 0, unsavedFiles: 1 })).toBe(true);
+    expect(closeGuarded({ desktop: true, dirtyDocs: 1, unsavedFiles: 0 })).toBe(true);
+    expect(closeGuarded({ desktop: true, dirtyDocs: 0, unsavedFiles: 0 })).toBe(false);
+    expect(closeGuarded({ desktop: false, dirtyDocs: 3, unsavedFiles: 1 })).toBe(false);
+  });
+
+  const steps = (dirty: string[]) => {
+    let saved = false;
+    return {
+      autosave: vi.fn(() => false),
+      dirty: vi.fn(() => (saved ? [] : dirty)),
+      ask: vi.fn(async (): Promise<CloseChoice | null> => "save"),
+      save: vi.fn(async () => {
+        saved = true;
+      }),
+      unsaved: vi.fn(),
+      close: vi.fn(async () => {}),
+      hold: { asking: false, closing: false } as SaveHold,
+      dropPending: vi.fn(),
+      renotify: vi.fn(),
+      failed: vi.fn(),
+    };
+  };
+
+  it("노트는 깨끗하고 dirty 가 그림 경로만 줘도 묻고 저장한다(창 닫기·새로 고침)", async () => {
+    const a = steps(["a/스케치-3f9a.excalidraw.json"]);
+    expect(await closeWindowSafely(a)).toBe(true);
+    expect(a.ask).toHaveBeenCalledWith(["a/스케치-3f9a.excalidraw.json"]);
+    expect(a.save).toHaveBeenCalledOnce();
+    const b = steps(["a/스케치-3f9a.excalidraw.json"]);
+    expect(await reloadAfterSaving(b)).toBe(true);
+    expect(b.ask).toHaveBeenCalledOnce();
+    expect(b.save).toHaveBeenCalledOnce();
   });
 });

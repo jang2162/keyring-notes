@@ -73,19 +73,29 @@ export function resetWidgetsForTest(): void {
   entries.length = 0;
 }
 
-/** 「위젯 넣기」 글 — widget·display·state 만 쓴다(editable 은 없으면 true) */
-export function widgetInsertText(def: WidgetDefinition): string {
-  const body = serializeWidgetBlock({ widget: { id: def.id, version: def.version }, display: def.display, state: def.defaultState(), extra: [] });
+/** 「위젯 넣기」 글 — widget·display·state 만 쓴다(editable 은 없으면 true). state 를 주면 그것으로(데이터 파일 경로를 넣을 때) */
+export function widgetInsertText(def: WidgetDefinition, state?: unknown): string {
+  const body = serializeWidgetBlock({
+    widget: { id: def.id, version: def.version },
+    display: def.display,
+    state: state === undefined ? def.defaultState() : state,
+    extra: [],
+  });
   return "```" + KEYRING_WIDGET_LANG + "\n" + body + "\n```";
 }
 
 /** 명령 팔레트 「위젯 넣기」 목록. 이름은 화면 언어, 없으면 영어, 없으면 id */
-export function widgetPaletteItems(lang: string, insert: (text: string) => void): { id: string; label: string; detail: string; run: () => void }[] {
+export function widgetPaletteItems(
+  lang: string,
+  insert: (text: string) => void,
+  /** 데이터 파일 위젯 — 있으면 insert 대신 이것이 파일을 만들고 넣는다(Workspace) */
+  insertWithFile?: (def: WidgetDefinition) => void,
+): { id: string; label: string; detail: string; run: () => void }[] {
   return entries.map((e) => ({
     id: e.def.id,
     label: e.def.title[lang] ?? e.def.title.en ?? e.def.id,
     detail: e.def.id,
-    run: () => insert(widgetInsertText(e.def)),
+    run: () => (e.def.dataFile && insertWithFile ? insertWithFile(e.def) : insert(widgetInsertText(e.def))),
   }));
 }
 

@@ -43,6 +43,8 @@ export interface DataFileHandle {
   onSettled(cb: () => void): () => void;
   drain(): void;
   release(): void;
+  /** 이 그림의 쓰지 않은 바이트·사본 대기를 지금 쓴다(위젯 포커스 아웃 — 자동 저장 켬일 때 호스트가 부른다). 남은 것이 없으면 true */
+  flush(): Promise<boolean>;
 }
 
 export interface DataFileOptions {
@@ -424,6 +426,10 @@ class Handle implements DataFileHandle {
 
   drain(): void {
     if (!this.isReleased) this.draining = true;
+  }
+
+  flush(): Promise<boolean> {
+    return this.w.flush();
   }
 
   release(): void {

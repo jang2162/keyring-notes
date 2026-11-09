@@ -213,7 +213,7 @@ function buildBlocks(state: EditorState, getCtx: GetCtx): DecorationSet {
       b.kind === "comment"
         ? new HiddenBlock(z - a + 1)
         : b.kind === "keyring-widget"
-          ? new KeyringBlockWidget(widgetBlockAt(state, b.from)?.body ?? "", b.from)
+          ? new KeyringBlockWidget(widgetBlockAt(state, b.from)?.body ?? "", b.from, () => getCtx()?.docPath ?? "")
           : new BlockWidget(state.sliceDoc(b.from, b.to), b.kind, b.from, getCtx);
     ranges.push(Decoration.replace({ widget, block: true }).range(b.from, b.to));
   }

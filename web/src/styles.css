@@ -509,6 +509,8 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .kw-fullscreen-button:focus-visible { outline: none; box-shadow: var(--focus); }
 .kw-frame-wrap:popover-open, .kw-frame-wrap.kw-fixed { position: fixed; inset: 0; width: auto; height: auto; max-width: none; max-height: none; margin: 0; padding: var(--sp-2); border: none; background: var(--bg); z-index: 1000; }
 .kw-frame-wrap:popover-open .kw-frame, .kw-frame-wrap.kw-fixed .kw-frame { flex: 1; min-height: 0; }
+.kw-notice { margin: var(--sp-1) 0; padding: var(--sp-1) var(--sp-3); font-size: var(--fs-sm); color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius); background: var(--bg-soft); word-break: break-all; }
+.kw-file-status { padding: 0 var(--sp-1); font-size: var(--fs-xs); color: var(--muted); }
 .kw-error-block { margin: var(--sp-1) 0; border: 1px dashed var(--danger); border-radius: var(--radius); background: var(--danger-bg); }
 .kw-error-block.kw-clickable { cursor: text; }
 .kw-error { padding: var(--sp-1) var(--sp-3); font-size: var(--fs-sm); color: var(--danger); }
