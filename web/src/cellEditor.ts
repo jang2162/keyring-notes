@@ -24,7 +24,18 @@ import {
   type TableRow,
 } from "./tableModel";
 import { enterTableFrom, exitTarget, navigate, newRowSpec, type NavKey } from "./tableNav";
-import { cellClick, paintCell, setVirtualCell, tableAtDOM, tableRanges, topTables, virtualField, type CellRef, type TableOptions } from "./tableWidget";
+import {
+  cellClick,
+  paintCell,
+  setVirtualCell,
+  showHandles,
+  tableAtDOM,
+  tableRanges,
+  topTables,
+  virtualField,
+  type CellRef,
+  type TableOptions,
+} from "./tableWidget";
 
 /**
  * 표의 칸 편집기: 본문 선택이 표의 한 칸 안에 있으면 그 칸 자리에 CodeMirror 편집기 하나를 붙인다(설계 6.2·6.3).
@@ -162,7 +173,9 @@ class CellPlugin {
     if (this.cell && u.docChanged) this.cell.ref = { ...this.cell.ref, table: u.changes.mapPos(this.cell.ref.table) };
     let click: { x: number; y: number } | undefined;
     for (const tr of u.transactions) for (const e of tr.effects) if (e.is(cellClick)) click = e.value;
-    if (u.docChanged || u.selectionSet || click || u.viewportChanged) this.schedule(click);
+    // 표가 화면 밖으로 나갔다 오거나 폭이 바뀌면 CodeMirror 가 표 위젯 DOM 을 새로 만든다 — 칸 편집기가 옛 DOM 에 남으면 다시 연다
+    const lost = !!this.cell && !this.cell.td.isConnected;
+    if (u.docChanged || u.selectionSet || click || u.viewportChanged || lost) this.schedule(click);
   }
 
   /** 본문 갱신이 DOM 에 반영된 뒤에 맞춘다(플러그인 update 때는 표 위젯 DOM 이 아직 옛것이다) */
@@ -178,6 +191,8 @@ class CellPlugin {
     });
   }
   private click: { x: number; y: number } | undefined;
+  /** 칸 편집기에 포커스가 있었는가(DOM 이 떼어지면 blur 없이 사라지므로 따로 기억한다) */
+  private cellFocused = false;
 
   sync(click?: { x: number; y: number }) {
     if (this.destroyed) return;
@@ -191,7 +206,8 @@ class CellPlugin {
       if (click) this.placeAt(click);
       return;
     }
-    const focus = !!click || !!c?.view.hasFocus || this.main.hasFocus;
+    // 떨어져 나간 칸 편집기는 포커스를 잃었으므로 그 전에 포커스가 있었는지(cellFocused)로 정한다
+    const focus = !!click || !!c?.view.hasFocus || this.main.hasFocus || (!!c && !c.td.isConnected && this.cellFocused);
     this.close(false);
     this.open(sel, focus, click);
   }
@@ -228,6 +244,8 @@ class CellPlugin {
       dispatchTransactions: (trs, v) => this.fromCellEditor(trs, v),
     });
     this.cell = { ref, view, td };
+    // 터치에서는 마우스를 올릴 수 없으므로 편집 중인 칸의 행·열에 손잡이를 둔다
+    showHandles(td);
     if (click) this.placeAt(click);
     if (focus) view.focus();
   }
@@ -389,6 +407,15 @@ class CellPlugin {
           // 찾기(Mod-f·Mod-g·F3)는 본문 키맵으로 — 본문 뷰는 칸 안에서 난 키를 받지 않는다
           if ((e.metaKey || e.ctrlKey) && /^[fg]$/i.test(e.key)) return runScopeHandlers(main, e, "editor");
           if (e.key === "F3") return runScopeHandlers(main, e, "editor");
+          return false;
+        },
+        focus: () => {
+          this.cellFocused = true;
+          return false;
+        },
+        blur: (_e, v) => {
+          // 칸을 떼어 내는 중의 blur 는 무시한다(다시 열 때 포커스를 되살린다)
+          if (v.dom.isConnected) this.cellFocused = false;
           return false;
         },
         compositionend: () => {

@@ -10,6 +10,7 @@ import type { LiveRenderContext } from "./liveBlocks";
 import { frontmatterEnd } from "./liveSyntax";
 import { renderInlineMarkdown } from "./markdown";
 import { cellEditing } from "./cellEditor";
+import { applyAction, colMenu, dropIndex, rowMenu, type MenuAction, type TableAction } from "./tableMenu";
 import { cellText, parseTable, type TableModel } from "./tableModel";
 import { Menu, type MenuEntry } from "./ui";
 
@@ -151,6 +152,7 @@ class TableWidget extends WidgetType {
         ]);
       });
       wrap.append(menu);
+      attachHandles(view, wrap);
     }
     wrap.addEventListener("mousedown", (e) => {
       const target = e.target as HTMLElement;
@@ -229,6 +231,175 @@ class TableWidget extends WidgetType {
   }
 }
 
+// ── 행·열 손잡이(설계 6.5): 누르면 메뉴, 끌면 옮기기. 마우스를 올린 행·열에 하나씩 둔다(칸마다 두지 않는다 — 수백 칸 표) ──
+
+function handleButton(cls: string, label: string): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = `cm-lp-handle ${cls}`;
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  return b;
+}
+
+/** 그 칸의 행·열에 손잡이를 옮긴다(마우스를 올렸을 때, 터치에서는 칸 편집기를 열 때 — cellEditor.ts) */
+export function showHandles(td: HTMLElement) {
+  const wrap = td.closest<HTMLElement>(".cm-lp-table");
+  const table = wrap?.querySelector("table");
+  const row = wrap?.querySelector<HTMLElement>(".cm-lp-row-handle");
+  const col = wrap?.querySelector<HTMLElement>(".cm-lp-col-handle");
+  if (!wrap || !table || !row || !col) return;
+  const w = wrap.getBoundingClientRect();
+  const t = table.getBoundingClientRect();
+  const c = td.getBoundingClientRect();
+  const tr = (td.parentElement as HTMLElement).getBoundingClientRect();
+  row.dataset.row = td.dataset.row;
+  col.dataset.col = td.dataset.col;
+  row.style.top = `${tr.top - w.top + tr.height / 2}px`;
+  row.style.left = `${t.left - w.left}px`;
+  col.style.left = `${c.left - w.left + c.width / 2}px`;
+  col.style.top = `${t.top - w.top}px`;
+  wrap.classList.add("cm-lp-handles-on");
+}
+
+function act(view: EditorView, wrap: HTMLElement, a: TableAction) {
+  const m = tableAtDOM(view, wrap);
+  if (!m) return;
+  view.dispatch({ changes: applyAction(m, a), userEvent: "input" });
+}
+
+function menuOf(view: EditorView, wrap: HTMLElement, items: MenuAction[], label: string, at: { x: number; y: number }) {
+  const groups: Record<string, number> = { insert: 0, move: 1, delete: 2, align: 3, sort: 4 };
+  const group = (k: string) =>
+    /(Above|Below|Left|Right)$/.test(k) && !/Move|align/.test(k)
+      ? "insert"
+      : /Up$|Down$|Move/.test(k)
+        ? "move"
+        : /Delete/.test(k)
+          ? "delete"
+          : /align/.test(k)
+            ? "align"
+            : "sort";
+  const entries: MenuEntry[] = [];
+  let last = -1;
+  for (const it of items) {
+    const g = groups[group(it.key)];
+    if (last >= 0 && g !== last) entries.push("-");
+    last = g;
+    entries.push({ label: t(it.key), danger: /Delete/.test(it.key), run: () => act(view, wrap, it.action) });
+  }
+  openMenu(at, entries, label);
+}
+
+/**
+ * 손잡이 누르기·끌기. 포인터 이벤트라 마우스와 터치가 같다. 4px 넘게 움직이면 끌기 — 놓을 자리에 선을 보이고,
+ * 놓으면 moveRow/moveColumn(트랜잭션 하나), 끄는 중 Esc 는 취소. 머리 행은 옮길 수 없어 메뉴만
+ */
+function attachHandles(view: EditorView, wrap: HTMLElement) {
+  const row = handleButton("cm-lp-row-handle", t("table.rowHandle"));
+  const col = handleButton("cm-lp-col-handle", t("table.colHandle"));
+  const line = document.createElement("div");
+  line.className = "cm-lp-drop-line";
+  wrap.append(row, col, line);
+  wrap.addEventListener("mousemove", (e) => {
+    const td = (e.target as HTMLElement).closest<HTMLElement>("td, th");
+    if (td && !(e.target as HTMLElement).closest(".cm-lp-handle")) showHandles(td);
+  });
+  for (const h of [row, col]) {
+    const isRow = h === row;
+    h.addEventListener("mousedown", (e) => e.preventDefault());
+    h.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const index = Number(isRow ? h.dataset.row : h.dataset.col);
+      if (Number.isNaN(index)) return;
+      const start = isRow ? e.clientY : e.clientX;
+      const table = wrap.querySelector("table")!;
+      // 끌 수 있는 항목: 행은 본문 행(머리 빼고), 열은 머리 칸
+      const items = isRow ? [...table.tBodies[0].rows] : [...table.tHead!.rows[0].cells];
+      const from = isRow ? index - 1 : index;
+      const canDrag = from >= 0 && items.length > 1;
+      let dragging = false;
+      let target = from;
+      try {
+        h.setPointerCapture(e.pointerId);
+      } catch {
+        // 이미 끝난 포인터(빠른 탭 등)면 잡지 못한다 — 손잡이 위에서 난 이벤트만으로도 된다
+      }
+      const mids = () =>
+        items.map((el) => {
+          const r = el.getBoundingClientRect();
+          return isRow ? r.top + r.height / 2 : r.left + r.width / 2;
+        });
+      const showLine = () => {
+        const w = wrap.getBoundingClientRect();
+        const others = items.filter((_, i) => i !== from);
+        const edge = target < others.length ? others[target].getBoundingClientRect() : others[others.length - 1].getBoundingClientRect();
+        const before = target < others.length;
+        const tr = table.getBoundingClientRect();
+        if (isRow)
+          Object.assign(line.style, {
+            top: `${(before ? edge.top : edge.bottom) - w.top}px`,
+            left: `${tr.left - w.left}px`,
+            width: `${tr.width}px`,
+            height: "2px",
+          });
+        else
+          Object.assign(line.style, {
+            left: `${(before ? edge.left : edge.right) - w.left}px`,
+            top: `${tr.top - w.top}px`,
+            height: `${tr.height}px`,
+            width: "2px",
+          });
+        line.classList.add("on");
+      };
+      const cancel = () => {
+        dragging = false;
+        line.classList.remove("on");
+        cleanup();
+      };
+      const onKey = (k: KeyboardEvent) => {
+        if (k.key === "Escape" && dragging) {
+          k.preventDefault();
+          k.stopPropagation();
+          cancel();
+        }
+      };
+      const move = (m: PointerEvent) => {
+        const at = isRow ? m.clientY : m.clientX;
+        if (!dragging && canDrag && Math.abs(at - start) > 4) dragging = true;
+        if (!dragging) return;
+        target = dropIndex(mids(), from, at);
+        showLine();
+      };
+      const up = (u: PointerEvent) => {
+        const was = dragging;
+        cleanup();
+        line.classList.remove("on");
+        if (was) {
+          if (target !== from) act(view, wrap, isRow ? { op: "moveRow", from, to: target } : { op: "moveColumn", from, to: target });
+          return;
+        }
+        if (u.type === "pointercancel") return;
+        const m = tableAtDOM(view, wrap);
+        if (!m) return;
+        const r = h.getBoundingClientRect();
+        menuOf(view, wrap, isRow ? rowMenu(m, index) : colMenu(m, index), h.title, { x: r.left, y: r.bottom + 2 });
+      };
+      const cleanup = () => {
+        h.removeEventListener("pointermove", move);
+        h.removeEventListener("pointerup", up);
+        h.removeEventListener("pointercancel", up);
+        window.removeEventListener("keydown", onKey, true);
+      };
+      h.addEventListener("pointermove", move);
+      h.addEventListener("pointerup", up);
+      h.addEventListener("pointercancel", up);
+      window.addEventListener("keydown", onKey, true);
+    });
+  }
+}
+
 /** 칸을 그린 HTML 로(칸 원문은 data-raw 에 두어 같으면 다시 그리지 않는다) */
 export function paintCell(td: HTMLElement, raw: string, ctx: LiveRenderContext | null) {
   td.dataset.raw = raw;
@@ -269,14 +440,15 @@ function tableField(getCtx: GetCtx) {
 }
 
 const theme = EditorView.baseTheme({
-  ".cm-lp-table": { position: "relative", padding: "4px 0", fontFamily: "var(--font-sans)", whiteSpace: "normal" },
+  // 폭은 표만큼(⋯ 메뉴 단추가 줄 끝이 아니라 표 오른쪽 위에 붙게)
+  ".cm-lp-table": { position: "relative", width: "fit-content", maxWidth: "100%", padding: "8px 0 4px", fontFamily: "var(--font-sans)", whiteSpace: "normal" },
   ".cm-lp-table-scroll": { overflowX: "auto" },
   ".cm-lp-table table": { margin: "0", borderCollapse: "collapse" },
   ".cm-lp-table th, .cm-lp-table td": { minWidth: "3em", cursor: "text", verticalAlign: "top" },
   ".cm-lp-table-menu": {
     position: "absolute",
     top: "0",
-    right: "0",
+    right: "-28px",
     font: "13px var(--font-sans)",
     lineHeight: "1",
     color: "var(--muted)",
@@ -288,7 +460,29 @@ const theme = EditorView.baseTheme({
     opacity: "0",
   },
   ".cm-lp-table:hover .cm-lp-table-menu, .cm-lp-table-menu:focus-visible": { opacity: "1" },
-  "@media (pointer: coarse)": { ".cm-lp-table-menu": { opacity: "1" } },
+  ".cm-lp-handle": {
+    position: "absolute",
+    zIndex: "1",
+    padding: "0",
+    border: "1px solid var(--border)",
+    borderRadius: "4px",
+    background: "var(--bg)",
+    color: "var(--muted)",
+    cursor: "grab",
+    opacity: "0",
+    touchAction: "none",
+    font: "10px/1 var(--font-sans)",
+  },
+  ".cm-lp-handle:hover": { color: "var(--accent)", borderColor: "var(--accent)" },
+  // 행 손잡이는 표 왼쪽 바깥, 열 손잡이는 표 위쪽 테두리에 걸친다
+  ".cm-lp-row-handle": { width: "12px", height: "20px", transform: "translate(-15px, -50%)" },
+  ".cm-lp-row-handle::before": { content: '"⋮"' },
+  ".cm-lp-col-handle": { width: "20px", height: "12px", transform: "translate(-50%, -6px)" },
+  ".cm-lp-col-handle::before": { content: '"⋯"' },
+  ".cm-lp-table.cm-lp-handles-on:hover .cm-lp-handle, .cm-lp-handle:focus-visible": { opacity: "1" },
+  ".cm-lp-drop-line": { position: "absolute", display: "none", background: "var(--accent)", pointerEvents: "none", zIndex: "2" },
+  ".cm-lp-drop-line.on": { display: "block" },
+  "@media (pointer: coarse)": { ".cm-lp-table-menu": { opacity: "1" }, ".cm-lp-table.cm-lp-handles-on .cm-lp-handle": { opacity: "1" } },
 });
 
 /** Live Preview 안에서만 켠다(livePreview 가 부른다) */
