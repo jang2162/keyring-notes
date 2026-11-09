@@ -80,10 +80,11 @@ describe("인용", () => {
 });
 
 describe("글머리와 할 일", () => {
-  it("- * + 만 점으로, 번호는 그대로", () => {
-    expect(only(marks("- a\n  * b\n1. c"), "bullet")).toEqual([
-      { kind: "bullet", from: 0, to: 1 },
-      { kind: "bullet", from: 6, to: 7 },
+  it("- * + 만 점으로, 번호는 그대로. 점은 뎁스를 안다(번호 목록도 센다)", () => {
+    expect(only(marks("- a\n  * b\n1. c\n   - d"), "bullet")).toEqual([
+      { kind: "bullet", from: 0, to: 1, depth: 1 },
+      { kind: "bullet", from: 6, to: 7, depth: 2 },
+      { kind: "bullet", from: 18, to: 19, depth: 2 },
     ]);
   });
 
@@ -115,7 +116,45 @@ describe("글머리와 할 일", () => {
   it("펼친 프런트매터(커서가 안)의 YAML 목록은 글머리·할 일로 그리지 않는다", () => {
     const list = marks("---\ntags:\n  - a\n  - [ ] b\n---\n\n- c", [2]);
     expect(only(list, "task")).toEqual([]);
-    expect(only(list, "bullet")).toEqual([{ kind: "bullet", from: 31, to: 32 }]);
+    expect(only(list, "bullet")).toEqual([{ kind: "bullet", from: 31, to: 32, depth: 1 }]);
+    expect(only(list, "listLine")).toEqual([{ kind: "listLine", line: 7, depth: 1, indentFrom: 31, indentTo: 31, markTo: 33 }]);
+  });
+
+  it("목록 줄: 줄 앞 공백·표시(뒤 공백 하나까지)를 나누고 뎁스를 센다 — 커서가 있는 줄에도", () => {
+    const doc = "- a\n  1. b\n     - [ ] c\n- [x] d";
+    for (const active of [[], [1, 2, 3, 4]]) {
+      expect(only(marks(doc, active), "listLine")).toEqual([
+        { kind: "listLine", line: 1, depth: 1, indentFrom: 0, indentTo: 0, markTo: 2 },
+        { kind: "listLine", line: 2, depth: 2, indentFrom: 4, indentTo: 6, markTo: 9 },
+        { kind: "listLine", line: 3, depth: 3, indentFrom: 11, indentTo: 16, markTo: 22 },
+        { kind: "listLine", line: 4, depth: 1, indentFrom: 24, indentTo: 24, markTo: 30 },
+      ]);
+    }
+  });
+
+  it("목록 항목 문단의 이어지는 줄은 그 뎁스의 글 시작에 맞춘다", () => {
+    const list = marks("- a\n  b\n  - c\n    d\n\n글");
+    expect(only(list, "listCont")).toEqual([
+      { kind: "listCont", line: 2, depth: 1, indentFrom: 4, indentTo: 6 },
+      { kind: "listCont", line: 4, depth: 2, indentFrom: 14, indentTo: 18 },
+    ]);
+  });
+
+  it("느슨한 목록의 둘째 문단은 첫 줄부터, 할 일의 이어지는 줄과 줄 앞 공백 없는 lazy 줄도 글 시작에 맞춘다", () => {
+    expect(only(marks("- a\n\n  p2\n  p3"), "listCont")).toEqual([
+      { kind: "listCont", line: 3, depth: 1, indentFrom: 5, indentTo: 7 },
+      { kind: "listCont", line: 4, depth: 1, indentFrom: 10, indentTo: 12 },
+    ]);
+    expect(only(marks("- [ ] a\n  b\nlazy"), "listCont")).toEqual([
+      { kind: "listCont", line: 2, depth: 1, indentFrom: 8, indentTo: 10 },
+      { kind: "listCont", line: 3, depth: 1, indentFrom: 12, indentTo: 12 },
+    ]);
+  });
+
+  it("인용 안 목록은 칸을 나누지 않는다(줄 앞이 > 라서)", () => {
+    const list = marks("> - a\n>   - b");
+    expect(only(list, "listLine")).toEqual([]);
+    expect(only(list, "bullet").map((m) => m.depth)).toEqual([1, 2]);
   });
 
   it("할 일이 아닌 줄은 null", () => {

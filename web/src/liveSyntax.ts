@@ -12,8 +12,16 @@ export type SyntaxMark =
   | { kind: "hide"; from: number; to: number }
   /** 구분선 줄의 내용 전체 */
   | { kind: "hr"; from: number; to: number }
-  /** 글머리 기호 한 글자(- * +) */
-  | { kind: "bullet"; from: number; to: number }
+  /** 글머리 기호 한 글자(- * +). depth 는 목록 뎁스(1부터, 번호 목록도 센다) — 뎁스마다 다른 점을 그린다 */
+  | { kind: "bullet"; from: number; to: number; depth: number }
+  /**
+   * 목록 항목의 첫 줄. 커서가 있는 줄에도 단다 — 들여쓰기 칸이 커서를 따라 움직이지 않게.
+   * indentFrom–indentTo: 줄 앞 공백, indentTo–markTo: 표시(글머리·번호·할 일)와 뒤 공백 하나. 글은 markTo 부터.
+   * 인용 안 목록은 줄 앞이 "> " 라 칸을 나눌 수 없어 내지 않는다(원문 들여쓰기 그대로)
+   */
+  | { kind: "listLine"; line: number; depth: number; indentFrom: number; indentTo: number; markTo: number }
+  /** 목록 항목 안 문단에서 표시가 있는 첫 줄이 아닌 줄. 줄 앞 공백을 접고 그 뎁스의 글 시작에 맞춘다 */
+  | { kind: "listCont"; line: number; depth: number; indentFrom: number; indentTo: number }
   /** "- [ ] " 전체(글머리부터 표시 뒤 공백까지). line 은 1부터 */
   | { kind: "task"; from: number; to: number; done: boolean; line: number }
   /** 인용 줄 장식. 커서가 있는 줄에도 단다 — 줄마다 막대가 들쭉날쭉하지 않게 */
@@ -37,6 +45,13 @@ export function frontmatterEnd(state: EditorState): number | null {
     if (t === "---" || t === "...") return i;
   }
   return null;
+}
+
+/** ListItem 의 목록 뎁스(1부터). 글머리·번호 목록을 가리지 않고 감싼 ListItem 을 센다 */
+function listDepth(item: SyntaxNode): number {
+  let d = 1;
+  for (let p = item.parent; p; p = p.parent) if (p.name === "ListItem") d++;
+  return d;
 }
 
 /** from–to 에 걸친 노드에서 그릴 것을 찾는다. active: 커서(선택)가 걸친 줄 번호 */
@@ -115,16 +130,33 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
         for (let i = lineOf(n.from); i <= lineOf(n.to); i++) quoteDepth.set(i, depth);
         return;
       }
+      // 항목 안 문단(할 일은 Task 가 문단 자리)의 줄 중 표시가 있는 첫 줄을 뺀 나머지 — 이어지는 줄(lazy 포함)과 느슨한 목록의 둘째 이후 문단
+      if ((name === "Paragraph" || name === "Task") && n.node.parent?.name === "ListItem" && depth === 0) {
+        const d = listDepth(n.node.parent);
+        const markLine = lineOf(n.node.parent.from);
+        for (let i = Math.max(lineOf(n.from), markLine + 1); i <= lineOf(n.to); i++) {
+          const l = doc.line(i);
+          out.push({ kind: "listCont", line: i, depth: d, indentFrom: l.from, indentTo: l.from + /^[ \t]*/.exec(l.text)![0].length });
+        }
+        return;
+      }
       if (name === "ListMark") {
-        if (active.has(lineOf(n.from))) return;
         const mark = state.sliceDoc(n.from, n.to);
         const task = n.node.nextSibling?.name === "Task" ? n.node.nextSibling.getChild("TaskMarker") : null;
+        const itemDepth = n.node.parent ? listDepth(n.node.parent) : 1;
+        const line = doc.lineAt(n.from);
+        if (depth === 0 && /^[ \t]*$/.test(doc.sliceString(line.from, n.from))) {
+          const end = task ? task.to : n.to;
+          const markTo = /[ \t]/.test(state.sliceDoc(end, end + 1)) ? end + 1 : end;
+          out.push({ kind: "listLine", line: line.number, depth: itemDepth, indentFrom: line.from, indentTo: n.from, markTo });
+        }
+        if (active.has(line.number)) return;
         if (task) {
           // 번호 목록의 할 일은 번호를 남기고 [ ] 만 바꾼다
           const start = /^[-*+]$/.test(mark) ? n.from : task.from;
           const end = state.sliceDoc(task.to, task.to + 1) === " " ? task.to + 1 : task.to;
           out.push({ kind: "task", from: start, to: end, done: /x/i.test(state.sliceDoc(task.from, task.to)), line: lineOf(n.from) });
-        } else if (/^[-*+]$/.test(mark)) out.push({ kind: "bullet", from: n.from, to: n.to });
+        } else if (/^[-*+]$/.test(mark)) out.push({ kind: "bullet", from: n.from, to: n.to, depth: itemDepth });
         return;
       }
       return;

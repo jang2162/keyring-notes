@@ -29,6 +29,7 @@ import { findBar, findKeymap } from "./findBar";
 import { bodyStart, codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
 import { inDrawnTable, type TableOptions } from "./tableWidget";
+import { headingGutterClass } from "./foldGutterClass";
 import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
@@ -289,6 +290,7 @@ export function Editor({
           markdown({ base: markdownLanguage, codeLanguages: findLanguage, extensions: [{ props: [codeFoldProp] }] }),
           codeFolding({ placeholderText: "…" }),
           foldMarkers,
+          headingGutterClass,
           autocompletion({
             // 그린 표 안은 칸 편집기가 자기 자동완성을 띄운다(본문에는 칸에서 친 글이 들어올 뿐이다)
             override: [(c) => (inDrawnTable(c.state, c.pos) ? null : wikilinkSource(() => callbacks.current.linkCandidates())(c))],
