@@ -14,11 +14,13 @@ const classes = (doc: string) => {
 };
 
 describe("제목 줄의 거터 칸 클래스", () => {
-  it("H1~H3 줄에만 그 수준의 클래스를 단다(H4~H6 은 본문 크기라 없다)", () => {
-    expect(classes("# a\n\n## b\n\n### c\n\n#### d\n\n본문")).toEqual([
+  it("H1~H3·H5·H6 줄에 그 수준의 클래스를 단다(H4 는 본문 크기라 없다)", () => {
+    expect(classes("# a\n\n## b\n\n### c\n\n#### d\n\n##### e\n\n###### f\n\n본문")).toEqual([
       [1, "cm-fold-h1"],
       [3, "cm-fold-h2"],
       [5, "cm-fold-h3"],
+      [9, "cm-fold-h5"],
+      [11, "cm-fold-h6"],
     ]);
   });
 

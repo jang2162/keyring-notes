@@ -322,9 +322,12 @@ const plugin = ViewPlugin.fromClass(
 
 const theme = EditorView.baseTheme({
   ".cm-lp-h": { fontWeight: "700" },
-  ".cm-lp-h1": { fontSize: "1.6em" },
-  ".cm-lp-h2": { fontSize: "1.35em" },
-  ".cm-lp-h3": { fontSize: "1.18em" },
+  // 미리보기 제목(브라우저 기본 h1~h6 크기)과 같은 크기. 원문 모드의 크기(editorCommands.ts headingSizes)는 Live 에서 걸지 않는다
+  ".cm-lp-h1": { fontSize: "2em" },
+  ".cm-lp-h2": { fontSize: "1.5em" },
+  ".cm-lp-h3": { fontSize: "1.17em" },
+  ".cm-lp-h5": { fontSize: "0.83em" },
+  ".cm-lp-h6": { fontSize: "0.67em" },
   ".cm-lp-mark": { backgroundColor: "var(--mark-bg)", color: "var(--mark-fg)", borderRadius: "3px" },
   ".cm-lp-link": { color: "var(--accent)", textDecoration: "underline", textDecorationStyle: "dashed", textUnderlineOffset: "3px" },
   ".cm-lp-hr": { display: "inline-block", width: "100%", verticalAlign: "middle", borderTop: "1px solid var(--border)", cursor: "text" },

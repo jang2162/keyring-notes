@@ -741,11 +741,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .pins-chevron { width: 14px; flex-shrink: 0; transition: transform 0.12s; }
 .pins-head[aria-expanded="true"] .pins-chevron { transform: rotate(90deg); }
 .pins-list { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 0; }
-.pins-list li { display: flex; align-items: center; height: 28px; border-radius: var(--radius); }
+/* 줄 높이·아이콘 크기는 트리 줄(.tree-row)과 같다 — 터치 높이는 아래 「pointer: coarse」 */
+.pins-list li { display: flex; align-items: center; height: 32px; border-radius: var(--radius); }
 .pins-list li:hover { background: var(--hover); }
 .pins-list li.active { background: var(--active); }
 .pins-list li.active a { color: var(--accent); font-weight: 500; }
 .pins-list a { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; height: 100%; padding-left: 18px; color: var(--fg); text-decoration: none; white-space: nowrap; font-size: var(--fs-base); }
+.pins-list .tree-icon { width: 18px; height: 18px; }
 .pins-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .pins-where { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm); }
 .pins-list .pins-unpin { width: 22px; height: 22px; margin-right: 2px; opacity: 0; }
@@ -1123,7 +1125,7 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 }
 @media (max-width: 800px) and (prefers-reduced-motion: reduce) { .left-dock { transition: none; } }
 @media (pointer: coarse) {
-  .tree-row { height: 40px; }
+  .tree-row, .pins-list li { height: 40px; }
   .crumb-btn { display: inline-flex; align-items: center; min-height: 32px; }
   /* 화살표는 보이는 크기 그대로, 누르는 자리만 넓힌다 */
   .tree-chevron { box-sizing: content-box; justify-content: center; align-items: center; align-self: stretch; padding: 0 7px; margin: 0 -7px; }
@@ -1212,9 +1214,9 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
    다시 재는 법: 4배 스크린샷에서 아이콘 잉크 오른쪽 끝 → 제목 잉크 왼쪽 끝이 SVG 행과 ±1px, 이모지·한글 잉크 세로 중심이 ±0.5px 인지 본다. */
 .tree-row .doc-icon, .tab .doc-icon, .pins-list .doc-icon { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; padding: 0 0 1px 2px; margin-right: 0; font-size: 12px; line-height: 1; }
 @supports (font: -apple-system-body) { .tree-row .doc-icon, .tab .doc-icon, .pins-list .doc-icon { padding: 0 0 1px; font-size: 9.5px; } }
-/* 트리는 아이콘을 18px 로 키웠다 — 이모지 잉크도 SVG(18px 칸의 잉크 약 15px)에 맞춰 같은 비율로 키운다(Chromium 14.5px, WebKit 은 1.25배로 그려 11.5px) */
-.tree-row .doc-icon { width: 18px; height: 18px; font-size: 14.5px; }
-@supports (font: -apple-system-body) { .tree-row .doc-icon { font-size: 11.5px; } }
+/* 트리·고정 목록은 아이콘을 18px 로 키웠다 — 이모지 잉크도 SVG(18px 칸의 잉크 약 15px)에 맞춰 같은 비율로 키운다(Chromium 14.5px, WebKit 은 1.25배로 그려 11.5px) */
+.tree-row .doc-icon, .pins-list .doc-icon { width: 18px; height: 18px; font-size: 14.5px; }
+@supports (font: -apple-system-body) { .tree-row .doc-icon, .pins-list .doc-icon { font-size: 11.5px; } }
 .tree-row .doc-icon, .tree-row .tree-name { align-self: center; }
 .daily-date { color: var(--muted); font-weight: normal; }
 .daily-title { font-weight: 500; }
@@ -1302,16 +1304,18 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .editor .cm-gutters { margin-left: -22px; }
 .editor.lines .cm-gutters { margin-left: 0; }
 /* 화살표는 그 줄 첫 줄(줄바꿈 전)의 세로 가운데에 둔다. 거터 칸은 줄 블록 높이만 받으므로 칸의 줄 높이(1lh)를 화살표 높이로 쓰고,
-   제목 줄은 Editor.tsx 의 cm-fold-h1~h3 으로 칸 글자 크기를 제목 글자에 맞춘다. 배율은 editorCommands.ts headingStyle 과 같고,
-   Live Preview 는 줄(.cm-lp-h1~h3, livePreview.ts)에도 같은 배율이 한 번 더 걸려 두 배율을 곱한다 */
+   제목 줄은 foldGutterClass.ts 의 cm-fold-h* 로 칸 글자 크기를 제목 글자에 맞춘다. 원문 모드 배율은 editorCommands.ts headingSizes,
+   Live Preview 배율은 줄 클래스(.cm-lp-h1~h6, livePreview.ts — 미리보기 제목 크기)와 같다 */
 @property --fold-lh { syntax: "<length>"; inherits: true; initial-value: 28px; }
 .cm-foldGutter .cm-gutterElement { width: 20px; display: flex; justify-content: center; align-items: flex-start; --fold-lh: 1lh; }
 .cm-foldGutter .cm-gutterElement.cm-fold-h1 { font-size: 1.6em; }
 .cm-foldGutter .cm-gutterElement.cm-fold-h2 { font-size: 1.35em; }
 .cm-foldGutter .cm-gutterElement.cm-fold-h3 { font-size: 1.18em; }
-.editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h1 { font-size: calc(1.6em * 1.6); }
-.editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h2 { font-size: calc(1.35em * 1.35); }
-.editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h3 { font-size: calc(1.18em * 1.18); }
+.editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h1 { font-size: 2em; }
+.editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h2 { font-size: 1.5em; }
+.editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h3 { font-size: 1.17em; }
+.editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h5 { font-size: 0.83em; }
+.editor.live .cm-foldGutter .cm-gutterElement.cm-fold-h6 { font-size: 0.67em; }
 .cm-fold-marker { display: flex; align-items: center; justify-content: center; height: var(--fold-lh); cursor: pointer; color: var(--muted); font-size: 14px; line-height: inherit; user-select: none; }
 .cm-fold-marker.open { opacity: 0; transition: opacity 0.12s; }
 .editor:hover .cm-fold-marker.open { opacity: 0.55; }

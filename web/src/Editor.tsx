@@ -22,7 +22,7 @@ import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
-import { headingStyle, insertLink, wikilinkSource, wrapSelection } from "./editorCommands";
+import { headingSizes, headingStyle, insertLink, wikilinkSource, wrapSelection } from "./editorCommands";
 import { findLanguage } from "./codeLanguages";
 import { activeCell } from "./cellEditor";
 import { findBar, findKeymap } from "./findBar";
@@ -298,7 +298,7 @@ export function Editor({
           }),
           EditorView.lineWrapping,
           codeFont(),
-          liveSlot.current.of(liveRef.current ? livePreview(getCtx, tableOpts) : []),
+          liveSlot.current.of(liveRef.current ? livePreview(getCtx, tableOpts) : syntaxHighlighting(headingSizes)),
           EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
@@ -508,7 +508,7 @@ export function Editor({
 
   // 편집 중 렌더링 켜고 끄기(에디터를 다시 만들지 않는다)
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview(getCtx, tableOpts) : []) });
+    viewRef.current?.dispatch({ effects: liveSlot.current.reconfigure(live ? livePreview(getCtx, tableOpts) : syntaxHighlighting(headingSizes)) });
   }, [live]);
 
   return <div className={`editor${live ? " live" : ""}${showLines ? " lines" : ""}`} ref={host} />;
