@@ -86,6 +86,7 @@ import {
   moveNodePath,
   nodeFiles,
   officialLangOf,
+  orderRootNodes,
   orderWorkspaces,
   parentNode,
   planDailyMigration,
@@ -703,7 +704,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     () => buildNodeTree(tree, { hidden: (p, type) => isVaultSettingsPath(p) || (type === "dir" && attachDirs.has(p)) }),
     [tree, attachDirs],
   );
-  const viewNodes = useMemo(() => (allWs ? nodeTree : (findNode(nodeTree, ws)?.children ?? [])), [nodeTree, allWs, ws]);
+  // 모든 워크스페이스 보기의 루트는 전환 메뉴와 같은 순서(설정의 워크스페이스 순서, 나머지는 이름순)
+  const viewNodes = useMemo(() => (allWs ? orderRootNodes(nodeTree, wsNames) : (findNode(nodeTree, ws)?.children ?? [])), [nodeTree, allWs, ws, wsNames]);
   const wsNode = (name: string) => findNode(nodeTree, name);
 
   const linkCandidates = useMemo<LinkCandidate[]>(() => {
