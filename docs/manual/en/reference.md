@@ -179,6 +179,27 @@ limit: 50
 
 Widgets go through the permission layer, so an agent running the same query (MCP `query`) sees only notes it can read.
 
+### keyring-widget blocks
+
+A note widget is a fenced code block with the language `keyring-widget` and one JSON object inside. The JSON must be strict: no comments, no trailing commas, and quoted keys.
+
+````markdown
+```keyring-widget
+{"widget": "keyring/dday@1", "display": "inline", "state": {"targetDate": "2026-12-25", "label": "Christmas"}}
+```
+````
+
+| Key | Description |
+| --- | --- |
+| `widget` | `<id>@<version>`, such as `keyring/dday@1`. The version is the version of the state format |
+| `display` | `block` (full width) or `inline` (as wide as its content). Defaults to the widget's own setting |
+| `editable` | `false` keeps the widget from changing the block. Defaults to `true` |
+| `state` | The widget's state. Each widget defines its fields. When missing, the widget starts from its default state |
+
+When the app rewrites a block, it writes the keys in the order `widget`, `display`, `editable`, `state`, and keeps other keys after them. The whole block stays on one line if it fits in 80 characters. Otherwise each key goes on its own line with two-space indentation, and `state` is expanded too. A block you wrote by hand keeps its layout until the app rewrites it.
+
+If the block's version is newer than the widget, the source is shown with "This widget needs a newer version". An older version is upgraded when shown, and the file is updated the next time you apply a change.
+
 ## Webhook events
 
 Webhooks POST JSON `{event, id, time, data}` with the header `X-Keyring-Signature: sha256=<HMAC-SHA256(secret, body)>`.
