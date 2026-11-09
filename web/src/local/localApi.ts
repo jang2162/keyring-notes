@@ -1,6 +1,7 @@
 import { ConflictError, ForbiddenError, KeyedError, NotFoundError, type LocalVault } from "@keyring-notes/core";
 import { ApiError, type VaultApi } from "../api";
 import { t } from "../i18n";
+import { bumpRawVersion, swapImageSrc, versioned } from "../rawVersion";
 
 /** 로컬 볼트 오류를 서버 응답과 같은 모양(ApiError)으로 바꿔 화면 코드가 그대로 처리하게 한다. */
 function toApiError(e: unknown): unknown {
@@ -32,18 +33,26 @@ const serverOnly = (what: string) => async (): Promise<never> => {
 export function createLocalApi(vault: LocalVault): VaultApi {
   const blobUrls = new Map<string, string>();
   const loading = new Set<string>();
+  /** 내용이 바뀐 첨부의 옛 blob URL: 새 것을 읽으면 이미 그려진 그림을 바꿔 끼운다 */
+  const stale = new Map<string, string>();
   vault.onChange((paths) => {
-    for (const p of paths) {
+    const files = paths.filter((p) => !/\.md$/i.test(p));
+    for (const p of files) {
       const u = blobUrls.get(p);
-      if (u) URL.revokeObjectURL(u);
+      if (u) {
+        URL.revokeObjectURL(u);
+        stale.set(p, u);
+      }
       blobUrls.delete(p);
     }
+    // 같은 경로의 첨부가 바뀌었다(교체·동기화·앱 밖 편집): 판을 올려 다시 그리게 한다
+    bumpRawVersion(files, (p) => (vault.fileUrl(p) ? rawUrl(p) : (stale.get(p) ?? "")));
   });
 
   /** 첨부 표시 URL: 앱은 파일 URL(asset 프로토콜), 브라우저는 읽어서 blob URL을 만든 뒤 다시 그리게 알린다. */
   const rawUrl = (path: string): string => {
     const direct = vault.fileUrl(path);
-    if (direct) return direct;
+    if (direct) return versioned(direct, path);
     const cached = blobUrls.get(path);
     if (cached) return cached;
     if (!loading.has(path)) {
@@ -52,7 +61,11 @@ export function createLocalApi(vault: LocalVault): VaultApi {
         .readBytes(path)
         .then((data) => {
           const type = /\.svg$/i.test(path) ? "image/svg+xml" : /\.pdf$/i.test(path) ? "application/pdf" : "";
-          blobUrls.set(path, URL.createObjectURL(new Blob([data as Uint8Array<ArrayBuffer>], type ? { type } : {})));
+          const url = URL.createObjectURL(new Blob([data as Uint8Array<ArrayBuffer>], type ? { type } : {}));
+          blobUrls.set(path, url);
+          const old = stale.get(path);
+          if (old) swapImageSrc(old, url);
+          stale.delete(path);
           window.dispatchEvent(new Event("keyring:asset-loaded"));
         })
         .catch(() => undefined)
@@ -101,6 +114,7 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     ingest: serverOnly("tool.ingest"),
     uploadFile: serverOnly("feature.upload"),
     uploadAttachment: async (path, file) => wrap(async () => vault.putFile(path, new Uint8Array(await file.arrayBuffer()))),
+    replaceAttachment: async (path, file, baseHash) => wrap(async () => vault.replaceFile(path, new Uint8Array(await file.arrayBuffer()), baseHash)),
     lint: (folder) => wrap(() => vault.lint({ folder })),
     sources: (path) => wrap(() => vault.sources(path)),
     properties: () => wrap(async () => vault.properties()),
@@ -109,6 +123,8 @@ export function createLocalApi(vault: LocalVault): VaultApi {
     semanticStatus: async () => ({ enabled: false }),
     semantic: serverOnly("feature.semantic"),
     rawUrl,
+    // 기기 볼트의 휴지통은 첨부를 담지 않는다
+    trashRawUrl: () => null,
     readBytes: (path) => wrap(() => vault.readBytes(path)),
   };
   return local;

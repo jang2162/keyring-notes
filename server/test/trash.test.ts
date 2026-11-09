@@ -332,6 +332,39 @@ describe("휴지통: S3에 둔 첨부", () => {
     expect(hashContent(Buffer.from(big))).toBe(hashContent(await readFile(path.join(sv.root, "W/N/big.bin"))));
     si.close();
   });
+
+  it("S3 보관 첨부만 따로 지운 것도 휴지통에 나오고(그림 바이트·되살리기), 노트 삭제와 이력 순으로 섞여 쪽이 나뉜다", async () => {
+    const { vault: sv, owner: so, index: si } = await s3Vault(true);
+    const big = new Uint8Array(64).map((_, i) => 255 - i);
+    await so.batch([
+      { op: "write", path: "W.md", content: "", baseHash: null },
+      { op: "write", path: "W/a.md", content: "에이", baseHash: null },
+      { op: "write", path: "W/b.md", content: "비", baseHash: null },
+      { op: "put", path: "W/files/big.bin", data: big },
+    ]);
+    expect(await sv.git.show((await sv.git.head())!, "W/files/big.bin")).toBeNull();
+    await so.delete("W/a.md", (await so.read("W/a.md")).hash);
+    await so.delete("W/files/big.bin", hashContent(Buffer.from(big)));
+    await so.delete("W/b.md", (await so.read("W/b.md")).hash);
+    const all = (await so.trash()).items;
+    expect(all.map((i) => [...i.notes, ...i.attachments])).toEqual([["W/b.md"], ["W/files/big.bin"], ["W/a.md"]]);
+    // 한 쪽에 둘씩: 첫 쪽 b·big, 다음 쪽 a(겹치지 않는다)
+    const p1 = await so.trash({ limit: 2 });
+    expect(p1.items.map((i) => [...i.notes, ...i.attachments])).toEqual([["W/b.md"], ["W/files/big.bin"]]);
+    const p2 = await so.trash({ limit: 2, cursor: p1.next! });
+    expect(p2.items.map((i) => [...i.notes, ...i.attachments])).toEqual([["W/a.md"]]);
+    expect(p2.next).toBeNull();
+    const item = all[1];
+    expect(item).toMatchObject({ notes: [], attachments: ["W/files/big.bin"], lost: 0 });
+    expect(new Uint8Array((await so.trashRaw(item.id, "W/files/big.bin")).data)).toEqual(big);
+    await so.restoreTrash(item.id, []);
+    expect(new Uint8Array(await readFile(path.join(sv.root, "W/files/big.bin")))).toEqual(big);
+    // S3 를 끈 서버에서는 받을 수 없어 줄이 없다(첨부만 지운 줄은 되살릴 것이 있을 때만)
+    await so.delete("W/files/big.bin", hashContent(Buffer.from(big)));
+    sv.blobSource = null;
+    expect((await so.trash()).items.some((i) => i.attachments.length || i.lost)).toBe(false);
+    si.close();
+  });
 });
 
 // 시험이 쓰는 보조 함수가 실제로 파일을 만든다(빈 노드 폴더 등)

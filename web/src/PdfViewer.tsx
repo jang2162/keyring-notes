@@ -15,6 +15,7 @@ import { removeAnnotation } from "./askFirst";
 import { t } from "./i18n";
 import type { LinkResolver } from "./markdown";
 import { editCompanion, type Companion, type CompanionTarget } from "./pdfCompanion";
+import { useRawVersion } from "./rawVersion";
 import { errorText } from "./toast";
 import { vaultLang } from "./vaultSettings";
 import { tipProps } from "./Tooltip";
@@ -66,7 +67,8 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
   const pagesRef = useRef<HTMLDivElement>(null);
   const rendered = useRef(new Map<number, number>()); // 쪽 → 그린 배율
 
-  // PDF 읽기
+  // PDF 읽기(같은 경로의 내용이 교체되면 다시 읽는다)
+  const version = useRawVersion(path);
   useEffect(() => {
     let alive = true;
     setPdf(null);
@@ -82,7 +84,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, version]);
   useEffect(() => () => void pdf?.destroy(), [pdf]);
 
   // 짝 노트 찾기

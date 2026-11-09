@@ -23,6 +23,8 @@ const FIELD = "\x1f";
 /** 점으로 시작하는 이름이 든 경로(내부 기록 파일) */
 const isInternal = (p: string) => p.split("/").some((seg) => seg.startsWith("."));
 const RECORD = "\x1e";
+/** S3 보관 첨부 목록 파일(blobs.ts 의 BLOB_INDEX 가 이것을 쓴다) */
+export const BLOB_INDEX_FILE = ".keyring-blobs.json";
 
 /**
  * 서버가 아는 이동을 커밋 메시지 끝 문단(트레일러)으로 남긴다(Vault.batch). 휴지통은 이 문단이 있는 커밋에서는
@@ -277,7 +279,18 @@ export class GitHistory {
     const picked = await this.run(["log", "--no-renames", "--diff-filter=D", "--format=%H", `--max-count=${limit + 1}`, ...from], { allowFail: true });
     // 커밋이 없는 저장소, 맨 처음 커밋 다음(부모 없음)
     if (picked.code !== 0) return { commits: [], more: false, last: null };
-    const revs = picked.stdout.split("\n").filter(Boolean);
+    let revs = picked.stdout.split("\n").filter(Boolean);
+    // S3 로 간 첨부만 지운 커밋은 git 에는 첨부 목록 파일 수정으로만 남는다 — 그 파일을 바꾼 커밋도 후보로 넣는다.
+    // 두 목록 다 같은 한 줄 이력의 앞쪽 limit+1 개라, 합쳐 이력 순으로 앞쪽 limit+1 개를 잘라도 빠지는 것이 없다
+    const blobs = await this.run(["log", "--format=%H", `--max-count=${limit + 1}`, ...(from.length ? from : ["HEAD"]), "--", BLOB_INDEX_FILE], {
+      allowFail: true,
+    });
+    const extra = blobs.code === 0 ? blobs.stdout.split("\n").filter((r) => r && !revs.includes(r)) : [];
+    if (extra.length) {
+      const order = await this.run(["rev-list", "--first-parent", ...(from.length ? from : ["HEAD"])], { allowFail: true });
+      const at = new Map(order.stdout.split("\n").map((r, i) => [r, i] as const));
+      revs = [...revs, ...extra].sort((a, b) => (at.get(a) ?? Infinity) - (at.get(b) ?? Infinity)).slice(0, limit + 1);
+    }
     const page = revs.slice(0, limit);
     return { commits: await this.describeDeletions(page), more: revs.length > limit, last: page.at(-1) ?? null };
   }
@@ -313,7 +326,7 @@ export class GitHistory {
       const deleted: string[] = [];
       let blobIndex = false;
       for (const [status, p, to] of renamed.get(rev) ?? plain.get(rev) ?? []) {
-        if (p === ".keyring-blobs.json" || to === ".keyring-blobs.json") blobIndex = true;
+        if (p === BLOB_INDEX_FILE || to === BLOB_INDEX_FILE) blobIndex = true;
         if (status === "D" && !isInternal(p) && !movedFrom.has(p)) deleted.push(p);
       }
       out.push({ ...c, deleted, blobIndex });

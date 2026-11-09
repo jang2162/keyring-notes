@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ConflictError, LocalVault, MemoryStore, NotFoundError, parseFrontmatter, SyncEngine, withoutEdited } from "../src/index.js";
+import { ConflictError, LocalVault, MemoryStore, NotFoundError, parseFrontmatter, sha256Hex, SyncEngine, withoutEdited } from "../src/index.js";
 import { FakeServer } from "./fakeServer.js";
 
 async function device(name = "폰") {
@@ -201,16 +201,19 @@ describe("동기화", () => {
     await expect(v.putFile("노트/attachments/그림.png", new Uint8Array([1]))).rejects.toBeInstanceOf(ConflictError);
   });
 
-  it("기기에서 바뀐 첨부는 보내지 않고 알린다", async () => {
+  // 2026-11-09 사용자 결정으로 규칙이 바뀌었다: 서버가 그대로면 기기에서 바꾼 첨부도 올린다(아래 「기기에서 바꾸거나 지운 첨부」).
+  // 보내지 않는 것은 서버도 바뀐 때뿐이다
+  it("기기와 서버가 둘 다 바꾼 첨부는 보내지 않고 알린다", async () => {
     const server = new FakeServer();
     await server.put("img.png", new Uint8Array([1]));
     const { v, store } = await device();
     const sync = new SyncEngine(v, server);
     await sync.run();
     store.files.set("img.png", { data: new Uint8Array([9]), mtime: Date.now() });
+    await server.put("img.png", new Uint8Array([5]));
     const r = await sync.run();
     expect(r.skipped.map((s) => s.path)).toEqual(["img.png"]);
-    expect([...(server.files.get("img.png")!.content as Uint8Array)]).toEqual([1]);
+    expect([...(server.files.get("img.png")!.content as Uint8Array)]).toEqual([5]);
   });
 
   it("기기에서 첨부가 든 폴더를 옮기면 새 자리는 올리고 원래 자리는 서버에서도 지운다", async () => {
@@ -352,5 +355,90 @@ describe("동기화와 수정 시각(edited)", () => {
     expect(server.text("a.md")).toBe((await v.read("a.md")).content);
     const again = await sync.run();
     expect([again.pushed, again.pulled, again.merged, again.conflicts].flat()).toEqual([]);
+  });
+});
+
+describe("동기화: 기기에서 바꾸거나 지운 첨부", () => {
+  const b = (...x: number[]) => new Uint8Array(x);
+
+  it("서버가 기준점 그대로(S===B)면 기기에서 교체한 첨부를 같은 경로에 교체해 올린다", async () => {
+    const server = new FakeServer();
+    await server.put("W/그림.png", b(1, 2));
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await v.replaceFile("W/그림.png", b(3), await sha256Hex(b(1, 2)));
+    const r = await sync.run();
+    expect(r.pushed).toEqual(["W/그림.png"]);
+    expect(r.skipped).toEqual([]);
+    expect([...(server.files.get("W/그림.png")!.content as Uint8Array)]).toEqual([3]);
+    const again = await sync.run();
+    expect([again.pushed, again.pulled, again.skipped]).toEqual([[], [], []]);
+  });
+
+  it("앱 밖에서 고친 첨부도 같은 규칙으로 올린다", async () => {
+    const server = new FakeServer();
+    await server.put("W/그림.png", b(1));
+    const { v, store } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await store.write("W/그림.png", b(9, 9));
+    await v.rescan();
+    expect((await sync.run()).pushed).toEqual(["W/그림.png"]);
+    expect([...(server.files.get("W/그림.png")!.content as Uint8Array)]).toEqual([9, 9]);
+  });
+
+  it("서버도 바뀌었으면(S!==B) 보내지도 받지도 않고 attachment-local 로 알린다", async () => {
+    const server = new FakeServer();
+    await server.put("W/그림.png", b(1));
+    const { v, store } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await v.replaceFile("W/그림.png", b(2), await sha256Hex(b(1)));
+    await server.put("W/그림.png", b(3));
+    const r = await sync.run();
+    expect(r.pushed).toEqual([]);
+    expect(r.skipped).toEqual([{ path: "W/그림.png", reason: "attachment-local" }]);
+    expect([...(server.files.get("W/그림.png")!.content as Uint8Array)]).toEqual([3]);
+    expect([...(await store.read("W/그림.png"))!]).toEqual([2]);
+  });
+
+  it("목록을 받은 뒤 교체 직전에 서버가 바뀌면(409) attachment-changed 로 건너뛴다", async () => {
+    const server = new FakeServer();
+    await server.put("W/그림.png", b(1));
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await v.replaceFile("W/그림.png", b(2), await sha256Hex(b(1)));
+    const real = server.replaceRaw.bind(server);
+    server.replaceRaw = async (p, d, base) => {
+      await server.put(p, b(7));
+      return real(p, d, base);
+    };
+    const r = await sync.run();
+    expect(r.skipped).toEqual([{ path: "W/그림.png", reason: "attachment-changed" }]);
+    expect([...(server.files.get("W/그림.png")!.content as Uint8Array)]).toEqual([7]);
+  });
+
+  it("교체를 못 하는 상대(replaceRaw 없음)에는 예전처럼 보내지 않는다", async () => {
+    const server = new FakeServer();
+    await server.put("W/그림.png", b(1));
+    const { v } = await device();
+    const remote = Object.assign(Object.create(FakeServer.prototype) as FakeServer, server, { replaceRaw: undefined });
+    const sync = new SyncEngine(v, remote);
+    await sync.run();
+    await v.replaceFile("W/그림.png", b(2), await sha256Hex(b(1)));
+    expect((await sync.run()).skipped).toEqual([{ path: "W/그림.png", reason: "attachment-local" }]);
+  });
+
+  it("기기에서 지운 첨부는 서버가 그대로일 때 서버에서도 지운다", async () => {
+    const server = new FakeServer();
+    await server.put("W/그림.png", b(1));
+    const { v } = await device();
+    const sync = new SyncEngine(v, server);
+    await sync.run();
+    await v.remove("W/그림.png", await sha256Hex(b(1)));
+    expect((await sync.run()).deletedRemote).toEqual(["W/그림.png"]);
+    expect(server.files.has("W/그림.png")).toBe(false);
   });
 });

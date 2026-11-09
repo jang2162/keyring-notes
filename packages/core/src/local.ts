@@ -3,7 +3,7 @@ import { editedStamp, sameExceptEdited, stampEdited, withoutEdited } from "./edi
 import { withoutRank } from "./childSort.js";
 import { mentionNames, unlinkedMentions, type Mention } from "./mentions.js";
 import { lintVault, linkGraph, type GraphData, type LintReport } from "./analysis.js";
-import { rewriteLinks, type LinkRewriteContext } from "./links.js";
+import { linkingDocs, rewriteLinks, type LinkRewriteContext } from "./links.js";
 import { ConflictError, ForbiddenError, NotFoundError, PathError } from "./errors.js";
 import { fromUtf8, sha256Hex, utf8 } from "./hash.js";
 import { analyze, anchorExists, parseFrontmatter, resolveLink, setTaskState, sourceRefs } from "./markdown.js";
@@ -489,8 +489,14 @@ export class LocalVault {
     return paths.map((p) => ({ path: p, title: this.files.get(p)?.meta?.title ?? p }));
   }
 
+  /** 이 노트를 링크한 노트. 첨부면 위키링크·임베드·상대 경로 마크다운 링크·출처를 원문에서 본다(색인은 마크다운 대상만 해석한다) */
   backlinks(input: string): { path: string; title: string }[] {
-    return this.withTitles(this.incoming(normalizeVaultPath(input)));
+    const rel = normalizeVaultPath(input);
+    if (!isMarkdown(rel)) {
+      const docs = this.mdEntries().map((e) => ({ path: e.path, content: e.content! }));
+      return this.withTitles(linkingDocs(docs, rel, [...this.files.keys()], this.daily()).map((d) => d.path));
+    }
+    return this.withTitles(this.incoming(rel));
   }
 
   /** 속성(프런트매터) 이름·종류·자주 쓴 값 */
@@ -784,7 +790,9 @@ export class LocalVault {
     });
   }
 
+  /** 노트·첨부 지우기(baseHash 가 지금 내용과 같아야 한다). 첨부는 기록에 남지 않는다 — 휴지통·이력에 없다 */
   remove(input: string, baseHash: string): Promise<void> {
+    if (!isMarkdown(normalizeVaultPath(input))) return this.attachmentChange(input, baseHash, null).then(() => undefined);
     return this.exclusive(async () => {
       const rel = this.requireWritable(input);
       await this.refreshFiles([rel]);
@@ -1010,6 +1018,40 @@ export class LocalVault {
       this.files.set(rel, { path: rel, size: st.size, mtime: st.mtime, md: false, hash });
       this.emit([rel], "local");
       return { path: rel, hash };
+    });
+  }
+
+  /** 첨부 내용 교체: 같은 경로에 새 바이트(지금 해시가 baseHash 여야 한다). 옛 내용은 기록에 남지 않는다 */
+  replaceFile(input: string, data: Uint8Array, baseHash: string): Promise<{ path: string; hash: string }> {
+    return this.attachmentChange(input, baseHash, data).then((hash) => ({ path: normalizeVaultPath(input), hash: hash! }));
+  }
+
+  /**
+   * 첨부 하나를 지우거나(data null) 내용을 바꾼다. 다른 창·앱 밖에서 먼저 바뀌었으면(저장소에서 다시 읽은 해시가 baseHash 와
+   * 다르면) 충돌. 돌려주는 것은 새 해시(지웠으면 null)
+   */
+  private attachmentChange(input: string, baseHash: string, data: Uint8Array | null): Promise<string | null> {
+    return this.exclusive(async () => {
+      const rel = normalizeVaultPath(input);
+      if (isMarkdown(rel)) throw new PathError("markdown_use_write");
+      if (this.isGenerated(rel)) throw new ForbiddenError("generated_path");
+      await this.refreshFiles([rel]);
+      const cur = this.files.get(rel);
+      if (!cur) throw new NotFoundError("file_missing", { path: rel });
+      const hash = cur.hash ?? (await sha256Hex((await this.store.read(rel)) ?? new Uint8Array()));
+      cur.hash = hash;
+      if (hash !== baseHash) throw new ConflictError(hash, "conflict_path", { path: rel });
+      if (data === null) {
+        await this.store.remove(rel);
+        this.files.delete(rel);
+        this.emit([rel], "local");
+        return null;
+      }
+      const st = await this.store.write(rel, data);
+      const next = await sha256Hex(data);
+      this.files.set(rel, { path: rel, size: st.size, mtime: st.mtime, md: false, hash: next });
+      this.emit([rel], "local");
+      return next;
     });
   }
 

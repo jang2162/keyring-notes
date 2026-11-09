@@ -40,6 +40,8 @@ export interface RemoteVault {
   putRaw?(path: string, data: Uint8Array): Promise<{ hash: string }>;
   /** 첨부 지우기(baseHash가 맞을 때만). 없으면 기기에서 지운 첨부는 서버에 남는다 */
   removeRaw?(path: string, baseHash: string): Promise<void>;
+  /** 첨부 내용 교체(baseHash가 맞을 때만, 아니면 ConflictError). 없으면 기기에서 바꾼 첨부는 보내지 않는다 */
+  replaceRaw?(path: string, data: Uint8Array, baseHash: string): Promise<{ hash: string }>;
 }
 
 export interface SyncReport {
@@ -62,10 +64,14 @@ export interface SyncReport {
   settingsConflicts: SettingsKeyConflict[];
   /**
    * 이번에 건너뛴 것(다음 동기화에서 다시 본다). reason: attachment-taken(같은 이름의 첨부가 서버에 생김),
-   * attachment-changed(지우는 사이 서버에서 바뀜), attachment-local(기기에서 바꾼 첨부는 보내지 않음),
+   * attachment-changed(지우거나 교체하는 사이 서버에서 바뀜), attachment-local(기기와 서버가 둘 다 바꾼 첨부는 보내지 않음),
+   * attachment-unsupported(서버가 첨부 교체를 모르는 옛 판이라 기기에서 바꾼 첨부를 보내지 못함),
    * local-changed(받는 사이 기기에서 바뀜), settings-changed(설정 파일을 합치는 사이 서버에서 또 바뀜)
    */
-  skipped: { path: string; reason: "attachment-taken" | "attachment-changed" | "attachment-local" | "local-changed" | "settings-changed" }[];
+  skipped: {
+    path: string;
+    reason: "attachment-taken" | "attachment-changed" | "attachment-local" | "attachment-unsupported" | "local-changed" | "settings-changed";
+  }[];
   errors: { path: string; message: string }[];
 }
 
@@ -85,6 +91,9 @@ export function conflictCopyPath(path: string, label: string, exists: (p: string
     if (!exists(p)) return p;
   }
 }
+
+/** 상대 서버가 첨부 교체(PUT /api/attachment)를 모른다 — 이 기능 전의 서버. 동기화 안에서만 쓴다 */
+export class ReplaceUnsupportedError extends Error {}
 
 /** 연결 자체가 안 됨(오프라인·서버 꺼짐). 이때는 동기화를 멈추고 다음에 다시 한다. */
 function isNetworkFailure(e: unknown): boolean {
@@ -106,7 +115,8 @@ function isNetworkFailure(e: unknown): boolean {
  *
  * 마크다운은 양방향, 첨부는 서버 → 기기에 더해 기기에서 새로 만든 첨부(붙여넣은 이미지 등)는 올리고,
  * 기기에서 지운 첨부(폴더 이동으로 옮긴 원래 자리 포함)는 서버가 기준점 그대로일 때만 서버에서도 지운다.
- * 이미 있는 첨부를 기기에서 바꾼 것은 보내지 않는다. 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
+ * 기기에서 바꾼 첨부(교체·앱 밖 편집)는 서버가 기준점 그대로일 때만 같은 경로에 교체해 올리고, 서버도 바뀌었으면 보내지 않는다.
+ * 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
  */
 export class SyncEngine {
   private running: Promise<SyncReport> | null = null;
@@ -268,7 +278,22 @@ export class SyncEngine {
               }
               continue;
             }
-            // 이 기기에서 바뀐 첨부는 보내지 않고 알린다.
+            // 이 기기에서 바꾼 첨부(교체, 앱 밖 편집기로 고친 것도): 서버가 기준점 그대로면 같은 경로에 교체해 올린다
+            if (L !== null && S !== null && S === B && this.remote.replaceRaw) {
+              const data = await this.vault.readBytes(path);
+              try {
+                base[path] = (await this.remote.replaceRaw(path, data, S)).hash;
+                report.pushed.push(path);
+              } catch (e) {
+                // 목록을 받은 뒤 서버에서 바뀌었거나 지워졌다
+                if (e instanceof ConflictError || e instanceof NotFoundError) report.skipped.push({ path, reason: "attachment-changed" });
+                // 옛 서버: 오류가 아니라 보내지 못한 것으로 알린다(서버를 올리면 다음 동기화에 보낸다)
+                else if (e instanceof ReplaceUnsupportedError) report.skipped.push({ path, reason: "attachment-unsupported" });
+                else throw e;
+              }
+              continue;
+            }
+            // 서버도 바뀐 것(또는 교체를 못 하는 상대)은 보내지 않고 알린다 — 어느 쪽도 덮어쓰지 않는다
             if (localChanged && L !== null) {
               report.skipped.push({ path, reason: "attachment-local" });
               continue;
@@ -427,13 +452,24 @@ export class HttpRemote implements RemoteVault {
     await this.req("DELETE", "/api/file", { path, baseHash });
   }
 
-  async putRaw(path: string, data: Uint8Array): Promise<{ hash: string }> {
-    const res = await this.fetchFn(`${this.baseUrl}/api/attachment?path=${encodeURIComponent(path)}`, {
-      method: "POST",
+  putRaw(path: string, data: Uint8Array): Promise<{ hash: string }> {
+    return this.sendRaw("POST", `path=${encodeURIComponent(path)}`, data);
+  }
+
+  replaceRaw(path: string, data: Uint8Array, baseHash: string): Promise<{ hash: string }> {
+    return this.sendRaw("PUT", `path=${encodeURIComponent(path)}&baseHash=${encodeURIComponent(baseHash)}`, data);
+  }
+
+  private async sendRaw(method: "POST" | "PUT", query: string, data: Uint8Array): Promise<{ hash: string }> {
+    const res = await this.fetchFn(`${this.baseUrl}/api/attachment?${query}`, {
+      method,
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/octet-stream", "x-keyring-upload": "1" },
       body: data as Uint8Array<ArrayBuffer>,
     });
     const body = (await res.json().catch(() => ({}))) as RemoteErrorBody & { hash?: string };
+    // 교체를 모르는 옛 서버는 라우트가 없어 오류 코드 없는 404·405 를 준다(있는 서버의 「파일 없음」 404 에는 code 가 있다)
+    if (method === "PUT" && (res.status === 405 || (res.status === 404 && !body.code))) throw new ReplaceUnsupportedError();
+    if (res.status === 404) throw new NotFoundError(body.code ?? "file_missing", body.params);
     if (res.status === 409) throw new ConflictError(body.currentHash ?? null, body.code ?? undefined, body.params);
     if (res.status === 401) throw new UnauthorizedError(body.code ?? undefined, body.params);
     if (!res.ok) {

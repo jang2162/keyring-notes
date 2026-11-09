@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { BLOB_INDEX_FILE } from "./git.js";
 import { isMarkdown } from "./paths.js";
 import { fileSha256, type S3Client } from "./s3.js";
 import { EncryptionError, isSealed, type CryptoProvider, type S3Crypto } from "./s3crypto.js";
@@ -11,7 +12,7 @@ import type { Vault } from "./vault.js";
 const hashContentHex = (data: Uint8Array) => createHash("sha256").update(data).digest("hex");
 
 /** Git으로 추적하는 첨부 목록(경로 → 내용 해시). 점 파일이라 트리·API에는 보이지 않는다. */
-export const BLOB_INDEX = ".keyring-blobs.json";
+export const BLOB_INDEX = BLOB_INDEX_FILE;
 
 export interface BlobEntry {
   sha256: string;

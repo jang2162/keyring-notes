@@ -149,7 +149,7 @@ Each line is one delete, newest first. It shows the note or node name, where it 
 - On a server, a node deleted in the app shows up after sync as one line per file. Restore each line on its own.
 - In the app, a deleted note is not listed if a new file with the same content, such as a copy of a template, appeared at the same time. That means in the same sync, or in the same check for changes made in another program. The content is still in the new file.
 - The trash shows the current workspace, or every workspace when **All workspaces** is on. Load older deletes with **Load more**.
-- On a server, attachments deleted with a node come back too, including attachments kept in S3. The desktop and mobile app does not keep attachment content in its history. There, the line says how many attachments can't be restored, and only the notes come back.
+- On a server, attachments deleted with a node come back too, including attachments kept in S3. An attachment deleted on its own is a line of its own. The desktop and mobile app does not keep attachment content in its history. There, the line says how many attachments can't be restored, and only the notes come back. An attachment deleted on its own in the app is not listed.
 - There is no permanent delete. Agents can't use the trash.
 
 ## Give a note an icon
@@ -167,6 +167,15 @@ The icon is stored as the note's frontmatter `icon: 📘`, so other editors and 
 Paste or drop images and files into the editor. They are uploaded to the current workspace's attachment folder (`_attachments` by default, `_첨부` when the vault language is Korean), and a link is inserted: `![[image]]` for images, `[[file]]` for other files, or a path when the link format is **Full path**. Pasted images are named `Pasted image <date-time>.png`. If a name is taken, ` 2`, ` 3` and so on is appended.
 
 The Files panel on the rail also has a drop area for adding files.
+
+## Replace or delete attachments
+
+Right-click an attachment in a node's "N files" row in the tree.
+
+- **Replace contents…** swaps in a new file at the same path, so every link and embed keeps working. Pick a file of the same type: a different extension is refused. On a server, the old content stays in history. **Undo** on the notice puts the old content back. Open previews, Live Preview images and PDF viewers in this window show the new content.
+- **Delete** first lists the notes that link to the attachment (wikilinks, Markdown links and embeds), because those links break. On a server, the deleted attachment goes to the trash (attachments kept in S3 too, while S3 is on), where an image shows as a preview and **Restore** brings it back byte for byte.
+- If another window or device changed the attachment after you chose the action, nothing is changed and you are asked to try again.
+- In the desktop and mobile app, both work too, but the app does not keep attachment content in its history. Only **Undo** on the notice brings back the old content. If the app syncs with a server, the change reaches the server at the next sync, and the server keeps the old content in its history and trash.
 
 ## Next steps
 

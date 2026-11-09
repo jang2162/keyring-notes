@@ -44,6 +44,14 @@ export class FakeServer implements RemoteVault {
     await this.put(path, data);
     return { hash: this.files.get(path)!.hash };
   }
+  async replaceRaw(path: string, data: Uint8Array, baseHash: string) {
+    this.check();
+    const cur = this.files.get(path)?.hash ?? null;
+    if (cur === null) throw new NotFoundError(path);
+    if (cur !== baseHash) throw new ConflictError(cur);
+    await this.put(path, data);
+    return { hash: this.files.get(path)!.hash };
+  }
   async removeRaw(path: string, baseHash: string) {
     return this.remove(path, baseHash);
   }

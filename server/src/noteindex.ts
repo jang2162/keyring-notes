@@ -201,6 +201,11 @@ export class NoteIndex {
     return [...out].sort();
   }
 
+  /** 문서마다 원문(첨부 백링크처럼 색인이 담지 않는 링크를 원문에서 다시 볼 때) */
+  contents(): { path: string; content: string }[] {
+    return this.db.prepare("SELECT path, body AS content FROM fts").all() as { path: string; content: string }[];
+  }
+
   tagRows(): { path: string; tag: string }[] {
     return this.db.prepare("SELECT path, tag FROM tags").all() as { path: string; tag: string }[];
   }

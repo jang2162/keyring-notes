@@ -5,7 +5,7 @@ import path from "node:path";
 import { AccessPolicy, atLeast } from "./access.js";
 import type { ConfigStore } from "./config.js";
 import { serverText } from "./lang.js";
-import { PathError } from "./paths.js";
+import { normalizeVaultPath, PathError } from "./paths.js";
 import { cleanMessage, hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
 
 /**
@@ -35,7 +35,7 @@ export interface Proposal {
   links?: { enabled: boolean; paths: string[] };
 }
 
-type StoredOp = Exclude<Op, { op: "put" }> | { op: "put"; path: string; dataFile: string };
+type StoredOp = Exclude<Op, { op: "put" }> | { op: "put"; path: string; dataFile: string; baseHash?: string };
 
 export interface ProposalSummary extends Omit<Proposal, "ops" | "preview"> {
   files: { path: string; change: "add" | "modify" | "delete"; binary: boolean }[];
@@ -96,14 +96,14 @@ export class ReviewQueue {
       if (op.op === "put") {
         const dataFile = `put-${n++}.bin`;
         await writeFile(path.join(pdir, dataFile), op.data);
-        stored.push({ op: "put", path: op.path, dataFile });
+        stored.push({ op: "put", path: op.path, dataFile, ...(op.baseHash === undefined ? {} : { baseHash: op.baseHash }) });
       } else stored.push(op);
     }
     const proposal: Proposal = {
       id,
       agent: agent.name,
       agentEmail: agent.email,
-      message: cleanMessage(message ?? "").trim() || this.vault.text().commit.proposal(preview.length),
+      message: cleanMessage(message ?? "").trim() || this.defaultMessage(ops, preview.length),
       createdAt: new Date().toISOString(),
       status: "pending",
       ops: stored,
@@ -187,13 +187,27 @@ export class ReviewQueue {
     return (await this.list({ status: "pending" })).length;
   }
 
+  /** 메시지 없는 제안의 커밋 제목: 첨부 하나 쓰기는 그 동작(「첨부 교체: …」 등), 나머지는 「변경 N건」 */
+  private defaultMessage(ops: Op[], files: number): string {
+    const T = this.vault.text().commit;
+    const op = ops.length === 1 ? ops[0] : null;
+    if (op?.op === "put") return op.baseHash === undefined ? T.attach(normalizeVaultPath(op.path)) : T.replaceAttachment(normalizeVaultPath(op.path));
+    return T.proposal(files);
+  }
+
   /** 승인: 저장해 둔 연산을 그대로(같은 baseHash로) 적용한다. 그 사이 문서가 바뀌었으면 충돌로 거부된다. */
   async approve(id: string, approver: string): Promise<Proposal> {
     const p = await this.get(id);
     if (p.status !== "pending") throw new PathError("proposal_done", { status: p.status });
     const ops: Op[] = [];
     for (const op of p.ops) {
-      if (op.op === "put") ops.push({ op: "put", path: op.path, data: new Uint8Array(await readFile(path.join(this.dir, id, op.dataFile))) });
+      if (op.op === "put")
+        ops.push({
+          op: "put",
+          path: op.path,
+          data: new Uint8Array(await readFile(path.join(this.dir, id, op.dataFile))),
+          ...(op.baseHash === undefined ? {} : { baseHash: op.baseHash }),
+        });
       else ops.push(op);
     }
     // 링크 갱신은 승인 시점의 내용으로 다시 계산하되, 제안 때와 같은 범위(그 에이전트가 볼 수 있는 경로, 미리보기에 보인 문서)로만

@@ -106,7 +106,7 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | GET | `/api/search?q=` | `&folder=&tag=&lines=&limit=` | Search. Repeat `tag` to require several tags. `lines` adds up to that many matching lines per note (a whole number, at most 50) |
 | GET | `/api/semantic` · `/api/semantic/status` | `?q=&folder=&limit=` | Semantic search / status |
 | GET | `/api/tags` | `?folder=` | Tags and note counts, within a folder or node |
-| GET | `/api/backlinks?path=` | | Backlinks |
+| GET | `/api/backlinks?path=` | | Backlinks. For an attachment, the notes that link to or embed it: wikilinks, embeds, relative Markdown links and images, and `sources` |
 | GET | `/api/mentions?path=` | | Unlinked mentions, visible notes only |
 | GET | `/api/sources?path=` | | Sources, citations, backlinks |
 | GET | `/api/graph` | `?folder=` | Graph (nodes and links) |
@@ -119,14 +119,16 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | POST | `/api/move` | `{from, to, baseHash, updateLinks?}` | Move or rename a note or attachment. Links update by default → `linksUpdated` (updated notes), `linkCount` |
 | POST | `/api/move` | `{from, to, node: true, updateLinks?}` | Move or rename a node: `A.md` and everything in `A/` in one commit → `moved[[from, to]]`, `linksUpdated`, `linkCount` |
 | POST | `/api/node/delete` | `{path, files[{path, baseHash}]}` | Delete a node with its children in one commit. 409 if the files differ from the list and hashes the client saw |
-| POST | `/api/batch` | `{message?, operations: [{op, ...}], updateLinks?}` | Batch write. `op` is `write`, `append`, `delete`, `move` or `put`. Chained moves (A→B→C) in one batch are combined for link updates. `files` lists only files that changed |
+| POST | `/api/batch` | `{message?, operations: [{op, ...}], updateLinks?}` | Batch write. `op` is `write`, `append`, `delete`, `move` or `put` (`data` in base64; with `baseHash` it replaces an existing attachment). Chained moves (A→B→C) in one batch are combined for link updates. `files` lists only files that changed |
 | POST | `/api/attachment?path=` | file bytes, header `x-keyring-upload: 1` | Create a new attachment, up to 50 MB. 409 if it exists |
+| PUT | `/api/attachment?path=&baseHash=` | file bytes, header `x-keyring-upload: 1` | Replace an attachment's bytes at the same path, so links keep working. `baseHash` is the sha256 of the current bytes: 409 with `currentHash` if it changed, 404 if the file is missing. Needs `write`. The old bytes stay in history → `path`, `hash` |
 | GET | `/api/raw?path=` | | Raw attachment file |
 | GET | `/api/history?path=` | | A note's commits, with authors |
 | GET | `/api/revision?path=&rev=` | | Content at a revision |
 | POST | `/api/rollback` | `{path, rev, baseHash}` | Roll back to a past revision, as a new commit |
 | GET | `/api/trash` | `?folder=&cursor=` | Trash, owner only: deletes newest first → `items[{id, date, author, node, notes, attachments, lost}]`, `next` (the last commit read; pass it as `cursor` for older deletes, `null` when done). Moves made on the server and paths in use are left out |
 | GET | `/api/trash/preview?id=&path=` | | A deleted note's content just before the delete. Owner only |
+| GET | `/api/trash/raw?id=&path=` | | A deleted attachment's bytes just before the delete, with the same headers as `/api/raw`. Owner only |
 | POST | `/api/trash/restore` | `{id, paths?}` | Restore one delete in one commit. A taken path gets ` 2` instead of being overwritten → `restored[[from, to]]`, `lost` (attachments that could not be restored). Owner only |
 | GET · POST | `/api/topics` | `{name}` | List topics / create a wiki topic (owner) |
 | POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | Collect a source |

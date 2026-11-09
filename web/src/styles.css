@@ -1005,6 +1005,7 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .trash-notes button { font-size: var(--fs-sm); padding: 2px 8px; }
 .trash-notes button[aria-pressed="true"] { background: var(--active); color: var(--accent); }
 .trash-preview { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; max-height: 50vh; overflow: auto; background: var(--bg-soft); }
+.trash-image { display: block; max-width: 100%; max-height: 50vh; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft); }
 .trash-more { margin-top: 10px; }
 @media (max-width: 800px) {
   .trash-sub, .trash-body { margin-left: 6px; }
