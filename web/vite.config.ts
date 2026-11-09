@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { gzipSync } from "node:zlib";
 import path from "node:path";
 import { defaultClientConditions, defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -57,7 +58,7 @@ function inlineWidgetBudget(): Plugin {
       const chunks: BudgetChunk[] = Object.values(bundle).flatMap((c) =>
         c.type === "chunk" ? [{ fileName: c.fileName, code: c.code, imports: c.imports, isEntry: c.isEntry, facadeModuleId: c.facadeModuleId }] : [],
       );
-      for (const s of inlineWidgetSizes(chunks)) {
+      for (const s of inlineWidgetSizes(chunks, (code) => gzipSync(code).length)) {
         if (s.over)
           this.error(
             `${s.facade}: ${s.bytes} B gzip > ${INLINE_WIDGET_GZIP_LIMIT} B — 인라인 기준을 넘는다(설계 「인라인/iframe 기준」). 줄이거나 isolation: "frame" 으로`,
