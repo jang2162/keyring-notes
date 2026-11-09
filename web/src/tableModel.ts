@@ -1,4 +1,5 @@
 import type { ChangeSet, ChangeSpec, Text } from "@codemirror/state";
+import { diffChange } from "./mirror";
 
 /**
  * 표 편집기의 표 모델: 문서 글 → 표 구조·칸 구간, 칸 편집 → 문서 변경. 화면 없이 순수 함수라 Node 에서 시험한다.
@@ -85,7 +86,8 @@ export function splitRow(text: string): RowParts {
 export function joinRow(p: Pick<RowParts, "indent" | "lead" | "segs" | "trail" | "tail">): string {
   const blank = (s: string | undefined) => s === undefined || s.trim() === "";
   const lead = p.lead || blank(p.segs[0]);
-  const trail = p.trail || blank(p.segs[p.segs.length - 1]);
+  // 칸이 하나뿐이면 | 가 하나는 있어야 표 줄로 읽힌다
+  const trail = p.trail || blank(p.segs[p.segs.length - 1]) || (p.segs.length === 1 && !lead);
   return (lead ? p.indent + "|" : "") + p.segs.join("|") + (trail ? "|" + p.tail : "");
 }
 
@@ -209,4 +211,143 @@ export function cellAt(m: TableModel, pos: number): { row: number; col: number }
     return col >= 0 ? { row: i, col } : null;
   }
   return null;
+}
+
+// ── 행·열 작업. 모두 본문 트랜잭션 하나에 넣을 ChangeSpec[] 를 돌려준다(원래 문서 좌표). 본문 행 번호 i 는 0부터 ──
+// 파일에 쓰는 범위는 설계 6.5 「파일에 쓰는 범위」 그대로다 — 표 전체를 다시 써 | 사이 공백을 맞추지 않는다
+
+/** 줄을 새 글로: 앞뒤 같은 부분을 빼고 달라진 곳만 */
+function lineChange(row: TableRow, next: string): ChangeSpec[] {
+  const d = diffChange(row.text, next);
+  return d ? [{ from: row.from + d.from, to: row.from + d.to, insert: d.insert }] : [];
+}
+
+/** 표의 모든 줄(머리·구분·본문)을 칸 목록 고치기로 다시 쓴다. edit 이 null 을 돌려주면 그 줄은 그대로 */
+function rewriteRows(m: TableModel, edit: (segs: string[], kind: "header" | "delim" | "body") => string[] | null): ChangeSpec[] {
+  const out: ChangeSpec[] = [];
+  const rows: [TableRow, "header" | "delim" | "body"][] = [[m.header, "header"], [m.delim, "delim"], ...m.body.map((r) => [r, "body"] as [TableRow, "body"])];
+  for (const [row, kind] of rows) {
+    const p = splitRow(row.text);
+    const segs = edit([...p.segs], kind);
+    if (segs) out.push(...lineChange(row, joinRow({ ...p, segs })));
+  }
+  return out;
+}
+
+const EMPTY = "  ";
+
+function emptyRow(m: TableModel): string {
+  const p = splitRow(m.header.text);
+  return joinRow({ indent: p.indent, lead: p.lead, segs: Array<string>(m.columns).fill(EMPTY), trail: p.trail, tail: "" });
+}
+
+function lastLine(m: TableModel): TableRow {
+  return m.body.length ? m.body[m.body.length - 1] : m.delim;
+}
+
+/** at: 0..body.length. 빈 칸은 "  " */
+export function insertRow(m: TableModel, at: number): ChangeSpec[] {
+  const line = emptyRow(m);
+  if (at < m.body.length) return [{ from: m.body[at].from, insert: line + "\n" }];
+  return [{ from: lastLine(m).to, insert: "\n" + line }];
+}
+
+export function deleteRow(m: TableModel, i: number): ChangeSpec[] {
+  const r = m.body[i];
+  // 앞 줄(구분 줄이나 앞 행)이 늘 있으므로 앞 줄바꿈과 함께 지운다 — 문서 끝 줄도 같은 방법으로 된다
+  return [{ from: r.from - 1, to: r.to }];
+}
+
+/** 본문 행 from 을 to 자리(옮긴 뒤 번호)로. 옮긴 줄 하나를 지우고 넣는다 — 그 사이 줄은 글이 그대로다 */
+export function moveRow(m: TableModel, from: number, to: number): ChangeSpec[] {
+  if (from === to) return [];
+  const r = m.body[from];
+  const del = { from: r.from - 1, to: r.to };
+  if (to < from) return [{ from: m.body[to].from, insert: r.text + "\n" }, del];
+  return [del, { from: m.body[to].to, insert: "\n" + r.text }];
+}
+
+/** at: 0..columns. 칸이 모자란 행은 그 자리가 칸 수를 넘으면 그대로 둔다(없는 칸은 빈 칸이다) */
+export function insertColumn(m: TableModel, at: number): ChangeSpec[] {
+  return rewriteRows(m, (segs, kind) => {
+    if (kind === "body" && at > segs.length) return null;
+    segs.splice(Math.min(at, segs.length), 0, kind === "delim" ? " --- " : EMPTY);
+    return segs;
+  });
+}
+
+/** columns > 1 일 때만 부른다 */
+export function deleteColumn(m: TableModel, col: number): ChangeSpec[] {
+  return rewriteRows(m, (segs) => {
+    if (col >= segs.length) return null;
+    segs.splice(col, 1);
+    return segs;
+  });
+}
+
+/** 열 from 을 to 자리로. 칸 글과 양옆 공백을 통째로 옮긴다. 모자란 행은 빈 칸을 채워 옮긴다 */
+export function moveColumn(m: TableModel, from: number, to: number): ChangeSpec[] {
+  if (from === to) return [];
+  const hi = Math.max(from, to);
+  return rewriteRows(m, (segs) => {
+    if (segs.length <= Math.min(from, to)) return null;
+    while (segs.length <= hi) segs.push(EMPTY);
+    const [moved] = segs.splice(from, 1);
+    segs.splice(to, 0, moved);
+    return segs;
+  });
+}
+
+/** 구분 줄의 그 칸만 :---·:---:·---:·--- 로. 원래 - 개수를 지킨다(최소 3) */
+export function setAlign(m: TableModel, col: number, align: Align): ChangeSpec[] {
+  const p = splitRow(m.delim.text);
+  const seg = p.segs[col];
+  if (seg === undefined) return [];
+  const ws = /^(\s*)(.*?)(\s*)$/.exec(seg)!;
+  const dashes = "-".repeat(Math.max(3, (ws[2].match(/-/g) ?? []).length));
+  const body = (align === "left" || align === "center" ? ":" : "") + dashes + (align === "right" || align === "center" ? ":" : "");
+  p.segs[col] = ws[1] + body + ws[3];
+  return lineChange(m.delim, joinRow(p));
+}
+
+/** 칸 원문 → 정렬에 쓸 보이는 글(마크다운 기호를 뺀 글) */
+export function visibleText(raw: string): string {
+  return raw
+    .replace(/\\\|/g, "|")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/!?\[\[[^\]|]*\|([^\]]*)\]\]/g, "$1")
+    .replace(/!?\[\[([^\]]*)\]\]/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\*\*|__|~~|==|`/g, "")
+    .replace(/\*|(?<!\w)_|_(?!\w)/g, "")
+    .replace(/\\(.)/g, "$1")
+    .trim();
+}
+
+/** 앞뒤 공백, 쉼표 천 단위, 부호, 소수, 끝의 % 를 허용한 숫자. 아니면 null */
+function asNumber(s: string): number | null {
+  const m = /^\s*([+-]?)(\d{1,3}(?:,\d{3})+|\d+)?(\.\d+)?\s*%?\s*$/.exec(s);
+  if (!m || (!m[2] && !m[3])) return null;
+  return Number(m[1] + (m[2] ?? "0").replace(/,/g, "") + (m[3] ?? ""));
+}
+
+/** 둘 다 숫자로 읽히면 숫자로, 아니면 localeCompare(numeric·base) */
+export function compareCells(a: string, b: string): number {
+  const x = asNumber(a);
+  const y = asNumber(b);
+  if (x !== null && y !== null) return x - y;
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+/** 본문 행만 안정 정렬. 빈 칸은 오름·내림 어느 쪽이든 맨 뒤. 순서가 바뀐 줄만 고친다 */
+export function sortRows(m: TableModel, col: number, dir: "asc" | "desc"): ChangeSpec[] {
+  const keyed = m.body.map((r) => ({ r, key: visibleText(r.cells[col]?.raw ?? "") }));
+  const sign = dir === "asc" ? 1 : -1;
+  const sorted = [...keyed].sort((a, b) => {
+    if (!a.key || !b.key) return Number(!a.key) - Number(!b.key);
+    return sign * compareCells(a.key, b.key);
+  });
+  return m.body.flatMap((r, i) => (sorted[i].r === r ? [] : [{ from: r.from, to: r.to, insert: sorted[i].r.text }]));
 }

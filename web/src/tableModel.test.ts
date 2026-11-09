@@ -2,7 +2,27 @@ import { describe, expect, it } from "vitest";
 import { ChangeSet, EditorState, type ChangeSpec } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
-import { cellAt, cellChangesToDoc, cellText, ensureCell, escapeCellInput, parseTable, rawToTextPos, textToRawPos, type TableModel } from "./tableModel";
+import {
+  cellAt,
+  cellChangesToDoc,
+  cellText,
+  compareCells,
+  deleteColumn,
+  deleteRow,
+  ensureCell,
+  escapeCellInput,
+  insertColumn,
+  insertRow,
+  moveColumn,
+  moveRow,
+  parseTable,
+  rawToTextPos,
+  setAlign,
+  sortRows,
+  textToRawPos,
+  visibleText,
+  type TableModel,
+} from "./tableModel";
 
 /** 문서의 첫 최상위 표(lezer Table 노드)를 모델로 */
 function tableOf(doc: string): TableModel {
@@ -179,5 +199,200 @@ describe("cellAt", () => {
   it("| 위나 구분 줄이면 null", () => {
     expect(cellAt(m, 0)).toBeNull();
     expect(cellAt(m, doc.indexOf("|---") + 1)).toBeNull();
+  });
+});
+
+/** 줄 수가 같을 때 바뀐 줄 번호(0부터) */
+function changedLines(before: string, after: string): number[] {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  expect(b).toHaveLength(a.length);
+  return a.flatMap((l, i) => (l === b[i] ? [] : [i]));
+}
+
+const T = "| h1 | h2 |\n|----|----|\n| a | b |\n| c | d |\n| e | f |";
+const run = (doc: string, op: (m: TableModel) => ChangeSpec[]) => apply(doc, op(tableOf(doc)));
+
+describe("행 작업", () => {
+  it("insertRow: 그 자리에 빈 행 줄 하나만", () => {
+    const after = run(T, (m) => insertRow(m, 1));
+    expect(after.split("\n")).toEqual(["| h1 | h2 |", "|----|----|", "| a | b |", "|  |  |", "| c | d |", "| e | f |"]);
+    expect(tableOf(after).body).toHaveLength(4);
+  });
+
+  it("insertRow: 맨 앞·맨 끝(끝 줄바꿈 없는 표)", () => {
+    expect(run(T, (m) => insertRow(m, 0)).split("\n")[2]).toBe("|  |  |");
+    const end = run(T, (m) => insertRow(m, 3));
+    expect(end.split("\n").at(-1)).toBe("|  |  |");
+    expect(end.startsWith(T + "\n")).toBe(true);
+  });
+
+  it("insertRow: 본문이 없는 표", () => {
+    expect(run("| a |\n|---|", (m) => insertRow(m, 0))).toBe("| a |\n|---|\n|  |");
+  });
+
+  it("insertRow: 바깥 | 없는 표도 빈 칸이 사라지지 않게 양끝 | 를 쓴다", () => {
+    // "  |  " 는 GFM 이 앞 공백을 떼고 맨 앞 | 를 테두리로 봐 칸 하나가 된다
+    const after = run("a | b\n--- | ---\n1 | 2", (m) => insertRow(m, 1));
+    expect(after.split("\n")[3]).toBe("|  |  |");
+    expect(tableOf(after).body[1].cells).toHaveLength(2);
+  });
+
+  it("insertRow: 표 뒤에 글이 있어도 표 끝 줄 다음에", () => {
+    expect(run("| a |\n|---|\n| 1 |\n\n뒤", (m) => insertRow(m, 1))).toBe("| a |\n|---|\n| 1 |\n|  |\n\n뒤");
+  });
+
+  it("deleteRow: 그 줄만 사라진다(가운데·끝)", () => {
+    expect(run(T, (m) => deleteRow(m, 1))).toBe("| h1 | h2 |\n|----|----|\n| a | b |\n| e | f |");
+    expect(run(T, (m) => deleteRow(m, 2))).toBe("| h1 | h2 |\n|----|----|\n| a | b |\n| c | d |");
+    expect(run(T + "\n\n뒤", (m) => deleteRow(m, 2))).toBe("| h1 | h2 |\n|----|----|\n| a | b |\n| c | d |\n\n뒤");
+  });
+
+  it("moveRow: 줄 글은 그대로, 순서만(위로·아래로)", () => {
+    const up = run(T, (m) => moveRow(m, 2, 0));
+    expect(up.split("\n").slice(2)).toEqual(["| e | f |", "| a | b |", "| c | d |"]);
+    expect(changedLines(T, up)).toEqual([2, 3, 4]);
+    const down = run(T, (m) => moveRow(m, 0, 2));
+    expect(down.split("\n").slice(2)).toEqual(["| c | d |", "| e | f |", "| a | b |"]);
+    const one = run(T, (m) => moveRow(m, 1, 2));
+    expect(changedLines(T, one)).toEqual([3, 4]);
+    expect(run(T, (m) => moveRow(m, 1, 1))).toBe(T);
+  });
+});
+
+describe("열 작업", () => {
+  const W = "|  a   | b |\n|---|:-:|\n| 1 | 2 |";
+
+  it("insertColumn: 모든 줄에 칸 하나, 구분 줄에는 ---, 다른 칸 글·공백은 그대로", () => {
+    const after = run(W, (m) => insertColumn(m, 1));
+    expect(after).toBe("|  a   |  | b |\n|---| --- |:-:|\n| 1 |  | 2 |");
+    const m = tableOf(after);
+    expect(m.columns).toBe(3);
+    expect(m.align).toEqual([null, null, "center"]);
+    expect(m.header.cells.map((c) => c.raw)).toEqual(["a", "", "b"]);
+  });
+
+  it("insertColumn: 맨 앞·맨 끝", () => {
+    expect(run(W, (m) => insertColumn(m, 0)).split("\n")[0]).toBe("|  |  a   | b |");
+    const end = run(W, (m) => insertColumn(m, 2));
+    expect(end).toBe("|  a   | b |  |\n|---|:-:| --- |\n| 1 | 2 |  |");
+  });
+
+  it("insertColumn: 바깥 | 없는 표의 끝 열은 머리 빈 칸을 | 로 닫는다", () => {
+    const after = run("a | b\n--- | ---\n1 | 2", (m) => insertColumn(m, 2));
+    const m = tableOf(after);
+    expect(m.columns).toBe(3);
+    expect(m.header.cells).toHaveLength(3);
+    expect(after.split("\n")[2].startsWith("1 | 2")).toBe(true);
+  });
+
+  it("insertColumn: 바깥 | 없는 표의 맨 앞 열", () => {
+    const after = run("a | b\n--- | ---\n1 | 2", (m) => insertColumn(m, 0));
+    const m = tableOf(after);
+    expect(m.columns).toBe(3);
+    expect(m.header.cells.map((c) => c.raw)).toEqual(["", "a", "b"]);
+    expect(m.body[0].cells.map((c) => c.raw)).toEqual(["", "1", "2"]);
+  });
+
+  it("insertColumn: 칸이 모자란 행은 그 칸 앞이면 넣고, 뒤면 그대로 둔다", () => {
+    const doc = "| a | b | c |\n|---|---|---|\n| x |";
+    expect(run(doc, (m) => insertColumn(m, 0)).split("\n")[2]).toBe("|  | x |");
+    expect(run(doc, (m) => insertColumn(m, 2)).split("\n")[2]).toBe("| x |");
+  });
+
+  it("deleteColumn: 그 칸과 | 하나만 지운다", () => {
+    const after = run(W, (m) => deleteColumn(m, 0));
+    expect(after).toBe("| b |\n|:-:|\n| 2 |");
+    expect(run(W, (m) => deleteColumn(m, 1))).toBe("|  a   |\n|---|\n| 1 |");
+    // 열이 하나 남으면 | 가 하나는 있어야 표로 읽힌다
+    expect(run("a | b\n--- | ---\n1 | 2", (m) => deleteColumn(m, 1))).toBe("a |\n--- |\n1 |");
+  });
+
+  it("deleteColumn: 칸이 모자란 행에서 없는 칸을 지워도 깨지지 않는다", () => {
+    const doc = "| a | b | c |\n|---|---|---|\n| x |";
+    const after = run(doc, (m) => deleteColumn(m, 2));
+    expect(after).toBe("| a | b |\n|---|---|\n| x |");
+  });
+
+  it("moveColumn: 칸 글과 공백을 통째로 옮긴다", () => {
+    const after = run(W, (m) => moveColumn(m, 0, 1));
+    expect(after).toBe("| b |  a   |\n|:-:|---|\n| 2 | 1 |");
+    expect(tableOf(after).align).toEqual(["center", null]);
+  });
+
+  it("moveColumn: 칸이 모자란 행은 빈 칸을 채워 옮긴다", () => {
+    const doc = "| a | b | c |\n|---|---|---|\n| x |";
+    expect(run(doc, (m) => moveColumn(m, 0, 2)).split("\n")[2]).toBe("|  |  | x |");
+    expect(run(doc, (m) => moveColumn(m, 1, 2)).split("\n")[2]).toBe("| x |");
+  });
+});
+
+describe("setAlign", () => {
+  it("구분 줄만, 그 칸만 바뀐다(원래 - 개수, 최소 3)", () => {
+    const doc = "| a | b |\n|-----|---|\n| 1 | 2 |";
+    const c = run(doc, (m) => setAlign(m, 0, "center"));
+    expect(c).toBe("| a | b |\n|:-----:|---|\n| 1 | 2 |");
+    expect(changedLines(doc, c)).toEqual([1]);
+    expect(run(doc, (m) => setAlign(m, 1, "right")).split("\n")[1]).toBe("|-----|---:|");
+    expect(run("| a |\n| :-: |", (m) => setAlign(m, 0, null)).split("\n")[1]).toBe("| --- |");
+    expect(run("| a |\n|:-|", (m) => setAlign(m, 0, "left")).split("\n")[1]).toBe("|:---|");
+  });
+});
+
+describe("sort", () => {
+  const col = (vals: string[]) => `| v |\n|---|\n${vals.map((v) => (v ? `| ${v} |` : "|  |")).join("\n")}`;
+  const values = (doc: string) => tableOf(doc).body.map((r) => r.cells[0]?.raw ?? "");
+
+  it("숫자는 숫자로, 빈 칸은 어느 쪽이든 맨 뒤", () => {
+    const doc = col(["10", "9", "", "2%", "1,000"]);
+    expect(values(run(doc, (m) => sortRows(m, 0, "asc")))).toEqual(["2%", "9", "10", "1,000", ""]);
+    expect(values(run(doc, (m) => sortRows(m, 0, "desc")))).toEqual(["1,000", "10", "9", "2%", ""]);
+  });
+
+  it("안정 정렬: 같은 값(b·B)은 원래 순서", () => {
+    expect(values(run(col(["b", "a", "B"]), (m) => sortRows(m, 0, "asc")))).toEqual(["a", "b", "B"]);
+    expect(values(run(col(["b", "a", "B"]), (m) => sortRows(m, 0, "desc")))).toEqual(["b", "B", "a"]);
+  });
+
+  it("머리 행·구분 줄은 그대로, 바뀐 줄은 본문 줄뿐", () => {
+    const after = run(T, (m) => sortRows(m, 0, "desc"));
+    expect(after.split("\n").slice(0, 2)).toEqual(T.split("\n").slice(0, 2));
+    expect(changedLines(T, after)).toEqual([2, 4]);
+  });
+
+  it("칸이 모자란 행은 빈 칸으로 친다", () => {
+    const doc = "| a | b |\n|---|---|\n| 1 | z |\n| 2 |";
+    expect(
+      run(doc, (m) => sortRows(m, 1, "asc"))
+        .split("\n")
+        .slice(2),
+    ).toEqual(["| 1 | z |", "| 2 |"]);
+  });
+
+  it("보이는 글로 비교한다(**12** 는 12)", () => {
+    expect(values(run(col(["**12**", "9"]), (m) => sortRows(m, 0, "asc")))).toEqual(["9", "**12**"]);
+  });
+});
+
+describe("compareCells / visibleText", () => {
+  it("숫자 비교", () => {
+    expect(compareCells("1,000", "10")).toBeGreaterThan(0);
+    expect(compareCells("-3", "2")).toBeLessThan(0);
+    expect(compareCells("1.5", "1.25")).toBeGreaterThan(0);
+    expect(compareCells("2%", "10%")).toBeLessThan(0);
+    expect(compareCells(" +4 ", "4")).toBe(0);
+  });
+  it("숫자와 글이 섞이면 localeCompare numeric·base", () => {
+    expect(compareCells("item 2", "item 10")).toBeLessThan(0);
+    expect(compareCells("a", "A")).toBe(0);
+    expect(compareCells("10", "abc")).toBe("10".localeCompare("abc", undefined, { numeric: true, sensitivity: "base" }));
+  });
+  it("visibleText 는 마크다운 기호를 뺀 글", () => {
+    expect(visibleText("**12**")).toBe("12");
+    expect(visibleText("[[노트|별칭]]")).toBe("별칭");
+    expect(visibleText("[[노트]]")).toBe("노트");
+    expect(visibleText("[글](u)")).toBe("글");
+    expect(visibleText("`co` ~~x~~ ==m== *i*")).toBe("co x m i");
+    expect(visibleText("a \\| b")).toBe("a | b");
   });
 });
