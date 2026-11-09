@@ -1,5 +1,6 @@
 import { useEffect, type MutableRefObject } from "react";
 import type { EditorHandle } from "../Editor";
+import { widgetResume } from "./blockEdit";
 import { mountKeyringWidget } from "./mount";
 
 /**
@@ -21,12 +22,12 @@ export function PreviewKeyringWidget(p: {
   useEffect(() => {
     const h = () => handle.current;
     const edit = readOnly ? null : h()?.widgetEdit();
-    const resume = edit && edit.line === line ? edit : null;
+    // 미리보기가 시작한 수정만 이어받는다 — Live Preview 칸의 수정을 이어받으면 나란히 보기에서 미리보기가 폼을 열고 포커스를 가져간다
+    const resume = widgetResume(edit ? { ...edit, gone: false } : null, "preview", edit?.line === line);
     const m = mountKeyringWidget(el, {
       body,
       readOnly: readOnly || !h(),
-      resumeDraft: resume ? resume.draft : undefined,
-      resumeFocus: resume ? resume.focus : null,
+      resume,
       write: (state, version) => h()?.writeWidget(line, state, version) ?? false,
       edit: {
         start: (draft) => h()?.startWidgetEdit(line, draft),

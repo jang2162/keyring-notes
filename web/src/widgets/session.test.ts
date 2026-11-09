@@ -199,6 +199,25 @@ describe("수정 모드", () => {
     }
   });
 
+  it("이어받을 때 「바뀌었는가」는 수정을 시작한 때 상태(resumeBase)로 본다 — 그사이 바깥 변경을 되돌리지 않는다", () => {
+    const a = session({ state: { n: 5 }, resumeDraft: { n: 1 }, resumeBase: { n: 1 } });
+    a.s.focusOut();
+    expect(a.of("write")).toEqual([]);
+    const b = session({ state: { n: 5 }, resumeDraft: { n: 2 }, resumeBase: { n: 1 } });
+    b.s.focusOut();
+    expect(b.of("write")).toEqual([["write", { n: 2 }]]);
+  });
+
+  it("editBase 는 수정을 시작한 때 상태 — 바깥 변경에도 그대로(다시 그릴 때 넘긴다)", () => {
+    const { s } = session({ state: { n: 1 } });
+    expect(s.editBase).toBeUndefined();
+    s.requestEdit();
+    s.external({ n: 5 }, true);
+    expect(s.editBase).toEqual({ n: 1 });
+    const r = session({ state: { n: 5 }, resumeDraft: { n: 2 }, resumeBase: { n: 1 } });
+    expect(r.s.editBase).toEqual({ n: 1 });
+  });
+
   it("resumeDraft 로 이어받으면 시작을 다시 부르지 않는다", () => {
     const { s, of } = session({ resumeDraft: { n: 4 } });
     expect(s.editing).toBe(true);

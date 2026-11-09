@@ -97,7 +97,7 @@ export interface EditorHandle {
   endWidgetEdit(): void;
   setWidgetFocus(index: number | null): void;
   /** 수정 중인 위젯(사라지지 않은 것). 미리보기를 다시 그린 뒤 초안·포커스를 이어받는다 */
-  widgetEdit(): { line: number; draft: unknown; focus: number | null } | null;
+  widgetEdit(): { line: number; draft: unknown; base: unknown; owner: string; focus: number | null } | null;
 }
 
 /** 할 일: 줄이 - [ ]이면 체크를 바꾸고, 목록이면 - [ ]를 붙이고, 아니면 - [ ]로 시작하게 */
@@ -403,7 +403,7 @@ export function Editor({
         },
         startWidgetEdit(lineNo, draft) {
           const b = widgetBlockAtLine(view.state, lineNo);
-          if (b) view.dispatch({ effects: startWidgetEditEffect.of({ from: b.from, draft }) });
+          if (b) view.dispatch({ effects: startWidgetEditEffect.of({ from: b.from, draft, owner: "preview" }) });
         },
         setWidgetDraft(draft) {
           view.dispatch({ effects: setWidgetDraft.of(draft) });
@@ -416,7 +416,7 @@ export function Editor({
         },
         widgetEdit() {
           const e = view.state.field(widgetEditField, false);
-          return e && !e.gone ? { line: view.state.doc.lineAt(e.from).number, draft: e.draft, focus: e.focus } : null;
+          return e && !e.gone ? { line: view.state.doc.lineAt(e.from).number, draft: e.draft, base: e.base, owner: e.owner, focus: e.focus } : null;
         },
         toggleTask(lineNo, done) {
           if (lineNo < 1 || lineNo > view.state.doc.lines) return;

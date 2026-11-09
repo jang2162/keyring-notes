@@ -97,16 +97,30 @@ export function rewriteWidgetBlock(state: EditorState, block: WidgetBlockRange, 
   return { changes: { from: block.bodyFrom, to: block.bodyTo, insert }, userEvent: "input.widget", annotations: isolateHistory.of("full") };
 }
 
-/** focus: 위젯 안 포커스 자리(순번) — 다시 붙은 위젯이 이어받는다 */
+/**
+ * focus: 위젯 안 포커스 자리(순번) — 다시 붙은 위젯이 이어받는다.
+ * base: 수정을 시작한 때 상태. 수정이 이어지는 동안 한 번만 정해진다 — 이어받는 위젯이 지금 블록 상태로 다시 잡으면
+ * 바꾸지 않은 초안이 그사이 들어온 바깥 변경을 되돌린다.
+ * owner: 수정을 시작한 호스트("live"·"preview"). 나란히 보기에서 같은 블록을 그리는 다른 호스트가 남의 수정을 이어받지 않게.
+ */
 export interface WidgetEdit {
   from: number;
   draft: unknown;
+  base: unknown;
+  owner: string;
   gone: boolean;
   focus: number | null;
 }
 
-export const startWidgetEdit: StateEffectType<{ from: number; draft: unknown }> = StateEffect.define<{ from: number; draft: unknown }>({
-  map: (v, m) => ({ from: m.mapPos(v.from, 1), draft: v.draft }),
+/** draft 는 시작 때 상태와 같으므로 base 가 된다 */
+export interface WidgetEditStart {
+  from: number;
+  draft: unknown;
+  owner?: string;
+}
+
+export const startWidgetEdit: StateEffectType<WidgetEditStart> = StateEffect.define<WidgetEditStart>({
+  map: (v, m) => ({ ...v, from: m.mapPos(v.from, 1) }),
 });
 export const setWidgetDraft: StateEffectType<unknown> = StateEffect.define<unknown>();
 export const setWidgetFocus: StateEffectType<number | null> = StateEffect.define<number | null>();
@@ -130,7 +144,7 @@ export const widgetEditField: StateField<WidgetEdit | null> = StateField.define<
       if (from !== v.from || gone !== v.gone) v = { ...v, from, gone };
     }
     for (const e of tr.effects) {
-      if (e.is(startWidgetEdit)) v = { from: e.value.from, draft: e.value.draft, gone: false, focus: null };
+      if (e.is(startWidgetEdit)) v = { from: e.value.from, draft: e.value.draft, base: e.value.draft, owner: e.value.owner ?? "", gone: false, focus: null };
       else if (e.is(endWidgetEdit)) v = null;
       else if (v && e.is(setWidgetDraft)) v = { ...v, draft: e.value };
       else if (v && e.is(setWidgetFocus) && v.focus !== e.value) v = { ...v, focus: e.value };
@@ -138,6 +152,18 @@ export const widgetEditField: StateField<WidgetEdit | null> = StateField.define<
     return v;
   },
 });
+
+/**
+ * 다시 붙는 위젯(편집기가 화면 밖으로 치웠다 다시 만든 것, 다시 그려진 미리보기)이 이어받을 것.
+ * 그 호스트가 시작한 수정이고(owner) 이 블록이며(here) 블록이 남아 있을 때만 — 나란히 보기에서 다른 호스트가 남의 수정을 열지 않게
+ */
+export function widgetResume(
+  edit: Pick<WidgetEdit, "draft" | "base" | "owner" | "gone" | "focus"> | null | undefined,
+  owner: string,
+  here: boolean,
+): { draft: unknown; base: unknown; focus: number | null } | null {
+  return edit && !edit.gone && edit.owner === owner && here ? { draft: edit.draft, base: edit.base, focus: edit.focus } : null;
+}
 
 /** 이 트랜잭션에서 gone 이 false → true 로 바뀌었는가 */
 export function widgetGoneNow(tr: Transaction): boolean {

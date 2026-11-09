@@ -11,14 +11,19 @@ import type { WidgetApi, WidgetContext } from "./types";
 export interface MountOptions {
   body: string;
   readOnly: boolean;
-  /** 다시 붙는 위젯이 이어받을 초안과 포커스 자리(편집기 필드에 남아 있던 것) */
-  resumeDraft?: unknown;
-  resumeFocus?: number | null;
+  /** 다시 붙는 위젯이 이어받을 초안·시작 상태·포커스 자리(편집기 필드에 남아 있던 것) */
+  resume?: Resume | null;
   /** 블록을 트랜잭션 하나로 다시 쓴다. 못 쓰면 false */
   write(state: unknown, version: number): boolean;
   edit: { start(draft: unknown): void; draft(draft: unknown): void; focus(index: number | null): void; end(): void };
   /** 있으면 머리에 「원문으로 편집」(Live Preview). 오류 블록을 누를 때도 쓴다 */
   onRaw?: () => void;
+}
+
+export interface Resume {
+  draft: unknown;
+  base: unknown;
+  focus: number | null;
 }
 
 export interface MountedWidget {
@@ -71,7 +76,7 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
   let live: Live | null = null;
   let dead = false;
 
-  const start = (resume: { draft: unknown; focus: number | null } | null) => {
+  const start = (resume: Resume | null) => {
     if (view.kind === "error") {
       errorBlock(el, body, t(view.key, view.vars), opts.onRaw);
       return;
@@ -112,16 +117,20 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
       const c = ctx();
       for (const cb of listeners) cb(c);
     };
+    // 세션 생성자가 이어받기를 거절하며 끝낼 때만 미룬다 — 위젯을 만드는 중(편집기 업데이트 안)이라 그 자리 dispatch 는 편집기가 막는다.
+    // 그 밖의 끝은 미루지 않는다: 미루면 적용(쓰기)으로 다시 그려진 다른 호스트의 위젯이 아직 지워지지 않은 수정 상태를 이어받는다
+    let constructing = true;
     const session = new WidgetSession(
-      { state: v.state, editable: v.editable, readOnly: opts.readOnly, resumeDraft: resume?.draft },
+      { state: v.state, editable: v.editable, readOnly: opts.readOnly, resumeDraft: resume?.draft, resumeBase: resume?.base },
       {
         write: (s) => opts.write(s, v.entry.def.version),
         startEdit: (d) => opts.edit.start(d),
         setDraft: (d) => opts.edit.draft(d),
-        endEdit: () => opts.edit.end(),
+        endEdit: () => (constructing ? queueMicrotask(() => opts.edit.end()) : opts.edit.end()),
         changed: () => fire(),
       },
     );
+    constructing = false;
     const api: WidgetApi = {
       setState: (p) => session.setState(p),
       requestEdit: () => session.requestEdit(),
@@ -205,7 +214,7 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
     live = null;
   };
 
-  start(opts.resumeDraft !== undefined ? { draft: opts.resumeDraft, focus: opts.resumeFocus ?? null } : null);
+  start(opts.resume ?? null);
 
   return {
     update(next) {
@@ -218,12 +227,12 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
         return;
       }
       // 다시 그린다. 수정 중이었고 같은 위젯이면(display 만 바뀜) 초안을 이어받고, 아니면 수정을 끝낸다
-      const was = live?.session.editing ? live.session.state : undefined;
+      const was: Resume | null = live?.session.editing ? { draft: live.session.state, base: live.session.editBase, focus: null } : null;
       const sameWidget = view.kind === "widget" && nextView.kind === "widget" && view.entry === nextView.entry;
       stopLive();
       view = nextView;
-      if (was !== undefined && !sameWidget) opts.edit.end();
-      start(was !== undefined && sameWidget ? { draft: was, focus: null } : null);
+      if (was && !sameWidget) opts.edit.end();
+      start(was && sameWidget ? was : null);
     },
     gone() {
       live?.session.gone();

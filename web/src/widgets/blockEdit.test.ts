@@ -16,6 +16,7 @@ import {
   widgetBlocks,
   widgetEditField,
   widgetGoneNow,
+  widgetResume,
 } from "./blockEdit";
 
 function state(doc: string, opts: { anchor?: number; readOnly?: boolean } = {}) {
@@ -212,7 +213,7 @@ describe("다시 쓰기", () => {
 
 describe("수정 중 위치 따라가기", () => {
   function editing(doc = DOC, from = doc.indexOf("```keyring")) {
-    const tr = apply(state(doc), { effects: startWidgetEdit.of({ from, draft: { n: 9 } }) });
+    const tr = apply(state(doc), { effects: startWidgetEdit.of({ from, draft: { n: 9 }, owner: "live" }) });
     return { tr, s: tr.state, from };
   }
 
@@ -220,7 +221,7 @@ describe("수정 중 위치 따라가기", () => {
     const { tr, s } = editing();
     expect(tr.docChanged).toBe(false);
     expect(outgoingChanges([tr], "k", "k")).toEqual([]);
-    expect(s.field(widgetEditField)).toEqual({ from: FROM, draft: { n: 9 }, gone: false, focus: null });
+    expect(s.field(widgetEditField)).toEqual({ from: FROM, draft: { n: 9 }, base: { n: 9 }, owner: "live", gone: false, focus: null });
   });
 
   it("초안·포커스·끝", () => {
@@ -228,7 +229,10 @@ describe("수정 중 위치 따라가기", () => {
     s = apply(s, { effects: setWidgetFocus.of(1) }).state;
     expect(s.field(widgetEditField)!.focus).toBe(1);
     s = apply(s, { effects: setWidgetDraft.of({ n: 10 }) }).state;
-    expect(s.field(widgetEditField)).toEqual({ from: FROM, draft: { n: 10 }, gone: false, focus: 1 });
+    // 시작 상태(base)·주인(owner)은 수정이 이어지는 동안 바뀌지 않는다 — 이어받는 위젯이 같은 기준으로 「바뀌었는가」를 본다
+    expect(s.field(widgetEditField)).toEqual({ from: FROM, draft: { n: 10 }, base: { n: 9 }, owner: "live", gone: false, focus: 1 });
+    s = apply(s, external({ changes: { from: 0, insert: "x" } })).state;
+    expect(s.field(widgetEditField)).toMatchObject({ base: { n: 9 }, owner: "live" });
     s = apply(s, { effects: endWidgetEdit.of(null) }).state;
     expect(s.field(widgetEditField)).toBeNull();
   });
@@ -327,5 +331,18 @@ describe("수정 중 위치 따라가기", () => {
     // 블록 뒤를 고친 문서 변경도 자리·gone 이 그대로면 같은 객체
     const tr3 = apply(s, external({ changes: { from: s.doc.length, insert: "끝" } }));
     expect(tr3.state.field(widgetEditField)).toBe(tr3.startState.field(widgetEditField));
+  });
+});
+
+describe("widgetResume — 다시 붙는 위젯이 이어받을 것", () => {
+  const edit = { from: 3, draft: { n: 2 }, base: { n: 1 }, owner: "live", gone: false, focus: 1 };
+  it("같은 호스트·같은 자리면 초안·시작 상태·포커스", () => {
+    expect(widgetResume(edit, "live", true)).toEqual({ draft: { n: 2 }, base: { n: 1 }, focus: 1 });
+  });
+  it("다른 호스트가 시작한 수정·다른 자리·사라진 블록·수정 없음은 이어받지 않는다", () => {
+    expect(widgetResume(edit, "preview", true)).toBeNull();
+    expect(widgetResume(edit, "live", false)).toBeNull();
+    expect(widgetResume({ ...edit, gone: true }, "live", true)).toBeNull();
+    expect(widgetResume(null, "live", true)).toBeNull();
   });
 });

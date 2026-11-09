@@ -8,8 +8,11 @@ import {
   startWidgetEdit,
   widgetBlockAt,
   widgetEditField,
+  widgetResume,
 } from "./blockEdit";
 import { mountKeyringWidget, type MountedWidget } from "./mount";
+
+const OWNER = "live";
 
 /** CodeMirror 가 다시 만든 위젯 객체(같은 DOM)에서 마운트를 찾는다 — updateDOM 이 DOM·세션·초안을 지키게 */
 const mounted = new WeakMap<HTMLElement, MountedWidget>();
@@ -33,13 +36,12 @@ export class KeyringBlockWidget extends WidgetType {
     dom.className = "cm-lp-block cm-lp-keyring-widget";
     const block = () => widgetBlockAt(view.state, view.posAtDOM(dom));
     const edit = view.state.field(widgetEditField, false);
-    // 편집기가 화면 밖으로 치웠다 다시 만든 위젯도 수정 중 초안·포커스를 이어받는다
-    const resume = edit && !edit.gone && edit.from === this.from ? edit : null;
+    // 편집기가 화면 밖으로 치웠다 다시 만든 위젯도 수정 중 초안·시작 상태·포커스를 이어받는다. 미리보기가 시작한 수정은 이어받지 않는다
+    const resume = widgetResume(edit, OWNER, edit?.from === this.from);
     const m = mountKeyringWidget(dom, {
       body: this.body,
       readOnly: view.state.readOnly,
-      resumeDraft: resume ? resume.draft : undefined,
-      resumeFocus: resume ? resume.focus : null,
+      resume,
       write: (state, version) => {
         const b = block();
         const next = b && nextWidgetBody(b.body, state, version);
@@ -51,15 +53,22 @@ export class KeyringBlockWidget extends WidgetType {
       edit: {
         start: (draft) => {
           const b = block();
-          if (b) view.dispatch({ effects: startWidgetEdit.of({ from: b.from, draft }) });
+          if (b) view.dispatch({ effects: startWidgetEdit.of({ from: b.from, draft, owner: OWNER }) });
         },
         draft: (draft) => view.dispatch({ effects: setWidgetDraft.of(draft) }),
         focus: (i) => view.dispatch({ effects: setWidgetFocus.of(i) }),
-        // 끝은 미룬다: 위젯을 만드는 중(편집기 업데이트 안)에 세션이 끝낼 수 있어 그 자리 dispatch 는 편집기가 막는다
-        end: () =>
-          queueMicrotask(() => {
+        // 끝은 곧바로 — 미루면 적용(쓰기)으로 다시 그려진 미리보기 위젯이 아직 지워지지 않은 수정을 본다.
+        // 편집기 업데이트 안(updateDOM 의 다시 그리기)에서 불리면 편집기가 dispatch 를 막으므로 그때만 미룬다
+        end: () => {
+          const close = () => {
             if (view.state.field(widgetEditField, false)) view.dispatch({ effects: endWidgetEdit.of(null) });
-          }),
+          };
+          try {
+            close();
+          } catch {
+            queueMicrotask(close);
+          }
+        },
       },
       onRaw: () => {
         const b = block();

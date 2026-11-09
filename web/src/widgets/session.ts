@@ -29,7 +29,7 @@ export class WidgetSession {
   private readonly readOnly: boolean;
 
   constructor(
-    init: { state: unknown; editable: boolean; readOnly: boolean; resumeDraft?: unknown },
+    init: { state: unknown; editable: boolean; readOnly: boolean; resumeDraft?: unknown; resumeBase?: unknown },
     private readonly host: SessionHost,
   ) {
     this.base = init.state;
@@ -39,7 +39,8 @@ export class WidgetSession {
     if (init.resumeDraft !== undefined && this.canChange()) {
       this.isEditing = true;
       this.draft = init.resumeDraft;
-      this.editStart = init.state;
+      // 시작 상태는 처음 수정을 시작한 때의 것(편집기 필드의 base). 없으면 지금 상태로 본다
+      this.editStart = init.resumeBase !== undefined ? init.resumeBase : init.state;
     } else if (init.resumeDraft !== undefined) {
       // 고칠 수 없게 된 블록(editable false·읽기 전용)은 이어받지 않는다 — 필드에 수정 상태가 남으면 원문으로 고칠 길이 막힌다
       this.host.endEdit();
@@ -52,6 +53,11 @@ export class WidgetSession {
 
   get editing(): boolean {
     return this.isEditing;
+  }
+
+  /** 수정을 시작한 때 상태(수정 중이 아니면 undefined) — 다시 그릴 때 새 세션에 넘긴다 */
+  get editBase(): unknown {
+    return this.isEditing ? this.editStart : undefined;
   }
 
   /** 블록의 editable(바깥 변경을 따라간다) */
