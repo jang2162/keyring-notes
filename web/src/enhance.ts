@@ -3,7 +3,7 @@ import { blockText, section } from "@keyring-notes/core";
 import { api } from "./api";
 import { renderMarkdown, SAFE_URI, splitFrontmatter, type LinkResolver } from "./markdown";
 import { t } from "./i18n";
-import { highlightPieces, paintCode, type Piece } from "./codeHighlight";
+import { paintCode, pieceCache } from "./codeHighlight";
 
 /**
  * 미리보기를 그린 뒤 채우는 것들: 수식(KaTeX), 다이어그램(Mermaid), 문서 임베드(![[문서]]).
@@ -25,9 +25,7 @@ let katexMod: typeof import("./render/katex") | null = null;
 let katexLoading: Promise<typeof import("./render/katex")> | null = null;
 const mermaidCache = new Map<string, string>();
 const embedCache = new Map<string, Promise<string>>();
-/** 칠한 코드 조각(언어 + 원문 → 조각). 입력마다 미리보기가 다시 그려져도 깜빡이지 않게 바로 칠한다. 오래된 것부터 버린다 */
-const codeCache = new Map<string, Piece[] | null>();
-const CODE_CACHE_MAX = 300;
+const codeCache = pieceCache(300);
 
 function paintCodes(root: HTMLElement, alive: () => boolean) {
   for (const el of root.querySelectorAll<HTMLElement>("pre > code[class*='language-']:not([data-done])")) {
@@ -36,18 +34,19 @@ function paintCodes(root: HTMLElement, alive: () => boolean) {
     if (!lang) continue;
     el.dataset.done = "1";
     const code = el.textContent ?? "";
-    const key = `${lang}\u0000${code}`;
-    const cached = codeCache.get(key);
+    const cached = codeCache.peek(code, lang);
     if (cached !== undefined) {
       if (cached) paintCode(el, cached);
       continue;
     }
-    void highlightPieces(code, lang).then((pieces) => {
-      if (codeCache.size >= CODE_CACHE_MAX) codeCache.delete(codeCache.keys().next().value!);
-      codeCache.set(key, pieces);
-      // 늦게 끝났을 때 그 자리 글이 바뀌었으면 칠하지 않는다(모르는 언어·실패면 글자 그대로)
-      if (pieces && alive() && el.textContent === code) paintCode(el, pieces);
-    });
+    void codeCache.load(code, lang).then(
+      (pieces) => {
+        // 늦게 끝났을 때 그 자리 글이 바뀌었으면 칠하지 않는다(모르는 언어면 글자 그대로)
+        if (pieces && alive() && el.textContent === code) paintCode(el, pieces);
+      },
+      // 파서를 불러오지 못하면(오프라인) 글자 그대로 둔다. 기억하지 않으므로 다음에 그릴 때 다시 시도한다
+      () => {},
+    );
   }
 }
 
