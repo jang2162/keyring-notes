@@ -18,6 +18,9 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | property | 속성 | One frontmatter field |
 | wikilink | 위키링크 | A link like `[[Note]]` |
 | embed | 임베드 | `![[…]]`, content shown inline |
+| horizontal rule | 구분선 | A `---`, `***` or `___` line |
+| quote | 인용문 | A block of lines starting with `>` (not a citation) |
+| code block | 코드 블록 | Code between fence lines (```` ``` ````) or indented by four spaces |
 | backlink | 백링크 | A link to this note from another note |
 | unlinked mention | 연결되지 않은 언급 | This note's name in another note, without a link |
 | source | 출처 | A note listed in the frontmatter `sources` |

@@ -3,6 +3,7 @@ import { blockText, section } from "@keyring-notes/core";
 import { api } from "./api";
 import { renderMarkdown, SAFE_URI, splitFrontmatter, type LinkResolver } from "./markdown";
 import { t } from "./i18n";
+import { paintCode, pieceCache } from "./codeHighlight";
 
 /**
  * 미리보기를 그린 뒤 채우는 것들: 수식(KaTeX), 다이어그램(Mermaid), 문서 임베드(![[문서]]).
@@ -24,6 +25,30 @@ let katexMod: typeof import("./render/katex") | null = null;
 let katexLoading: Promise<typeof import("./render/katex")> | null = null;
 const mermaidCache = new Map<string, string>();
 const embedCache = new Map<string, Promise<string>>();
+const codeCache = pieceCache(300);
+
+function paintCodes(root: HTMLElement, alive: () => boolean) {
+  for (const el of root.querySelectorAll<HTMLElement>("pre > code[class*='language-']:not([data-done])")) {
+    if (el.closest(".mermaid-slot")) continue;
+    const lang = /(?:^|\s)language-(\S+)/.exec(el.className)?.[1];
+    if (!lang) continue;
+    el.dataset.done = "1";
+    const code = el.textContent ?? "";
+    const cached = codeCache.peek(code, lang);
+    if (cached !== undefined) {
+      if (cached) paintCode(el, cached);
+      continue;
+    }
+    void codeCache.load(code, lang).then(
+      (pieces) => {
+        // 늦게 끝났을 때 그 자리 글이 바뀌었으면 칠하지 않는다(모르는 언어면 글자 그대로)
+        if (pieces && alive() && el.textContent === code) paintCode(el, pieces);
+      },
+      // 파서를 불러오지 못하면(오프라인) 글자 그대로 둔다. 기억하지 않으므로 다음에 그릴 때 다시 시도한다
+      () => {},
+    );
+  }
+}
 
 /** 볼트가 바뀌면 임베드한 문서 내용을 다시 읽게 한다. */
 export function invalidateEmbeds() {
@@ -116,7 +141,7 @@ async function fillEmbed(el: HTMLElement, ctx: EnhanceContext, alive: () => bool
 }
 
 /**
- * root 안의 자리(.math, .mermaid-slot, .note-embed)를 채운다. 돌려준 함수를 부르면 늦게 끝난 작업이 더는 손대지 않는다.
+ * root 안의 자리(.math, .mermaid-slot, .note-embed)를 채우고 코드 블록(pre > code.language-*)을 언어별로 칠한다. 돌려준 함수를 부르면 늦게 끝난 작업이 더는 손대지 않는다.
  */
 export function enhance(root: HTMLElement, ctx: EnhanceContext, parentAlive?: () => boolean): () => void {
   let live = true;
@@ -161,6 +186,8 @@ export function enhance(root: HTMLElement, ctx: EnhanceContext, parentAlive?: ()
   for (const el of root.querySelectorAll<HTMLElement>(".note-embed[data-embed]:not([data-done])")) {
     void fillEmbed(el, ctx, alive);
   }
+
+  paintCodes(root, alive);
 
   return () => {
     live = false;

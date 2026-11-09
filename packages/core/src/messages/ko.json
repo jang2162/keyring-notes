@@ -338,6 +338,8 @@
   "cmd.wide": "넓게 보기",
   "cmd.wsAll": "모든 워크스페이스",
   "cmd.wsOnlyOne": "지금 워크스페이스만",
+  "code.copied": "복사함",
+  "code.copy": "복사",
   "common.cancel": "취소",
   "common.change": "바꾸기",
   "common.close": "닫기",

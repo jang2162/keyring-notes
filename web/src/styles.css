@@ -167,6 +167,41 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .markdown-body .wikilink.unresolved { color: var(--muted); }
 .markdown-body pre.frontmatter { font-size: 12px; color: var(--muted); border-left: 3px solid var(--accent); }
 
+/* ── 코드 구문 색: 편집 화면(syntaxHighlighting(classHighlighter))과 미리보기(codeHighlight.ts)가 같은 tok-* 클래스를 쓴다 ── */
+:root {
+  --tok-keyword: #8250df; --tok-string: #0a3069; --tok-string2: #116329; --tok-number: #0550ae;
+  --tok-comment: #6e7781; --tok-def: #6639ba; --tok-type: #953800; --tok-prop: #0550ae;
+  --tok-meta: #57606a; --tok-deleted: #82071e; --tok-invalid: #cf222e;
+}
+:root[data-theme="dark"] {
+  --tok-keyword: #ff7b72; --tok-string: #a5d6ff; --tok-string2: #7ee787; --tok-number: #79c0ff;
+  --tok-comment: #8b949e; --tok-def: #d2a8ff; --tok-type: #ffa657; --tok-prop: #79c0ff;
+  --tok-meta: #8b949e; --tok-deleted: #ffa198; --tok-invalid: #ff7b72;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --tok-keyword: #ff7b72; --tok-string: #a5d6ff; --tok-string2: #7ee787; --tok-number: #79c0ff;
+  --tok-comment: #8b949e; --tok-def: #d2a8ff; --tok-type: #ffa657; --tok-prop: #79c0ff;
+  --tok-meta: #8b949e; --tok-deleted: #ffa198; --tok-invalid: #ff7b72;
+  }
+}
+.tok-keyword, .tok-macroName { color: var(--tok-keyword); }
+.tok-string, .tok-inserted { color: var(--tok-string); }
+.tok-string2, .tok-literal { color: var(--tok-string2); }
+.tok-number, .tok-atom, .tok-bool, .tok-labelName { color: var(--tok-number); }
+.tok-comment { color: var(--tok-comment); font-style: italic; }
+.tok-definition, .tok-variableName2 { color: var(--tok-def); }
+.tok-typeName, .tok-className, .tok-namespace { color: var(--tok-type); }
+.tok-propertyName { color: var(--tok-prop); }
+.tok-meta { color: var(--tok-meta); }
+.tok-deleted { color: var(--tok-deleted); }
+.tok-invalid { color: var(--tok-invalid); }
+.tok-emphasis { font-style: italic; }
+.tok-strong { font-weight: 700; }
+.tok-link { text-decoration: underline; }
+/* Live Preview 는 링크 글자에 점선 밑줄(.cm-lp-link)을 따로 긋는다 — 안쪽 실선까지 두 줄이 되지 않게 */
+.cm-lp-link .tok-link { text-decoration: none; }
+
 /* ── 미리보기: 할 일, 백링크 ── */
 .preview-pane { padding: 0 0 48px; }
 .markdown-body li.task-item { list-style: none; margin-left: -1.3em; }

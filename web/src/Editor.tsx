@@ -1,10 +1,8 @@
 import { autocompletion, completionKeymap, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { languages } from "@codemirror/language-data";
 import {
   codeFolding,
-  defaultHighlightStyle,
   ensureSyntaxTree,
   foldable,
   foldAll,
@@ -20,11 +18,12 @@ import {
   unfoldCode,
   unfoldEffect,
 } from "@codemirror/language";
-import { tags } from "@lezer/highlight";
+import { classHighlighter, tags } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef, type MutableRefObject } from "react";
+import { findLanguage } from "./codeLanguages";
 import { findBar, findKeymap } from "./findBar";
 import { bodyStart, codeFont, frontmatterFold, livePreview } from "./livePreview";
 import type { LiveRenderContext } from "./liveBlocks";
@@ -252,6 +251,8 @@ const headingStyle = HighlightStyle.define([
   { tag: tags.link, color: "var(--accent)" },
   { tag: tags.url, color: "var(--muted)" },
   { tag: tags.processingInstruction, color: "var(--muted)" },
+  // classHighlighter 에는 취소선 클래스가 없다
+  { tag: tags.strikethrough, textDecoration: "line-through" },
 ]);
 
 /** `[[` 또는 `![[` 뒤에서 문서·첨부 이름을 제안하고, 고르면 `]]`까지 닫아 준다. */
@@ -354,9 +355,10 @@ export function Editor({
           highlightSelectionMatches(),
           findBar(),
           syntaxHighlighting(headingStyle),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          // 코드 블록 언어별 색은 미리보기와 같은 tok-* 클래스로(색은 styles.css 의 테마 토큰)
+          syntaxHighlighting(classHighlighter),
           foldSlot.current.of(foldRef.current ? frontmatterFold(showProps) : []),
-          markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [{ props: [codeFoldProp] }] }),
+          markdown({ base: markdownLanguage, codeLanguages: findLanguage, extensions: [{ props: [codeFoldProp] }] }),
           codeFolding({ placeholderText: "…" }),
           foldMarkers,
           autocompletion({ override: [wikilinkSource(() => callbacks.current.linkCandidates())], icons: false }),

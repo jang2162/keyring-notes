@@ -21,8 +21,12 @@ Only when the same line was changed differently are you asked to **Save my chang
 Live Preview is on by default. Turn it off from the status bar or in Settings → **Editor**.
 
 - Lines without the cursor hide Markdown markup (`#`, `**`, `~~`, `==`, backticks, `[text](url)`, `[[target|alias]]`) and show only the formatting.
-- Embeds, callouts, math, Mermaid diagrams and footnotes are drawn as in the preview. Comments `%%…%%` and block IDs `^id` are hidden.
-- Move the cursor to a line, or click a drawn block, to see its source. Code blocks and tables are shown as source.
+- Horizontal rules, quotes, bullets and to-dos are drawn. `---` becomes a line, `>` becomes a bar on the left, `-`, `*` and `+` become a dot, and `- [ ]` becomes a checkbox.
+- Click a checkbox to check or uncheck the to-do. The cursor stays where it was. In a read-only note the checkbox can't be clicked.
+- Code blocks hide their fence lines and show the language and a **Copy** button. **Copy** copies only the code inside. The code stays as text, so you edit it in place. Move the cursor into the block to see the fences.
+- Code is colored by language, with the same colors in the editor and the preview. Short names such as ` ```py `, ` ```sh `, and ` ```yml ` work too.
+- Embeds, callouts, math, Mermaid diagrams, footnotes, images between words (`![text](url)`) and HTML blocks are drawn as in the preview. Comments `%%…%%` and block IDs `^id` are hidden.
+- Move the cursor to a line, or click a drawn block, to see its source. Tables are shown as source.
 - Leading frontmatter folds into one line, "N properties — see the right panel · Show source".
 
 `Ctrl/Cmd+E` switches between editing and preview. The supported syntax is listed in [Reference](../reference.md#markdown-syntax).

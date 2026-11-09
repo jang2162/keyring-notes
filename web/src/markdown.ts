@@ -92,6 +92,11 @@ function joinRelative(base: string, rel: string): string {
   return out.join("/");
 }
 
+/** 문서(docPath) 기준 상대 경로를 볼트 경로로 */
+export function vaultRelative(docPath: string, rel: string): string {
+  return joinRelative(dirname(docPath), rel);
+}
+
 interface WikiMeta {
   target: string;
   heading?: string;
@@ -267,7 +272,7 @@ md.renderer.rules.image = (tokens, idx, opts, env, self) => {
     } catch {
       /* 잘못된 퍼센트 인코딩은 그대로 둔다 */
     }
-    const rel = joinRelative(dirname(docPath), decoded);
+    const rel = vaultRelative(docPath, decoded);
     token.attrSet("src", api.rawUrl(resolver.resolve(rel, docPath) ?? rel));
   }
   return defaultImage(tokens, idx, opts, env, self);
