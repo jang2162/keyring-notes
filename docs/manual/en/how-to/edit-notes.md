@@ -24,7 +24,7 @@ Live Preview is on by default. Turn it off from the status bar or in Settings �
 - Horizontal rules, quotes, bullets and to-dos are drawn. `---` becomes a line, `>` becomes a bar on the left, `-`, `*` and `+` become a dot, and `- [ ]` becomes a checkbox.
 - Click a checkbox to check or uncheck the to-do. The cursor stays where it was. In a read-only note the checkbox can't be clicked.
 - Code blocks hide their fence lines and show the language and a **Copy** button. **Copy** copies only the code inside. The code stays as text, so you edit it in place. Move the cursor into the block to see the fences.
-- Code is colored by language, with the same colors in the editor and the preview.
+- Code is colored by language, with the same colors in the editor and the preview. Short names such as ` ```py `, ` ```sh `, and ` ```yml ` work too.
 - Embeds, callouts, math, Mermaid diagrams, footnotes, images between words (`![text](url)`) and HTML blocks are drawn as in the preview. Comments `%%…%%` and block IDs `^id` are hidden.
 - Move the cursor to a line, or click a drawn block, to see its source. Tables are shown as source.
 - Leading frontmatter folds into one line, "N properties — see the right panel · Show source".

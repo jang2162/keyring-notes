@@ -15,7 +15,7 @@ describe("코드 블록 언어별 조각", () => {
   });
 
   it("언어 별칭과 대소문자도 찾는다", async () => {
-    for (const lang of ["js", "typescript", "JavaScript", "Python"]) {
+    for (const lang of ["js", "typescript", "JavaScript", "Python", "py", "sh", "yml"]) {
       const pieces = await highlightPieces("x = 1", lang);
       expect(pieces, lang).not.toBeNull();
       expect(join(pieces!)).toBe("x = 1");
@@ -25,6 +25,7 @@ describe("코드 블록 언어별 조각", () => {
   it("모르는 언어는 null, 빈 글은 빈 배열", async () => {
     expect(await highlightPieces("x", "없는언어")).toBeNull();
     expect(await highlightPieces("x", "")).toBeNull();
+    expect(await highlightPieces("x", "text")).toBeNull();
     expect(await highlightPieces("", "ts")).toEqual([]);
   });
 

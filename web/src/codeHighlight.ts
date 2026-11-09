@@ -1,6 +1,5 @@
-import { LanguageDescription } from "@codemirror/language";
-import { languages } from "@codemirror/language-data";
 import { classHighlighter, highlightCode } from "@lezer/highlight";
+import { findLanguage } from "./codeLanguages";
 
 /**
  * 미리보기 코드 블록을 편집 화면과 같은 lezer 파서·같은 tok-* 클래스로 칠한다(색은 styles.css 의 tok-* 규칙).
@@ -13,7 +12,7 @@ export interface Piece {
 
 /** 코드 글을 lezer 파서로 나눈 조각. 언어를 모르면 null, 파서 청크를 불러오지 못하면(오프라인 등) 실패로 끝난다 — 실패는 다시 시도할 수 있어야 해서 null 과 가른다 */
 export async function highlightPieces(code: string, lang: string): Promise<Piece[] | null> {
-  const desc = LanguageDescription.matchLanguageName(languages, lang.trim(), true);
+  const desc = findLanguage(lang);
   if (!desc) return null;
   const support = await desc.load();
   const out: Piece[] = [];
