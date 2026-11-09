@@ -51,14 +51,20 @@ class HrWidget extends WidgetType {
   }
 }
 
+/** 뎁스마다 되풀이하는 글머리 점. 미리보기(styles.css 「목록」)의 list-style-type 과 같은 글자다 */
+export const BULLETS = ["•", "◦", "▪"];
+
 class BulletWidget extends WidgetType {
-  eq() {
-    return true;
+  constructor(readonly depth: number) {
+    super();
+  }
+  eq(o: BulletWidget) {
+    return o.depth === this.depth;
   }
   toDOM() {
     const el = document.createElement("span");
     el.className = "cm-lp-bullet";
-    el.textContent = "•";
+    el.textContent = BULLETS[(this.depth - 1) % BULLETS.length];
     return el;
   }
   ignoreEvent() {
@@ -153,7 +159,12 @@ const codeTail = Decoration.replace({ widget: new CodeTailWidget() });
 const codeBlockLine = Decoration.line({ class: "cm-lp-codeblock" });
 const codeHeadLine = Decoration.line({ class: "cm-lp-codeblock cm-lp-codehead" });
 const codeTailLine = Decoration.line({ class: "cm-lp-codeblock cm-lp-codetail" });
-const bulletWidget = Decoration.replace({ widget: new BulletWidget() });
+const bulletWidgets = BULLETS.map((_, i) => Decoration.replace({ widget: new BulletWidget(i + 1) }));
+/** 목록 줄: 뎁스만큼 들여 쓰고 줄바꿈된 줄은 글 시작에 맞춘다(hanging indent). 너비는 theme 의 --li-indent 칸 */
+const listLine = (depth: number) => Decoration.line({ class: "cm-lp-li", attributes: { style: `--li-depth: ${depth}` } });
+const listIndent = (cols: number) => Decoration.mark({ class: "cm-lp-li-indent", attributes: { style: `--li-cols: ${cols}` } });
+// inclusive: 칸 끝에 걸친 글머리 위젯, 칸 전체를 바꾸는 체크박스 위젯도 칸 안에 그린다(없으면 위젯이 칸 밖으로 빠진다)
+const listMark = Decoration.mark({ class: "cm-lp-li-mark", inclusive: true });
 const quoteLine = (depth: number) => Decoration.line({ class: "cm-lp-quote", attributes: { style: `--quote-depth: ${depth}` } });
 
 interface Item {
@@ -227,8 +238,14 @@ function build(view: EditorView): DecorationSet {
     for (const m of syntaxMarks(state, from, to, active)) {
       if (m.kind === "hide") items.push({ from: m.from, to: m.to, deco: hide });
       else if (m.kind === "hr") items.push({ from: m.from, to: m.to, deco: hrWidget, replace: true });
-      else if (m.kind === "bullet") items.push({ from: m.from, to: m.to, deco: bulletWidget, replace: true });
-      else if (m.kind === "task")
+      else if (m.kind === "bullet") items.push({ from: m.from, to: m.to, deco: bulletWidgets[(m.depth - 1) % bulletWidgets.length], replace: true });
+      else if (m.kind === "listLine" || m.kind === "listCont") {
+        const at = state.doc.line(m.line).from;
+        items.push({ from: at, to: at, deco: listLine(m.depth) });
+        // 공백은 숨기지 않고 정해진 너비의 칸에 담는다 — 커서가 있는 줄에서도 원문을 그 자리에서 고칠 수 있게
+        if (m.indentTo > m.indentFrom) items.push({ from: m.indentFrom, to: m.indentTo, deco: listIndent(m.kind === "listLine" ? m.depth - 1 : 0) });
+        if (m.kind === "listLine" && m.markTo > m.indentTo) items.push({ from: m.indentTo, to: m.markTo, deco: listMark });
+      } else if (m.kind === "task")
         items.push({ from: m.from, to: m.to, deco: Decoration.replace({ widget: new TaskWidget(m.done, state.readOnly) }), replace: true });
       else if (m.kind === "quoteLine") {
         const at = state.doc.line(m.line).from;
@@ -307,7 +324,19 @@ const theme = EditorView.baseTheme({
   ".cm-lp-mark": { backgroundColor: "var(--mark-bg)", color: "var(--mark-fg)", borderRadius: "3px" },
   ".cm-lp-link": { color: "var(--accent)", textDecoration: "underline", textDecorationStyle: "dashed", textUnderlineOffset: "3px" },
   ".cm-lp-hr": { display: "inline-block", width: "100%", verticalAlign: "middle", borderTop: "1px solid var(--border)", cursor: "text" },
-  ".cm-lp-bullet": { display: "inline-block", minWidth: "0.6em", textAlign: "center", color: "var(--muted)" },
+  ".cm-lp-bullet": { color: "var(--muted)" },
+  // 목록: 줄을 뎁스 × --li-indent 만큼 들이고 첫 줄만 그만큼 당긴다. 첫 줄은 [들여쓰기 칸][표시 칸] 다음에 글이 오므로
+  // 줄바꿈된 줄이 글 시작에 선다. 칸 너비는 미리보기 ul·ol 의 padding 과 같은 --li-indent(styles.css 「목록」)
+  ".cm-lp-li": {
+    paddingLeft: "calc(var(--li-depth) * var(--li-indent, 1.75em)) !important",
+    textIndent: "calc(var(--li-depth) * var(--li-indent, 1.75em) * -1)",
+  },
+  // overflow 를 숨기면 inline-block 의 기준선이 아래 끝으로 내려가 줄 높이가 달라진다 — 넘친 공백은 그냥 둔다
+  ".cm-lp-li-indent, .cm-lp-li-mark": { display: "inline-block", textIndent: "0", whiteSpace: "pre" },
+  ".cm-lp-li-indent": { width: "calc(var(--li-cols) * var(--li-indent, 1.75em))" },
+  // 표시는 칸 오른쪽에 붙인다(미리보기의 바깥 표시처럼). 커서가 있는 할 일 줄의 원문 "- [ ] " 처럼 칸보다 길면 칸이 늘어 그 줄 글만 밀린다.
+  // flex 로 오른쪽에 붙이면 넘친 것은 왼쪽으로 빠지지만, 공백만 든 글 조각("1." 뒤 " ")을 버려 번호와 글이 붙는다
+  ".cm-lp-li-mark": { minWidth: "var(--li-indent, 1.75em)", textAlign: "right" },
   ".cm-lp-task": { margin: "0 6px 0 0", verticalAlign: "-1px", cursor: "pointer" },
   ".cm-lp-task:disabled": { cursor: "default" },
   // 코드 상자: 고정폭·바탕은 codeFont 가 단다(.cm-code-line). 여기서는 머리·꼬리 줄 모양만

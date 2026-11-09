@@ -21,7 +21,8 @@ Only when the same line was changed differently are you asked to **Save my chang
 Live Preview is on by default. Turn it off from the status bar or in Settings → **Editor**.
 
 - Lines without the cursor hide Markdown markup (`#`, `**`, `~~`, `==`, backticks, `[text](url)`, `[[target|alias]]`) and show only the formatting.
-- Horizontal rules, quotes, bullets and to-dos are drawn. `---` becomes a line, `>` becomes a bar on the left, `-`, `*` and `+` become a dot, and `- [ ]` becomes a checkbox.
+- Horizontal rules, quotes, bullets and to-dos are drawn. `---` becomes a line, `>` becomes a bar on the left, `-`, `*` and `+` become a dot, and `- [ ]` becomes a checkbox. The dot changes with the nesting level (•, ◦, ▪, then again).
+- Each list level is indented by the same step as in the preview, and a long item wraps to line up with its text, not with the dot.
 - Click a checkbox to check or uncheck the to-do. The cursor stays where it was. In a read-only note the checkbox can't be clicked.
 - Code blocks hide their fence lines and show the language and a **Copy** button. **Copy** copies only the code inside. The code stays as text, so you edit it in place. Move the cursor into the block to see the fences.
 - Code is colored by language, with the same colors in the editor and the preview. Short names such as ` ```py `, ` ```sh `, and ` ```yml ` work too.
