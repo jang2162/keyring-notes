@@ -221,7 +221,7 @@ describe("widgetFileRefs", () => {
     expect(widgetFileRefs("---\nx: |\n  ```keyring-widget\n  " + blk("x/a.json") + "\n  ```\n---\n본문\n")).toEqual([]);
   });
   it("JSON 이스케이프로 쓴 경로는 풀린 값", () => {
-    const body = String.raw`{"widget": "a/b@1", "state": {"file": "스케치.excalidraw.json"}}`;
+    const body = String.raw`{"widget": "a/b@1", "state": {"file": "\uc2a4\ucf00\uce58.excalidraw.json"}}`;
     expect(widgetFileRefs("```keyring-widget\n" + body + "\n```\n")).toEqual(["스케치.excalidraw.json"]);
   });
 });
@@ -237,7 +237,7 @@ describe("rewriteWidgetFileRefs", () => {
     });
   });
   it("이스케이프로 쓴 같은 값도 바꾼다", () => {
-    const body = String.raw`{"widget": "a/b@1", "state": {"file": "x/a.excalidraw.json"}}`;
+    const body = String.raw`{"widget": "a/b@1", "state": {"file": "x/\u0061.excalidraw.json"}}`;
     expect(rewriteWidgetFileRefs(body, FROM, TO)).toEqual({ body: '{"widget": "a/b@1", "state": {"file": "y/b c.excalidraw.json"}}', count: 1 });
   });
   it("state.file 이 from 이 아니면 모르는 키에 있어도 null", () => {

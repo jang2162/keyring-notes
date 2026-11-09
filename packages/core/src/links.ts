@@ -1,5 +1,6 @@
 import { parseFrontmatter, resolveLink } from "./markdown.js";
 import { dailyOfPath, type DailyLookup } from "./daily.js";
+import { KEYRING_WIDGET_LANG, parseWidgetBlock, rewriteWidgetFileRefs, widgetDataPath } from "./keyringWidget.js";
 
 /**
  * 이름 바꾸기·이동 때 다른 문서의 링크를 고친다(서버 Vault.batch와 앱 LocalVault가 같이 쓴다).
@@ -12,7 +13,8 @@ import { dailyOfPath, type DailyLookup } from "./daily.js";
  * 둘 다 고쳐진다. R0가 없거나(원래 깨진 링크) 기대 대상이 이동 후에 없으면(같은 일괄 쓰기에서 삭제) 그대로 둔다.
  *
  * 고치는 곳: 본문 위키링크 `[[…]]`·`![[…]]`, 프런트매터 sources/source의 `[[…]]`와 경로 값,
- * 상대 경로 마크다운 링크·이미지 `[x](../a.md)`. 펜스 코드 블록과 인라인 코드 안은 건드리지 않는다.
+ * 상대 경로 마크다운 링크·이미지 `[x](../a.md)`, ```keyring-widget 블록의 state.file(데이터 파일 — 볼트 기준 경로).
+ * 그 밖의 펜스 코드 블록과 인라인 코드 안은 건드리지 않는다.
  */
 export interface LinkRewriteContext {
   /** 이동: 원래 경로 → 새 경로(같은 일괄 쓰기 안의 연쇄 이동은 합쳐서) */
@@ -189,7 +191,8 @@ export function rewriteLinks(content: string, oldPath: string, newPath: string, 
         if (daily) names.add(daily.datePart.toLowerCase());
       }
     }
-    if (![...names].some((n) => n && lower.includes(n))) return null;
+    // 위젯 블록의 state.file 은 JSON 이스케이프로 쓸 수 있어 이름으로 거르지 못한다
+    if (!lower.includes(KEYRING_WIDGET_LANG) && ![...names].some((n) => n && lower.includes(n))) return null;
   }
   const rw = new Rewriter(ctx, oldPath, newPath);
   const lines = content.split("\n");
@@ -225,14 +228,22 @@ export function rewriteLinks(content: string, oldPath: string, newPath: string, 
     const item = /^(\s*-\s+)(.*)$/.exec(line);
     if (item) lines[i] = item[1] + rw.sourceValue(item[2]);
   }
-  // 본문: 펜스 코드 블록 밖, 인라인 코드 밖
+  // 본문: 펜스 코드 블록 밖, 인라인 코드 밖. keyring-widget 펜스는 닫힐 때 state.file 만 본다
   let fence: string | null = null;
+  let widget: { start: number; indent: number } | null = null;
   for (let i = Math.max(fm.lines, 0); i < lines.length; i++) {
     const line = lines[i];
     const f = FENCE_RE.exec(line);
     if (f) {
-      if (fence === null) fence = f[1][0].repeat(f[1].length);
-      else if (f[1].startsWith(fence)) fence = null;
+      if (fence === null) {
+        fence = f[1][0].repeat(f[1].length);
+        const info = line.slice(f[0].length).trim().split(/\s+/)[0];
+        widget = info === KEYRING_WIDGET_LANG ? { start: i + 1, indent: f[0].length - f[1].length } : null;
+      } else if (f[1].startsWith(fence)) {
+        if (widget) rewriteWidgetFence(lines, widget.start, i, widget.indent, ctx, rw);
+        fence = null;
+        widget = null;
+      }
       continue;
     }
     if (fence !== null) continue;
@@ -240,6 +251,34 @@ export function rewriteLinks(content: string, oldPath: string, newPath: string, 
   }
   if (rw.count === 0) return null;
   return { content: lines.join("\n"), count: rw.count };
+}
+
+/**
+ * lines[start, end) 가 keyring-widget 펜스 본문. state.file 이 이동 전에 있던 파일이고 기대 대상이 다르며 이동 후에 있으면
+ * 그 문자열만 고친다(rewriteWidgetFileRefs — 본문을 다시 직렬화하지 않는다). 경로는 볼트 기준이라 문서 위치와 무관하다.
+ * 여는 펜스의 들여쓰기만큼 걷은 앞 공백은 줄마다 그대로 되돌린다(고치는 글에는 줄바꿈이 들지 않는다).
+ */
+function rewriteWidgetFence(lines: string[], start: number, end: number, indent: number, ctx: LinkRewriteContext, rw: Rewriter): void {
+  const strip = new RegExp(`^ {0,${indent}}`);
+  const prefixes: string[] = [];
+  const body: string[] = [];
+  for (let j = start; j < end; j++) {
+    const raw = lines[j];
+    const pre = strip.exec(raw)![0];
+    prefixes.push(pre);
+    body.push(raw.slice(pre.length));
+  }
+  const text = body.join("\n");
+  const parsed = parseWidgetBlock(text);
+  if (!parsed.ok) return;
+  const r0 = widgetDataPath(parsed.block.state);
+  if (r0 === null || !ctx.before.includes(r0)) return;
+  const expected = ctx.moves.get(r0) ?? r0;
+  if (expected === r0 || !ctx.after.includes(expected)) return;
+  const next = rewriteWidgetFileRefs(text, r0, expected);
+  if (!next) return;
+  next.body.split("\n").forEach((l, k) => (lines[start + k] = prefixes[k] + l));
+  rw.count += next.count;
 }
 
 /** YAML 흐름 목록 안의 항목을 쉼표로 나눈다(따옴표·[[ ]] 안의 쉼표는 나누지 않는다) */

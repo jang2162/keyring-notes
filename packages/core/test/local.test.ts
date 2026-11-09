@@ -201,6 +201,16 @@ describe("공통 설정·노드 이동", () => {
     expect(v.graph().nodes.map((n) => n.id)).not.toContain("keyring-settings.md");
   });
 
+  it("첨부 이동: keyring-widget 블록의 state.file 이 새 경로로, 첨부 백링크에 그 노트", async () => {
+    const blk = (f: string) => `# 그림\n\n\`\`\`keyring-widget\n{"widget": "keyring/excalidraw@1", "state": {"file": "${f}"}}\n\`\`\`\n`;
+    const { v, store } = await vault({ "회의록.md": blk("그림/스케치-3f9a.excalidraw.json") });
+    store.touch("그림/스케치-3f9a.excalidraw.json", "{}");
+    await v.rescan();
+    await v.move("그림/스케치-3f9a.excalidraw.json", "보관/스케치.excalidraw.json", await sha256Hex(utf8("{}")));
+    expect(unstamped((await v.read("회의록.md")).content)).toBe(blk("보관/스케치.excalidraw.json"));
+    expect(v.backlinks("보관/스케치.excalidraw.json").map((b) => b.path)).toEqual(["회의록.md"]);
+  });
+
   it("노드 이동: 노트와 하위(문서·첨부)를 한 기록으로, 링크(첨부 임베드·상대 경로) 갱신", async () => {
     const { v, store } = await vault({
       "업무/프로젝트.md": "# 프로젝트 소개 [[계획]]",

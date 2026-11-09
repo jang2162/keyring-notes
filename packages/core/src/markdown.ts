@@ -1,6 +1,7 @@
 import { parse as parseYaml } from "yaml";
 import { PathError } from "./errors.js";
 import { dailyLinkDate, dailyNotesOn, type DailyLookup } from "./daily.js";
+import { widgetFileRefs } from "./keyringWidget.js";
 
 export interface Heading {
   level: number;
@@ -460,7 +461,8 @@ export function analyze(relPath: string, content: string): Analysis {
     sources: sourceTargets(fm.data),
     frontmatter: fm.data,
     tags: collectTags(fm.data, bodyLines, fenced),
-    links: wikilinkTargets(content),
+    // keyring-widget 데이터 파일(state.file)도 첨부 링크로 친다 — 깨진 링크·백링크 색인에 잡히게
+    links: [...new Set([...wikilinkTargets(content), ...widgetFileRefs(content)])],
     tasks,
   };
 }
