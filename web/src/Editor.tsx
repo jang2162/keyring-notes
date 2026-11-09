@@ -34,6 +34,7 @@ import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, 
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
 import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
+import { widgetEditField } from "./widgets/blockEdit";
 
 export interface LinkCandidate {
   /** [[ ]] 안에 넣을 이름 */
@@ -299,6 +300,8 @@ export function Editor({
           EditorView.lineWrapping,
           codeFont(),
           liveSlot.current.of(liveRef.current ? livePreview(getCtx, tableOpts) : syntaxHighlighting(headingSizes)),
+          // liveSlot 밖: Live Preview 를 끈 칸·미리보기만 보는 칸에서도 미리보기 위젯이 이 필드로 수정 중 초안을 둔다
+          widgetEditField,
           EditorState.readOnly.of(readOnly),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (callbacks.current.onSave(), true) },
