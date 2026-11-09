@@ -44,6 +44,8 @@ export interface TreeActions {
   moveTo: (path: string, kind: "node" | "file") => void;
   duplicate: (node: VaultNode) => void;
   remove: (path: string, kind: "node" | "file") => void;
+  /** 첨부 내용 바꾸기(같은 경로에 새 파일 — 링크 그대로) */
+  replace: (path: string) => void;
   copyPath: (path: string) => void;
   copyLink: (path: string) => void;
   openOther: (path: string) => void;
@@ -296,6 +298,7 @@ export const Tree = forwardRef<
       return [
         { label: t("common.open"), run: () => actions.openAttachment(r.path) },
         "-",
+        { label: t("file.replace"), run: () => actions.replace(r.path) },
         { label: t("common.rename"), keys: "F2", run: () => setRenaming(r.path) },
         { label: t("tree.moveTo"), run: () => actions.moveTo(r.path, "file") },
         "-",

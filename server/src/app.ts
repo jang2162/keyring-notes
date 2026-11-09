@@ -98,6 +98,18 @@ function optionalBool(value: unknown): boolean | undefined {
   return value;
 }
 
+/** 첨부 바이트 응답(/raw·/trash/raw) */
+function rawResponse(c: Context<Env>, path: string, data: Uint8Array) {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  const type = MIME[ext] ?? "application/octet-stream";
+  return c.body(new Uint8Array(data), 200, {
+    "content-type": type,
+    // SVG 등에 섞인 스크립트가 앱 출처로 실행되지 않게 한다.
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    "x-content-type-options": "nosniff",
+  });
+}
+
 function requireHash(value: unknown): string {
   const h = optionalHash(value);
   if (h === null) throw new PathError("field_required", { field: "baseHash" });
@@ -472,6 +484,13 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     return c.json(await c.var.scoped.putAttachment(requirePath(c.req.query("path")), data));
   });
 
+  // 첨부 내용 교체: 같은 경로에 새 바이트(링크가 그대로 이어진다). baseHash 는 지금 내용 해시 — 다르면 409
+  api.put("/attachment", async (c) => {
+    const data = new Uint8Array(await c.req.arrayBuffer());
+    if (data.byteLength === 0) throw new PathError("file_empty");
+    return c.json(await c.var.scoped.replaceAttachment(requirePath(c.req.query("path")), data, requireHash(c.req.query("baseHash"))));
+  });
+
   api.post("/ingest/file", async (c) => {
     const topic = c.req.query("topic");
     const name = c.req.query("name");
@@ -581,9 +600,14 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
         case "move":
           return { op: "move", from: requirePath(o.from), to: requirePath(o.to), baseHash: requireHash(o.baseHash) };
         case "put":
-          // 첨부 새로 만들기(노드 삭제 되돌리기): data는 base64
+          // 첨부 새로 만들기(노드 삭제 되돌리기), baseHash 를 주면 같은 경로의 내용 교체: data는 base64
           if (typeof o.data !== "string") throw new PathError("field_required", { field: "data (base64)" });
-          return { op: "put", path: requirePath(o.path), data: new Uint8Array(Buffer.from(o.data, "base64")) };
+          return {
+            op: "put",
+            path: requirePath(o.path),
+            data: new Uint8Array(Buffer.from(o.data, "base64")),
+            ...(o.baseHash === undefined ? {} : { baseHash: requireHash(o.baseHash) }),
+          };
         default:
           throw new PathError("op_unknown", { op: String(o?.op) });
       }
@@ -594,14 +618,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
 
   api.get("/raw", async (c) => {
     const { path, data } = await c.var.scoped.readRaw(requirePath(c.req.query("path")));
-    const ext = path.split(".").pop()?.toLowerCase() ?? "";
-    const type = MIME[ext] ?? "application/octet-stream";
-    return c.body(new Uint8Array(data), 200, {
-      "content-type": type,
-      // SVG 등에 섞인 스크립트가 앱 출처로 실행되지 않게 한다.
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-      "x-content-type-options": "nosniff",
-    });
+    return rawResponse(c, path, data);
   });
 
   // 휴지통(소유자만): 지운 노트 목록(folder: 워크스페이스, cursor: 앞 쪽의 next)·지우기 직전 내용·되살리기
@@ -612,6 +629,12 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     const id = c.req.query("id");
     if (!id) throw new PathError("field_required", { field: "id" });
     return c.json(await c.var.scoped.trashPreview(id, requirePath(c.req.query("path"))));
+  });
+  api.get("/trash/raw", async (c) => {
+    const id = c.req.query("id");
+    if (!id) throw new PathError("field_required", { field: "id" });
+    const { path, data } = await c.var.scoped.trashRaw(id, requirePath(c.req.query("path")));
+    return rawResponse(c, path, data);
   });
   api.post("/trash/restore", async (c) => {
     const body = await c.req.json();

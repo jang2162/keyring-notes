@@ -40,6 +40,8 @@ export interface RemoteVault {
   putRaw?(path: string, data: Uint8Array): Promise<{ hash: string }>;
   /** 첨부 지우기(baseHash가 맞을 때만). 없으면 기기에서 지운 첨부는 서버에 남는다 */
   removeRaw?(path: string, baseHash: string): Promise<void>;
+  /** 첨부 내용 교체(baseHash가 맞을 때만, 아니면 ConflictError). 없으면 기기에서 바꾼 첨부는 보내지 않는다 */
+  replaceRaw?(path: string, data: Uint8Array, baseHash: string): Promise<{ hash: string }>;
 }
 
 export interface SyncReport {
@@ -62,7 +64,7 @@ export interface SyncReport {
   settingsConflicts: SettingsKeyConflict[];
   /**
    * 이번에 건너뛴 것(다음 동기화에서 다시 본다). reason: attachment-taken(같은 이름의 첨부가 서버에 생김),
-   * attachment-changed(지우는 사이 서버에서 바뀜), attachment-local(기기에서 바꾼 첨부는 보내지 않음),
+   * attachment-changed(지우거나 교체하는 사이 서버에서 바뀜), attachment-local(기기와 서버가 둘 다 바꾼 첨부는 보내지 않음),
    * local-changed(받는 사이 기기에서 바뀜), settings-changed(설정 파일을 합치는 사이 서버에서 또 바뀜)
    */
   skipped: { path: string; reason: "attachment-taken" | "attachment-changed" | "attachment-local" | "local-changed" | "settings-changed" }[];
@@ -106,7 +108,8 @@ function isNetworkFailure(e: unknown): boolean {
  *
  * 마크다운은 양방향, 첨부는 서버 → 기기에 더해 기기에서 새로 만든 첨부(붙여넣은 이미지 등)는 올리고,
  * 기기에서 지운 첨부(폴더 이동으로 옮긴 원래 자리 포함)는 서버가 기준점 그대로일 때만 서버에서도 지운다.
- * 이미 있는 첨부를 기기에서 바꾼 것은 보내지 않는다. 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
+ * 기기에서 바꾼 첨부(교체·앱 밖 편집)는 서버가 기준점 그대로일 때만 같은 경로에 교체해 올리고, 서버도 바뀌었으면 보내지 않는다.
+ * 어떤 경우에도 상대의 변경을 덮어쓰지 않는다.
  */
 export class SyncEngine {
   private running: Promise<SyncReport> | null = null;
@@ -268,7 +271,19 @@ export class SyncEngine {
               }
               continue;
             }
-            // 이 기기에서 바뀐 첨부는 보내지 않고 알린다.
+            // 이 기기에서 바꾼 첨부(교체, 앱 밖 편집기로 고친 것도): 서버가 기준점 그대로면 같은 경로에 교체해 올린다
+            if (L !== null && S !== null && S === B && this.remote.replaceRaw) {
+              const data = await this.vault.readBytes(path);
+              try {
+                base[path] = (await this.remote.replaceRaw(path, data, S)).hash;
+                report.pushed.push(path);
+              } catch (e) {
+                if (!(e instanceof ConflictError)) throw e;
+                report.skipped.push({ path, reason: "attachment-changed" });
+              }
+              continue;
+            }
+            // 서버도 바뀐 것(또는 교체를 못 하는 상대)은 보내지 않고 알린다 — 어느 쪽도 덮어쓰지 않는다
             if (localChanged && L !== null) {
               report.skipped.push({ path, reason: "attachment-local" });
               continue;
@@ -427,9 +442,17 @@ export class HttpRemote implements RemoteVault {
     await this.req("DELETE", "/api/file", { path, baseHash });
   }
 
-  async putRaw(path: string, data: Uint8Array): Promise<{ hash: string }> {
-    const res = await this.fetchFn(`${this.baseUrl}/api/attachment?path=${encodeURIComponent(path)}`, {
-      method: "POST",
+  putRaw(path: string, data: Uint8Array): Promise<{ hash: string }> {
+    return this.sendRaw("POST", `path=${encodeURIComponent(path)}`, data);
+  }
+
+  replaceRaw(path: string, data: Uint8Array, baseHash: string): Promise<{ hash: string }> {
+    return this.sendRaw("PUT", `path=${encodeURIComponent(path)}&baseHash=${encodeURIComponent(baseHash)}`, data);
+  }
+
+  private async sendRaw(method: "POST" | "PUT", query: string, data: Uint8Array): Promise<{ hash: string }> {
+    const res = await this.fetchFn(`${this.baseUrl}/api/attachment?${query}`, {
+      method,
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/octet-stream", "x-keyring-upload": "1" },
       body: data as Uint8Array<ArrayBuffer>,
     });

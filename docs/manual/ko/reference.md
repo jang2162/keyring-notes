@@ -107,7 +107,7 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | GET | `/api/search?q=` | `&folder=&tag=&lines=&limit=` | 검색. `tag` 를 여러 번 주면 그 태그를 모두 가진 노트만 찾습니다. `lines` 를 주면 노트마다 일치 줄을 그만큼(0 이상의 정수, 최대 50) 붙입니다 |
 | GET | `/api/semantic` · `/api/semantic/status` | `?q=&folder=&limit=` | 의미 검색 / 상태 |
 | GET | `/api/tags` | `?folder=` | 태그와 노트 수(폴더·노드 범위) |
-| GET | `/api/backlinks?path=` | | 백링크 |
+| GET | `/api/backlinks?path=` | | 백링크. 첨부면 그 첨부를 가리키거나 임베드한 노트: 위키링크, 임베드, 상대 경로 마크다운 링크·이미지, `sources` |
 | GET | `/api/mentions?path=` | | 연결되지 않은 언급(볼 수 있는 노트만) |
 | GET | `/api/sources?path=` | | 출처, 인용, 백링크 |
 | GET | `/api/graph` | `?folder=` | 그래프(노드·링크) |
@@ -120,14 +120,16 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | POST | `/api/move` | `{from, to, baseHash, updateLinks?}` | 노트·첨부 옮기기·이름 바꾸기. 링크는 기본으로 고칩니다 → `linksUpdated`(고친 노트), `linkCount` |
 | POST | `/api/move` | `{from, to, node: true, updateLinks?}` | 노드 옮기기·이름 바꾸기: `A.md` 와 `A/` 안 전체를 한 커밋으로 → `moved[[from, to]]`, `linksUpdated`, `linkCount` |
 | POST | `/api/node/delete` | `{path, files[{path, baseHash}]}` | 노드를 하위째 한 커밋으로 지우기. 클라이언트가 본 파일 목록·해시와 다르면 409 |
-| POST | `/api/batch` | `{message?, operations: [{op, ...}], updateLinks?}` | 일괄 쓰기. `op` 는 `write`, `append`, `delete`, `move`, `put`. 같은 일괄 쓰기의 연쇄 이동(A→B→C)은 합쳐서 링크를 고칩니다. `files` 에는 실제로 바뀐 파일만 |
+| POST | `/api/batch` | `{message?, operations: [{op, ...}], updateLinks?}` | 일괄 쓰기. `op` 는 `write`, `append`, `delete`, `move`, `put`(`data` 는 base64, `baseHash` 를 주면 있는 첨부의 내용 교체). 같은 일괄 쓰기의 연쇄 이동(A→B→C)은 합쳐서 링크를 고칩니다. `files` 에는 실제로 바뀐 파일만 |
 | POST | `/api/attachment?path=` | 파일 바이트, 헤더 `x-keyring-upload: 1` | 첨부 새로 만들기(50MB 까지). 이미 있으면 409 |
+| PUT | `/api/attachment?path=&baseHash=` | 파일 바이트, 헤더 `x-keyring-upload: 1` | 같은 경로에 첨부 내용만 바꾸기(링크가 그대로 이어집니다). `baseHash` 는 지금 바이트의 sha256: 바뀌었으면 `currentHash` 와 함께 409, 파일이 없으면 404. `write` 권한이 필요합니다. 옛 바이트는 이력에 남습니다 → `path`, `hash` |
 | GET | `/api/raw?path=` | | 첨부 원본 파일 |
 | GET | `/api/history?path=` | | 노트의 커밋 목록(작성자 포함) |
 | GET | `/api/revision?path=&rev=` | | 특정 리비전의 내용 |
 | POST | `/api/rollback` | `{path, rev, baseHash}` | 과거 리비전으로 되돌리기(새 커밋) |
 | GET | `/api/trash` | `?folder=&cursor=` | 휴지통(소유자만): 삭제를 최근 것부터 → `items[{id, date, author, node, notes, attachments, lost}]`, `next`(마지막으로 읽은 커밋. 더 오래된 삭제를 볼 때 `cursor` 로 넘김, 끝이면 `null`). 서버에서 옮긴 노트와 지금 쓰이는 경로는 빠집니다 |
 | GET | `/api/trash/preview?id=&path=` | | 지운 노트의 지우기 직전 내용(소유자만) |
+| GET | `/api/trash/raw?id=&path=` | | 지운 첨부의 지우기 직전 바이트. 머리는 `/api/raw` 와 같습니다(소유자만) |
 | POST | `/api/trash/restore` | `{id, paths?}` | 한 번의 삭제를 한 커밋으로 되살리기. 자리에 파일이 있으면 덮어쓰지 않고 ` 2` 를 붙임 → `restored[[from, to]]`, `lost`(되살리지 못한 첨부 수). 소유자만 |
 | GET · POST | `/api/topics` | `{name}` | 토픽 목록 / 위키 토픽 만들기(소유자) |
 | POST | `/api/ingest` | `{kind: url\|html\|text, topic, ...}` | 원본 수집 |

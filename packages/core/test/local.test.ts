@@ -637,3 +637,45 @@ describe("로컬 볼트의 수정 시각(edited)과 rank", () => {
     expect(text(await store.read("b.md"))).toBe("비");
   });
 });
+
+describe("기기 볼트: 첨부 지우기·바꾸기", () => {
+  const b = (...x: number[]) => new Uint8Array(x);
+  const open = async () => {
+    const store = new MemoryStore();
+    const v = new LocalVault(store, { author: "폰" });
+    await v.open();
+    await v.putFile("W/그림.png", b(1, 2));
+    return { store, v };
+  };
+
+  it("remove 는 첨부도 지운다(내용 해시가 맞을 때만) — 기록에는 남지 않는다", async () => {
+    const { v, store } = await open();
+    const entries = v.entries().length;
+    await expect(v.remove("W/그림.png", await sha256Hex(b(9)))).rejects.toBeInstanceOf(ConflictError);
+    await v.remove("W/그림.png", await sha256Hex(b(1, 2)));
+    expect(await store.read("W/그림.png")).toBeNull();
+    await expect(v.readBytes("W/그림.png")).rejects.toThrow();
+    expect(v.entries().length).toBe(entries);
+  });
+
+  it("replaceFile 은 같은 경로에 새 바이트를 쓴다. 다른 창·앱 밖에서 먼저 바뀌었으면 충돌", async () => {
+    const { v, store } = await open();
+    const r = await v.replaceFile("W/그림.png", b(3), await sha256Hex(b(1, 2)));
+    expect(r).toEqual({ path: "W/그림.png", hash: await sha256Hex(b(3)) });
+    expect([...(await store.read("W/그림.png"))!]).toEqual([3]);
+    // 메모리는 [3] 이라고 알지만 저장소는 앱 밖에서 [8] 로 바뀌었다
+    await store.write("W/그림.png", b(8));
+    await expect(v.replaceFile("W/그림.png", b(4), await sha256Hex(b(3)))).rejects.toBeInstanceOf(ConflictError);
+    expect([...(await store.read("W/그림.png"))!]).toEqual([8]);
+    await expect(v.replaceFile("W/없음.png", b(4), await sha256Hex(b(3)))).rejects.toThrow();
+    await expect(v.replaceFile("W/글.md", b(4), await sha256Hex(b(3)))).rejects.toThrow();
+  });
+
+  it("backlinks 는 첨부를 가리키는 노트(임베드·위키링크·상대 마크다운 링크)를 센다", async () => {
+    const { v } = await open();
+    await v.write("W/임베드.md", "![[그림.png]]", null);
+    await v.write("W/sub/링크.md", "[보기](../그림.png)", null);
+    await v.write("W/코드.md", "`![[그림.png]]`", null);
+    expect(v.backlinks("W/그림.png").map((x) => x.path)).toEqual(["W/sub/링크.md", "W/임베드.md"]);
+  });
+});

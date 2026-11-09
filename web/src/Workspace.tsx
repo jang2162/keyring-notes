@@ -113,6 +113,7 @@ import { Properties } from "./Properties";
 import { PdfViewer } from "./PdfViewer";
 import { localContext } from "./local/boot";
 import { useSyncStatus } from "./Sync";
+import { attachmentDeleteText, extOf, sameKind } from "./attachmentManage";
 import { chooseDialog, confirmDialog, promptDialog } from "./dialog";
 import { mentionTarget, References, UnlinkedMentions } from "./Links";
 import { DEFAULT_PREFS, setPrefs, usePrefs, type Prefs } from "./prefs";
@@ -1592,6 +1593,14 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     };
   }, [flushOutbox]);
 
+  // 서버: 이 창에서 첨부 내용을 바꾸면(rawVersion) 미리보기를 새 주소로 다시 그린다. 기기 볼트는 아래에서 함께 듣는다
+  useEffect(() => {
+    if (localContext) return;
+    const onAsset = () => setAssetVersion((v) => v + 1);
+    window.addEventListener("keyring:asset-loaded", onAsset);
+    return () => window.removeEventListener("keyring:asset-loaded", onAsset);
+  }, []);
+
   // 기기 볼트: 동기화로 받은 변경, 다른 편집기에서 고친 파일을 화면에 반영한다
   useEffect(() => {
     if (!localContext) return;
@@ -2212,9 +2221,10 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     updatePins((p) => (p.includes(node) ? removePin(p, node) : addPin(p, node)));
   };
 
-  /** 첨부 하나 지우기 */
+  /** 첨부 하나 지우기: 가리키는 노트 수·이름을 보이고 확인받는다(서버는 휴지통으로, 기기 볼트는 되돌리기 알림만) */
   const deleteAttachment = async (path: string) => {
-    if (!(await confirmDialog(t("file.deleteAsk", { name: path.split("/").pop()! }), t("common.delete")))) return;
+    const refs = await api.backlinks(path).catch(() => []);
+    if (!(await confirmDialog(attachmentDeleteText(path.split("/").pop()!, refs, appMode.local), t("common.delete")))) return;
     try {
       const data = await api.readBytes(path);
       await api.remove(path, await sha256Hex(data));
@@ -2234,6 +2244,52 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     } catch (e) {
       toastError(e);
     }
+  };
+
+  /**
+   * 첨부 내용 바꾸기: 같은 경로에 새 파일(링크 그대로). 같은 형식(확장자)만 받는다. 고르기 전에 읽은 내용 해시로 보내므로
+   * 그 사이 다른 창·기기가 바꿨으면 409. 알림의 되돌리기는 옛 바이트로 다시 바꾼다
+   */
+  const replaceAttachment = async (path: string) => {
+    const name = path.split("/").pop()!;
+    let old: Uint8Array;
+    try {
+      old = await api.readBytes(path);
+    } catch (e) {
+      return toastError(e);
+    }
+    const base = await sha256Hex(old);
+    const input = document.createElement("input");
+    input.type = "file";
+    if (extOf(path)) input.accept = `.${extOf(path)}`;
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (!sameKind(path, file.name)) return void toast(t("file.replaceExt", { ext: extOf(path) || "—", name: file.name }), { kind: "error" });
+      void (async () => {
+        try {
+          const res = await api.replaceAttachment(path, file, base);
+          vaultChanged();
+          await refreshTree();
+          const now = res.hash ?? (await sha256Hex(new Uint8Array(await file.arrayBuffer())));
+          toast(t("file.replaced", { name }), {
+            kind: "info",
+            action: {
+              label: t("common.undo"),
+              run: () =>
+                void api
+                  .replaceAttachment(path, new Blob([old as Uint8Array<ArrayBuffer>]), now)
+                  .then(() => (vaultChanged(), refreshTree()))
+                  .catch((e) => (e instanceof ApiError && e.status === 409 ? toast(t("file.changedRetry"), { kind: "error" }) : toastError(e))),
+            },
+          });
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409) toast(t("file.changedRetry"), { kind: "error" });
+          else toastError(e);
+        }
+      })();
+    });
+    input.click();
   };
 
   const duplicateNode = async (node: VaultNode) => {
@@ -2899,6 +2955,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     moveTo: startMove,
     duplicate: (n) => void duplicateNode(n),
     remove: (p, kind) => void (kind === "node" ? deleteNode(p) : deleteAttachment(p)),
+    replace: (p) => void replaceAttachment(p),
     copyPath: (p) => void copyText(p, "path"),
     copyLink: (p) => void copyText(`[[${linkTo(p)}]]`, "link"),
     openOther: (p) => void openOther(p),

@@ -15,6 +15,7 @@ export interface TreeNode {
 
 import { sha256Hex, type ChildSort, type Mention, type PropertyStat, type TrashPage } from "@keyring-notes/core";
 import { isNetworkError, offline } from "./offline";
+import { bumpRawVersion, versioned } from "./rawVersion";
 
 export interface Doc {
   path: string;
@@ -546,6 +547,19 @@ const remoteApi = {
     if (!res.ok) throw apiErrorOf(res.status, data, res.statusText);
     return data as { path: string; hash: string | null };
   },
+  /** 첨부 내용 교체(같은 경로, 링크 그대로). baseHash 는 지금 내용 해시 — 다른 창·기기가 먼저 바꿨으면 409 */
+  async replaceAttachment(path: string, file: Blob, baseHash: string): Promise<{ path: string; hash: string | null }> {
+    const res = await fetch(`/api/attachment?path=${q(path)}&baseHash=${enc(baseHash)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/octet-stream", "x-keyring-upload": "1" },
+      body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) window.dispatchEvent(new Event("keyring:unauthorized"));
+    if (!res.ok) throw apiErrorOf(res.status, data, res.statusText);
+    bumpRawVersion([path], remoteApi.rawUrl);
+    return data as { path: string; hash: string | null };
+  },
   async uploadFile(topic: string, file: File): Promise<IngestResult> {
     const res = await fetch(`/api/ingest/file?topic=${q(topic)}&name=${q(file.name)}`, {
       method: "POST",
@@ -569,7 +583,9 @@ const remoteApi = {
       "GET",
       `/api/semantic?q=${encodeURIComponent(query)}&limit=20${folder ? `&folder=${q(folder)}` : ""}`,
     ).then((r) => r.hits),
-  rawUrl: (path: string) => `/api/raw?path=${q(path)}`,
+  rawUrl: (path: string) => versioned(`/api/raw?path=${q(path)}`, path),
+  /** 휴지통의 지운 첨부 바이트(그림 미리보기). 기기 볼트는 첨부를 휴지통에 남기지 않아 null */
+  trashRawUrl: (id: string, path: string): string | null => `/api/trash/raw?id=${enc(id)}&path=${q(path)}`,
   /** 첨부 파일 내용(PDF 보기) */
   readBytes: async (path: string): Promise<Uint8Array> => {
     const res = await fetch(`/api/raw?path=${q(path)}`, { credentials: "same-origin" });

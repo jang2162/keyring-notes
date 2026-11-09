@@ -16,7 +16,7 @@ Notes form a tree of nodes: a node "A" is the note \`A.md\` plus its children un
 ## Connect
 
 - [MCP endpoint](${base}/mcp): Streamable HTTP (stateless, JSON responses). Send \`Authorization: Bearer <agent token>\`.
-- [REST API](${base}/api/whoami): the same vault over HTTP under \`/api/*\`. Send \`Authorization: Bearer <agent token>\` and, for every POST/PUT/DELETE, \`Content-Type: application/json\`.
+- [REST API](${base}/api/whoami): the same vault over HTTP under \`/api/*\`. Send \`Authorization: Bearer <agent token>\` and, for every POST/PUT/DELETE, \`Content-Type: application/json\` (file uploads send raw bytes instead, see Attachments below).
 - [Health check](${base}/api/health): no authentication.
 
 Agent tokens are issued by the vault owner (admin console, or \`keyring agent add <name>\` on the server). The token is shown once. This page is public and static; it holds no vault data.
@@ -36,6 +36,7 @@ Each token has a per-path permission table: \`hidden\` < \`read\` < \`append\` <
 - Read: \`list_children\`, \`list_topics\`, \`list_documents\`, \`read_outline\`, \`read_section\`, \`read_document\`, \`list_frontmatter\` (REST: \`GET /api/tree\`, \`/api/file?path=\`, \`/api/outline\`, \`/api/section\`, \`/api/frontmatter\`).
 - Search and relations: \`search\` (words of 3+ characters; a \`#tag\` word is a tag filter), \`semantic_search\` (only when the server has an embedding model), \`backlinks\`, \`unlinked_mentions\`, \`list_tags\`, \`sources\`, \`query\` (YAML queries, as in widgets).
 - Write: \`write_document\`, \`append_document\`, \`move_document\` (updates links to the note in the same commit), \`delete_document\`, \`batch_write\` (several operations in one commit; all or nothing). REST: \`PUT /api/file\`, \`POST /api/append\`, \`POST /api/move\`, \`DELETE /api/file\`, \`POST /api/batch\`.
+- Attachments (REST only): \`POST /api/attachment?path=\` creates a new file (409 if it exists). \`PUT /api/attachment?path=&baseHash=\` replaces the bytes at the same path, so links to it keep working; it needs \`write\` there and \`baseHash\` is the sha256 of the current bytes. Send the bytes with \`Content-Type: application/octet-stream\` and \`x-keyring-upload: 1\`. \`DELETE /api/file\` deletes an attachment; check \`GET /api/backlinks?path=\` first, which lists the notes that link to or embed it.
 - Collect sources: \`ingest_url\` (web page or PDF) and \`ingest_text\` save a source under \`<topic>/raw/\` (needs \`append\` there). REST: \`POST /api/ingest\`.
 - Check structure: \`lint\` (broken links, orphan wiki pages, pages without sources, stale pages).
 - Review queue: writes under folders the owner marked for review return \`pending\` and the vault is unchanged until a person approves. Check the outcome with \`my_proposals\`.

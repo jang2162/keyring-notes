@@ -35,7 +35,7 @@ export interface Proposal {
   links?: { enabled: boolean; paths: string[] };
 }
 
-type StoredOp = Exclude<Op, { op: "put" }> | { op: "put"; path: string; dataFile: string };
+type StoredOp = Exclude<Op, { op: "put" }> | { op: "put"; path: string; dataFile: string; baseHash?: string };
 
 export interface ProposalSummary extends Omit<Proposal, "ops" | "preview"> {
   files: { path: string; change: "add" | "modify" | "delete"; binary: boolean }[];
@@ -96,7 +96,7 @@ export class ReviewQueue {
       if (op.op === "put") {
         const dataFile = `put-${n++}.bin`;
         await writeFile(path.join(pdir, dataFile), op.data);
-        stored.push({ op: "put", path: op.path, dataFile });
+        stored.push({ op: "put", path: op.path, dataFile, ...(op.baseHash === undefined ? {} : { baseHash: op.baseHash }) });
       } else stored.push(op);
     }
     const proposal: Proposal = {
@@ -193,7 +193,13 @@ export class ReviewQueue {
     if (p.status !== "pending") throw new PathError("proposal_done", { status: p.status });
     const ops: Op[] = [];
     for (const op of p.ops) {
-      if (op.op === "put") ops.push({ op: "put", path: op.path, data: new Uint8Array(await readFile(path.join(this.dir, id, op.dataFile))) });
+      if (op.op === "put")
+        ops.push({
+          op: "put",
+          path: op.path,
+          data: new Uint8Array(await readFile(path.join(this.dir, id, op.dataFile))),
+          ...(op.baseHash === undefined ? {} : { baseHash: op.baseHash }),
+        });
       else ops.push(op);
     }
     // 링크 갱신은 승인 시점의 내용으로 다시 계산하되, 제안 때와 같은 범위(그 에이전트가 볼 수 있는 경로, 미리보기에 보인 문서)로만

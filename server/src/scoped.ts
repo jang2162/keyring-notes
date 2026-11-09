@@ -2,6 +2,7 @@ import { atLeast, levelOf, type Level, type Principal } from "./access.js";
 import { agentText, type AgentLang } from "./agentText.js";
 import type { Author, CommitInfo } from "./git.js";
 import {
+  linkingDocs,
   headings,
   linkGraph,
   lintVault,
@@ -376,10 +377,25 @@ export class ScopedVault {
     return hits;
   }
 
-  /** 이 문서를 링크한 문서들 중 읽을 수 있는 것만. */
+  /**
+   * 이 문서를 링크한 문서들 중 읽을 수 있는 것만. 첨부면 위키링크·임베드·상대 경로 마크다운 링크·출처를 원문에서 본다
+   * (색인은 마크다운 대상만 해석한다). 해석은 읽을 수 있는 경로로만 해서 숨긴 파일이 결과를 바꾸지 않는다
+   */
   async backlinks(input: string): Promise<{ path: string; title: string }[]> {
     const rel = this.requireRead(input);
     const titles = new Map(this.index.docs().map((d) => [d.path, d.title]));
+    if (!isMarkdown(rel)) {
+      const paths: string[] = [];
+      const walk = (ns: TreeNode[]) => {
+        for (const n of ns) {
+          if (n.type === "dir") walk(n.children ?? []);
+          else if (this.canRead(n.path)) paths.push(n.path);
+        }
+      };
+      walk(await this.vault.tree());
+      const docs = this.index.contents().filter((d) => this.canRead(d.path));
+      return linkingDocs(docs, rel, paths, this.vault.daily()).map((d) => ({ path: d.path, title: titles.get(d.path) ?? d.path }));
+    }
     return this.index
       .backlinks(rel, undefined, this.vault.daily())
       .filter((p) => this.canRead(p))
@@ -747,6 +763,17 @@ export class ScopedVault {
     return { path: rel, hash: hashContent(Buffer.from(data)), rev: res.rev, pending: res.pending };
   }
 
+  /** 첨부 내용 교체: 같은 경로에 새 바이트(지금 해시가 baseHash 여야 한다). 옛 내용은 이력에 남는다 */
+  async replaceAttachment(
+    input: string,
+    data: Uint8Array,
+    baseHash: string,
+  ): Promise<{ path: string; hash: string | null; rev: string | null; pending?: PendingInfo }> {
+    const rel = normalizeVaultPath(input);
+    const res = await this.batch([{ op: "put", path: rel, data, baseHash }]);
+    return { path: rel, hash: hashContent(Buffer.from(data)), rev: res.rev, pending: res.pending };
+  }
+
   async delete(path: string, baseHash: string): Promise<{ rev: string | null; pending?: PendingInfo }> {
     const res = await this.batch([{ op: "delete", path, baseHash }]);
     return res.pending ? { rev: null, pending: res.pending } : { rev: res.rev };
@@ -849,16 +876,17 @@ export class ScopedVault {
     only?: Set<string>,
   ): Promise<{ item: TrashItem; s3: Map<string, string> } | null> {
     const md = c.deleted.filter((p) => isMarkdown(p) && ctx.keep(p));
-    if (!md.length) return null;
     const inGit = c.deleted.filter((p) => !isMarkdown(p) && ctx.keep(p));
     const s3 = c.blobIndex ? new Map([...(await this.s3Deleted(c))].filter(([p]) => ctx.keep(p))) : new Map<string, string>();
+    if (!md.length && !inGit.length && !s3.size) return null;
     const node = trashHead([...md, ...inGit, ...s3.keys()], ctx.dirGone);
     const notes = only ? md.filter((p) => only.has(p)) : md.filter((p) => !ctx.taken.has(trashKey(p)));
-    if (!notes.length) return null;
     const free = (p: string) => !ctx.taken.has(trashKey(p));
     // S3 보관 첨부는 S3를 쓰고 있을 때만 받을 수 있다(지금 꺼져 있으면 되살릴 수 없음으로 센다)
     const fromS3 = [...s3.keys()].filter(free);
     const canFetch = this.vault.blobSource !== null;
+    // 노트가 든 삭제는 노트가 남았을 때만 줄이 된다. 첨부만 지운 삭제(첨부 하나 삭제 등)는 되살릴 첨부가 남았을 때만
+    if (md.length ? !notes.length : !inGit.some(free) && !(canFetch && fromS3.length)) return null;
     return {
       item: {
         id: c.rev,
@@ -909,6 +937,24 @@ export class ScopedVault {
   }
 
   /**
+   * 지우기 직전 첨부 바이트(휴지통의 첨부 미리보기). Git 에 든 것은 그 커밋의 부모에서, S3 보관 첨부는 내용 해시로 받는다
+   */
+  async trashRaw(id: string, input: string): Promise<{ path: string; data: Buffer }> {
+    this.requireOwner();
+    const rel = normalizeVaultPath(input);
+    const c = await this.vault.git.deletion(id);
+    if (!c || isMarkdown(rel)) throw new NotFoundError("rev_doc_missing", { path: rel });
+    if (c.deleted.includes(rel)) {
+      const [data] = await this.vault.git.readMany([{ rev: `${c.rev}^`, path: rel }]);
+      if (data) return { path: rel, data };
+    }
+    const sha = c.blobIndex ? (await this.s3Deleted(c)).get(rel) : undefined;
+    const data = sha && this.vault.blobSource ? await this.vault.blobSource(sha) : null;
+    if (!data) throw new NotFoundError("rev_doc_missing", { path: rel });
+    return { path: rel, data: Buffer.from(data) };
+  }
+
+  /**
    * 휴지통에서 되살리기: 그 커밋에서 지운 노트(paths: 화면이 본 것, 없으면 지금 없는 것 전부)와 지금 없는 첨부를
    * 지우기 직전 내용으로 한 커밋에 만든다(노드는 통째로). 그 사이 자리에 다른 파일이 생겼으면 덮어쓰지 않고 " 2"…
    * (restoreTargets). 그 자리에 이미 같은 내용이 있으면(다른 창에서 먼저 되살림) 건너뛴다. restored: [원래 경로, 만든 경로]
@@ -935,7 +981,8 @@ export class ScopedVault {
       // 되살리면 수정 시각이 새로 적히므로 그 줄은 빼고 견준다
       if (now === null || !sameExceptEdited(now, content)) contents.set(p, content);
     }
-    if (!found || !contents.size) throw new NotFoundError("trash_empty");
+    // 노트가 든 삭제에서 노트가 모두 이미 있으면 되살릴 것이 없다(첨부만 지운 삭제는 첨부를 되살린다)
+    if (!found || (found.item.notes.length ? !contents.size : !found.item.attachments.length)) throw new NotFoundError("trash_empty");
     const s3 = found.s3;
     const item = { ...found.item, notes: found.item.notes.filter((p) => contents.has(p)) };
     const targets = restoreTargets([...item.notes, ...item.attachments], item.node, ctx.files);
@@ -956,7 +1003,7 @@ export class ScopedVault {
       ops.push({ op: "put", path: targets.get(p)!, data: new Uint8Array(data) });
       restored.push([p, targets.get(p)!]);
     }
-    const res = await this.batch(ops, this.vault.text().commit.restoreDeleted(item.node ?? item.notes[0].replace(/\.md$/i, "")));
+    const res = await this.batch(ops, this.vault.text().commit.restoreDeleted(item.node ?? (item.notes[0] ?? item.attachments[0]).replace(/\.md$/i, "")));
     return { restored, lost, rev: res.rev };
   }
 

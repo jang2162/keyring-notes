@@ -1,5 +1,5 @@
 import type { TrashItem } from "@keyring-notes/core";
-import { ChevronRight, FileText, FolderClosed, RotateCcw } from "lucide-react";
+import { ChevronRight, File, FileText, FolderClosed, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, appMode } from "./api";
 import { fmtDateTime, t } from "./i18n";
@@ -7,6 +7,14 @@ import { renderMarkdown, type LinkResolver } from "./markdown";
 import { Modal } from "./Modal";
 import { errorText, toast, toastError } from "./toast";
 import { parentOf, stemOf } from "./Tree";
+
+const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
+const isNote = (p: string) => /\.md$/i.test(p);
+
+/** 줄의 머리 이름: 노드, 없으면 첫 노트(.md 없이), 첨부만 지운 줄은 첫 첨부 */
+export function trashHeadName(item: TrashItem): string {
+  return item.node ?? (item.notes[0] ?? item.attachments[0] ?? "").replace(/\.md$/i, "");
+}
 
 /** 되살린 뒤 열 노트: 노드 노트, 없으면 처음 되살린 노트(만든 경로) */
 function headTarget(item: TrashItem, restored: [string, string][]): [string, string] | null {
@@ -81,7 +89,8 @@ export function TrashPanel({
   const show = (id: string, path: string) => {
     if (open?.id === id && open.path === path) return setOpen(null);
     setOpen({ id, path });
-    if (previews[key(id, path)] !== undefined) return;
+    // 첨부는 글로 읽지 않는다(그림이면 바이트 주소로 그린다)
+    if (!isNote(path) || previews[key(id, path)] !== undefined) return;
     api.trashPreview(id, path).then(
       (content) => setPreviews((p) => ({ ...p, [key(id, path)]: content })),
       (e) => setPreviews((p) => ({ ...p, [key(id, path)]: { error: errorText(e) } })),
@@ -95,7 +104,7 @@ export function TrashPanel({
       setItems((cur) => cur?.filter((i) => i.id !== item.id) ?? null);
       onChanged();
       const head = headTarget(item, restored);
-      const name = head ? stemOf(head[1]) : stemOf(item.node ?? item.notes[0]);
+      const name = head ? stemOf(head[1]) : stemOf(restored[0]?.[1] ?? trashHeadName(item));
       const text = head && head[0] !== head[1] ? t("trash.restoredAs", { name }) : t("trash.restored", { name });
       toast(lost ? `${text} · ${t("trash.lost", { count: lost })}` : text, {
         kind: lost ? "warn" : "info",
@@ -117,22 +126,21 @@ export function TrashPanel({
         {items?.length === 0 && next === null && <p className="meta">{t("trash.empty")}</p>}
         <ul className="trash-list">
           {items?.map((item) => {
-            const head = item.node ?? item.notes[0].replace(/\.md$/i, "");
+            const head = trashHeadName(item);
             const children = item.node ? item.notes.filter((p) => p !== `${item.node}.md`).length : 0;
             const expanded = open?.id === item.id;
-            const many = item.notes.length > 1;
+            // 첨부만 지운 줄(첨부 하나 삭제 등): 노트 대신 첨부를 고르고 그림이면 그린다
+            const filesOnly = item.notes.length === 0;
+            const shown = filesOnly ? item.attachments : item.notes;
+            const many = shown.length > 1;
             const preview = open && expanded ? previews[key(open.id, open.path)] : undefined;
+            const imageUrl = open && expanded && !isNote(open.path) && IMAGE_RE.test(open.path) ? api.trashRawUrl(item.id, open.path) : null;
             return (
               <li key={item.id} className={`trash-item${expanded ? " open" : ""}`}>
                 <div className="trash-row">
-                  <button
-                    type="button"
-                    className="trash-head"
-                    aria-expanded={expanded}
-                    onClick={() => (expanded ? setOpen(null) : show(item.id, item.notes[0]))}
-                  >
+                  <button type="button" className="trash-head" aria-expanded={expanded} onClick={() => (expanded ? setOpen(null) : show(item.id, shown[0]))}>
                     <ChevronRight size={14} className="trash-caret" aria-hidden />
-                    {many ? <FolderClosed size={16} aria-hidden /> : <FileText size={16} aria-hidden />}
+                    {many ? <FolderClosed size={16} aria-hidden /> : filesOnly ? <File size={16} aria-hidden /> : <FileText size={16} aria-hidden />}
                     <span className="trash-title">{stemOf(head)}</span>
                     {parentOf(head) && <span className="meta trash-path">{parentOf(head)}</span>}
                   </button>
@@ -145,7 +153,7 @@ export function TrashPanel({
                     fmtDateTime(item.date),
                     !appMode.local && item.author,
                     children > 0 && t("trash.children", { count: children }),
-                    !item.node && many && t("trash.others", { count: item.notes.length - 1 }),
+                    !item.node && many && t("trash.others", { count: shown.length - 1 }),
                     item.attachments.length > 0 && t("trash.attachments", { count: item.attachments.length }),
                   ]
                     .filter(Boolean)
@@ -156,14 +164,20 @@ export function TrashPanel({
                   <div className="trash-body">
                     {many && (
                       <div className="trash-notes" role="group" aria-label={t("trash.preview")}>
-                        {item.notes.map((p) => (
+                        {shown.map((p) => (
                           <button type="button" key={p} aria-pressed={open?.path === p} onClick={() => show(item.id, p)}>
                             {p.startsWith(`${item.node}/`) ? p.slice(item.node!.length + 1).replace(/\.md$/i, "") : stemOf(p)}
                           </button>
                         ))}
                       </div>
                     )}
-                    {preview === undefined ? (
+                    {open && !isNote(open.path) ? (
+                      imageUrl ? (
+                        <img className="trash-image" src={imageUrl} alt={stemOf(open.path)} />
+                      ) : (
+                        <p className="meta">{open.path}</p>
+                      )
+                    ) : preview === undefined ? (
                       <p className="meta">{t("common.loading")}</p>
                     ) : typeof preview === "object" ? (
                       <p className="form-error">{preview.error}</p>

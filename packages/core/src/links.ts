@@ -278,3 +278,31 @@ export function chainMoves(moves: [string, string][]): Map<string, string> {
   for (const [k, v] of out) if (k === v) out.delete(k);
   return out;
 }
+
+/**
+ * target(첨부 등 아무 파일)을 가리키는 문서들: 본문 위키링크·임베드, 상대 경로 마크다운 링크·이미지, 프런트매터 출처.
+ * 백링크 색인은 마크다운만 해석하고 마크다운 링크를 담지 않으므로, 이동할 때 링크를 고치는 규칙(rewriteLinks)에
+ * target 을 가짜 자리로 옮겨 보아 고칠 링크가 있는 문서를 센다 — 해석 규칙이 이동과 늘 같다. paths: 해석에 쓸 파일 전체(첨부 포함)
+ */
+export function linkingDocs(
+  docs: Iterable<{ path: string; content: string }>,
+  target: string,
+  paths: string[],
+  daily?: DailyLookup | null,
+): { path: string; count: number }[] {
+  const probe = `${target}.keyring-probe`;
+  const ctx: LinkRewriteContext = {
+    moves: new Map([[target, probe]]),
+    before: paths,
+    after: [...paths.filter((p) => p !== target), probe],
+    fullPaths: true,
+    daily,
+  };
+  const out: { path: string; count: number }[] = [];
+  for (const d of docs) {
+    if (d.path === target) continue;
+    const r = rewriteLinks(d.content, d.path, d.path, ctx);
+    if (r) out.push({ path: d.path, count: r.count });
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}

@@ -71,8 +71,11 @@ export type Op =
   | { op: "append"; path: string; content: string; baseHash?: string | null }
   | { op: "delete"; path: string; baseHash: string }
   | { op: "move"; from: string; to: string; baseHash: string }
-  /** 첨부 파일(이미지·PDF 등) 새로 만들기. 이미 있으면 충돌. */
-  | { op: "put"; path: string; data: Uint8Array };
+  /**
+   * 첨부 파일(이미지·PDF 등) 쓰기. baseHash 가 없으면 새로 만들기(이미 있으면 충돌), 있으면 같은 경로의 내용 교체 —
+   * 지금 바이트 해시가 baseHash 와 같아야 한다(링크가 그대로 이어지게 경로는 바꾸지 않는다)
+   */
+  | { op: "put"; path: string; data: Uint8Array; baseHash?: string };
 
 /** 권한 계층이 연산 종류별로 검사할 수 있게 넘겨주는 동작 이름. */
 export type Action = "create" | "append" | "modify" | "delete";
@@ -466,11 +469,17 @@ export class Vault {
         const rel = resolved.get(op.path)!;
         const s = await slot(rel);
         if (op.op === "put") {
-          guard("create", rel);
-          if (s.hash !== null) throw new ConflictError(s.hash, "file_exists", { path: rel });
+          if (op.baseHash === undefined) {
+            guard("create", rel);
+            if (s.hash !== null) throw new ConflictError(s.hash, "file_exists", { path: rel });
+          } else {
+            if (s.hash === null) throw new NotFoundError("file_missing", { path: rel });
+            guard("modify", rel);
+            if (s.hash !== op.baseHash) throw new ConflictError(s.hash, "conflict_path", { path: rel });
+          }
           s.bytes = op.data;
           s.hash = hashContent(Buffer.from(op.data));
-          verbs.push({ kind: "attach", text: T.attach(rel) });
+          verbs.push({ kind: "attach", text: op.baseHash === undefined ? T.attach(rel) : T.replaceAttachment(rel) });
           continue;
         }
         if (op.op === "write") {
