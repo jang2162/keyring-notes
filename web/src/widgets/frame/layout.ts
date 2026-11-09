@@ -1,3 +1,5 @@
+import { parseFrameMsg, type FrameMsg } from "./protocol";
+
 /** keyring-widget iframe 호스트의 순수 판정(DOM 접착은 mountFrame.ts) */
 
 /** 불러오는 동안의 아래 한도 */
@@ -47,4 +49,30 @@ export function frameGuard(): { load(): "ok" | "kill"; ready(): "ok" | "kill"; k
 export function frameEventAction(e: { sourceIsFrame: boolean; origin: string }): "accept" | "ignore" | "kill" {
   if (!e.sourceIsFrame) return "ignore";
   return e.origin === "null" ? "accept" : "kill";
+}
+
+export type FrameRoute =
+  | { kind: "ignore" }
+  | { kind: "kill" }
+  /** 지운 iframe 이 drain 창 안에 보낸 쓰기 — 파일 핸들에 넘기고 답하지 않는다 */
+  | { kind: "drainWrite"; msg: Extract<FrameMsg, { type: "fileWrite" }> }
+  | { kind: "receive"; msg: FrameMsg };
+
+/**
+ * mountFrame 이 창 message 하나를 어디로 보낼까(DOM 없는 판정). 순서: 출처(frameEventAction) → 모양(parseFrameMsg) →
+ * drain 창이면 fileWrite 만 → 죽었으면 버림 → ready 는 frameGuard(두 번째면 kill) → 호스트로
+ */
+export function routeFrameMessage(
+  e: { sourceIsFrame: boolean; origin: string; data: unknown },
+  id: string,
+  s: { draining: boolean; dead: boolean; guard: ReturnType<typeof frameGuard> },
+): FrameRoute {
+  const action = frameEventAction(e);
+  if (action !== "accept") return { kind: action };
+  const msg = parseFrameMsg(e.data, id);
+  if (!msg) return { kind: "ignore" };
+  if (s.draining) return msg.type === "fileWrite" ? { kind: "drainWrite", msg } : { kind: "ignore" };
+  if (s.dead) return { kind: "ignore" };
+  if (msg.type === "ready" && s.guard.ready() === "kill") return { kind: "kill" };
+  return { kind: "receive", msg };
 }

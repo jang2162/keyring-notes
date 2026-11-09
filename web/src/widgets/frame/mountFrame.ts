@@ -6,8 +6,7 @@ import { focusOutAction, type WidgetSession } from "../session";
 import type { WidgetContext } from "../types";
 import { frameSrcdoc } from "./bootstrap";
 import { FrameHost } from "./host";
-import { frameEventAction, frameFocusInside, frameGuard, frameHeight, FRAME_MIN_HEIGHT } from "./layout";
-import { parseFrameMsg } from "./protocol";
+import { frameFocusInside, frameGuard, frameHeight, FRAME_MIN_HEIGHT, routeFrameMessage } from "./layout";
 import { fetchFrameCode, resolveFrameCode } from "./source";
 
 /**
@@ -155,19 +154,11 @@ export function mountFrame(
   };
 
   function onMessage(e: MessageEvent) {
-    const action = frameEventAction({ sourceIsFrame: win !== null && e.source === win, origin: e.origin });
-    if (action === "ignore") return;
-    if (action === "kill") return kill();
-    const msg = parseFrameMsg(e.data, id);
-    if (!msg) return;
-    if (draining) {
-      // 지운 iframe 이 이미 보낸 쓰기만 받는다 — 답은 보내지 않는다(받을 문서가 없다)
-      if (msg.type === "fileWrite" && o.file) o.file.write(msg.bytes, msg.baseHash).catch(() => {});
-      return;
-    }
-    if (dead) return;
-    if (msg.type === "ready" && guard.ready() === "kill") return kill();
-    host?.receive(msg);
+    const r = routeFrameMessage({ sourceIsFrame: win !== null && e.source === win, origin: e.origin, data: e.data }, id, { draining, dead, guard });
+    if (r.kind === "kill") return kill();
+    // 지운 iframe 이 이미 보낸 쓰기만 받는다 — 답은 보내지 않는다(받을 문서가 없다)
+    if (r.kind === "drainWrite") return void o.file?.write(r.msg.bytes, r.msg.baseHash).catch(() => {});
+    if (r.kind === "receive") host?.receive(r.msg);
   }
 
   o.onUpdate(() => host?.update());
