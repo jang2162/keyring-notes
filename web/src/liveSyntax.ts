@@ -63,8 +63,14 @@ export function syntaxMarks(state: EditorState, from: number, to: number, active
     const tail = close ? lineOf(close.from) : lineOf(node.to);
     for (let i = head + 1; i <= (close ? tail - 1 : tail); i++) out.push({ kind: "codeLine", line: i });
     for (let i = head; i <= tail; i++) if (active.has(i)) return;
-    const text = node.getChild("CodeText");
-    out.push({ kind: "fenceHead", from: open.from, to: doc.line(head).to, lang, code: text ? state.sliceDoc(text.from, text.to) : "" });
+    // 목록·인용 안에서는 CodeText 가 줄마다 따로 생기고(사이에 들여쓰기·QuoteMark) 빈 줄에는 없을 수 있어 코드 줄마다 겹친 글을 모은다
+    const texts = node.getChildren("CodeText");
+    const lines: string[] = [];
+    for (let i = head + 1; i <= (close ? tail - 1 : tail); i++) {
+      const l = doc.line(i);
+      lines.push(texts.map((t) => (t.to < l.from || t.from > l.to ? "" : state.sliceDoc(Math.max(t.from, l.from), Math.min(t.to, l.to)))).join(""));
+    }
+    out.push({ kind: "fenceHead", from: open.from, to: doc.line(head).to, lang, code: lines.join("\n") });
     if (close) out.push({ kind: "fenceTail", from: close.from, to: doc.line(tail).to });
   };
 

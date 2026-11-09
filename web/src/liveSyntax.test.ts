@@ -142,6 +142,21 @@ describe("코드 블록", () => {
     expect(only(marks("~~~py extra\nx\n~~~"), "fenceHead")).toEqual([{ kind: "fenceHead", from: 0, to: 11, lang: "py", code: "x" }]);
   });
 
+  it("목록 안 코드 블록: 펜스 기호부터 숨기고(글머리 들여쓰기는 둔다) 복사할 코드는 모든 줄", () => {
+    const list = marks("- item\n  ```js\n  a();\n  b();\n  ```");
+    expect(only(list, "fenceHead")).toEqual([{ kind: "fenceHead", from: 9, to: 14, lang: "js", code: "a();\nb();" }]);
+    expect(only(list, "fenceTail")).toEqual([{ kind: "fenceTail", from: 31, to: 34 }]);
+  });
+
+  it("목록 안 코드 블록의 빈 줄도 복사할 코드에 남는다", () => {
+    expect(only(marks("- item\n  ```js\n  a();\n\n  b();\n  ```"), "fenceHead")[0]?.code).toBe("a();\n\nb();");
+  });
+
+  it("인용 안 코드 블록: 펜스 기호부터 숨기고 복사할 코드는 인용 기호를 뺀 모든 줄", () => {
+    expect(only(marks("> ```js\n> a();\n> b();\n> ```"), "fenceHead")).toEqual([{ kind: "fenceHead", from: 2, to: 7, lang: "js", code: "a();\nb();" }]);
+    expect(only(marks("> ```js\n> a();\n>\n> >b\n> ```"), "fenceHead")[0]?.code).toBe("a();\n\n>b");
+  });
+
   it("코드 안의 ---·> ·- 는 그리지 않는다", () => {
     const list = marks("```\n---\n> a\n- b\n```");
     expect(list.filter((m) => m.kind === "hr" || m.kind === "quoteLine" || m.kind === "bullet")).toEqual([]);
