@@ -460,7 +460,7 @@ function tableField(getCtx: GetCtx) {
   return StateField.define<DecorationSet>({
     create: (state) => buildTables(state, getCtx),
     update: (deco, tr) =>
-      tr.docChanged || tr.state.field(rawField) !== tr.startState.field(rawField) || syntaxTree(tr.state) !== syntaxTree(tr.startState)
+      tr.docChanged || tr.state.field(rawField) !== tr.startState.field(rawField, false) || syntaxTree(tr.state) !== syntaxTree(tr.startState)
         ? buildTables(tr.state, getCtx)
         : deco,
     provide: (f) => EditorView.decorations.from(f),

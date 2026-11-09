@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { editTableRaw, inDrawnTable, tableEditor, tableRanges } from "./tableWidget";
@@ -78,5 +78,17 @@ describe("inDrawnTable: 본문 자동완성을 그린 표 안에서 끈다(칸�
     const off = EditorState.create({ doc: DOC, extensions: [markdown({ base: markdownLanguage })] });
     ensureSyntaxTree(off, DOC.length, 5000);
     expect(inDrawnTable(off, FROM + 3)).toBe(false);
+  });
+});
+
+describe("Live Preview 를 껐다 켜기(Compartment 재구성)", () => {
+  it("표 편집기를 다시 넣는 트랜잭션에서 던지지 않고 표를 그린다", () => {
+    const slot = new Compartment();
+    let s = EditorState.create({ doc: DOC, extensions: [markdown({ base: markdownLanguage }), slot.of([])] });
+    ensureSyntaxTree(s, DOC.length, 5000);
+    s = s.update({ effects: slot.reconfigure(tableEditor(() => null, opts)) }).state;
+    expect(tableRanges(s)).toEqual([{ from: FROM, to: TO }]);
+    s = s.update({ effects: slot.reconfigure([]) }).state;
+    expect(inDrawnTable(s, FROM + 3)).toBe(false);
   });
 });
