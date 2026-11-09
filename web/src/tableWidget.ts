@@ -138,7 +138,7 @@ export function disposeTable(wrap: object) {
   const set = disposers.get(wrap);
   if (!set) return;
   disposers.delete(wrap);
-  for (const fn of [...set]) fn();
+  for (const fn of set) fn();
 }
 
 const ALIGN: Record<string, string> = { left: "left", center: "center", right: "right" };
