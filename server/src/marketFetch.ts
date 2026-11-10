@@ -5,7 +5,7 @@ import { MARKET_LIMITS, PathError, redactUrl } from "@keyring-notes/core";
 import { guardedLookup, isPrivateAddress, type LookupFn } from "./netGuard.js";
 
 /**
- * 마켓 저장소로 나가는 요청 하나(리다이렉트 포함). 규칙은 계획 docs/superpowers/plans/2026-11-10-marketplace-phase1.md
+ * 마켓 저장소로 나가는 요청 하나(리다이렉트 포함). 규칙은 docs/guides/development.md 「마켓 받기와 나가는 요청」 과 계획 docs/superpowers/plans/2026-11-10-marketplace-phase1.md
  * 「Global Constraints」 의 나가는 요청 줄: https 만·사설 주소 거부(접속에 쓰는 풀이로)·리다이렉트마다 다시·쿠키·인증·프록시 없음·
  * identity 만·크기는 받는 동안 센다·시간은 요청 전체에.
  */

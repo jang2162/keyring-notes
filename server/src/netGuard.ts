@@ -7,7 +7,7 @@ import { PathError } from "@keyring-notes/core";
  * lookup 으로 준다) — 판정한 뒤 접속이 이름을 다시 풀면 둘째 풀이가 사설 주소를 줄 수 있다(DNS 재바인딩).
  * 웹 클립(convert.ts)의 판정은 이 꼴이 아니다 — docs/guides/development.md 「알려진 한계」.
  *
- * 주소 판정 표의 원본은 계획 docs/superpowers/plans/2026-11-10-marketplace-phase1.md 「주소 판정 표」이고,
+ * 주소 판정 표의 원본은 docs/guides/development.md 「마켓 받기와 나가는 요청」 이고,
  * Rust market_fetch(app/src-tauri) 가 같은 표·같은 시험 벡터를 쓴다. 한쪽을 고치면 다른 쪽도 고친다.
  */
 

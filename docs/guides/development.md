@@ -109,6 +109,55 @@ keyring-widget 중 앱 코드가 아니거나 인라인 기준을 넘는 위젯(
 
 **알려진 한계.** 위젯이 이미 가진 상태·파일 바이트를 자기 iframe 의 탐색 URL(탐색이 시작되는 순간 주소에 실어)이나 WebRTC(`RTCPeerConnection` 의 STUN)로 밖에 내보내는 것은 CSP·sandbox 로 막을 수 없다. 내장 위젯은 앱 코드라 믿고, 제3자 위젯은 마켓플레이스 설계에서 다룬다(검토·서명·권한 표시 등). 데스크톱 앱(WKWebView)에서는 iframe 에도 `webkit.messageHandlers.ipc` 가 보이지만, 호출 키가 없는 요청은 답도 부수 효과도 없었다(Task 8 확인 — 키는 부모 창의 `__TAURI_INTERNALS__` 에만 있다).
 
+## 마켓 받기와 나가는 요청
+
+마켓플레이스 1단계(설계 `docs/superpowers/specs/2026-11-10-marketplace-design.md`, 계획 `docs/superpowers/plans/2026-11-10-marketplace-phase1.md`)가 서버·앱에서 저장소로 나가는 요청을 어떻게 지키는지 적는다. 형식·검사의 단일 원본은 core `marketFormat.ts`·`marketLock.ts` 다.
+
+**누가 받는가.** 화면은 저장소에 직접 요청하지 않는다(CSP `connect-src 'self'` 그대로). 서버 모드는 서버(`server/src/marketCache.ts`)가 받고 화면은 `/api/market/*` 에서 가져온다. 데스크톱·모바일 앱 기기 볼트는 앱 명령 `market_fetch`(`app/src-tauri/src/market.rs`)로 받는다. 앱 + 동기화는 서버를 먼저 쓰고 길의 문제(닿지 못함·사설 거부·`http:` 거부·시간·리다이렉트·401)일 때만 네이티브로 대신 받는다. 브라우저 기기 볼트에 동기화가 없으면 받지 않는다(`web/src/market/source.ts` `pickSource`).
+
+**이름 풀이를 접속에 고정한다.** 판정한 뒤 접속이 이름을 다시 풀면 둘째 풀이가 사설 주소를 줄 수 있다(DNS 재바인딩). 서버는 `http.request` 의 `lookup` 옵션(`netGuard.ts` `guardedLookup`), Rust 는 reqwest 의 `dns_resolver`(`GuardResolver`)로 접속에 쓰는 풀이 결과 자체를 판정한다. Node 의 함정 셋:
+
+- IP 글자 주소(`https://127.0.0.1/`, `https://[::1]/`)는 `lookup` 을 타지 않는다. 그래서 접속 전에 따로 판정한다(`checkUrl`). IPv6 글자의 `URL.hostname` 은 대괄호를 품어(`"[::1]"`) `net.isIP` 가 0 이 되므로 벗긴 뒤 본다. 10진·16진 IPv4 꼴은 WHATWG URL 이 점 꼴로 바꿔 둔다.
+- `autoSelectFamily` 가 켜져 있으면 `lookup(host, { all: true }, cb)` 꼴로 불린다. 두 꼴 다 받는다.
+- 전역 agent 는 `NODE_USE_ENV_PROXY=1` 이면 프록시를 타고, 그때 `lookup` 이 불리지 않는다. 그래서 요청마다 `agent: false` 다. Rust 는 `no_proxy()`.
+
+리다이렉트는 손으로 따라가며 홉마다 다시 판정한다. 접속한 소켓 주소도 한 번 더 본다(둘째 줄). 시간 상한은 요청 하나 전체(리다이렉트 포함)에 하나다. 크기는 받는 동안 세고 넘으면 끊는다. `accept-encoding: identity` 를 보내고, 압축된 응답은 거부한다(압축 폭탄 면이 없다).
+
+**주소 판정 표**(서버 `netGuard.ts`·Rust `market.rs` 가 같다. 시험 벡터는 둘 다 `server/test/fixtures/address-vectors.json` 하나를 읽는다 — 한쪽만 고치지 않는다):
+
+- 판정 방법: 주소를 바이트로 파싱해 CIDR 로 본다. 앞뒤 `[`·`]` 와 zone id(`%en0`·`%25en0`)는 벗긴다. 파싱하지 못하면 막는다(fail-closed). IPv4 의 앞자리 0(`01.1.1.1`)도 파싱 실패다.
+- IPv4: `0/8`·`10/8`·`100.64/10`·`127/8`·`169.254/16`·`172.16/12`·`192.0.0/24`·`192.0.2/24`·`192.88.99/24`·`192.168/16`·`198.18/15`·`198.51.100/24`·`203.0.113/24`·`224/4` 이상.
+- IPv6: `::/96` 전체, `fc00::/7`·`fe80::/10`·`fec0::/10`·`ff00::/8`, `64:ff9b:1::/48`, `2001::/32`(Teredo)·`2001:db8::/32`·`2001:2::/48`·`100::/64`.
+- IPv4 를 품은 꼴은 품은 IPv4 로 다시 판정한다: `::ffff:0:0/96`(사상)·`::ffff:0:0:0/96`(SIIT)·`64:ff9b::/96`(NAT64)·`2002::/16`(6to4).
+
+**`http:`·사설 주소는 운영자·그 기기만.** 서버는 `KEYRING_MARKET_ALLOW_HTTP`·`KEYRING_MARKET_ALLOW_PRIVATE`(웹 클립의 `KEYRING_FETCH_ALLOW_PRIVATE` 와 따로), 앱은 이 기기의 `localStorage` `keyring:market:device`. 볼트의 공통 설정에 두지 않는다 — 볼트를 고칠 수 있는 기기·사람이 서버를 내부망으로 보내는 통로가 된다.
+
+**패키지 파일은 실행할 수 없는 꼴로만 낸다.** `/api/market/file` 은 `application/octet-stream` + `content-disposition: attachment` + `content-security-policy: default-src 'none'; sandbox` 다. 앱 페이지 CSP 가 `script-src 'self'` 라, 같은 출처에서 JS 타입으로 내면 HTML 주입 하나로 제3자 `frame.js` 가 앱 권한으로 돈다. 화면은 바이트로 받아 iframe 에 글로 건넨다.
+
+**서버 캐시**(`<KEYRING_DATA>/packages/@scope/name/<version>/` + `.keyring-cache.json`):
+
+- 받기는 `.tmp-*` 에 다 쓰고 sha256·크기·매니페스트를 지난 뒤 메타를 쓴다.
+- 놓는 순서는 ① 판 → `.old-*` ② `.tmp-*` → 판 ③ `.old-*` 삭제다. 비지 않은 폴더 위로의 `rename` 은 `ENOTEMPTY` 라 덮어 놓을 수 없다.
+- 시작 정리는 바이트가 메타 sha 와 맞는 `.tmp` 만 살리고, 판 폴더가 비면 `.old` 를 되돌린다.
+- 캐시를 「있다」 고 보는 모든 길(빠른 길·시작 정리·맞추기)이 바이트를 다시 잰다. 상한 판은 다시 받는다.
+- 잠금에 없는 판은 마지막으로 받은 지 24시간 뒤에 지운다. 기기 볼트 + 동기화 기기가 받게 한 뒤 잠금이 동기화로 오기 전에 지우지 않게 하려는 것이다.
+- 공통 설정이 깨져 읽지 못하면 정리하지 않는다.
+
+**기기 캐시와 적용 자리**(`web/src/market/`):
+
+- 화면 쪽 캐시는 브라우저 IndexedDB(`keyring-market`) 또는 앱 데이터 폴더(`$APPDATA/packages/`)다.
+- 잠금이 바뀔 때마다 맞추고(`state.ts`), 잠금을 읽은 뒤에만 잠금에 없는 판을 바로 지운다.
+- 2·3단계는 `registerPackageKind(type, { apply })` 로 종류별 적용자를 걸고 `readPackageFile` 로 바이트를 읽는다. 읽을 때마다 잠금 sha 로 다시 잰다.
+- 개발 빌드(`import.meta.env.DEV`)에서만 `globalThis.keyringMarket` 이 있다.
+
+**알려진 한계.**
+
+- 웹 클립(`server/src/convert.ts` `fetchUrl`)은 아직 DNS 재바인딩에 열려 있다(판정 뒤 `fetch` 가 이름을 다시 푼다). 마켓 받기는 이 함수를 쓰지 않는다.
+- identity 요청을 따르지 않고 압축해 보내는 호스팅은 쓸 수 없다(서버·앱 둘 다 거부).
+- HTTP 프록시 뒤에서만 바깥에 나갈 수 있는 서버는 받지 못한다(`agent: false`).
+- 공식 저장소 주소는 `https://keyring-notes-marketplace.develma.com/`(core `OFFICIAL_REPO_URL`)다. 마켓 서버를 배포하기 전까지는 이 주소가 저장소를 내주지 않는다.
+- 공식 마켓 배포는 `docs/guides/deploy-marketplace.md`.
+
 ## 의존성과 라이선스 고지
 
 웹 빌드(`vite build`)가 빌드 결과에 제3자 라이선스 고지 `web/dist/licenses.txt` 를 함께 낸다. 서버는 그것을 `/licenses.txt` 로 내주고, 화면은 설정 「정보」 의 「오픈 소스 라이선스」 에서 모달로 연다. 웹은 서비스 워커가 지연 자산과 함께 받아 두어 오프라인에서도 열린다. 생성물이라 커밋하지 않는다. 개발 서버(`vite`)에는 없다. 서버는 `/licenses.txt` 를 인증 없이 내준다 — 로그인 전에도 서버 의존성의 이름과 판이 보인다.

@@ -77,6 +77,17 @@ The image fixes `KEYRING_DATA`, `KEYRING_HOST` and `KEYRING_PORT`, and the vault
 > [!NOTE]
 > Inside the container, `localhost` is the container itself. A `KEYRING_EMBED_URL` that points to a model running on the host needs the host's address instead.
 
+## Marketplace server
+
+The marketplace server (`marketplace/compose.yaml`) is separate from Keyring Notes. Its `.env` lives in `marketplace/.env`, with examples in `marketplace/.env.example`. See [Run your own marketplace](how-to/run-a-marketplace.md).
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `MARKET_BIND` | `127.0.0.1` | Host address the server port is published on |
+| `MARKET_PORT` | `8080` | Host port |
+| `MARKET_REBUILD_SECONDS` | `60` | How often the server rebuilds `index.json` from the packages folder |
+| `MARKET_NAME` | `Keyring Notes` | Repository name in `index.json`, shown in the app's repository list |
+
 ## Next steps
 
 - [Deploy with Docker](how-to/deploy-with-docker.md): put these keys to use on a server.

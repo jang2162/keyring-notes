@@ -213,7 +213,7 @@ Upload the whole folder to any host that serves static files as they are:
 - Do not compress responses. The app asks for uncompressed files and refuses compressed ones.
 - Serve the files byte for byte. A changed file no longer matches its checksum.
 
-After you publish a new version, run `pkg index` again and upload `index.json` with the new files.
+After you publish a new version, run `pkg index` again and upload `index.json` with the new files. To run a server that rebuilds `index.json` by itself, see [Run your own marketplace](run-a-marketplace.md).
 
 ## Next steps
 

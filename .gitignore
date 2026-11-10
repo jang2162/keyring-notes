@@ -27,6 +27,7 @@ dist/
 # 서버에서 직접 쓰는 개인 덮어쓰기 파일. 서버마다 다르며 커밋하지 않는다(쓰는 법: docs/manual/en/how-to/deploy-with-docker.md)
 /compose.override.yaml
 /marketplace/compose.override.yaml
+/marketplace/index.json
 
 # START Ruler Generated Files
 /.agents/skills

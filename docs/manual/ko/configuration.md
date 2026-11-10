@@ -78,6 +78,17 @@
 > [!NOTE]
 > 컨테이너 안의 `localhost` 는 컨테이너 자신입니다. 호스트에서 도는 모델을 `KEYRING_EMBED_URL` 로 가리키려면 호스트의 주소를 쓰세요.
 
+## 마켓 서버
+
+마켓 서버(`marketplace/compose.yaml`)는 Keyring Notes 와 따로 뜹니다. `.env` 는 `marketplace/.env` 에 두고, 예시는 `marketplace/.env.example` 에 있습니다. [내 마켓플레이스 운영하기](how-to/run-a-marketplace.md)를 보세요.
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `MARKET_BIND` | `127.0.0.1` | 서버 포트를 열 호스트 주소 |
+| `MARKET_PORT` | `8080` | 호스트 포트 |
+| `MARKET_REBUILD_SECONDS` | `60` | 패키지 폴더에서 `index.json` 을 다시 만드는 주기 |
+| `MARKET_NAME` | `Keyring Notes` | `index.json` 의 저장소 이름. 앱의 저장소 목록에 보입니다 |
+
 ## 다음 단계
 
 - [Docker 로 배포하기](how-to/deploy-with-docker.md): 이 키들을 서버에 적용하기

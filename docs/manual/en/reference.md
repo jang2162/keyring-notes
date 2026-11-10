@@ -18,6 +18,7 @@ Run the admin CLI with `pnpm keyring <command>` from a source checkout, or `dock
 | `agent grant <name> <path> <level>` | Set access to a folder or note. The path `/` means the whole vault |
 | `agent revoke <name> <path>` | Remove a rule. The parent rule, or `hidden`, applies again |
 | `pkg check <folder>` | Check a marketplace package folder. Exits with `1` on an error and prints warnings |
+| `pkg serve <folder> [--host <address>] [--port <port>] [--rebuild-seconds <seconds>] [--name <name>]` | Serve a marketplace repository: rebuild `index.json` at start and on a timer, and serve `/index.json` and `/packages/…` only. Used by the marketplace server image |
 | `pkg index <folder> [--name <name>]` | Check every package under `<folder>/packages/` and write `<folder>/index.json`. Unchanged files leave it untouched |
 
 The server re-reads the config file on the next request after it changes, so no restart is needed.
