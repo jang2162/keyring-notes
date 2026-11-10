@@ -203,15 +203,17 @@ export function t(key: string, params?: Params): string {
 
 /** 언어가 바뀌면 다시 그린다. 지금 언어를 돌려준다 */
 export function useLang(): string {
-  const [l, setL] = useState(current);
+  // 언어 id 가 같아도 팩이 바뀔 수 있다(이 기기 언어팩 불러오기·마켓 판 업데이트) — 알림마다 다시 그린다
+  const [, bump] = useState(0);
   useEffect(() => {
-    listeners.add(setL);
-    setL(current);
+    const fn = () => bump((n) => n + 1);
+    listeners.add(fn);
+    fn();
     return () => {
-      listeners.delete(setL);
+      listeners.delete(fn);
     };
   }, []);
-  return l;
+  return current;
 }
 
 export function onLanguageChange(fn: (lang: string) => void): () => void {
