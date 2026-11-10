@@ -148,18 +148,23 @@ export function parsePackageId(id: string): { scope: string; name: string } | nu
   return m ? { scope: m[1]!, name: m[2]! } : null;
 }
 
+/** 오류 글·응답에 되돌려 줄 주소: `scheme://user:pass@` 의 자격 증명을 지운다(URL 로 읽히지 않는 글에도) */
+export function redactUrl(url: string): string {
+  return String(url).replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#]*@/i, "$1");
+}
+
 /** 저장소 주소의 정규형: https(허용 시 http)·사용자/비밀번호·?·# 없음·끝 / 하나. 같은지는 이 글자로 본다. */
 export function normalizeRepoUrl(url: string, opts: { allowHttp?: boolean } = {}): string {
   let u: URL;
   try {
     u = new URL(String(url).trim());
   } catch {
-    throw new PathError("market_url_invalid", { url: String(url) });
+    throw new PathError("market_url_invalid", { url: redactUrl(String(url)) });
   }
-  if (u.protocol !== "https:" && !(u.protocol === "http:" && opts.allowHttp)) throw new PathError("market_url_protocol", { url: String(url) });
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && opts.allowHttp)) throw new PathError("market_url_protocol", { url: redactUrl(String(url)) });
   if (u.username || u.password) throw new PathError("market_url_credentials", { url: `${u.protocol}//${u.host}${u.pathname}` });
   // `?`·`#` 만 있고 값이 비면 search·hash 가 "" 라 href 로 본다
-  if (!u.hostname || u.href.includes("?") || u.href.includes("#")) throw new PathError("market_url_invalid", { url: String(url) });
+  if (!u.hostname || u.href.includes("?") || u.href.includes("#")) throw new PathError("market_url_invalid", { url: redactUrl(String(url)) });
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}/`;
 }
 

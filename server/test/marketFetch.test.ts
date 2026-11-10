@@ -91,6 +91,17 @@ describe("주소 판정", () => {
     expect(s.connections).toBe(0);
     expect(() => checkUrl(new URL("http://x/"), { allowHttp: false, allowPrivate: false })).toThrow(PathError);
     expect(() => checkUrl(new URL("https://u:p@x/"), { allowHttp: false, allowPrivate: false })).toThrow(/./);
+    for (const u of ["http://u:p@x/", "https://u:p@x/"]) {
+      const e = (() => {
+        try {
+          checkUrl(new URL(u), { allowHttp: false, allowPrivate: false });
+        } catch (x) {
+          return x as PathError;
+        }
+        throw new Error("no error");
+      })();
+      expect(JSON.stringify(e.params) + e.message, u).not.toContain("u:p");
+    }
   });
 
   it("사설로 풀리는 이름 — 접속 0, 풀이는 한 번(판정한 풀이가 접속에 쓰인다)", async () => {

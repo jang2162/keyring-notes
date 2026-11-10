@@ -146,7 +146,7 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | GET | `/api/market/index?repo=` | | 서버가 받아 검사한 마켓 저장소의 `index.json` → `{repo, index, ignored, error?}`. 5분 동안 캐시하고, 실패는 30초 동안 다시 묻지 않습니다. 소유자와 기기 |
 | POST | `/api/market/ensure` | `{id, entry: {version, repo, sha256}, sizes?}` | 패키지 판 하나를 서버 캐시에 받게 하고 파일마다 sha256 을 확인합니다 → `{ok: true}`. 잠금은 바꾸지 않습니다. 소유자와 기기 |
 | GET | `/api/market/file?id=&version=&path=&sha256=` | | 캐시의 패키지 파일. `sha256` 이 맞을 때만 줍니다. 브라우저가 실행하지 않게 `application/octet-stream`, `content-disposition: attachment`, sandbox CSP 로 보냅니다. 소유자와 기기 |
-| GET | `/api/market/status` | | 잠금의 패키지별 캐시 상태 → `{<id>: {state: ready\|fetching\|error, version, error?}}`. 소유자와 기기 |
+| GET | `/api/market/status` | | 잠금의 패키지별 캐시 상태 → `{<id>: {state: ready\|fetching\|error, version, error?}}`. 서버가 읽지 못한 항목은 `market_lock_invalid` 인 `error` 로 보입니다. 캐시 파일의 바이트가 맞지 않으면 다시 받을 때까지 그 패키지가 `error` 입니다. 소유자와 기기 |
 
 ### 오류
 
@@ -334,7 +334,7 @@ marketplace:
 - `repos` 는 순서가 우선순위입니다. 없으면 공식 저장소를 씁니다. 빈 목록이면 저장소가 없는 것입니다.
 - `packages` 는 잠금입니다. 모든 기기와 서버가 이 판·이 파일을 그대로 씁니다. 파일을 손으로 고쳤거나 동기화로 바뀐 것이 와도 서버는 잠금에 적힌 것을 받고, 잠금에서 빠진 것은 24시간 뒤에 지웁니다.
 - 항목은 자기 `repo` 에서만 받습니다. 그 저장소가 `repos` 에 없어도 마찬가지입니다.
-- id·판·주소·파일 이름·체크섬이 잘못된 항목은 건너뛰고 `market_lock_invalid` 로 알립니다. 다른 항목은 그대로 씁니다.
+- id·판·주소·파일 이름·체크섬이 잘못된 항목은 건너뜁니다. 그 항목으로는 아무것도 받거나 쓰거나 지우지 않고, `GET /api/market/status` 에 `market_lock_invalid` 로 보입니다. 다른 항목은 그대로 씁니다.
 - 두 기기가 같은 항목을 바꾸면 판이 높은 쪽의 항목이 통째로 남습니다. 한 기기가 지우고 다른 기기가 업데이트했으면 업데이트가 이깁니다.
 
 ## 백업 파일 형식

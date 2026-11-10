@@ -124,7 +124,7 @@ describe("받게 하기와 파일", () => {
     }
   });
 
-  it("sha 가 틀린 항목은 400 market_hash_mismatch(path), status 에 error", async () => {
+  it("sha 가 틀린 항목은 400 market_hash_mismatch(path), 잠금에 없는 id 라 status 에는 없다", async () => {
     const { app, cookie } = env;
     const bad = { ...e(), sha256: { ...e().sha256, "frame.js": "f".repeat(64) } };
     const r = await app.request("/api/market/ensure", { method: "POST", headers: { ...json, ...cookie }, body: ensureBody(bad) });
@@ -133,7 +133,8 @@ describe("받게 하기와 파일", () => {
     expect(body.code).toBe("market_hash_mismatch");
     expect(body.params.path).toBe("frame.js");
     const s = await (await app.request("/api/market/status", { headers: cookie })).json();
-    expect(s["@me/clock"]).toMatchObject({ state: "error", error: { code: "market_hash_mismatch" } });
+    // status 는 잠금의 패키지별 — 잠금에 없는 id 의 실패는 ensure 응답으로만 간다(리뷰 L1)
+    expect(s["@me/clock"]).toBeUndefined();
   });
 
   it("POST 는 JSON 만(415)", async () => {

@@ -12,6 +12,7 @@ import {
   parseRepoIndex,
   parseSemver,
   PathError,
+  redactUrl,
   satisfies,
   validRange,
 } from "../src/index.js";
@@ -108,6 +109,19 @@ describe("저장소 주소", () => {
     expect(code(() => normalizeRepoUrl("ftp://x/"))).toBe("market_url_protocol");
     expect(code(() => normalizeRepoUrl("not a url"))).toBe("market_url_invalid");
   });
+  it("오류에 자격 증명을 되돌려 주지 않는다", () => {
+    for (const u of ["http://u:p@x/", "ftp://u:p@x/", "https://u:p@x/?a", "https://u:p@x/"]) {
+      try {
+        normalizeRepoUrl(u);
+        throw new Error("no error");
+      } catch (e) {
+        expect(JSON.stringify((e as PathError).params) + (e as Error).message, u).not.toContain("u:p");
+      }
+    }
+    expect(redactUrl("https://u:p@x.test/a")).toBe("https://x.test/a");
+    expect(redactUrl("not a url")).toBe("not a url");
+  });
+
   it("공식 저장소", () => {
     expect(OFFICIAL_REPO_URL).toBe("https://keyring-notes-marketplace.develma.com/");
     expect(isOfficialRepo("https://keyring-notes-marketplace.develma.com")).toBe(true);

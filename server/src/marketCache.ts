@@ -18,6 +18,7 @@ import {
   parseVaultSettings,
   PathError,
   planCache,
+  redactUrl,
   settingsObject,
   sha256Hex,
   VAULT_SETTINGS_PATH,
@@ -83,6 +84,10 @@ export class MarketCache {
   private readonly inflight = new Map<string, Promise<void>>();
   private readonly indexes = new Map<string, { at: number; result: RepoIndexResult }>();
   private readonly states = new Map<string, Status>();
+  /** 마지막 reconcile 의 잠금. status 는 잠금의 패키지만 보인다(null 이면 아직 모름) */
+  private lock: Record<string, LockEntry> | null = null;
+  /** 바이트를 잠금 sha 로 다시 잰 판 폴더 → 그때의 메타 at. read 가 불일치를 보면 지운다 */
+  private readonly verified = new Map<string, number>();
   private queue: Promise<void> = Promise.resolve();
 
   constructor(private readonly opts: MarketCacheOptions) {
@@ -110,6 +115,37 @@ export class MarketCache {
     }
   }
 
+  /**
+   * 폴더의 파일이 메타의 sha256 그대로인가. 캐시를 「있다」 고 보는 모든 길(빠른 길·시작 정리·맞추기)이 거친다 —
+   * 메타만 보면 확인 뒤 쓰기가 끊겼거나 디스크에서 바뀐 판이 ready 로 남은 채 영원히 404 가 된다.
+   * 경로 중간의 링크도 거부한다(실제 경로가 폴더 아래 그 이름 그대로여야 한다).
+   */
+  private async verifyDir(dir: string, meta: Meta, memo = true): Promise<boolean> {
+    if (memo && this.verified.get(dir) === meta.at) return true;
+    try {
+      if (!(await this.insideRoot(dir))) return false;
+      const real = await realpath(dir);
+      for (const [p, sha] of Object.entries(meta.sha256)) {
+        if (!PACKAGE_TYPES.some((t) => packageFileAllowed(t, p))) return false;
+        const abs = resolveInVault(dir, p);
+        if ((await realpath(abs)) !== path.join(real, p)) return false;
+        if (!(await lstat(abs)).isFile()) return false;
+        if ((await sha256Hex(new Uint8Array(await readFile(abs)))) !== sha) return false;
+      }
+    } catch {
+      return false;
+    }
+    if (memo) this.verified.set(dir, meta.at);
+    return true;
+  }
+
+  /** 잠금에 있는 그 판(같은 sha)일 때만 status 를 바꾼다 — 잠금에 없는 id 나 다른 판을 받게 한 ensure 가 잠금의 상태를 덮지 않게 */
+  private setState(id: string, entry: LockEntry, s: Status): void {
+    const locked = this.lock?.[id];
+    if (!locked || locked.version !== entry.version || !sameHashes(locked.sha256, entry.sha256)) return;
+    this.states.set(id, s);
+  }
+
   private async readMeta(dir: string): Promise<Meta | null> {
     try {
       const m = JSON.parse(await readFile(path.join(dir, META), "utf8")) as Meta;
@@ -131,7 +167,8 @@ export class MarketCache {
     for (const n of order) {
       const dir = path.join(this.opts.root, n);
       const meta = await this.readMeta(dir);
-      if (meta) {
+      // 메타가 있어도 바이트를 다시 잰다 — 확인 뒤 쓰기가 끊긴 .tmp 를 놓으면 그 판은 스스로 낫지 않는다
+      if (meta && (await this.verifyDir(dir, meta, false))) {
         try {
           const target = this.versionDir(meta.id, meta.version);
           if (!(await this.exists(target))) {
@@ -183,11 +220,11 @@ export class MarketCache {
   private async fetchVersion(id: string, entry: LockEntry, sizes?: Record<string, number>): Promise<void> {
     const dir = this.versionDir(id, entry.version);
     const have = await this.readMeta(dir);
-    if (have && have.repo === entry.repo && sameHashes(have.sha256, entry.sha256) && (await this.insideRoot(dir))) {
-      this.states.set(id, { state: "ready", version: entry.version });
+    if (have && have.repo === entry.repo && sameHashes(have.sha256, entry.sha256) && (await this.verifyDir(dir, have))) {
+      this.setState(id, entry, { state: "ready", version: entry.version });
       return;
     }
-    this.states.set(id, { state: "fetching", version: entry.version });
+    this.setState(id, entry, { state: "fetching", version: entry.version });
     const tmp = path.join(this.opts.root, `.tmp-${randomBytes(6).toString("hex")}`);
     try {
       if (parsePackageId(id)!.scope === "keyring" && !isOfficialRepo(entry.repo)) throw new PathError("market_scope_reserved", { id });
@@ -224,10 +261,11 @@ export class MarketCache {
       const meta: Meta = { id, version: entry.version, repo: entry.repo, sha256: entry.sha256, at: this.now() };
       await writeFile(path.join(tmp, META), JSON.stringify(meta));
       await this.place(tmp, dir);
-      this.states.set(id, { state: "ready", version: entry.version });
+      this.verified.set(dir, meta.at);
+      this.setState(id, entry, { state: "ready", version: entry.version });
     } catch (e) {
       if (!(e as { keepTmp?: boolean }).keepTmp) await rm(tmp, { recursive: true, force: true });
-      this.states.set(id, { state: "error", version: entry.version, error: errorOf(e) });
+      this.setState(id, entry, { state: "error", version: entry.version, error: errorOf(e) });
       throw e;
     }
   }
@@ -266,11 +304,18 @@ export class MarketCache {
     if (!meta || meta.id !== id || meta.version !== version || meta.sha256[file] !== sha256) throw missing();
     const abs = resolveInVault(dir, file);
     try {
+      // 판 폴더 안쪽 링크(messages -> 밖)도 따라가지 않는다
+      if ((await realpath(abs)) !== path.join(await realpath(dir), file)) throw missing();
       const st = await lstat(abs);
       if (!st.isFile()) throw missing();
       const bytes = new Uint8Array(await readFile(abs));
-      // 메타는 놓을 때 확인한 값이다 — 그 뒤 디스크에서 바뀐 바이트는 내지 않는다
-      if ((await sha256Hex(bytes)) !== sha256) throw missing();
+      // 메타는 놓을 때 확인한 값이다 — 그 뒤 디스크에서 바뀐 바이트는 내지 않고, 다음 맞추기가 다시 받게 한다
+      if ((await sha256Hex(bytes)) !== sha256) {
+        this.verified.delete(dir);
+        const entry = this.lock?.[id];
+        if (entry) this.setState(id, entry, { state: "error", version, error: { code: "market_hash_mismatch", params: { path: file } } });
+        throw missing();
+      }
       return bytes;
     } catch (e) {
       if (e instanceof NotFoundError) throw e;
@@ -285,7 +330,7 @@ export class MarketCache {
     try {
       repo = normalizeRepoUrl(repoInput, { allowHttp: this.opts.allowHttp });
     } catch (e) {
-      return { repo: String(repoInput), index: null, ignored: [], error: errorOf(e) };
+      return { repo: redactUrl(String(repoInput)), index: null, ignored: [], error: errorOf(e) };
     }
     const hit = this.indexes.get(repo);
     const ttl = (r: RepoIndexResult) => (r.error ? (this.opts.failTtlMs ?? 30_000) : (this.opts.indexTtlMs ?? 5 * 60_000));
@@ -325,7 +370,9 @@ export class MarketCache {
           const dir = path.join(root, s.name, n.name, v.name);
           const id = `${s.name}/${n.name}`;
           const meta = await this.readMeta(dir);
-          out.push({ id, version: v.name, sha256: meta?.sha256 ?? {}, dir, at: meta?.at ?? 0 });
+          // 바이트가 상한 판은 「없는 것」 으로 — planCache 가 다시 받는다
+          const ok = meta !== null && (await this.verifyDir(dir, meta));
+          out.push({ id, version: v.name, sha256: ok ? meta.sha256 : {}, dir, at: meta?.at ?? 0 });
         }
       }
     }
@@ -342,6 +389,7 @@ export class MarketCache {
   private async reconcileNow(settings: MarketplaceSettings | null): Promise<void> {
     await this.ready;
     if (!settings) return;
+    this.lock = settings.packages;
     const cached = await this.scan();
     const plan = planCache(settings.packages, cached);
     for (const { id, entry } of plan.fetch) await this.ensure(id, entry).catch(() => undefined);
@@ -356,7 +404,10 @@ export class MarketCache {
       // 비게 된 이름·범위 폴더도 지운다
       for (const up of [path.dirname(c.dir), path.dirname(path.dirname(c.dir))]) await rmdir(up).catch(() => undefined);
     }
-    for (const id of this.states.keys()) if (!(id in settings.packages)) this.states.delete(id);
+    // 읽지 못한 항목도 보인다 — 받지도 지우지도 않는다
+    const bad = new Set(settings.problems.map((p) => p.id));
+    for (const p of settings.problems) this.states.set(p.id, { state: "error", version: "", error: { code: p.code, params: { id: p.id } } });
+    for (const id of this.states.keys()) if (!(id in settings.packages) && !bad.has(id)) this.states.delete(id);
   }
 
   status(): Record<string, Status> {

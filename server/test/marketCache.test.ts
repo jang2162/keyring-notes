@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { KeyedError, OFFICIAL_REPO_URL, parseMarketplace, PathError, type LockEntry } from "@keyring-notes/core";
@@ -81,6 +81,9 @@ describe("ensure·read", () => {
     const meta = JSON.parse(await readFile(path.join(root, "@me", "clock", "1.0.0", ".keyring-cache.json"), "utf8"));
     expect(meta).toMatchObject({ id: "@me/clock", version: "1.0.0", repo: REPO, sha256: e.sha256 });
     expect(await codeOf(c.read("@me/clock", "1.0.0", "frame.js", "0".repeat(64)))).toBe("market_not_found");
+    // status 는 잠금의 패키지별 — 잠금을 알기 전의 ensure 는 보이지 않고, 맞추기 뒤에 ready
+    expect(c.status()["@me/clock"]).toBeUndefined();
+    await c.reconcile({ ...parseMarketplace({}), packages: { "@me/clock": e } });
     expect(c.status()["@me/clock"]).toEqual({ state: "ready", version: "1.0.0" });
   });
 
@@ -94,7 +97,8 @@ describe("ensure·read", () => {
     expect((err as PathError).params.path).toBe("frame.js");
     await expect(readdir(path.join(root, "@me", "clock", "1.0.0"))).rejects.toThrow();
     expect(await leftovers()).toEqual([]);
-    expect(c.status()["@me/clock"]).toMatchObject({ state: "error", error: { code: "market_hash_mismatch" } });
+    // 잠금에 없는 id 의 ensure 는 status 에 나오지 않는다(status 는 잠금의 패키지별) — 오류는 ensure 의 응답으로 간다
+    expect(c.status()["@me/clock"]).toBeUndefined();
   });
 
   it("이미 다른 sha 의 캐시가 있을 때 불일치 → 기존 캐시가 그대로", async () => {
@@ -318,5 +322,121 @@ describe("index", () => {
     const c = cache({ fetch: fakeFetch({ "https://bad.test/index.json": new TextEncoder().encode("<html>") }) });
     expect((await c.index("https://bad.test/")).error?.code).toBe("market_index_invalid");
     expect((await c.index("http://bad.test/")).error?.code).toBe("market_url_protocol");
+  });
+});
+
+describe("상한 캐시(바이트가 잠금의 sha 와 다름)", () => {
+  const settings = (packages: Record<string, LockEntry>) => ({ ...parseMarketplace({}), packages });
+  const dirOf = () => path.join(root, "@me", "clock", "1.0.0");
+
+  it("메타는 맞는데 바이트가 상한 .tmp 는 시작 정리가 살리지 않고, reconcile 이 다시 받는다", async () => {
+    const e = lockOf("@me/clock", "1.0.0");
+    await cache().ensure("@me/clock", e);
+    // 확인 뒤 쓰기가 끊긴 상태(리뷰 재현): 판 폴더를 .tmp 로 옮기고 frame.js 를 0바이트로
+    await rename(dirOf(), path.join(root, ".tmp-eeee"));
+    await truncate(path.join(root, ".tmp-eeee", "frame.js"), 0);
+    const f = fakeFetch();
+    const c = cache({ fetch: f });
+    await c.reconcile(settings({ "@me/clock": e }));
+    expect(f.calls.length).toBeGreaterThan(0);
+    expect((await c.read("@me/clock", "1.0.0", "frame.js", e.sha256["frame.js"]!)).byteLength).toBeGreaterThan(0);
+    expect(c.status()["@me/clock"]).toEqual({ state: "ready", version: "1.0.0" });
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it("교체 도중 멈춘 자리의 .tmp 가 상했으면 멀쩡한 .old 를 되돌린다(오프라인에서도 옛 판을 읽는다)", async () => {
+    const e = lockOf("@me/clock", "1.0.0");
+    await cache().ensure("@me/clock", e);
+    const { cp } = await import("node:fs/promises");
+    await cp(dirOf(), path.join(root, ".tmp-bad"), { recursive: true });
+    await truncate(path.join(root, ".tmp-bad", "frame.js"), 0);
+    await rename(dirOf(), path.join(root, ".old-good"));
+    const offline = fakeFetch({ [frameUrl("1.0.0")]: new PathError("market_timeout") });
+    const c = cache({ fetch: offline });
+    expect((await c.read("@me/clock", "1.0.0", "frame.js", e.sha256["frame.js"]!)).byteLength).toBeGreaterThan(0);
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it("판 폴더의 바이트가 상하면 reconcile·ensure 가 다시 받는다(status 가 ready 로 거짓말하지 않는다)", async () => {
+    const e = lockOf("@me/clock", "1.0.0");
+    await cache().ensure("@me/clock", e);
+    await truncate(path.join(dirOf(), "frame.js"), 0);
+    const f = fakeFetch();
+    const c = cache({ fetch: f });
+    await c.reconcile(settings({ "@me/clock": e }));
+    expect(f.calls.length).toBeGreaterThan(0);
+    expect((await c.read("@me/clock", "1.0.0", "frame.js", e.sha256["frame.js"]!)).byteLength).toBeGreaterThan(0);
+    await writeFile(path.join(dirOf(), "frame.js"), "tampered");
+    const g = fakeFetch();
+    const c2 = cache({ fetch: g });
+    await c2.ensure("@me/clock", e);
+    expect(g.calls.length).toBeGreaterThan(0);
+    expect((await c2.read("@me/clock", "1.0.0", "frame.js", e.sha256["frame.js"]!)).byteLength).toBeGreaterThan(0);
+  });
+
+  it("떠 있는 동안 상하면 read 가 status 를 error 로 바꾸고 다음 reconcile 이 다시 받는다", async () => {
+    const e = lockOf("@me/clock", "1.0.0");
+    const f = fakeFetch();
+    const c = cache({ fetch: f });
+    await c.reconcile(settings({ "@me/clock": e }));
+    const before = f.calls.length;
+    await writeFile(path.join(dirOf(), "frame.js"), "tampered");
+    expect(await codeOf(c.read("@me/clock", "1.0.0", "frame.js", e.sha256["frame.js"]!))).toBe("market_not_found");
+    expect(c.status()["@me/clock"]).toMatchObject({ state: "error", error: { code: "market_hash_mismatch", params: { path: "frame.js" } } });
+    await c.reconcile(settings({ "@me/clock": e }));
+    expect(f.calls.length).toBeGreaterThan(before);
+    expect(c.status()["@me/clock"]).toEqual({ state: "ready", version: "1.0.0" });
+  });
+});
+
+describe("status 와 잠금(리뷰 L1·L3)", () => {
+  const settings = (packages: Record<string, LockEntry>, raw?: Record<string, unknown>) =>
+    raw ? parseMarketplace({ packages: raw }) : { ...parseMarketplace({}), packages };
+
+  it("잠금의 판이 ready 인데 다른 sha 의 ensure 가 실패해도 status 는 ready 로 남는다", async () => {
+    const e = lockOf("@me/clock", "1.0.0");
+    const c = cache();
+    await c.reconcile(settings({ "@me/clock": e }));
+    expect(await codeOf(c.ensure("@me/clock", { ...e, sha256: { ...e.sha256, "frame.js": "e".repeat(64) } }))).toBe("market_hash_mismatch");
+    expect(c.status()["@me/clock"]).toEqual({ state: "ready", version: "1.0.0" });
+  });
+
+  it("잘못된 잠금 항목은 status 에 market_lock_invalid 로 보인다", async () => {
+    const c = cache();
+    const e = lockOf("@me/clock", "1.0.0");
+    await c.reconcile(settings({}, { "@me/clock": e, "@me/bad": { ...e, version: "../../x" } }));
+    expect(c.status()["@me/bad"]).toEqual({ state: "error", version: "", error: { code: "market_lock_invalid", params: { id: "@me/bad" } } });
+    expect(c.status()["@me/clock"]).toMatchObject({ state: "ready" });
+  });
+});
+
+describe("판 폴더 안쪽 링크(리뷰 L2)", () => {
+  it("하위 폴더가 밖을 가리키면 sha 가 맞아도 읽지 않고, 다음 맞추기가 다시 받는다", async () => {
+    const e = lockOf("@me/clock", "1.0.0");
+    const f = fakeFetch();
+    const c = cache({ fetch: f });
+    await c.reconcile({ ...parseMarketplace({}), packages: { "@me/clock": e } });
+    const dir = path.join(root, "@me", "clock", "1.0.0");
+    const outside = path.join(path.dirname(root), "outside-messages");
+    await rename(path.join(dir, "messages"), outside);
+    await symlink(outside, path.join(dir, "messages"));
+    expect(await codeOf(c.read("@me/clock", "1.0.0", "messages/ko.json", e.sha256["messages/ko.json"]!))).toBe("market_not_found");
+    const before = f.calls.length;
+    const c2 = cache({ fetch: f });
+    await c2.reconcile({ ...parseMarketplace({}), packages: { "@me/clock": e } });
+    expect(f.calls.length).toBeGreaterThan(before);
+    expect((await c2.read("@me/clock", "1.0.0", "messages/ko.json", e.sha256["messages/ko.json"]!)).byteLength).toBeGreaterThan(0);
+    await rm(outside, { recursive: true, force: true });
+  });
+});
+
+describe("자격 증명을 되돌려 주지 않는다(리뷰 L5)", () => {
+  it("index 실패 응답의 repo·params 에 사용자·비밀번호가 없다", async () => {
+    const c = cache();
+    for (const u of ["https://u:p@x.test/", "http://u:p@x.test/", "ftp://u:p@x.test/"]) {
+      const r = await c.index(u);
+      expect(JSON.stringify(r), u).not.toContain("u:p");
+      expect(r.error).toBeDefined();
+    }
   });
 });

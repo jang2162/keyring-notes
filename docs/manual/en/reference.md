@@ -145,7 +145,7 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | GET | `/api/market/index?repo=` | | A marketplace repository's `index.json`, downloaded and checked by the server → `{repo, index, ignored, error?}`. Cached for 5 minutes, failures for 30 seconds. Owner and devices |
 | POST | `/api/market/ensure` | `{id, entry: {version, repo, sha256}, sizes?}` | Make the server download one package version into its cache and check every file's sha256 → `{ok: true}`. It does not change the lock. Owner and devices |
 | GET | `/api/market/file?id=&version=&path=&sha256=` | | A cached package file, only when `sha256` matches. Sent as `application/octet-stream` with `content-disposition: attachment` and a sandbox CSP, so the browser never runs it. Owner and devices |
-| GET | `/api/market/status` | | Cache state per locked package → `{<id>: {state: ready\|fetching\|error, version, error?}}`. Owner and devices |
+| GET | `/api/market/status` | | Cache state per locked package → `{<id>: {state: ready\|fetching\|error, version, error?}}`. Entries the server cannot read show as `error` with `market_lock_invalid`. A cached file whose bytes no longer match turns its package to `error` until the server downloads it again. Owner and devices |
 
 ### Errors
 
@@ -333,7 +333,7 @@ marketplace:
 - `repos` is in priority order. When it is missing, the official repository is used. An empty list means no repositories.
 - `packages` is the lock: every device and the server use exactly this version and these files. The server downloads what the lock lists, even when you edit the file by hand or the change arrives through sync, and removes what the lock no longer lists after 24 hours.
 - An entry stays tied to its `repo`, even when that repository is no longer in `repos`.
-- An entry with a bad id, version, address, file name or checksum is skipped and reported as `market_lock_invalid`. Other entries keep working.
+- An entry with a bad id, version, address, file name or checksum is skipped: nothing is downloaded, written or deleted for it, and `GET /api/market/status` shows it as `market_lock_invalid`. Other entries keep working.
 - When two devices change the same entry, the higher version wins as a whole entry. When one device removes it and another updates it, the update wins.
 
 ## Backup file format

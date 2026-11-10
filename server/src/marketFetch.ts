@@ -1,7 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import { isIP, type Socket } from "node:net";
-import { MARKET_LIMITS, PathError } from "@keyring-notes/core";
+import { MARKET_LIMITS, PathError, redactUrl } from "@keyring-notes/core";
 import { guardedLookup, isPrivateAddress, type LookupFn } from "./netGuard.js";
 
 /**
@@ -26,7 +26,7 @@ export interface MarketFetchOptions {
 
 /** 첫 주소와 리다이렉트 주소마다 같은 판정: 프로토콜·사용자 정보·IP 글자 사설 주소 */
 export function checkUrl(url: URL, opts: { allowHttp: boolean; allowPrivate: boolean; isPrivate?: (ip: string) => boolean }): void {
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && opts.allowHttp)) throw new PathError("market_url_protocol", { url: url.href });
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && opts.allowHttp)) throw new PathError("market_url_protocol", { url: redactUrl(url.href) });
   if (url.username || url.password) throw new PathError("market_url_credentials", { url: `${url.protocol}//${url.host}${url.pathname}` });
   // IPv6 글자의 hostname 은 대괄호를 품는다("[::1]") — 벗기지 않으면 isIP 가 0 이라 판정을 건너뛰고,
   // IP 글자는 lookup 을 타지 않으므로 그대로 접속된다
@@ -139,7 +139,7 @@ export async function marketFetch(input: string, opts: MarketFetchOptions): Prom
   try {
     url = new URL(input);
   } catch {
-    throw new PathError("market_url_invalid", { url: String(input) });
+    throw new PathError("market_url_invalid", { url: redactUrl(String(input)) });
   }
   const check = opts.check ?? checkUrl;
   const signal = AbortSignal.timeout(opts.timeoutMs);
@@ -158,7 +158,7 @@ export async function marketFetch(input: string, opts: MarketFetchOptions): Prom
     try {
       url = new URL(r.redirect!, url);
     } catch {
-      throw new PathError("market_url_invalid", { url: r.redirect! });
+      throw new PathError("market_url_invalid", { url: redactUrl(r.redirect!) });
     }
   }
 }
