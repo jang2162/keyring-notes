@@ -3,6 +3,8 @@
  * 서버·앱·CLI 가 같이 쓰므로 Node 전용 API 를 쓰지 않는다. 설계 docs/superpowers/specs/2026-11-10-marketplace-design.md 「저장소 형식」.
  */
 import { PathError } from "./errors.js";
+import { fromUtf8 } from "./hash.js";
+import { checkPack } from "./i18n.js";
 
 /** 위젯 ref 의 조각 꼴(`parseWidgetRef`)과 같게 둔다 — 3단계가 `@scope/name@N` 을 받을 때 그대로 쓴다. */
 export const PACKAGE_ID_RE = /^@([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9-]*)$/;
@@ -201,4 +203,309 @@ export function packageFileUrl(repo: string, id: string, version: string, path: 
 export function packageCacheDir(id: string, version: string): string[] {
   const [scope, name] = checkedParts(id, version);
   return [`@${scope}`, name, version];
+}
+
+// ── index.json ──
+
+export interface IndexFile {
+  path: string;
+  sha256: string;
+  size: number;
+}
+export interface IndexVersion {
+  engines: { keyring: string };
+  files: IndexFile[];
+}
+export interface RepoIndex {
+  format: 1;
+  name: string;
+  packages: Record<string, { type: PackageType; versions: Record<string, IndexVersion> }>;
+}
+
+const SHA256_RE = /^[0-9a-f]{64}$/;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function isSha256(v: unknown): v is string {
+  return typeof v === "string" && SHA256_RE.test(v);
+}
+
+/** 한 판 안의 경로 묶음 검사: 허용 꼴·겹침·대소문자만 다른 겹침(macOS·Windows 에서 같은 파일이 된다)·매니페스트. 문제면 이유, 아니면 null */
+function pathsProblem(type: PackageType, paths: string[]): string | null {
+  const seen = new Set<string>();
+  const lower = new Set<string>();
+  for (const p of paths) {
+    if (!packageFileAllowed(type, p)) return `file:${p}`;
+    if (seen.has(p)) return `duplicate:${p}`;
+    if (lower.has(p.toLowerCase())) return `case:${p}`;
+    seen.add(p);
+    lower.add(p.toLowerCase());
+  }
+  if (!seen.has(MANIFEST_FILE)) return "no_manifest";
+  return null;
+}
+
+function parseIndexVersion(type: PackageType, raw: unknown): IndexVersion | string {
+  if (!isRecord(raw)) return "shape";
+  const engines = raw.engines;
+  if (!isRecord(engines) || typeof engines.keyring !== "string" || !validRange(engines.keyring)) return "engines";
+  if (!Array.isArray(raw.files)) return "files";
+  const files: IndexFile[] = [];
+  let total = 0;
+  for (const f of raw.files) {
+    if (!isRecord(f) || typeof f.path !== "string") return "files";
+    if (!isSha256(f.sha256)) return `sha256:${f.path}`;
+    const size = f.size;
+    if (typeof size !== "number" || !Number.isSafeInteger(size) || size < 0 || size > MARKET_LIMITS.fileBytes) return `size:${f.path}`;
+    total += size;
+    files.push({ path: f.path, sha256: f.sha256, size });
+  }
+  const problem = pathsProblem(
+    type,
+    files.map((f) => f.path),
+  );
+  if (problem) return problem;
+  if (total > MARKET_LIMITS.packageBytes) return "too_large";
+  return { engines: { keyring: engines.keyring }, files };
+}
+
+/**
+ * 잘못된 패키지·판은 빼고 ignored 에 「id[@판]: 이유」. 공식이 아니면 @keyring/… 를 뺀다(개인 저장소가 공식 패키지를 같은 id 로 가리지 못하게).
+ * 맨 모양이 틀리면 PathError(market_index_invalid).
+ */
+export function parseRepoIndex(raw: unknown, opts: { official: boolean }): { index: RepoIndex; ignored: string[] } {
+  if (!isRecord(raw)) throw new PathError("market_index_invalid", { reason: "shape" });
+  if (raw.format !== 1) throw new PathError("market_index_invalid", { reason: "format" });
+  if (!isRecord(raw.packages)) throw new PathError("market_index_invalid", { reason: "packages" });
+  const index: RepoIndex = { format: 1, name: typeof raw.name === "string" ? raw.name.slice(0, 200) : "", packages: {} };
+  const ignored: string[] = [];
+  for (const [id, pkg] of Object.entries(raw.packages)) {
+    const pid = parsePackageId(id);
+    if (!pid) {
+      ignored.push(`${id}: id`);
+      continue;
+    }
+    if (pid.scope === "keyring" && !opts.official) {
+      ignored.push(`${id}: scope_reserved`);
+      continue;
+    }
+    if (!isRecord(pkg) || !PACKAGE_TYPES.includes(pkg.type as PackageType) || !isRecord(pkg.versions)) {
+      ignored.push(`${id}: shape`);
+      continue;
+    }
+    const type = pkg.type as PackageType;
+    const versions: Record<string, IndexVersion> = {};
+    for (const [v, ver] of Object.entries(pkg.versions)) {
+      if (!parseSemver(v)) {
+        ignored.push(`${id}@${v}: version`);
+        continue;
+      }
+      const r = parseIndexVersion(type, ver);
+      if (typeof r === "string") ignored.push(`${id}@${v}: ${r}`);
+      else versions[v] = r;
+    }
+    if (Object.keys(versions).length) index.packages[id] = { type, versions };
+  }
+  return { index, ignored };
+}
+
+/** engines 가 맞는 가장 높은 정식 판(프리릴리스는 「가장 높은 판」 으로 고르지 않는다 — 판을 지정하면 설치는 된다) */
+export function latestVersion(index: RepoIndex, id: string, appVersion: string): string | null {
+  const pkg = index.packages[id];
+  if (!pkg) return null;
+  let best: string | null = null;
+  for (const [v, ver] of Object.entries(pkg.versions)) {
+    if (parseSemver(v)?.pre.length) continue;
+    if (!satisfies(appVersion, ver.engines.keyring)) continue;
+    if (best === null || compareSemver(v, best) > 0) best = v;
+  }
+  return best;
+}
+
+// ── 매니페스트 ──
+
+export interface PackageManifest {
+  id: string;
+  version: string;
+  type: PackageType;
+  name: Record<string, string>;
+  description: Record<string, string>;
+  author: string;
+  license: string;
+  engines: { keyring: string };
+  widget?: {
+    stateVersion: number;
+    display: "block" | "inline";
+    dataFile?: { ext: string; initial: string; name?: Record<string, string> };
+    defaultState: unknown;
+  };
+  colors?: { light?: Record<string, string>; dark?: Record<string, string> };
+}
+
+const LANG_TAG_RE = new RegExp(`^${LANG_TAG}$`);
+
+function invalid(reason: string): PathError {
+  return new PathError("market_manifest_invalid", { reason });
+}
+
+/** 언어 태그 → 비지 않은 글자, 하나 이상 */
+function langText(v: unknown, field: string): Record<string, string> {
+  if (!isRecord(v)) throw invalid(field);
+  const out: Record<string, string> = {};
+  for (const [k, t] of Object.entries(v)) {
+    if (!LANG_TAG_RE.test(k) || typeof t !== "string" || !t.trim()) throw invalid(field);
+    out[k] = t;
+  }
+  if (!Object.keys(out).length) throw invalid(field);
+  return out;
+}
+
+function parseWidget(raw: unknown): NonNullable<PackageManifest["widget"]> {
+  if (!isRecord(raw)) throw invalid("widget");
+  const { stateVersion, display, dataFile, defaultState, isolation } = raw;
+  if (typeof stateVersion !== "number" || !Number.isSafeInteger(stateVersion) || stateVersion < 1) throw invalid("widget.stateVersion");
+  if (display !== "block" && display !== "inline") throw invalid("widget.display");
+  // 받은 위젯은 모두 iframe(위젯 설계 「인라인/iframe 기준」)
+  if (isolation !== undefined && isolation !== "frame") throw invalid("widget.isolation");
+  if (defaultState === undefined) throw invalid("widget.defaultState");
+  const widget: NonNullable<PackageManifest["widget"]> = { stateVersion, display, defaultState };
+  if (dataFile !== undefined) {
+    // initial 이 비면 안 된다 — 서버가 빈 첨부를 거절한다
+    if (!isRecord(dataFile) || typeof dataFile.ext !== "string" || !/^[a-z0-9]{1,16}$/.test(dataFile.ext)) throw invalid("widget.dataFile.ext");
+    if (typeof dataFile.initial !== "string" || !dataFile.initial) throw invalid("widget.dataFile.initial");
+    widget.dataFile = { ext: dataFile.ext, initial: dataFile.initial };
+    if (dataFile.name !== undefined) widget.dataFile.name = langText(dataFile.name, "widget.dataFile.name");
+  }
+  return widget;
+}
+
+/** 아니면 PathError(market_manifest_invalid, { reason }) */
+export function parseManifest(raw: unknown): PackageManifest {
+  if (!isRecord(raw)) throw invalid("shape");
+  if (typeof raw.id !== "string" || !parsePackageId(raw.id)) throw invalid("id");
+  if (typeof raw.version !== "string" || !parseSemver(raw.version)) throw invalid("version");
+  if (!PACKAGE_TYPES.includes(raw.type as PackageType)) throw invalid("type");
+  const type = raw.type as PackageType;
+  if (typeof raw.author !== "string") throw invalid("author");
+  if (typeof raw.license !== "string") throw invalid("license");
+  if (!isRecord(raw.engines) || typeof raw.engines.keyring !== "string" || !validRange(raw.engines.keyring)) throw invalid("engines");
+  const m: PackageManifest = {
+    id: raw.id,
+    version: raw.version,
+    type,
+    name: langText(raw.name, "name"),
+    description: langText(raw.description, "description"),
+    author: raw.author,
+    license: raw.license,
+    engines: { keyring: raw.engines.keyring },
+  };
+  if (type === "widget") m.widget = parseWidget(raw.widget);
+  if (type === "theme") {
+    const c = raw.colors;
+    if (!isRecord(c) || (c.light === undefined && c.dark === undefined)) throw invalid("colors");
+    const colors: NonNullable<PackageManifest["colors"]> = {};
+    for (const mode of ["light", "dark"] as const) {
+      if (c[mode] === undefined) continue;
+      if (!isRecord(c[mode])) throw invalid(`colors.${mode}`);
+      const entries = Object.entries(c[mode]);
+      if (entries.some(([, v]) => typeof v !== "string")) throw invalid(`colors.${mode}`);
+      colors[mode] = Object.fromEntries(entries) as Record<string, string>;
+    }
+    const { errors } = checkThemeColors(colors);
+    if (errors.length) throw invalid(`colors: ${errors[0]}`);
+    m.colors = colors;
+  }
+  return m;
+}
+
+// ── 테마 색 ──
+
+/**
+ * 색 값의 엄격한 꼴만 받는다 — 값은 CSS 에 그대로 들어가므로 이 검사가 CSS 주입을 막는 유일한 자리다.
+ * 금지 글자는 꼴 검사 전에 거부한다(꼴 정규식이 넓어져도 이 줄이 남게).
+ */
+const COLOR_FORBIDDEN_RE = /[;{}\\!<>"'\n\r]|url\(|var\(/i;
+const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+// 괄호 안은 숫자·부호·%·deg·.·빈칸·,·/ 만(oklab 의 a·b 는 음수일 수 있다)
+const FUNC_COLOR_RE = /^(?:rgb|rgba|hsl|hsla|oklch|oklab)\((?=[^)]*[0-9])(?:[0-9.%\s,/+-]|deg)+\)$/;
+
+export function isThemeColor(value: string): boolean {
+  if (typeof value !== "string" || value.length > 100 || COLOR_FORBIDDEN_RE.test(value)) return false;
+  return HEX_COLOR_RE.test(value) || FUNC_COLOR_RE.test(value);
+}
+
+const TOKEN_RE = /^--[a-z][a-z0-9-]*$/;
+// 테마는 색만 바꾼다(사용자 ①) — 크기·글꼴·간격 꼴은 받지 않는다
+const NON_COLOR_TOKEN_RE = /^--(?:fs-|font-|radius-)|-(?:h|w)$/;
+
+export function checkThemeColors(colors: PackageManifest["colors"], known?: readonly string[]): { errors: string[]; unknownTokens: string[] } {
+  const errors: string[] = [];
+  const unknown = new Set<string>();
+  for (const mode of ["light", "dark"] as const) {
+    for (const [token, value] of Object.entries(colors?.[mode] ?? {})) {
+      if (!TOKEN_RE.test(token)) errors.push(`${mode}.${token}: name`);
+      else if (NON_COLOR_TOKEN_RE.test(token)) errors.push(`${mode}.${token}: not_color_token`);
+      else if (!isThemeColor(value)) errors.push(`${mode}.${token}: value`);
+      else if (known && !known.includes(token)) unknown.add(token);
+    }
+  }
+  return { errors, unknownTokens: [...unknown] };
+}
+
+// ── 파일 묶음 ──
+
+function parseJson(bytes: Uint8Array, path: string): unknown {
+  try {
+    return JSON.parse(fromUtf8(bytes));
+  } catch {
+    throw invalid(`json:${path}`);
+  }
+}
+
+/** 파일 묶음 전체 검사(CLI check·서버·앱이 받은 뒤 같이 씀): 매니페스트, 필수 파일, 허용 꼴, 종류별 내용. 아니면 PathError */
+export function checkPackageFiles(
+  files: Map<string, Uint8Array>,
+  expect?: { id: string; version: string; type: PackageType },
+): { manifest: PackageManifest; warnings: string[] } {
+  const raw = files.get(MANIFEST_FILE);
+  if (!raw) throw invalid("no_manifest");
+  if (raw.byteLength > MARKET_LIMITS.fileBytes) throw invalid(`size:${MANIFEST_FILE}`);
+  const manifest = parseManifest(parseJson(raw, MANIFEST_FILE));
+  if (expect) {
+    if (manifest.id !== expect.id) throw invalid("id");
+    if (manifest.version !== expect.version) throw invalid("version");
+    if (manifest.type !== expect.type) throw invalid("type");
+  }
+  const problem = pathsProblem(manifest.type, [...files.keys()]);
+  if (problem) throw invalid(problem);
+  let total = 0;
+  for (const [p, b] of files) {
+    if (b.byteLength > MARKET_LIMITS.fileBytes) throw invalid(`size:${p}`);
+    total += b.byteLength;
+  }
+  if (total > MARKET_LIMITS.packageBytes) throw invalid("too_large");
+  const warnings: string[] = [];
+  if (manifest.type === "widget") {
+    if (!files.has("frame.js")) throw invalid("no_frame_js");
+    for (const [p, b] of files) {
+      if (!p.startsWith("messages/")) continue;
+      const msgs = parseJson(b, p);
+      if (!isRecord(msgs) || Object.values(msgs).some((v) => typeof v !== "string")) throw invalid(`messages:${p}`);
+    }
+  }
+  if (manifest.type === "language") {
+    const b = files.get("messages.json");
+    if (!b) throw invalid("no_messages_json");
+    const r = checkPack(parseJson(b, "messages.json"), b.byteLength);
+    if ("error" in r) throw invalid(`messages.json:${r.error}`);
+    const { missing, unknown, placeholderMismatch, notString, htmlLike } = r.report;
+    if (missing.length) warnings.push(`missing: ${missing.length}`);
+    if (unknown.length) warnings.push(`unknown: ${unknown.join(", ")}`);
+    if (placeholderMismatch.length) warnings.push(`placeholder: ${placeholderMismatch.join(", ")}`);
+    if (notString.length) warnings.push(`not_string: ${notString.join(", ")}`);
+    if (htmlLike.length) warnings.push(`html: ${htmlLike.join(", ")}`);
+  }
+  return { manifest, warnings };
 }

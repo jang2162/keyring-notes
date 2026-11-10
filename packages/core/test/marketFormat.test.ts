@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   compareSemver,
   isOfficialRepo,
+  latestVersion,
   normalizeRepoUrl,
   OFFICIAL_REPO_URL,
   packageCacheDir,
   packageFileAllowed,
   packageFileUrl,
   parsePackageId,
+  parseRepoIndex,
   parseSemver,
   PathError,
   satisfies,
@@ -119,5 +121,122 @@ describe("패키지 파일", () => {
     expect(code(() => packageCacheDir("@a/b", "../1"))).toBe("market_lock_invalid");
     expect(code(() => packageCacheDir("@a/..", "1.0.0"))).toBe("market_lock_invalid");
     expect(code(() => packageFileUrl("https://r.example/m/", "@a/b", "1.0.0", "../x"))).toBe("market_lock_invalid");
+  });
+});
+
+const H = (c: string) => c.repeat(64);
+
+function sampleIndex() {
+  return {
+    format: 1,
+    name: "Keyring 공식",
+    packages: {
+      "@keyring/pomodoro": {
+        type: "widget",
+        versions: {
+          "1.2.0": {
+            engines: { keyring: ">=0.13.0" },
+            files: [
+              { path: "keyring-package.json", sha256: H("a"), size: 812 },
+              { path: "frame.js", sha256: H("b"), size: 20480 },
+            ],
+          },
+        },
+      },
+      "@me/clock": {
+        type: "widget",
+        versions: {
+          "1.0.0": {
+            engines: { keyring: "*" },
+            files: [
+              { path: "keyring-package.json", sha256: H("c"), size: 10 },
+              { path: "frame.js", sha256: H("d"), size: 10 },
+            ],
+          },
+        },
+      },
+    },
+  };
+}
+
+describe("parseRepoIndex", () => {
+  it("설계의 예를 그대로 읽는다", () => {
+    const raw = sampleIndex();
+    const { index, ignored } = parseRepoIndex(raw, { official: true });
+    expect(ignored).toEqual([]);
+    expect(index).toEqual(raw);
+  });
+
+  it("공식이 아니면 @keyring/… 를 뺀다", () => {
+    const { index, ignored } = parseRepoIndex(sampleIndex(), { official: false });
+    expect(Object.keys(index.packages)).toEqual(["@me/clock"]);
+    expect(ignored).toHaveLength(1);
+    expect(ignored[0]).toMatch(/^@keyring\/pomodoro: /);
+  });
+
+  it("잘못된 판은 그 판만 뺀다", () => {
+    const good = sampleIndex().packages["@me/clock"].versions["1.0.0"];
+    const bad: Record<string, unknown> = {
+      "1.2": good,
+      "1.0.1": { ...good, engines: { keyring: ">= banana" } },
+      "1.0.2": { ...good, files: [good.files[0], { path: "frame.js", sha256: "A".repeat(64), size: 1 }] },
+      "1.0.3": { ...good, files: [good.files[0], { path: "frame.js", sha256: H("d"), size: -1 }] },
+      "1.0.4": { ...good, files: [...good.files, { path: "../x", sha256: H("d"), size: 1 }] },
+      "1.0.5": { ...good, files: [...good.files, { path: "frame.js", sha256: H("d"), size: 1 }] },
+      "1.0.6": {
+        ...good,
+        files: [...good.files, { path: "messages/ko.json", sha256: H("d"), size: 1 }, { path: "messages/KO.json", sha256: H("d"), size: 1 }],
+      },
+      "1.0.7": { ...good, files: [good.files[1]] },
+      "1.0.8": { ...good, files: [good.files[0], { path: "frame.js", sha256: H("d"), size: 8388608 }, { path: "frame.css", sha256: H("d"), size: 8388608 }] },
+      "1.0.9": { ...good, files: [good.files[0], { path: "frame.js", sha256: H("d"), size: 8388609 }] },
+      "1.1.0": good,
+    };
+    const raw = { format: 1, name: "me", packages: { "@me/clock": { type: "widget", versions: bad } } };
+    const { index, ignored } = parseRepoIndex(raw, { official: false });
+    expect(Object.keys(index.packages["@me/clock"]!.versions)).toEqual(["1.1.0"]);
+    expect(ignored).toHaveLength(Object.keys(bad).length - 1);
+    for (const v of Object.keys(bad).filter((v) => v !== "1.1.0"))
+      expect(
+        ignored.some((x) => x.startsWith(`@me/clock@${v}: `)),
+        v,
+      ).toBe(true);
+  });
+
+  it("잘못된 패키지는 빼고, 맨 모양이 틀리면 market_index_invalid", () => {
+    const raw = { format: 1, name: "me", packages: { "@me/x": { type: "font", versions: {} }, "bad id": { type: "widget", versions: {} } } };
+    const { index, ignored } = parseRepoIndex(raw, { official: false });
+    expect(index.packages).toEqual({});
+    expect(ignored).toHaveLength(2);
+    expect(code(() => parseRepoIndex({ format: 2, name: "x", packages: {} }, { official: true }))).toBe("market_index_invalid");
+    expect(code(() => parseRepoIndex([], { official: true }))).toBe("market_index_invalid");
+    expect(code(() => parseRepoIndex({ format: 1, name: "x" }, { official: true }))).toBe("market_index_invalid");
+  });
+});
+
+describe("latestVersion", () => {
+  it("engines 가 맞는 가장 높은 정식 판", () => {
+    const f = sampleIndex().packages["@me/clock"].versions["1.0.0"].files;
+    const index = parseRepoIndex(
+      {
+        format: 1,
+        name: "x",
+        packages: {
+          "@me/clock": {
+            type: "widget",
+            versions: {
+              "1.0.0": { engines: { keyring: ">=0.1.0" }, files: f },
+              "1.3.0": { engines: { keyring: ">=0.13.0" }, files: f },
+              "2.0.0-beta": { engines: { keyring: ">=0.1.0" }, files: f },
+            },
+          },
+        },
+      },
+      { official: false },
+    ).index;
+    expect(latestVersion(index, "@me/clock", "0.12.0")).toBe("1.0.0");
+    expect(latestVersion(index, "@me/clock", "0.13.0")).toBe("1.3.0");
+    expect(latestVersion(index, "@me/clock", "0.0.1")).toBeNull();
+    expect(latestVersion(index, "@me/none", "0.13.0")).toBeNull();
   });
 });
