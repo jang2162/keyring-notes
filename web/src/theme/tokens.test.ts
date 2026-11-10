@@ -2,6 +2,11 @@ import { THEME_DEFAULTS, THEME_TOKENS } from "@keyring-notes/core";
 import { describe, expect, it } from "vitest";
 import stylesCss from "../styles.css?raw";
 
+const manuals = import.meta.glob("../../../docs/manual/*/how-to/publish-packages.md", { query: "?raw", import: "default", eager: true }) as Record<
+  string,
+  string
+>;
+
 const css = stylesCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
 /** 선택자가 정확히 sel 인 블록(중첩 없음)들의 선언을 모은다. media 가 주어지면 그 @media 블록 안에서만 */
@@ -45,8 +50,11 @@ const light = decls(":root");
 const dark = decls(':root[data-theme="dark"]');
 const mediaDark = decls(':root:not([data-theme="light"])', "(prefers-color-scheme: dark)");
 
-/** styles.css 의 색 꼴 값(16진·rgb()·hsl()·oklch()) — 그림자처럼 색이 든 다른 값은 아니다 */
-const COLOR_RE = /^(?:#[0-9a-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla|oklch|oklab)\([^)]*\))$/;
+/**
+ * 테마 토큰이 아닌 것으로 정해 둔 변수: 크기·간격·글꼴·그림자(`--focus` 포함). 이 밖의 `:root` 변수는 모두 색으로 보고 THEME_TOKENS 에
+ * 있어야 한다 — 색 꼴을 세면 `transparent`·이름 색·`color-mix()` 로 더한 새 색 변수를 놓친다.
+ */
+const NOT_THEME_RE = /^--(?:sp-|fs-|font-|radius|shadow|focus$)|-(?:w|h)$/;
 
 describe("styles.css 와 THEME_TOKENS", () => {
   it("밝음 값이 THEME_DEFAULTS.light 와 같다", () => {
@@ -61,16 +69,21 @@ describe("styles.css 와 THEME_TOKENS", () => {
     expect(mediaDark).toEqual(dark);
   });
 
-  it(":root 의 색 꼴 변수는 모두 THEME_TOKENS 에 있다", () => {
-    const colorVars = Object.entries(light)
-      .filter(([, v]) => COLOR_RE.test(v))
-      .map(([k]) => k);
-    expect(colorVars.length).toBeGreaterThan(0);
-    expect(colorVars.filter((k) => !THEME_TOKENS.includes(k))).toEqual([]);
-    const darkColorVars = Object.entries(dark)
-      .filter(([, v]) => COLOR_RE.test(v))
-      .map(([k]) => k);
-    expect(darkColorVars.filter((k) => !THEME_TOKENS.includes(k))).toEqual([]);
+  it(":root 의 크기·글꼴·그림자가 아닌 변수는 모두 THEME_TOKENS 에 있다", () => {
+    for (const set of [light, dark]) {
+      const vars = Object.keys(set).filter((k) => !NOT_THEME_RE.test(k));
+      expect(vars.length).toBeGreaterThan(0);
+      expect(vars.filter((k) => !THEME_TOKENS.includes(k))).toEqual([]);
+    }
+  });
+
+  it("사용자 문서(publish-packages en·ko)의 토큰 표가 THEME_TOKENS·THEME_DEFAULTS 와 같다(순서 포함)", () => {
+    const want = THEME_TOKENS.map((t) => [t, THEME_DEFAULTS.light[t], THEME_DEFAULTS.dark[t]]);
+    expect(Object.keys(manuals)).toHaveLength(2);
+    for (const [file, text] of Object.entries(manuals)) {
+      const rows = [...text.matchAll(/^\| `(--[a-z0-9-]+)` \| [^|]+ \| `([^`]+)` \| `([^`]+)` \|$/gm)].map((m) => [m[1], m[2], m[3]]);
+      expect(rows, file).toEqual(want);
+    }
   });
 
   it("--focus 는 --focus-ring 을 쓰고 어두운 벌에는 없다", () => {
