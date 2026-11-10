@@ -106,7 +106,21 @@ pub fn is_private_str(s: &str) -> bool {
 }
 
 /// 첫 주소와 리다이렉트 주소마다: 프로토콜·사용자 정보·IP 글자 사설 주소(IP 글자는 resolver 를 타지 않는다)
+#[cfg_attr(not(test), allow(dead_code))] // 운영 길은 fetch_inner_with 가 check_url_with 를 직접 부른다
 pub fn check_url(url: &Url, allow_http: bool, allow_private: bool) -> Result<(), &'static str> {
+    check_url_with(url, allow_http, allow_private, is_private_ip)
+}
+
+/// 주소 판정 함수. 운영은 늘 is_private_ip 이고, 시험만 바꾼다(서버 marketFetch.ts 의 isPrivate 와 같은 꼴) —
+/// 로컬 주소가 모두 사설이라 이음새 없이는 「공개 저장소가 사설로 보내는」 경우를 이 기계 안에서 만들 수 없다
+pub(crate) type IsPrivate = fn(IpAddr) -> bool;
+
+fn check_url_with(
+    url: &Url,
+    allow_http: bool,
+    allow_private: bool,
+    is_private: IsPrivate,
+) -> Result<(), &'static str> {
     match url.scheme() {
         "https" => {}
         "http" if allow_http => {}
@@ -122,7 +136,7 @@ pub fn check_url(url: &Url, allow_http: bool, allow_private: bool) -> Result<(),
         .and_then(|h| h.strip_suffix(']'))
         .unwrap_or(host);
     if let Ok(ip) = host.parse::<IpAddr>() {
-        if !allow_private && is_private_ip(ip) {
+        if !allow_private && is_private(ip) {
             return Err("market_private_address");
         }
     }
@@ -130,9 +144,18 @@ pub fn check_url(url: &Url, allow_http: bool, allow_private: bool) -> Result<(),
 }
 
 /// 지킴 둘째 줄: 실제로 붙은 주소(첫 줄은 resolver)
+#[cfg_attr(not(test), allow(dead_code))] // 운영 길은 check_remote_with
 pub fn check_remote(addr: Option<SocketAddr>, allow_private: bool) -> Result<(), &'static str> {
+    check_remote_with(addr, allow_private, is_private_ip)
+}
+
+fn check_remote_with(
+    addr: Option<SocketAddr>,
+    allow_private: bool,
+    is_private: IsPrivate,
+) -> Result<(), &'static str> {
     match addr {
-        Some(a) if !allow_private && is_private_ip(a.ip()) => Err("market_private_address"),
+        Some(a) if !allow_private && is_private(a.ip()) => Err("market_private_address"),
         _ => Ok(()),
     }
 }
@@ -143,6 +166,7 @@ pub struct GuardResolver {
     pub allow_private: bool,
     /// 막았는지 — reqwest 오류에서 원인을 다시 찾는 대신 이 표시로 market_private_address 를 고른다
     pub blocked: Arc<AtomicBool>,
+    pub is_private: IsPrivate,
 }
 
 impl GuardResolver {
@@ -154,7 +178,7 @@ impl GuardResolver {
         if addrs.is_empty() {
             return Err("no address".into());
         }
-        if !self.allow_private && addrs.iter().any(|a| is_private_ip(a.ip())) {
+        if !self.allow_private && addrs.iter().any(|a| (self.is_private)(a.ip())) {
             self.blocked.store(true, Ordering::SeqCst);
             return Err("market_private_address".into());
         }
@@ -191,6 +215,27 @@ pub(crate) async fn fetch_inner(
     allow_private: bool,
     deadline: Duration,
 ) -> Result<Vec<u8>, String> {
+    fetch_inner_with(
+        input,
+        max_bytes,
+        expect_size,
+        allow_http,
+        allow_private,
+        deadline,
+        is_private_ip,
+    )
+    .await
+}
+
+pub(crate) async fn fetch_inner_with(
+    input: &str,
+    max_bytes: u64,
+    expect_size: Option<u64>,
+    allow_http: bool,
+    allow_private: bool,
+    deadline: Duration,
+    is_private: IsPrivate,
+) -> Result<Vec<u8>, String> {
     let start = Instant::now();
     let blocked = Arc::new(AtomicBool::new(false));
     let client = reqwest::Client::builder()
@@ -201,13 +246,15 @@ pub(crate) async fn fetch_inner(
         .dns_resolver(Arc::new(GuardResolver {
             allow_private,
             blocked: blocked.clone(),
+            is_private,
         }))
         .build()
         .map_err(|_| "market_fetch_failed:client".to_string())?;
     let mut url = Url::parse(input).map_err(|_| "market_url_invalid".to_string())?;
     let mut redirects = 0;
     loop {
-        check_url(&url, allow_http, allow_private)?;
+        // 리다이렉트마다 다시 — IP 글자 주소는 resolver 를 타지 않으므로 여기서 막지 않으면 요청이 사설 주소로 나간다
+        check_url_with(&url, allow_http, allow_private, is_private)?;
         let left = deadline
             .checked_sub(start.elapsed())
             .ok_or("market_timeout")?;
@@ -219,7 +266,7 @@ pub(crate) async fn fetch_inner(
             .send()
             .await
             .map_err(|e| request_error(&e, &blocked))?;
-        check_remote(resp.remote_addr(), allow_private)?;
+        check_remote_with(resp.remote_addr(), allow_private, is_private)?;
         let status = resp.status();
         if status.is_redirection() {
             let loc = resp
@@ -431,6 +478,29 @@ mod tests {
                             }
                         }
                         return;
+                    } else if let Some(port) = path.strip_prefix("/go6/") {
+                        // 「공개」 저장소가 사설 IP 글자로 보낸다
+                        out = head(
+                            "302 Found",
+                            &format!("location: http://[::1]:{port}/ok\r\n"),
+                            b"",
+                        );
+                    } else if let Some(port) = path.strip_prefix("/golocal/") {
+                        // 「공개」 저장소가 사설로 풀리는 이름으로 보낸다
+                        out = head(
+                            "302 Found",
+                            &format!("location: http://localhost:{port}/ok\r\n"),
+                            b"",
+                        );
+                    } else if let Some(n) = path.strip_prefix("/sl/") {
+                        // 홉마다 200ms — 둘째 홉 하나가 남은 시간을 넘는다
+                        std::thread::sleep(Duration::from_millis(200));
+                        if n == "1" {
+                            out = head("302 Found", "location: /sl/2\r\n", b"");
+                        } else {
+                            out = head("200 OK", "", b"done");
+                            out.extend_from_slice(b"done");
+                        }
                     } else if path == "/gz" {
                         out = head("200 OK", "content-encoding: gzip\r\n", b"raw");
                         out.extend_from_slice(b"raw");
@@ -571,6 +641,7 @@ mod tests {
         let r = GuardResolver {
             allow_private: false,
             blocked: blocked.clone(),
+            is_private: is_private_ip,
         };
         assert!(run(r.lookup("localhost")).is_err());
         assert!(blocked.load(Ordering::SeqCst));
@@ -603,5 +674,179 @@ mod tests {
             .unwrap(),
             b"done"
         );
+    }
+
+    /// 127.0.0.1 만 「공개」 로 보는 판정 — 이 기계 밖으로 나가지 않고 「공개 저장소가 사설로 보내는」 경우를 만든다(서버 isPrivate 와 같은 꼴)
+    fn loopback_v4_is_public(ip: IpAddr) -> bool {
+        ip != IpAddr::V4(std::net::Ipv4Addr::LOCALHOST) && is_private_ip(ip)
+    }
+
+    /// [::1] 에서 듣고 접속 수를 센다. IPv6 루프백이 없으면 None
+    fn v6_listener() -> Option<(u16, Arc<AtomicUsize>)> {
+        let listener = TcpListener::bind("[::1]:0").ok()?;
+        let port = listener.local_addr().ok()?.port();
+        let count = Arc::new(AtomicUsize::new(0));
+        let c = count.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                c.fetch_add(1, Ordering::SeqCst);
+                // 요청을 다 읽은 뒤 답한다(안 읽고 닫으면 클라이언트가 연결 끊김으로 본다)
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                loop {
+                    let mut h = String::new();
+                    if reader.read_line(&mut h).is_err() || h == "\r\n" || h.is_empty() {
+                        break;
+                    }
+                }
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\ninner",
+                );
+            }
+        });
+        Some((port, count))
+    }
+
+    #[test]
+    fn redirect_from_public_to_private_never_connects() {
+        let (port, count) = responder();
+        let Some((p6, c6)) = v6_listener() else {
+            eprintln!("IPv6 루프백이 없어 건너뜀");
+            return;
+        };
+        // 이음새: 첫 홉(127.0.0.1)은 공개다 — 그래야 리다이렉트까지 간다
+        let base = format!("http://127.0.0.1:{port}");
+        let r = run(fetch_inner_with(
+            &format!("{base}/go6/{p6}"),
+            1000,
+            None,
+            true,
+            false,
+            T,
+            loopback_v4_is_public,
+        ));
+        assert_eq!(r, Err("market_private_address".into()));
+        let r = run(fetch_inner_with(
+            &format!("{base}/golocal/{p6}"),
+            1000,
+            None,
+            true,
+            false,
+            T,
+            loopback_v4_is_public,
+        ));
+        assert_eq!(r, Err("market_private_address".into()));
+        assert!(count.load(Ordering::SeqCst) >= 2, "첫 홉은 닿아야 한다");
+        assert_eq!(c6.load(Ordering::SeqCst), 0, "사설 쪽 접속 0");
+        // 허용하면 그 사설 주소로 간다(리다이렉트 자체는 따라간다는 대조)
+        assert_eq!(
+            run(fetch_inner_with(
+                &format!("{base}/go6/{p6}"),
+                1000,
+                None,
+                true,
+                true,
+                T,
+                loopback_v4_is_public
+            ))
+            .unwrap(),
+            b"inner"
+        );
+    }
+
+    #[test]
+    fn deadline_is_for_the_whole_request_not_per_hop() {
+        let (port, _) = responder();
+        let url = format!("http://127.0.0.1:{port}/sl/1");
+        // 홉 둘이 각 200ms: 홉마다 300ms 였다면 통과했을 것
+        assert_eq!(
+            run(fetch_inner(
+                &url,
+                1000,
+                None,
+                true,
+                true,
+                Duration::from_millis(300)
+            )),
+            Err("market_timeout".into())
+        );
+        assert_eq!(
+            run(fetch_inner(
+                &url,
+                1000,
+                None,
+                true,
+                true,
+                Duration::from_secs(5)
+            ))
+            .unwrap(),
+            b"done"
+        );
+    }
+
+    /// 자식 프로세스 쪽(직접 돌지 않는다): 프록시 환경 변수가 켜진 채로 받는다
+    #[test]
+    #[ignore]
+    fn proxy_env_child() {
+        let Ok(port) = std::env::var("MARKET_TARGET_PORT") else {
+            return;
+        };
+        for host in ["127.0.0.1", "localhost"] {
+            let r = run(fetch_inner(
+                &format!("http://{host}:{port}/ok"),
+                1000,
+                None,
+                true,
+                true,
+                T,
+            ));
+            assert_eq!(r.as_deref(), Ok(&b"hello"[..]), "{host}");
+        }
+    }
+
+    #[test]
+    fn proxy_env_is_ignored() {
+        let (port, count) = responder();
+        let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+        let pport = proxy.local_addr().unwrap().port();
+        let pcount = Arc::new(AtomicUsize::new(0));
+        let pc = pcount.clone();
+        std::thread::spawn(move || {
+            for stream in proxy.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                pc.fetch_add(1, Ordering::SeqCst);
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\nproxy",
+                );
+            }
+        });
+        let p = format!("http://127.0.0.1:{pport}");
+        let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+        cmd.args([
+            "market::tests::proxy_env_child",
+            "--exact",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("MARKET_TARGET_PORT", port.to_string())
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy");
+        for k in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ] {
+            cmd.env(k, &p);
+        }
+        let out = cmd.output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).to_string()
+            + &String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "child failed: {text}");
+        assert!(text.contains("1 passed"), "child did not run: {text}");
+        assert_eq!(pcount.load(Ordering::SeqCst), 0, "프록시 접속 0");
+        assert!(count.load(Ordering::SeqCst) >= 2, "대상에 직접 닿음");
     }
 }
