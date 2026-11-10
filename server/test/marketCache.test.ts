@@ -318,6 +318,36 @@ describe("index", () => {
     expect(bad.calls).toHaveLength(2);
   });
 
+  it("fresh 는 5분 캐시를 건너뛰되 저장소마다 10초에 한 번까지", async () => {
+    let now = 0;
+    const f = fakeFetch();
+    const c = cache({ fetch: f, now: () => now });
+    await c.index(REPO);
+    expect(f.calls).toHaveLength(1);
+    now += 60_000;
+    await c.index(REPO);
+    expect(f.calls).toHaveLength(1);
+    now += 60_000;
+    await c.index(REPO, { fresh: true });
+    expect(f.calls).toHaveLength(2);
+    now += 5_000;
+    await c.index(REPO, { fresh: true });
+    expect(f.calls).toHaveLength(2);
+    now += 6_000;
+    await c.index(REPO, { fresh: true });
+    expect(f.calls).toHaveLength(3);
+
+    const bad = fakeFetch({ "https://down.test/index.json": new PathError("market_timeout") });
+    const d = cache({ fetch: bad, now: () => now });
+    await d.index("https://down.test/");
+    now += 5_000;
+    await d.index("https://down.test/", { fresh: true });
+    expect(bad.calls).toHaveLength(1);
+    now += 6_000;
+    await d.index("https://down.test/", { fresh: true });
+    expect(bad.calls).toHaveLength(2);
+  });
+
   it("JSON 이 아니면 market_index_invalid, 주소가 틀리면 그 오류", async () => {
     const c = cache({ fetch: fakeFetch({ "https://bad.test/index.json": new TextEncoder().encode("<html>") }) });
     expect((await c.index("https://bad.test/")).error?.code).toBe("market_index_invalid");

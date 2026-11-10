@@ -73,6 +73,7 @@ describe("권한", () => {
     const { app, agent } = env;
     const paths: [string, RequestInit][] = [
       [`/api/market/index?repo=${encodeURIComponent(REPO)}`, {}],
+      [`/api/market/index?repo=${encodeURIComponent(REPO)}&fresh=1`, {}],
       ["/api/market/ensure", { method: "POST", headers: json, body: ensureBody(e()) }],
       [fileQuery("frame.js", e().sha256["frame.js"]!), {}],
       ["/api/market/status", {}],
@@ -95,6 +96,16 @@ describe("권한", () => {
     expect(idx.status).toBe(200);
     expect(Object.keys((await idx.json()).index.packages).sort()).toEqual(["@me/clock", "@me/fog", "@me/ja", "@me/paper", "@me/sea"]);
     expect((await app.request("/api/market/status", { headers: cookie })).status).toBe(200);
+  });
+
+  it("fresh=1 은 소유자에게 200 이고 캐시를 건너뛴다(10초 바닥 — 시험 안에서는 바로 다시 받지 않음)", async () => {
+    const { app, device } = env;
+    const q = `/api/market/index?repo=${encodeURIComponent(REPO)}`;
+    expect((await app.request(q, { headers: device })).status).toBe(200);
+    const n = calls.length;
+    const r = await app.request(`${q}&fresh=1`, { headers: device });
+    expect(r.status).toBe(200);
+    expect(calls.length).toBe(n);
   });
 });
 

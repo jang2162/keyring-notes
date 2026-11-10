@@ -144,7 +144,7 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | POST | `/api/review/:id/approve` · `/api/review/:id/reject` | `{reason?}` | 승인 / 거절(소유자) |
 | GET | `/api/sync/manifest` | | 동기화용 파일 목록 `{files: [{path, hash, size}]}`. 소유자와 기기. 서버가 만드는 위키 index·log 는 뺍니다 |
 | GET | `/api/plugins` · `/plugins/<이름>.js` | | 위젯 플러그인 목록 / 모듈(소유자 로그인) |
-| GET | `/api/market/index?repo=` | | 서버가 받아 검사한 마켓 저장소의 `index.json` → `{repo, index, ignored, error?}`. 5분 동안 캐시하고, 실패는 30초 동안 다시 묻지 않습니다. 소유자와 기기 |
+| GET | `/api/market/index?repo=` | | 서버가 받아 검사한 마켓 저장소의 `index.json` → `{repo, index, ignored, error?}`. 5분 동안 캐시하고, 실패는 30초 동안 다시 묻지 않습니다. `&fresh=1` 을 붙이면 그 캐시를 건너뛰되 저장소마다 10초에 한 번까지만 새로 받습니다. 소유자와 기기 |
 | POST | `/api/market/ensure` | `{id, entry: {version, repo, sha256}, sizes?}` | 패키지 판 하나를 서버 캐시에 받게 하고 파일마다 sha256 을 확인합니다 → `{ok: true}`. 잠금은 바꾸지 않습니다. 소유자와 기기 |
 | GET | `/api/market/file?id=&version=&path=&sha256=` | | 캐시의 패키지 파일. `sha256` 이 맞을 때만 줍니다. 브라우저가 실행하지 않게 `application/octet-stream`, `content-disposition: attachment`, sandbox CSP 로 보냅니다. 소유자와 기기 |
 | GET | `/api/market/status` | | 잠금의 패키지별 캐시 상태 → `{<id>: {state: ready\|fetching\|error, version, error?}}`. 서버가 읽지 못한 항목은 `market_lock_invalid` 인 `error` 로 보입니다. 캐시 파일의 바이트가 맞지 않으면 다시 받을 때까지 그 패키지가 `error` 입니다. 소유자와 기기 |

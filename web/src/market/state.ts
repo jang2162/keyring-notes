@@ -37,7 +37,8 @@ export interface MarketState {
   readPackageText(id: string, path: string): Promise<string>;
   onPackagesChange(fn: () => void): () => void;
   registerPackageKind(type: PackageType, applier: { apply(pkgs: InstalledPackage[]): void | Promise<void> }): () => void;
-  repoIndexes(): Promise<RepoIndexResult[]>;
+  /** fresh: 마켓 화면을 열 때·「새로 고침」(서버 캐시를 건너뜀). 그 밖의 길(설치 판정)은 캐시 */
+  repoIndexes(opts?: { fresh?: boolean }): Promise<RepoIndexResult[]>;
   installPackage(id: string, opts?: { version?: string; repo?: string }): Promise<InstalledPackage>;
   uninstallPackage(id: string): Promise<void>;
   marketAvailability(): "ok" | "unavailable";
@@ -193,14 +194,14 @@ export function createMarketState(deps: MarketDeps): MarketState {
       void Promise.resolve(applier.apply(installed.filter((p) => p.type === type && p.status === "ready"))).catch(() => undefined);
       return () => set.delete(applier);
     },
-    async repoIndexes() {
+    async repoIndexes(opts) {
       const s = deps.settings();
       const source = deps.source();
       if (!s) return [];
       return Promise.all(
         s.repos.map((repo) =>
           source
-            ? source.index(repo).catch((e: unknown) => ({ repo, index: null, ignored: [], error: errorOf(e) }))
+            ? source.index(repo, opts).catch((e: unknown) => ({ repo, index: null, ignored: [], error: errorOf(e) }))
             : { repo, index: null, ignored: [], error: { code: "market_unavailable", params: {} } },
         ),
       );

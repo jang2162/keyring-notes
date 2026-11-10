@@ -38,6 +38,8 @@ import type { Vault } from "./vault.js";
  */
 
 const META = ".keyring-cache.json";
+/** `index(…, { fresh })` 가 캐시를 건너뛰는 바닥 */
+export const FRESH_FLOOR_MS = 10_000;
 
 interface Meta {
   id: string;
@@ -325,7 +327,11 @@ export class MarketCache {
 
   // ── 저장소 목록 ──
 
-  async index(repoInput: string): Promise<RepoIndexResult> {
+  /**
+   * 저장소 목록(캐시 5분, 실패 30초). `fresh`(마켓 화면을 열 때·「새로 고침」)는 그 캐시를 건너뛰되, 받은 지 FRESH_FLOOR_MS 안이면
+   * 캐시 그대로 — 화면을 연달아 열거나 단추를 연타해도 저장소로 나가는 요청은 저장소마다 10초에 한 번이다.
+   */
+  async index(repoInput: string, opts: { fresh?: boolean } = {}): Promise<RepoIndexResult> {
     let repo: string;
     try {
       repo = normalizeRepoUrl(repoInput, { allowHttp: this.opts.allowHttp });
@@ -333,7 +339,7 @@ export class MarketCache {
       return { repo: redactUrl(String(repoInput)), index: null, ignored: [], error: errorOf(e) };
     }
     const hit = this.indexes.get(repo);
-    const ttl = (r: RepoIndexResult) => (r.error ? (this.opts.failTtlMs ?? 30_000) : (this.opts.indexTtlMs ?? 5 * 60_000));
+    const ttl = (r: RepoIndexResult) => (opts.fresh ? FRESH_FLOOR_MS : r.error ? (this.opts.failTtlMs ?? 30_000) : (this.opts.indexTtlMs ?? 5 * 60_000));
     if (hit && this.now() - hit.at < ttl(hit.result)) return hit.result;
     let result: RepoIndexResult;
     try {

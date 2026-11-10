@@ -1,6 +1,15 @@
 import { KeyedError, MARKET_LIMITS, OFFICIAL_REPO_URL, type LockEntry } from "@keyring-notes/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fallbackSource, marketMode, nativeSource, pickSource, readDeviceMarketSettings, serverSource, type PackageSource } from "./source";
+import {
+  fallbackSource,
+  marketMode,
+  nativeSource,
+  pickSource,
+  readDeviceMarketSettings,
+  serverSource,
+  writeDeviceMarketSettings,
+  type PackageSource,
+} from "./source";
 
 // 서버 시험과 같은 픽스처 저장소(pkg index 로 만든 것). web 은 Node 형식이 없어 Vite 의 ?raw 로 읽는다
 const raw = import.meta.glob("../../../server/test/fixtures/market/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
@@ -88,6 +97,17 @@ describe("serverSource", () => {
     expect((ensure.init!.headers as Record<string, string>)["content-type"]).toBe("application/json");
     expect((ensure.init!.headers as Record<string, string>).authorization).toBe("Bearer tok");
     for (const r of requests.slice(1)) expect(r.url).toMatch(/sha256=[0-9a-f]{64}/);
+  });
+
+  it("index 는 fresh 일 때만 fresh=1 을 붙인다", async () => {
+    const { fetchFn, requests } = fakeServer();
+    const s = serverSource("", fetchFn);
+    await s.index(REPO);
+    await s.index(REPO, { fresh: true });
+    expect(requests.map((r) => r.url)).toEqual([
+      `/api/market/index?repo=${encodeURIComponent(REPO)}`,
+      `/api/market/index?repo=${encodeURIComponent(REPO)}&fresh=1`,
+    ]);
   });
 
   it("토큰이 없으면 authorization 을 보내지 않는다(같은 출처 쿠키)", async () => {
@@ -244,5 +264,14 @@ describe("readDeviceMarketSettings", () => {
       },
     });
     expect(readDeviceMarketSettings()).toEqual({ allowHttp: false, allowPrivate: false });
+  });
+
+  it("writeDeviceMarketSettings 뒤 같은 값을 읽는다", () => {
+    const m = new Map<string, string>();
+    vi.stubGlobal("localStorage", { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) });
+    writeDeviceMarketSettings({ allowHttp: true, allowPrivate: false });
+    expect(readDeviceMarketSettings()).toEqual({ allowHttp: true, allowPrivate: false });
+    writeDeviceMarketSettings({ allowHttp: false, allowPrivate: true });
+    expect(readDeviceMarketSettings()).toEqual({ allowHttp: false, allowPrivate: true });
   });
 });

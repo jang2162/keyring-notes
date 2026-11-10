@@ -200,6 +200,15 @@ describe("설치·제거·파일", () => {
     const t = setup({ repos: [OFFICIAL_REPO_URL, REPO] });
     expect((await t.state.repoIndexes()).map((r) => r.repo)).toEqual([OFFICIAL_REPO_URL, REPO]);
   });
+
+  it("repoIndexes({ fresh }) 는 받는 쪽에 fresh 를 넘긴다", async () => {
+    const seen: (boolean | undefined)[] = [];
+    const src = fakeSource();
+    const t = setup({ source: { ...src, index: (repo, opts) => (seen.push(opts?.fresh), src.index(repo)) } });
+    await t.state.repoIndexes();
+    await t.state.repoIndexes({ fresh: true });
+    expect(seen).toEqual([undefined, true]);
+  });
 });
 
 describe("ready", () => {
