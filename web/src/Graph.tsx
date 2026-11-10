@@ -13,6 +13,7 @@ import { Modal } from "./Modal";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent } from "react";
 import { api, type GraphData } from "./api";
 import { t } from "./i18n";
+import { useAppliedTheme } from "./theme/apply";
 import { errorText } from "./toast";
 
 interface Node extends SimulationNodeDatum {
@@ -74,6 +75,7 @@ export function GraphView({
   onOpen: (p: string) => void;
 }) {
   const [data, setData] = useState<GraphData | null>(null);
+  const theme = useAppliedTheme();
   const [error, setError] = useState<string | null>(null);
   const [folder, setFolder] = useState(initialFolder);
   const [local, setLocal] = useState<0 | 1 | 2>(current ? 2 : 0);
@@ -222,8 +224,9 @@ export function GraphView({
       simulation.stop();
       ro.disconnect();
     };
+    // 색은 그릴 때 CSS 변수에서 읽는다 — 테마가 바뀌면(받은 테마·모드) 다시 그린다(배치도 처음부터)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, local, current, legend]);
+  }, [data, local, current, legend, theme]);
 
   const toWorld = (e: { clientX: number; clientY: number }) => {
     const r = canvas.current!.getBoundingClientRect();

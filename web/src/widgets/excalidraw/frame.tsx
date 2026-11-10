@@ -3,6 +3,7 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { WidgetApi, WidgetContext, WidgetRender } from "../types";
 import { escapeAction, keepsWriting, parseScene, SceneGate, sceneKey } from "./scene";
+import { isDark } from "./theme";
 
 /**
  * 내장 위젯 Excalidraw 의 iframe 묶음(IIFE — web/frameBuild.ts). 런타임이 먼저 돌고 이 묶음이 keyringWidgetRegister 를 부른다.
@@ -32,26 +33,6 @@ for (const name of ["localStorage", "sessionStorage"] as const) {
 }
 // srcdoc 에서는 location.origin 이 "null" 이라 이것이 없으면 파일의 source 가 열 때마다 달라진다
 (window as unknown as Record<string, unknown>).EXCALIDRAW_EXPORT_SOURCE = "keyring-notes";
-
-/** 앱 테마 토큰 --bg 의 밝기로 Excalidraw 테마를 고른다 */
-function isDark(bg: string | undefined): boolean {
-  const s = (bg ?? "").trim();
-  let rgb: number[] | null = null;
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s);
-  if (hex) {
-    const h = hex[1]!.length === 3 ? [...hex[1]!].map((c) => c + c).join("") : hex[1]!;
-    rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
-  } else {
-    const m = /rgba?\(([^)]+)\)/i.exec(s);
-    if (m)
-      rgb = m[1]!
-        .split(/[ ,/]+/)
-        .slice(0, 3)
-        .map(Number);
-  }
-  if (!rgb || rgb.some((n) => !Number.isFinite(n))) return false;
-  return (0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!) / 255 < 0.5;
-}
 
 const langCode = (lang: string) => (lang.toLowerCase().startsWith("ko") ? "ko-KR" : "en");
 

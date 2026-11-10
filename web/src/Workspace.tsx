@@ -2904,8 +2904,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       id: "theme",
       group: g.view,
       label: t("cmd.theme"),
+      // 받은 테마에서는 system 으로(system → light → dark → system)
       run: () => setPrefs((p) => ({ theme: p.theme === "system" ? "light" : p.theme === "light" ? "dark" : "system" })),
     },
+    // 늘 있다 — 받은 테마로 화면을 읽을 수 없어도 Mod+K 에서 이름으로 찾아 돌아온다(설계 「테마 토큰」)
+    { id: "themeReset", group: g.view, label: t("cmd.themeReset"), run: () => setPrefs({ theme: "system" }) },
     { id: "graph", group: g.tool, label: t("tool.graph"), run: () => setGraphOpen(true) },
     { id: "lint", group: g.tool, label: t("tool.lint"), run: () => setLintOpen(true) },
     { id: "trash", group: g.tool, label: t("tool.trash"), run: () => setTrashOpen(true) },
