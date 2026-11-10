@@ -1,10 +1,14 @@
 import { Readability } from "@mozilla/readability";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import http from "node:http";
+import https from "node:https";
+import { isIP, type Socket } from "node:net";
+import type { Readable, Transform } from "node:stream";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 // @ts-expect-error 타입 선언이 없는 패키지
 import { gfm } from "turndown-plugin-gfm";
+import { guardedLookup, isPrivateAddress, type LookupFn } from "./netGuard.js";
 import { PathError } from "./paths.js";
 import { vaultText, type VaultText } from "@keyring-notes/core";
 
@@ -136,32 +140,20 @@ export async function pdfToMarkdown(data: Uint8Array, fallbackTitle: string, T: 
 
 // ── URL 가져오기(SSRF 방지) ──
 
-function isPrivateAddress(ip: string): boolean {
-  if (ip.includes(":")) {
-    const v = ip.toLowerCase();
-    if (v === "::1" || v === "::") return true;
-    if (v.startsWith("::ffff:")) return isPrivateAddress(v.slice(7));
-    return /^(fc|fd|fe8|fe9|fea|feb)/.test(v);
-  }
-  const [a, b] = ip.split(".").map(Number);
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
-}
+// 지킴은 마켓 받기와 같다(netGuard.ts, docs/guides/development.md 「마켓 받기와 나가는 요청」): 접속에 쓰는 풀이 자체를 판정,
+// IP 글자는 접속 전에, 리다이렉트마다 다시, 소켓 주소를 한 번 더, agent: false 로 프록시 무시.
+// 마켓과 다른 것은 URL 수집의 기존 동작이다: http 도 받고, 2xx 면 받고, 압축을 풀고, 시간 제한은 홉마다.
 
 export interface FetchOptions {
   /** 사설·루프백 주소 허용(기본 금지). 사내 위키를 수집하려면 KEYRING_FETCH_ALLOW_PRIVATE=1. */
   allowPrivate?: boolean;
   maxBytes?: number;
+  /** 홉(리다이렉트 하나)마다의 상한 */
   timeoutMs?: number;
+  /** 시험용: 이름 풀이(기본 시스템 DNS) */
+  resolve?: LookupFn;
+  /** 시험용: 주소 판정(기본 isPrivateAddress) */
+  isPrivate?: (ip: string) => boolean;
 }
 
 export interface Fetched {
@@ -170,64 +162,140 @@ export interface Fetched {
   data: Uint8Array;
 }
 
-async function assertPublicHost(url: URL, allowPrivate: boolean) {
-  if (allowPrivate) return;
+const MAX_HOPS = 6;
+
+/** 첫 주소와 리다이렉트 주소마다: 스킴·사용자 정보·IP 글자 사설 주소(IP 글자는 lookup 을 타지 않는다) */
+function checkClipUrl(url: URL, allowPrivate: boolean, isPrivate: (ip: string) => boolean): void {
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new PathError("url_protocol");
+  if (url.username || url.password) throw new PathError("url_credentials");
+  // IPv6 글자의 hostname 은 대괄호를 품는다("[::1]") — 벗기지 않으면 isIP 가 0 이다
   const host = url.hostname.replace(/^\[|\]$/g, "");
-  const addrs = isIP(host) ? [host] : (await lookup(host, { all: true, verbatim: true })).map((a) => a.address);
-  if (addrs.length === 0 || addrs.some(isPrivateAddress)) {
-    throw new PathError("private_address", { host: url.hostname });
-  }
+  if (!allowPrivate && isIP(host) && isPrivate(host)) throw new PathError("private_address", { host: url.hostname });
+}
+
+type Hop = { redirect: string } | { contentType: string; data: Uint8Array };
+
+function fetchFailed(reason: string): PathError {
+  return new PathError("fetch_failed", { reason });
+}
+
+function decoder(encoding: string | undefined): Transform | null | undefined {
+  const enc = (encoding ?? "identity").trim().toLowerCase();
+  if (enc === "identity" || enc === "") return null;
+  if (enc === "gzip" || enc === "x-gzip") return createGunzip();
+  if (enc === "deflate") return createInflate();
+  if (enc === "br") return createBrotliDecompress();
+  return undefined;
+}
+
+function clipHop(url: URL, opts: FetchOptions, maxBytes: number): Promise<Hop> {
+  const allowPrivate = opts.allowPrivate ?? false;
+  const isPrivate = opts.isPrivate ?? isPrivateAddress;
+  const privateError = () => new PathError("private_address", { host: url.hostname });
+  const lookup = guardedLookup({ allowPrivate, resolve: opts.resolve, isPrivate, privateError });
+  const signal = AbortSignal.timeout(opts.timeoutMs ?? 20_000);
+  return new Promise<Hop>((resolve, reject) => {
+    let settled = false;
+    const done = (e: unknown, v?: Hop) => {
+      if (settled) return;
+      settled = true;
+      if (e) reject(e);
+      else resolve(v!);
+    };
+    const req = (url.protocol === "https:" ? https : http).request(
+      url,
+      {
+        method: "GET",
+        // 전역 agent 는 NODE_USE_ENV_PROXY=1 이면 프록시를 타고 lookup 이 불리지 않는다(시험 clipFetch.test.ts 「프록시 환경 변수」)
+        agent: false,
+        lookup: lookup as http.RequestOptions["lookup"],
+        signal,
+        headers: {
+          "user-agent": "Mozilla/5.0 (compatible; KeyringNotes/0.4; +clipper)",
+          accept: "text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
+          "accept-encoding": "gzip, deflate, br",
+        },
+      },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        const location = res.headers.location;
+        if (status >= 300 && status < 400 && location) {
+          res.resume();
+          return done(null, { redirect: location });
+        }
+        if (status < 200 || status >= 300) {
+          res.resume();
+          return done(fetchFailed(`HTTP ${status}`));
+        }
+        const declared = Number(res.headers["content-length"] ?? 0);
+        if (declared > maxBytes) {
+          req.destroy();
+          return done(new PathError("doc_too_large"));
+        }
+        const unzip = decoder(res.headers["content-encoding"]);
+        if (unzip === undefined) {
+          req.destroy();
+          return done(fetchFailed("content-encoding"));
+        }
+        // 압축이면 풀린 바이트로 센다 — 압축 폭탄도 상한에서 끊긴다
+        const body: Readable = unzip ? res.pipe(unzip) : res;
+        const chunks: Buffer[] = [];
+        let total = 0;
+        body.on("data", (c: Buffer) => {
+          total += c.length;
+          if (total > maxBytes) {
+            req.destroy();
+            unzip?.destroy();
+            return done(new PathError("doc_too_large"));
+          }
+          chunks.push(c);
+        });
+        body.on("end", () => done(null, { contentType: (res.headers["content-type"] ?? "").toLowerCase(), data: new Uint8Array(Buffer.concat(chunks)) }));
+        body.on("error", (e: Error & { code?: string }) => done(signal.aborted ? fetchFailed("timeout") : fetchFailed(e.code ?? e.message)));
+        res.on("aborted", () => done(fetchFailed(signal.aborted ? "timeout" : "aborted")));
+      },
+    );
+    req.on("socket", (socket: Socket) => {
+      if (allowPrivate) return;
+      // 둘째 줄: 실제로 붙으려는 주소·붙은 주소를 한 번 더 본다(첫 줄은 lookup 의 판정)
+      const guard = (ip: string | undefined) => {
+        if (ip && isPrivate(ip)) {
+          const e = privateError();
+          done(e);
+          req.destroy(e);
+        }
+      };
+      socket.on("connectionAttempt", (ip: string) => guard(ip));
+      socket.on("lookup", (_e: unknown, address: string) => guard(address));
+      socket.on("connect", () => guard(socket.remoteAddress));
+    });
+    req.on("error", (e: Error & { code?: string }) => {
+      if (e instanceof PathError) return done(e);
+      done(fetchFailed(signal.aborted ? "timeout" : (e.code ?? e.message)));
+    });
+    req.end();
+  });
 }
 
 /** http(s) 문서를 가져온다. 리다이렉트마다 주소를 다시 검사하고, 크기·시간을 제한한다. */
 export async function fetchUrl(input: string, opts: FetchOptions = {}): Promise<Fetched> {
   const maxBytes = opts.maxBytes ?? 20 * 1024 * 1024;
+  const isPrivate = opts.isPrivate ?? isPrivateAddress;
   let url: URL;
   try {
     url = new URL(input);
   } catch {
     throw new PathError("url_invalid");
   }
-  for (let hop = 0; hop < 6; hop++) {
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new PathError("url_protocol");
-    if (url.username || url.password) throw new PathError("url_credentials");
-    await assertPublicHost(url, opts.allowPrivate ?? false);
-    const res = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
-      headers: { "user-agent": "Mozilla/5.0 (compatible; KeyringNotes/0.4; +clipper)", accept: "text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5" },
-    }).catch((e) => {
-      throw new PathError("fetch_failed", { reason: String(e?.cause?.code ?? e?.message ?? e) });
-    });
-    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
-      url = new URL(res.headers.get("location")!, url);
-      continue;
+  for (let hop = 0; hop < MAX_HOPS; hop++) {
+    checkClipUrl(url, opts.allowPrivate ?? false, isPrivate);
+    const r = await clipHop(url, opts, maxBytes);
+    if ("data" in r) return { url: url.href, contentType: r.contentType, data: r.data };
+    try {
+      url = new URL(r.redirect, url);
+    } catch {
+      throw new PathError("url_invalid");
     }
-    if (!res.ok) throw new PathError("fetch_failed", { reason: `HTTP ${res.status}` });
-    const declared = Number(res.headers.get("content-length") ?? 0);
-    if (declared > maxBytes) throw new PathError("doc_too_large");
-    const reader = res.body?.getReader();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    if (reader) {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > maxBytes) {
-          await reader.cancel();
-          throw new PathError("doc_too_large");
-        }
-        chunks.push(value);
-      }
-    }
-    const data = new Uint8Array(total);
-    let off = 0;
-    for (const c of chunks) {
-      data.set(c, off);
-      off += c.byteLength;
-    }
-    return { url: url.href, contentType: (res.headers.get("content-type") ?? "").toLowerCase(), data };
   }
   throw new PathError("too_many_redirects");
 }
