@@ -6,6 +6,7 @@ import {
   MemoryStore,
   NotFoundError,
   parseFrontmatter,
+  parseVaultSettings,
   sha256Hex,
   SyncEngine,
   withoutEdited,
@@ -292,6 +293,38 @@ describe("동기화", () => {
     expect(r.conflicts).toEqual([]);
     expect(r.settingsConflicts).toEqual([{ key: ["ui", "theme"], local: "light", server: "dark" }]);
     expect(server.text("keyring-settings.md")).toBe("---\nkeyring: settings\nui:\n  theme: dark\n  live: false\n---\n");
+  });
+});
+
+describe("동기화와 마켓 잠금", () => {
+  it("두 기기가 같은 패키지를 동시에 다른 판으로 올려도 세 곳의 항목이 같고 한쪽 항목 통째다", async () => {
+    const H = (c: string) => c.repeat(64);
+    const server = new FakeServer();
+    const pkg = (version: string, sha: string) =>
+      `    "@a/b": { version: ${version}, repo: https://a/, sha256: { keyring-package.json: ${H(sha)}, frame.js: ${H(sha)} } }`;
+    const file = (line: string) => `---\nkeyring: settings\nmarketplace:\n  packages:\n${line}\n---\n`;
+    await server.put("keyring-settings.md", file(pkg("1.2.0", "a")));
+    const one = await device("폰");
+    const two = await device("노트북");
+    const s1 = new SyncEngine(one.v, server);
+    const s2 = new SyncEngine(two.v, server);
+    await s1.run();
+    await s2.run();
+    // 폰은 1.3.0(sha c), 노트북은 1.2.1(sha b) 로 동시에 올린다
+    const m1 = await one.v.read("keyring-settings.md");
+    await one.v.write("keyring-settings.md", file(pkg("1.3.0", "c")), m1.hash);
+    const m2 = await two.v.read("keyring-settings.md");
+    await two.v.write("keyring-settings.md", file(pkg("1.2.1", "b")), m2.hash);
+    const r2 = await s2.run();
+    const r1 = await s1.run();
+    await s2.run();
+    expect(r1.settingsConflicts ?? []).toEqual([]);
+    expect(r2.settingsConflicts ?? []).toEqual([]);
+    const lock = (text: string) => parseVaultSettings(text).marketplace.packages["@a/b"];
+    const onServer = lock(server.text("keyring-settings.md")!);
+    expect(onServer).toEqual({ version: "1.3.0", repo: "https://a/", sha256: { "keyring-package.json": H("c"), "frame.js": H("c") } });
+    expect(lock((await one.v.read("keyring-settings.md")).content)).toEqual(onServer);
+    expect(lock((await two.v.read("keyring-settings.md")).content)).toEqual(onServer);
   });
 });
 

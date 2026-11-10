@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  DEFAULT_VAULT_SETTINGS,
   officialLangOf,
   parseVaultSettings,
   setVaultSetting,
@@ -19,7 +18,7 @@ import { language } from "./i18n";
  * 동기화·다른 탭으로 파일이 바뀌면 reloadVaultSettings()로 다시 읽는다.
  * 파일이 없으면 처음 고칠 때(또는 ensureVaultSettings) 만들고, 그때 볼트 언어를 지금 화면 언어로 정한다.
  */
-let current: VaultSettings = { ...DEFAULT_VAULT_SETTINGS, workspaces: {}, ui: {}, workspaceOrder: [] };
+let current: VaultSettings = parseVaultSettings(null);
 let loadedHash: string | null = null;
 /** 파일이 있는지(마지막으로 읽은 결과). 모르면 null */
 let exists: boolean | null = null;

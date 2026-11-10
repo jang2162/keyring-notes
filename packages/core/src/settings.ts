@@ -2,6 +2,7 @@ import { parseDocument, isMap } from "yaml";
 import { parseFrontmatter } from "./markdown.js";
 import { dailyFormatProblem, type DailyConfig, type DailyLookup, type WeekStart } from "./daily.js";
 import { PathError } from "./errors.js";
+import { parseMarketplace, type MarketplaceSettings } from "./marketLock.js";
 import { vaultLangOf, vaultText, type VaultLang } from "./vaultText.js";
 
 /**
@@ -17,6 +18,8 @@ import { vaultLangOf, vaultText, type VaultLang } from "./vaultText.js";
  *   workspaces  워크스페이스별: 데일리(켜기·폴더·형식·템플릿·주 시작·기본 아이콘), 템플릿 폴더, 첨부 폴더
  *               (경로는 모두 워크스페이스 기준)
  *   ui          화면 설정 중 기기를 따라가는 것(테마·화면 언어·편집기·자동 저장·트리 표시·단축키…). 값의 모양은 웹이 정한다
+ *   marketplace 마켓 저장소 목록(repos)과 잠금(packages — 모든 기기가 같은 판·같은 파일). 잠금 항목 하나는 병합에서 잎 하나다
+ *               (settingsMerge.ts isAtomicSettingsKey). 기기별 덮어쓰기가 없다
  * 아이콘은 노드 노트의 icon 속성이라 여기에 두지 않는다.
  */
 export const VAULT_SETTINGS_PATH = "keyring-settings.md";
@@ -58,6 +61,8 @@ export interface VaultSettings {
   workspaces: Record<string, Partial<Omit<WorkspaceSettings, "daily">> & { daily?: Partial<DailySettings> }>;
   /** 화면 설정 중 따라가는 것(웹이 검사해서 쓴다) */
   ui: Record<string, unknown>;
+  /** 마켓 저장소·잠금(marketLock.ts) */
+  marketplace: MarketplaceSettings;
 }
 
 export const DEFAULT_VAULT_SETTINGS: VaultSettings = {
@@ -66,6 +71,7 @@ export const DEFAULT_VAULT_SETTINGS: VaultSettings = {
   workspaceOrder: [],
   workspaces: {},
   ui: {},
+  marketplace: parseMarketplace(undefined),
 };
 
 /** 볼트 언어(정하지 않았으면 fallback, 그것도 없으면 영어) */
@@ -90,7 +96,7 @@ export function defaultWorkspaceSettings(lang: VaultLang): WorkspaceSettings {
 /** 설정 파일 내용 → 설정(없거나 잘못된 값은 빼거나 기본값) */
 export function parseVaultSettings(content: string | null | undefined): VaultSettings {
   const fm = content ? parseFrontmatter(content).data : null;
-  if (!fm) return { ...DEFAULT_VAULT_SETTINGS, workspaces: {}, ui: {}, workspaceOrder: [] };
+  if (!fm) return { ...DEFAULT_VAULT_SETTINGS, workspaces: {}, ui: {}, workspaceOrder: [], marketplace: parseMarketplace(undefined) };
   const vault = obj(fm.vault) ?? {};
   const workspaces: VaultSettings["workspaces"] = {};
   for (const [name, raw] of Object.entries(obj(fm.workspaces) ?? {})) {
@@ -118,6 +124,7 @@ export function parseVaultSettings(content: string | null | undefined): VaultSet
     workspaceOrder: Array.isArray(vault.workspaceOrder) ? vault.workspaceOrder.filter((x): x is string => typeof x === "string" && !!x.trim()) : [],
     workspaces,
     ui: obj(fm.ui) ?? {},
+    marketplace: parseMarketplace(fm.marketplace),
   };
 }
 
