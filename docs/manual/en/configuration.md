@@ -16,6 +16,7 @@ Set these in the environment of `pnpm start`, or in `.env` when you use Docker C
 | `KEYRING_BACKUP_DIR` | path | `./backups` | Backup file folder |
 | `KEYRING_INDEX` | path | `<vault>/.keyring/index.db` | Search index. It is a cache: delete it and it is rebuilt on the next start |
 | `KEYRING_PLUGINS_DIR` | path | `./plugins` (`<DATA>/plugins` when `KEYRING_DATA` is set) | Widget plugin folder |
+| `KEYRING_PACKAGES_DIR` | path | `./market-cache` (`<DATA>/packages` when `KEYRING_DATA` is set) | Downloaded marketplace packages. It is a cache: the server downloads the locked packages again when they are missing |
 | `KEYRING_HOST` | address | `127.0.0.1` | Bind address |
 | `KEYRING_PORT` | number | `8787` | Port |
 | `KEYRING_PUBLIC_URL` | URL | (none) | The https address you reach the server at. Only requests for this host name are accepted, and the login cookie gets `Secure` |
@@ -25,6 +26,8 @@ Set these in the environment of `pnpm start`, or in `.env` when you use Docker C
 | `KEYRING_BACKUP_SCHEDULER` | `0` or `1` | `1` | `0` turns off automatic backups |
 | `KEYRING_SCHEDULER` | `0` or `1` | `1` | `0` turns off scheduled jobs (webhooks) |
 | `KEYRING_FETCH_ALLOW_PRIVATE` | `0` or `1` | (none) | `1` lets URL collection reach private and loopback addresses, such as an internal wiki. Blocked by default to prevent server-side request forgery (SSRF) |
+| `KEYRING_MARKET_ALLOW_HTTP` | `0` or `1` | (none) | `1` lets the server download marketplace repositories over plain `http:`. Anyone who can edit the vault's shared settings can then make the server fetch unencrypted addresses |
+| `KEYRING_MARKET_ALLOW_PRIVATE` | `0` or `1` | (none) | `1` lets the server download marketplace repositories from private and loopback addresses, such as a repository on your home network. Anyone who can edit the vault's shared settings can then point the server at your internal network. Separate from `KEYRING_FETCH_ALLOW_PRIVATE` |
 | `KEYRING_EMBED_URL` | URL | (none) | OpenAI-compatible `/embeddings` URL for semantic search. Needs `KEYRING_EMBED_MODEL` too |
 | `KEYRING_EMBED_MODEL` | text | (none) | Embedding model name |
 | `KEYRING_EMBED_KEY` | secret | (none) | Embedding API key, sent as `Authorization: Bearer` |
@@ -62,14 +65,14 @@ Set these in the environment of `pnpm start`, or in `.env` when you use Docker C
 
 Only keys listed under `environment:` in `docker-compose.yml` reach the container:
 
-- `KEYRING_PUBLIC_URL`, `KEYRING_ALLOWED_HOSTS`, `KEYRING_FETCH_ALLOW_PRIVATE`
+- `KEYRING_PUBLIC_URL`, `KEYRING_ALLOWED_HOSTS`, `KEYRING_FETCH_ALLOW_PRIVATE`, `KEYRING_MARKET_ALLOW_HTTP`, `KEYRING_MARKET_ALLOW_PRIVATE`
 - every `KEYRING_S3_*` variable in the table above
 - `KEYRING_EMBED_URL`, `KEYRING_EMBED_MODEL`, `KEYRING_EMBED_KEY`
 - `KEYRING_SCHEDULER`, `KEYRING_BACKUP_SCHEDULER`
 - `KEYRING_UPDATE_URL`, `KEYRING_LANG` (passed only when they appear in `.env`, because an empty value means something different from no value)
 - `TZ`
 
-The image fixes `KEYRING_DATA`, `KEYRING_HOST` and `KEYRING_PORT`, and the vault, config, backup, plugin and index paths all sit under `/data`.
+The image fixes `KEYRING_DATA`, `KEYRING_HOST` and `KEYRING_PORT`, and the vault, config, backup, plugin, package and index paths all sit under `/data`.
 
 > [!NOTE]
 > Inside the container, `localhost` is the container itself. A `KEYRING_EMBED_URL` that points to a model running on the host needs the host's address instead.

@@ -29,7 +29,7 @@ compose 의 `environment:` 에 적힌 키만 컨테이너에 들어간다. 키�
 ### 컨테이너에 넘기지 않는 서버 변수
 
 - `KEYRING_DATA`·`KEYRING_HOST`·`KEYRING_PORT`·`KEYRING_WEB_DIST` 는 Dockerfile 이 정한다.
-- `KEYRING_VAULT`·`KEYRING_CONFIG`·`KEYRING_BACKUP_DIR`·`KEYRING_PLUGINS_DIR`·`KEYRING_INDEX` 는 `/data` 아래로 정해진다.
+- `KEYRING_VAULT`·`KEYRING_CONFIG`·`KEYRING_BACKUP_DIR`·`KEYRING_PLUGINS_DIR`·`KEYRING_INDEX`·`KEYRING_PACKAGES_DIR` 는 `/data` 아래로 정해진다.
 - `KEYRING_PASSWORD` 는 CLI 전용이다.
 - `.env` 의 `KEYRING_PORT` 는 호스트 쪽 포트일 뿐이다.
 

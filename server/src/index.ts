@@ -154,6 +154,7 @@ const app = createApp({
   ingestor,
   admin: { backups, publicUrl, allowedHosts, updateUrl, automation, s3, blobs },
   setupCode: () => (config.get().owner.passwordHash === null ? setupCode : null),
+  market,
 });
 
 mountWebApp(app, webDist);

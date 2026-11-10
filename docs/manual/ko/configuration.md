@@ -17,6 +17,7 @@
 | `KEYRING_BACKUP_DIR` | 경로 | `./backups` | 백업 파일 폴더 |
 | `KEYRING_INDEX` | 경로 | `<볼트>/.keyring/index.db` | 검색 인덱스. 캐시라서 지우면 다음 시작 때 다시 만듭니다 |
 | `KEYRING_PLUGINS_DIR` | 경로 | `./plugins`(`KEYRING_DATA` 가 있으면 `<DATA>/plugins`) | 위젯 플러그인 폴더 |
+| `KEYRING_PACKAGES_DIR` | 경로 | `./market-cache`(`KEYRING_DATA` 가 있으면 `<DATA>/packages`) | 받은 마켓 패키지. 캐시라서 없으면 서버가 잠금에 있는 패키지를 다시 받습니다 |
 | `KEYRING_HOST` | 주소 | `127.0.0.1` | 바인드 주소 |
 | `KEYRING_PORT` | 숫자 | `8787` | 포트 |
 | `KEYRING_PUBLIC_URL` | URL | (없음) | 접속하는 https 주소. 이 호스트 이름으로 온 요청만 받고, 로그인 쿠키에 `Secure` 가 붙습니다 |
@@ -26,6 +27,8 @@
 | `KEYRING_BACKUP_SCHEDULER` | `0`·`1` | `1` | `0` 이면 자동 백업을 끕니다 |
 | `KEYRING_SCHEDULER` | `0`·`1` | `1` | `0` 이면 정기 작업(웹훅)을 끕니다 |
 | `KEYRING_FETCH_ALLOW_PRIVATE` | `0`·`1` | (없음) | `1` 이면 URL 수집이 사내 위키 같은 사설·루프백 주소에도 닿습니다. 서버 측 요청 위조(SSRF)를 막으려고 기본은 막혀 있습니다 |
+| `KEYRING_MARKET_ALLOW_HTTP` | `0`·`1` | (없음) | `1` 이면 서버가 마켓 저장소를 암호화하지 않은 `http:` 로도 받습니다. 볼트의 공통 설정을 고칠 수 있는 사람이 서버에 암호화하지 않은 주소를 받게 할 수 있게 됩니다 |
+| `KEYRING_MARKET_ALLOW_PRIVATE` | `0`·`1` | (없음) | `1` 이면 서버가 집 안 저장소 같은 사설·루프백 주소의 마켓 저장소에서도 받습니다. 볼트의 공통 설정을 고칠 수 있는 사람이 서버를 내부망으로 보낼 수 있게 됩니다. `KEYRING_FETCH_ALLOW_PRIVATE` 와 따로입니다 |
 | `KEYRING_EMBED_URL` | URL | (없음) | 의미 검색용 OpenAI 호환 `/embeddings` 주소. `KEYRING_EMBED_MODEL` 도 있어야 합니다 |
 | `KEYRING_EMBED_MODEL` | 글 | (없음) | 임베딩 모델 이름 |
 | `KEYRING_EMBED_KEY` | 비밀 | (없음) | 임베딩 API 키. `Authorization: Bearer` 로 보냅니다 |
@@ -63,14 +66,14 @@
 
 `docker-compose.yml` 의 `environment:` 에 적힌 키만 컨테이너에 들어갑니다.
 
-- `KEYRING_PUBLIC_URL`, `KEYRING_ALLOWED_HOSTS`, `KEYRING_FETCH_ALLOW_PRIVATE`
+- `KEYRING_PUBLIC_URL`, `KEYRING_ALLOWED_HOSTS`, `KEYRING_FETCH_ALLOW_PRIVATE`, `KEYRING_MARKET_ALLOW_HTTP`, `KEYRING_MARKET_ALLOW_PRIVATE`
 - 위 표의 모든 `KEYRING_S3_*` 변수
 - `KEYRING_EMBED_URL`, `KEYRING_EMBED_MODEL`, `KEYRING_EMBED_KEY`
 - `KEYRING_SCHEDULER`, `KEYRING_BACKUP_SCHEDULER`
 - `KEYRING_UPDATE_URL`, `KEYRING_LANG`(빈 값과 없는 값의 뜻이 달라서 `.env` 에 있을 때만 넘깁니다)
 - `TZ`
 
-`KEYRING_DATA`, `KEYRING_HOST`, `KEYRING_PORT` 는 이미지가 정하고, 볼트·설정·백업·플러그인·인덱스 경로는 모두 `/data` 아래입니다.
+`KEYRING_DATA`, `KEYRING_HOST`, `KEYRING_PORT` 는 이미지가 정하고, 볼트·설정·백업·플러그인·패키지·인덱스 경로는 모두 `/data` 아래입니다.
 
 > [!NOTE]
 > 컨테이너 안의 `localhost` 는 컨테이너 자신입니다. 호스트에서 도는 모델을 `KEYRING_EMBED_URL` 로 가리키려면 호스트의 주소를 쓰세요.

@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { PLUGIN_NAME_RE, WIDGET_FRAME_SCRIPT_HASH } from "@keyring-notes/core";
+import { PLUGIN_NAME_RE, WIDGET_FRAME_SCRIPT_HASH, type LockEntry } from "@keyring-notes/core";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -11,6 +11,7 @@ import { adminRoutes, type AdminDeps } from "./admin.js";
 import { PasskeyError, PasskeyService } from "./passkeys.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { Ingestor } from "./ingest.js";
+import type { MarketCache } from "./marketCache.js";
 import type { NoteIndex } from "./noteindex.js";
 import type { ReviewQueue } from "./review.js";
 import type { SemanticIndex } from "./embeddings.js";
@@ -53,6 +54,8 @@ export interface AppOptions {
   review?: ReviewQueue;
   /** 비밀번호가 없을 때 웹에서 처음 설정하는 데 쓰는 일회용 코드(서버 로그에만 나온다). */
   setupCode?: () => string | null;
+  /** 마켓 패키지 캐시(없으면 /api/market/* 은 404) */
+  market?: MarketCache;
 }
 
 /** 앱 페이지에 거는 보안 헤더. 첨부 파일(/api/raw)은 자기 CSP(sandbox)를 따로 건다. */
@@ -144,7 +147,7 @@ class LoginThrottle {
   }
 }
 
-export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review, semantic, pluginsDir }: AppOptions) {
+export function createApp({ vault, index, config, wiki, ingestor, admin, setupCode, review, semantic, pluginsDir, market }: AppOptions) {
   const app = new Hono<Env>();
   const throttle = new LoginThrottle();
   const passkeys = new PasskeyService(config, admin.publicUrl);
@@ -398,6 +401,41 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.get("/sync/manifest", async (c) => {
     if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("sync_owner_only");
     return c.json({ files: await manifest.files() });
+  });
+
+  // ── 마켓(소유자만 — 쿠키 로그인 또는 기기 토큰). 설치 API 는 따로 없다: 공통 설정의 잠금을 쓰는 것이 설치다 ──
+  const marketOf = (c: Context<Env>): MarketCache => {
+    if (c.var.scoped.principal.kind !== "owner") throw new ForbiddenError("market_owner_only");
+    if (!market) throw new NotFoundError("market_unavailable");
+    return market;
+  };
+  const queryOf = (c: Context<Env>, field: string): string => {
+    const v = c.req.query(field);
+    if (!v) throw new PathError("field_required", { field });
+    return v;
+  };
+  api.get("/market/index", async (c) => c.json(await marketOf(c).index(queryOf(c, "repo"))));
+  api.get("/market/status", (c) => c.json(marketOf(c).status()));
+  api.post("/market/ensure", async (c) => {
+    const m = marketOf(c);
+    const body = (await c.req.json()) as { id?: unknown; entry?: unknown; sizes?: unknown };
+    if (typeof body.id !== "string") throw new PathError("field_required", { field: "id" });
+    const sizes =
+      body.sizes && typeof body.sizes === "object" && Object.values(body.sizes).every((n) => typeof n === "number")
+        ? (body.sizes as Record<string, number>)
+        : undefined;
+    await m.ensure(body.id, body.entry as LockEntry, sizes);
+    return c.json({ ok: true });
+  });
+  // 같은 출처에서 제3자 frame.js 를 내므로 실행할 수 없는 꼴로만 — 앱 페이지 CSP 가 script-src 'self' 라 JS 타입으로 내면
+  // HTML 주입 하나로 그 코드가 앱 권한으로 돈다. 화면은 바이트로 받아 iframe 에 글로 건넨다
+  api.get("/market/file", async (c) => {
+    const bytes = await marketOf(c).read(queryOf(c, "id"), queryOf(c, "version"), queryOf(c, "path"), queryOf(c, "sha256"));
+    return c.body(bytes as Uint8Array<ArrayBuffer>, 200, {
+      "content-type": "application/octet-stream",
+      "content-security-policy": "default-src 'none'; sandbox",
+      "content-disposition": "attachment",
+    });
   });
 
   api.get("/tree", async (c) => c.json({ tree: await c.var.scoped.tree(c.req.query("folder")) }));

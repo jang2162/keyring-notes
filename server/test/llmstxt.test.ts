@@ -48,6 +48,8 @@ describe("GET /llms.txt", () => {
     expect(body).toContain("/mcp");
     expect(body).toContain("base_hash");
     expect(body).toContain("409");
+    expect(body).toContain("/api/market/");
+    expect(body).toContain("owner only");
   });
 
   it("볼트 내용·토큰·비밀번호 같은 이 서버의 상태를 담지 않는다", async () => {
