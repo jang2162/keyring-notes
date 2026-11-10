@@ -26,6 +26,8 @@
   --success-bg: #eaf6ed;
   --hover: rgb(0 0 0 / 0.05);
   --active: rgb(59 111 216 / 0.12);
+  /* 초점 고리 색. --focus(그림자 꼴)는 테마 토큰이 아니므로 색만 떼어 테마가 바꿀 수 있게 둔다 */
+  --focus-ring: rgb(59 111 216 / 0.55);
   /* 노트 안 찾기: 일치·지금 일치 */
   --find-match: rgb(250 204 21 / 0.4);
   --find-current: rgb(249 115 22 / 0.45);
@@ -36,7 +38,7 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
   --shadow: 0 4px 16px rgb(0 0 0 / 0.12);
   --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.2);
-  --focus: 0 0 0 2px var(--bg), 0 0 0 4px rgb(59 111 216 / 0.55);
+  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring);
   --font-sans: system-ui, -apple-system, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
   --font-serif: "Iowan Old Style", "Apple Myungjo", "Noto Serif KR", Georgia, serif;
   --font-mono: ui-monospace, "SF Mono", "D2Coding", Menlo, monospace;
@@ -85,7 +87,7 @@
     --find-current: rgb(249 115 22 / 0.5);
     --shadow: 0 4px 16px rgb(0 0 0 / 0.45);
     --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.55);
-    --focus: 0 0 0 2px var(--bg), 0 0 0 4px rgb(122 162 247 / 0.6);
+    --focus-ring: rgb(122 162 247 / 0.6);
     color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -117,7 +119,7 @@
     --find-current: rgb(249 115 22 / 0.5);
     --shadow: 0 4px 16px rgb(0 0 0 / 0.45);
     --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.55);
-    --focus: 0 0 0 2px var(--bg), 0 0 0 4px rgb(122 162 247 / 0.6);
+    --focus-ring: rgb(122 162 247 / 0.6);
     color-scheme: dark;
   }
 }

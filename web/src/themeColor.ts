@@ -1,10 +1,12 @@
+import { THEME_DEFAULTS } from "@keyring-notes/core";
 import type { Prefs } from "./prefs";
 
 /**
- * 설치한 웹 앱(PWA)의 상단 상태 표시줄·하단 영역 색. styles.css 의 `--bg`(밝은·어두운 테마)와 같은 값이다 — 시험이 둘을 맞춰 본다.
- * index.html 의 theme-color 메타 두 벌(prefers-color-scheme light·dark)의 처음 값도 이것이다.
+ * 설치한 웹 앱(PWA)의 상단 상태 표시줄·하단 영역 색 = 기본 테마의 `--bg`(밝은·어두운).
+ * index.html 의 theme-color 메타 두 벌(prefers-color-scheme light·dark)의 처음 값도 이것이다(손으로 맞춘다).
+ * THEME_DEFAULTS 와 styles.css 가 같은지는 theme/tokens.test.ts 가 본다.
  */
-export const THEME_BG = { light: "#ffffff", dark: "#17191c" } as const;
+export const THEME_BG = { light: THEME_DEFAULTS.light["--bg"]!, dark: THEME_DEFAULTS.dark["--bg"]! } as const;
 
 /** 테마 설정에 따른 두 메타(light·dark 미디어 쿼리)의 content. 직접 고른 테마면 시스템 설정과 상관없이 둘 다 그 색 */
 export function themeColorContents(theme: Prefs["theme"]): { light: string; dark: string } {
