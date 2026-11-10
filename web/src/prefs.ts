@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { onVaultSettings, updateVaultSetting } from "./vaultSettings";
 import { setLanguage, systemLanguage, urlLanguage } from "./i18n";
+import { PACKAGE_ID_RE } from "@keyring-notes/core";
+import { resolveTheme } from "./theme/resolve";
 import { applyThemeColor } from "./themeColor";
 
 /**
@@ -13,8 +15,11 @@ import { applyThemeColor } from "./themeColor";
  * 연달아 바뀌는 값(글자 크기·자동 저장 간격 등)은 멈춘 뒤 한 번만 파일에 쓴다.
  * 덮어쓰기 값은 서버로 보내지 않는다.
  */
+/** 테마 고르기: 기본 셋 또는 받은 테마 패키지 id(하나만 고른다). 옛 앱 판은 패키지 id 를 버리고 시스템으로 읽는다 */
+export type ThemeChoice = "system" | "light" | "dark" | `@${string}/${string}`;
+
 export interface Prefs {
-  theme: "system" | "light" | "dark";
+  theme: ThemeChoice;
   /** 화면 언어(""이면 브라우저·OS 언어) */
   language: string;
   leftWidth: number;
@@ -120,16 +125,18 @@ export function isSynced(k: keyof Prefs): k is SyncedKey {
 }
 
 const ENUMS: Partial<Record<keyof Prefs, readonly string[]>> = {
-  theme: ["system", "light", "dark"],
   editorFont: ["sans", "serif", "mono"],
   treeAttachments: ["show", "hide"],
   leftView: ["files", "search", "tags", "attachments"],
   rightTab: ["outline", "links", "props", "history"],
 };
 
+const THEME_BASE: readonly string[] = ["system", "light", "dark"];
+
 /** 저장된 값 검사(파일·다른 기기에서 온 값은 믿지 않는다). 못 쓰면 undefined */
-function valid<K extends keyof Prefs>(k: K, v: unknown): Prefs[K] | undefined {
+export function validPref<K extends keyof Prefs>(k: K, v: unknown): Prefs[K] | undefined {
   const d = DEFAULT_PREFS[k];
+  if (k === "theme") return typeof v === "string" && (THEME_BASE.includes(v) || PACKAGE_ID_RE.test(v)) ? (v as Prefs[K]) : undefined;
   if (k === "keys") {
     if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
     return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => typeof x === "string")) as Prefs[K];
@@ -175,10 +182,10 @@ function resolve(): Prefs {
   const out = { ...DEFAULT_PREFS } as Record<string, unknown>;
   for (const k of Object.keys(DEFAULT_PREFS) as (keyof Prefs)[]) {
     if (isSynced(k)) {
-      const v = valid(k, overrides[k]) ?? valid(k, pendingShared.has(k) ? pendingShared.get(k) : shared[k]);
+      const v = validPref(k, overrides[k]) ?? validPref(k, pendingShared.has(k) ? pendingShared.get(k) : shared[k]);
       if (v !== undefined) out[k] = v;
     } else {
-      const v = valid(k, device[k]);
+      const v = validPref(k, device[k]);
       if (v !== undefined) out[k] = v;
     }
   }
@@ -260,7 +267,7 @@ export function isLocalOverride(k: SyncedKey): boolean {
 
 /** 공통 설정(모든 기기)의 값. 정하지 않았으면 기본값 */
 export function sharedPref<K extends SyncedKey>(k: K): Prefs[K] {
-  return valid(k, pendingShared.has(k) ? pendingShared.get(k) : shared[k]) ?? DEFAULT_PREFS[k];
+  return validPref(k, pendingShared.has(k) ? pendingShared.get(k) : shared[k]) ?? DEFAULT_PREFS[k];
 }
 
 /**
@@ -313,10 +320,13 @@ export function usePrefs(): Prefs {
 
 /** 테마: html[data-theme]에 둔다(system이면 지운다 → prefers-color-scheme). PWA 상하단 색(theme-color)도 따라간다 */
 export function applyTheme(theme: Prefs["theme"]) {
+  // DOM 없는 곳(시험)에서 이 모듈을 읽어도 시작 publish() 가 던지지 않게
+  if (typeof document === "undefined") return;
+  const r = resolveTheme(theme, [], { systemDark: false, escape: false });
   const root = document.documentElement;
-  if (theme === "system") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", theme);
-  applyThemeColor(theme);
+  if (r.dataTheme === null) root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", r.dataTheme);
+  applyThemeColor(r.metaBg);
 }
 
 // 공통 설정 파일이 바뀌면(읽기·동기화·다른 기기) 따라간다. 이 기기 캐시도 바꿔 다음 시작 때 먼저 쓴다
