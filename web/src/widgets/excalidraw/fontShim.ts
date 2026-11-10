@@ -13,9 +13,10 @@ export function installFontShim(lookup: (rel: string) => ArrayBuffer | undefined
         const bytes = lookup(rel);
         if (bytes) return new Orig(family, bytes, descriptors);
       }
-      // 싣지 않은 글꼴(Excalifont·Liberation·Xiaolai — vite.config.ts 의 fontsSkip): 주소(CDN)로 받으러 가지 않게 없는 local() 로 만든다.
-      // 그 글꼴로 쓴 글은 시스템 글꼴로 보인다
-      if (rels.length) return new Orig(family, "local('keyring-font-not-bundled')", descriptors);
+      // 싣지 않은 글꼴(Excalifont·Liberation·Xiaolai — vite.config.ts 의 fontsSkip): 주소(CDN)로 받으러 가지 않게 없는 local() 로 만들고,
+      // unicode-range 를 쓰지 않는 한 글자(U+10FFFF)로 좁혀 어떤 글에도 맞지 않게 한다 — 맞으면 브라우저가 불러오다 실패하고
+      // Excalidraw 가 그 실패를 글꼴 CDN 주소와 함께 콘솔 오류로 적는다. 그 글꼴로 쓴 글은 시스템 글꼴로 보인다
+      if (rels.length) return new Orig(family, "local('keyring-font-not-bundled')", { ...descriptors, unicodeRange: "U+10FFFF" });
     }
     return new Orig(family, source, descriptors);
   }

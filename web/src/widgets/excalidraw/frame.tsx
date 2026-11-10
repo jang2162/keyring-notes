@@ -2,7 +2,7 @@ import { installFontShim } from "./fontShim";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { WidgetApi, WidgetContext, WidgetRender } from "../types";
-import { escapeIsNoop, keepsWriting, parseScene, SceneGate, sceneKey } from "./scene";
+import { escapeAction, keepsWriting, parseScene, SceneGate, sceneKey } from "./scene";
 
 /**
  * 내장 위젯 Excalidraw 의 iframe 묶음(IIFE — web/frameBuild.ts). 런타임이 먼저 돌고 이 묶음이 keyringWidgetRegister 를 부른다.
@@ -95,12 +95,17 @@ async function start(el: HTMLElement, first: WidgetContext, api: WidgetApi, onCt
   let stopped = false;
   const enc = new TextEncoder();
 
-  // Excalidraw 가 Esc 를 처리하기 전(capture)에 상태를 보고, 할 일이 없는 Esc 면 전체 화면을 닫는다(escapeIsNoop)
-  let excalidrawApi: { getAppState(): object } | null = null;
+  // Excalidraw 가 Esc 를 처리하기 전(capture)에 상태를 보고(escapeAction): 고른 것만 남았으면 위젯이 풀고, 할 일이 없으면 전체 화면을 닫는다.
+  // 글 편집·한글 조합 중 Esc 는 Excalidraw 에 맡긴다(조합 중이면 아예 보지 않는다)
+  let excalidrawApi: { getAppState(): object; updateScene(s: { appState: object }): void } | null = null;
   let fullscreen = !!first.fullscreen;
   const onEsc = (e: KeyboardEvent) => {
-    if (e.key !== "Escape" || e.isComposing || e.keyCode === 229 || !fullscreen || !api.toggleFullscreen || !excalidrawApi) return;
-    if (escapeIsNoop(excalidrawApi.getAppState() as Record<string, unknown>)) api.toggleFullscreen();
+    if (e.key !== "Escape" || e.isComposing || e.keyCode === 229 || !excalidrawApi) return;
+    const action = escapeAction(excalidrawApi.getAppState() as Record<string, unknown>);
+    if (action === "clearSelection") {
+      e.preventDefault();
+      excalidrawApi.updateScene({ appState: { selectedElementIds: {}, selectedGroupIds: {} } });
+    } else if (action === "close" && fullscreen && api.toggleFullscreen) api.toggleFullscreen();
   };
   window.addEventListener("keydown", onEsc, true);
 

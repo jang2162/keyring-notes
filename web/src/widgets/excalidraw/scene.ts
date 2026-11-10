@@ -64,13 +64,16 @@ export class SceneGate {
 
 /**
  * Excalidraw 는 할 일이 없는 Esc 도 preventDefault 해 런타임의 「처리하지 않은 Esc → 부모(전체 화면 닫기)」 길이 열리지 않는다.
- * 그래서 Esc 가 Excalidraw 에 할 일(선택 해제·글 편집 끝·도구 되돌리기·메뉴 닫기·그리던 것 끝)이 없을 때만 위젯이 직접 전체 화면을 닫는다
+ * 또 0.18.1 은 Esc 로 선택을 풀지 않는다 — 그대로 두면 무엇이든 고른 동안 Esc 로 전체 화면이 닫히지 않는다.
+ * 그래서 Excalidraw 에 할 일(글 편집 끝·도구 되돌리기·메뉴 닫기·그리던 것 끝)이 있으면 맡기고, 고른 것만 남았으면 위젯이 풀고(clearSelection),
+ * 아무것도 없을 때만 전체 화면을 닫는다(close)
  */
-export function escapeIsNoop(s: Record<string, unknown>): boolean {
-  const selected = s.selectedElementIds as Record<string, boolean> | undefined;
-  if (selected && Object.values(selected).some(Boolean)) return false;
-  if ((s.activeTool as { type?: string } | undefined)?.type !== "selection") return false;
-  return [s.editingTextElement, s.openMenu, s.openPopup, s.openDialog, s.contextMenu, s.newElement, s.multiElement].every((v) => v === null || v === undefined);
+export function escapeAction(s: Record<string, unknown>): "excalidraw" | "clearSelection" | "close" {
+  if ((s.activeTool as { type?: string } | undefined)?.type !== "selection") return "excalidraw";
+  const busy = [s.editingTextElement, s.openMenu, s.openPopup, s.openDialog, s.contextMenu, s.newElement, s.multiElement];
+  if (!busy.every((v) => v === null || v === undefined)) return "excalidraw";
+  const any = (m: unknown) => !!m && Object.values(m as Record<string, boolean>).some(Boolean);
+  return any(s.selectedElementIds) || any(s.selectedGroupIds) ? "clearSelection" : "close";
 }
 
 /**
