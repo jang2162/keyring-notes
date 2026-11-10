@@ -5,7 +5,7 @@ This guide builds a marketplace repository of widgets, themes and languages that
 It is for people who make packages or run their own repository.
 
 > [!NOTE]
-> The app cannot install or use packages yet. Installing from the app, themes, languages and widgets arrive in later releases. You can already build and check repositories with the commands below.
+> The app installs and uses themes and languages, see [Install packages](install-packages.md). Widget installation comes in a later release. You can already publish widget packages.
 
 ## How a repository is laid out
 
@@ -152,6 +152,11 @@ The editor's selection and current-line colors, shadows and the dark-mode tints 
 The app measures the contrast of body text (`--fg`) on the background (`--bg`) in each mode the theme draws, with the WCAG 2 formula. A missing token counts as the default value of that mode, and a see-through `--bg` is laid over the default background. Below 4.5:1, `pkg check` warns (`contrast: light 3.2`), and the app shows a warning when the theme is installed or chosen. The theme still installs. The ratio is rounded down, so a warning never shows 4.5. If a value passes the format check but the app cannot read it as a color, the warning shows `?` instead of a ratio.
 
 A `language` package's `messages.json` uses the same format as a language pack file (`meta` and `messages`). Missing keys are allowed and fall back to the base language.
+
+- `meta.id` is the language tag that users pick, such as `ja` or `pt-BR`. It cannot be an official language (`en`, `ko`).
+- The app uses only keys that exist in the base language, with string values and the same `{name}` placeholders as the base language. Other keys are dropped, and those messages are shown in the base language. `pkg check` lists them as warnings.
+- Values are always shown as plain text, even when they look like HTML.
+- If a device has an unofficial language pack with the same `meta.id`, that device uses its own pack. If two installed packages have the same `meta.id`, the one installed first is used.
 
 ### A minimal widget
 

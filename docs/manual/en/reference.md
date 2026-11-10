@@ -23,7 +23,7 @@ Run the admin CLI with `pnpm keyring <command>` from a source checkout, or `dock
 
 The server re-reads the config file on the next request after it changes, so no restart is needed.
 
-The `pkg` commands read relative paths from the folder you run them in. The package and repository formats are in [Publish marketplace packages](how-to/publish-packages.md).
+The `pkg` commands read relative paths from the folder you run them in. The package and repository formats are in [Publish marketplace packages](how-to/publish-packages.md). Installing packages in the app is in [Install packages](how-to/install-packages.md).
 
 ## Permissions
 

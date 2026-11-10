@@ -12,6 +12,7 @@ Click the gear at the bottom of the rail, press `Ctrl/Cmd+,`, or go to `#/:setti
 | --- | --- |
 | **General** | Theme, show icons, labels on the side bar, reset |
 | **Language** | Display language, vault language, language packs. On a server also agent language and server language |
+| **Marketplace** | Installed packages, browse and install themes and languages, repositories, see [Install packages](install-packages.md) |
 | **Editor** | Autosave, Live Preview, font and size, readable width, line numbers, properties above the document |
 | **Files & links** | New link format, files in the tree, backlinks at the end of the document, daily display |
 | **Workspaces** | Workspaces and their daily, template and attachment folders |
@@ -31,6 +32,10 @@ Settings marked **All devices** are stored in the vault's shared settings file a
 - Changes from other tabs or sync apply right away.
 
 These stay on this device only: panel widths and open state, the left view and right tab, folded sections, open tabs, tree expansion, the last note, recent emoji and unofficial language packs.
+
+## Theme
+
+**Theme** in **General** offers **System**, **Light**, **Dark** and the themes installed from the marketplace. Installed themes, contrast warnings and **Back to the default theme** are described in [Install packages](install-packages.md#pick-a-theme).
 
 ## The shared settings file
 
@@ -68,4 +73,5 @@ Press `Ctrl/Cmd+/` for the list of shortcuts, and change them in Settings → **
 ## Next steps
 
 - [Organize notes](organize-notes.md)
+- [Install packages](install-packages.md)
 - [Manage the server](manage-the-server.md)
