@@ -17,8 +17,12 @@ Run the admin CLI with `pnpm keyring <command>` from a source checkout, or `dock
 | `agent remove <name>` | Delete an agent |
 | `agent grant <name> <path> <level>` | Set access to a folder or note. The path `/` means the whole vault |
 | `agent revoke <name> <path>` | Remove a rule. The parent rule, or `hidden`, applies again |
+| `pkg check <folder>` | Check a marketplace package folder. Exits with `1` on an error and prints warnings |
+| `pkg index <folder> [--name <name>]` | Check every package under `<folder>/packages/` and write `<folder>/index.json`. Unchanged files leave it untouched |
 
 The server re-reads the config file on the next request after it changes, so no restart is needed.
+
+The `pkg` commands read relative paths from the folder you run them in. The package and repository formats are in [Publish marketplace packages](how-to/publish-packages.md).
 
 ## Permissions
 
