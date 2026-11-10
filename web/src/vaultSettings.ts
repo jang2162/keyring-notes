@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import {
-  DEFAULT_VAULT_SETTINGS,
   officialLangOf,
   parseVaultSettings,
+  settingsObject,
   setVaultSetting,
   vaultLanguage,
   VAULT_SETTINGS_PATH,
+  type MarketplaceSettings,
   type SettingPath,
   type VaultLang,
   type VaultSettings,
@@ -19,17 +20,21 @@ import { language } from "./i18n";
  * 동기화·다른 탭으로 파일이 바뀌면 reloadVaultSettings()로 다시 읽는다.
  * 파일이 없으면 처음 고칠 때(또는 ensureVaultSettings) 만들고, 그때 볼트 언어를 지금 화면 언어로 정한다.
  */
-let current: VaultSettings = { ...DEFAULT_VAULT_SETTINGS, workspaces: {}, ui: {}, workspaceOrder: [] };
+let current: VaultSettings = parseVaultSettings(null);
 let loadedHash: string | null = null;
 /** 파일이 있는지(마지막으로 읽은 결과). 모르면 null */
 let exists: boolean | null = null;
 const listeners = new Set<(s: VaultSettings) => void>();
 let first: Promise<void> | null = null;
 
+/** 파일을 한 번이라도 읽었고 프런트매터가 깨지지 않았는지 — 마켓 맞추기가 깨진 파일을 「빈 잠금」 으로 읽어 캐시를 지우지 않게 */
+let readable = false;
+
 function publish(content: string | null, hash: string | null) {
   exists = content !== null;
   if (hash !== null && hash === loadedHash) return;
   loadedHash = hash;
+  readable = content === null || settingsObject(content) !== null;
   current = parseVaultSettings(content);
   for (const l of listeners) l(current);
 }
@@ -66,6 +71,11 @@ export function getVaultSettings(): VaultSettings {
 }
 
 /** 볼트 언어(볼트에 남는 글: 제목 없음·충돌 사본·기본 폴더·템플릿). 정하지 않았으면 화면 언어 */
+/** 공통 설정의 marketplace. 아직 읽지 않았거나 파일이 깨졌으면 null(그때는 아무것도 지우지 않는다) */
+export function marketplaceSettings(): MarketplaceSettings | null {
+  return readable ? current.marketplace : null;
+}
+
 export function vaultLang(): VaultLang {
   return vaultLanguage(current, officialLangOf(language()));
 }

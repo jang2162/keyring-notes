@@ -1,9 +1,10 @@
 //! Keyring Notes 앱 셸. 화면(web)과 로컬 볼트·동기화(packages/core)는 모두 TypeScript이고,
-//! 여기서는 파일·폴더 선택·HTTP 플러그인과 데스크톱 업데이터, 창 닫기 지킴, macOS 메뉴만 등록한다.
+//! 여기서는 파일·폴더 선택·HTTP 플러그인과 데스크톱 업데이터, 창 닫기 지킴, macOS 메뉴, 마켓 네이티브 받기(market.rs)만 등록한다.
 //! 권한 범위는 capabilities/default.json(모든 기기)·desktop.json(데스크톱만).
 
 #[cfg(desktop)]
 mod close_guard;
+mod market;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,6 +20,9 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(desktop)]
     let builder = close_guard::install(builder);
+    // 모바일에는 close_guard 가 없다 — 앱 명령의 invoke_handler 를 여기서 하나만 건다(데스크톱은 close_guard 의 목록)
+    #[cfg(mobile)]
+    let builder = builder.invoke_handler(tauri::generate_handler![market::market_fetch]);
     #[cfg(target_os = "macos")]
     let builder = macos_menu::install(builder);
     builder

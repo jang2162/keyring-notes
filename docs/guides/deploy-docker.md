@@ -4,7 +4,7 @@
 
 ## 저장소가 갖는 것과 갖지 않는 것
 
-- `docker-compose.yml` 은 앱(`keyring`)과, 꺼져 있는 `s3` 프로필의 SeaweedFS 만 갖는다. 이것만으로 로컬에서 돈다.
+- `docker-compose.yml` 은 앱(`keyring`)과, 꺼져 있는 `s3` 프로필의 SeaweedFS 만 갖는다. 이것만으로 로컬에서 돈다. 마켓 서버는 따로 `marketplace/` 에 있다([deploy-marketplace.md](deploy-marketplace.md)).
 - **웹 서버(리버스 프록시)는 넣지 않는다.** 운영자마다 쓰는 프록시가 다르다. 그 서버에서만 필요한 설정(호스트 포트 닫기, 프록시 네트워크)은 운영자가 서버에서 `compose.override.yaml` 로 쓰고, 저장소는 그 파일을 ignore 한다. 기본 compose 파일에 특정 서버의 설정을 넣지 않는다.
 - **이미지는 게시하지 않는다.** `pull_policy: build` 로 서버가 `up` 할 때마다 저장소 코드로 빌드한다. 레지스트리 이미지를 들이면 업데이트 절차(`git pull && docker compose up -d --build`)와 사용자 문서가 함께 바뀌어야 한다.
 - `Dockerfile` 은 BuildKit 기능(`RUN --mount=type=secret,id=extra_ca`)을 쓴다. 그래서 사용자 문서의 요구 사항에 BuildKit(buildx)이 있고, buildx 가 없을 때의 증상은 `troubleshooting.md` 에 있다. 이 기능을 빼거나 더하면 그 두 자리도 고친다.
@@ -29,7 +29,7 @@ compose 의 `environment:` 에 적힌 키만 컨테이너에 들어간다. 키�
 ### 컨테이너에 넘기지 않는 서버 변수
 
 - `KEYRING_DATA`·`KEYRING_HOST`·`KEYRING_PORT`·`KEYRING_WEB_DIST` 는 Dockerfile 이 정한다.
-- `KEYRING_VAULT`·`KEYRING_CONFIG`·`KEYRING_BACKUP_DIR`·`KEYRING_PLUGINS_DIR`·`KEYRING_INDEX` 는 `/data` 아래로 정해진다.
+- `KEYRING_VAULT`·`KEYRING_CONFIG`·`KEYRING_BACKUP_DIR`·`KEYRING_PLUGINS_DIR`·`KEYRING_INDEX`·`KEYRING_PACKAGES_DIR` 는 `/data` 아래로 정해진다.
 - `KEYRING_PASSWORD` 는 CLI 전용이다.
 - `.env` 의 `KEYRING_PORT` 는 호스트 쪽 포트일 뿐이다.
 

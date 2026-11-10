@@ -379,7 +379,9 @@ pub fn install(builder: Builder<Wry>) -> Builder<Wry> {
             restart_after_closing,
             set_update_pending,
             quit_ask_ack,
-            quit_ask_done
+            quit_ask_done,
+            // Tauri 는 invoke_handler 를 하나만 받아 나중 것이 앞의 것을 덮는다 — 앱 명령은 이 목록 하나에(모바일은 lib.rs)
+            crate::market::market_fetch
         ])
         .on_window_event(|w, e| match e {
             WindowEvent::CloseRequested { api, .. } => {

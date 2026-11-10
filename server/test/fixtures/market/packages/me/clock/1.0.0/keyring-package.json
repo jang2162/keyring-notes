@@ -1,0 +1,11 @@
+{
+  "id": "@me/clock",
+  "version": "1.0.0",
+  "type": "widget",
+  "name": { "en": "Clock", "ko": "시계" },
+  "description": { "en": "A test clock widget" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": ">=0.1.0" },
+  "widget": { "stateVersion": 1, "display": "block", "defaultState": { "count": 0 } }
+}

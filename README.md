@@ -69,7 +69,7 @@ The status bar shows **Saved**, and the note is now a Markdown file in `Work/` w
 ## Documentation
 
 - [Getting started](docs/manual/en/getting-started.md)
-- [How-to guides](docs/manual/en/how-to/): organize notes, connect agents, build an LLM Wiki, back up and more
+- [How-to guides](docs/manual/en/how-to/): organize notes, connect agents, build an LLM Wiki, run a marketplace, back up and more
 - [Configuration](docs/manual/en/configuration.md): environment variables and `.env` keys
 - [Reference](docs/manual/en/reference.md): CLI, MCP tools, REST API, file formats and shortcuts
 - [Troubleshooting](docs/manual/en/troubleshooting.md)

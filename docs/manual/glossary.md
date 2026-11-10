@@ -29,6 +29,9 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | daily note | 데일리 노트 | A note for one date |
 | widget | 위젯 | A `widget` code block that shows notes as a list, table, board or chart |
 | note widget | 노트 안 위젯 | A small app inside a note that keeps its state in a `keyring-widget` block |
+| marketplace | 마켓플레이스 | Repositories of widgets, themes and languages the app can download |
+| package | 패키지 | One widget, theme or language in a marketplace repository, with its manifest `keyring-package.json` |
+| repository (marketplace) | 저장소 | A folder of static files with `index.json` and `packages/`, served over https |
 | wiki topic | 위키 토픽 | A node with `SCHEMA.md`, maintained by agents |
 | structure check | 정리 점검 | The check for broken links, orphan pages and missing sources |
 | trash | 휴지통 | Deleted notes, listed from history so they can be restored |

@@ -18,6 +18,8 @@ export interface LocalContext {
   vaultDir: string | null;
   /** 데스크톱에서 다른 볼트 폴더 고르기 */
   chooseFolder?: () => Promise<void>;
+  /** 동기화가 쓰는 요청 함수(앱은 tauri-plugin-http) — 마켓의 서버 캐시 읽기도 같은 것을 쓴다 */
+  fetchFn: typeof fetch;
 }
 
 /** 로컬 모드일 때만 채워진다. */
@@ -107,6 +109,6 @@ export async function startLocal(): Promise<LocalContext> {
   window.addEventListener("focus", () => void vault.rescan().catch(() => undefined));
   sync.startAuto();
   if (sync.get().settings?.auto) void sync.run();
-  localContext = { vault, sync, kind: app ? "app" : "browser", vaultDir, chooseFolder };
+  localContext = { vault, sync, kind: app ? "app" : "browser", vaultDir, chooseFolder, fetchFn };
   return localContext;
 }

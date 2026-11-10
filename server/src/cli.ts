@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { isLevel, LEVELS } from "./access.js";
 import { ConfigStore } from "./config.js";
 import { serverLanguage, serverText, setServerLanguage } from "./lang.js";
+import { runPkg } from "./pkgCli.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const configFile = path.resolve(
@@ -61,6 +62,7 @@ async function main(args: string[]) {
     console.log(serverText("cli.password_set"));
     return;
   }
+  if (cmd === "pkg") return runPkg([sub, ...rest].filter((x): x is string => x !== undefined));
   if (cmd !== "agent") {
     console.log(usage());
     process.exitCode = cmd ? 1 : 0;

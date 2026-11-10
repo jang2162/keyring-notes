@@ -18,8 +18,13 @@ Keyring Notes 의 명령, API, 파일 형식을 정확히 모았습니다.
 | `agent remove <이름>` | 에이전트를 지웁니다 |
 | `agent grant <이름> <경로> <단계>` | 폴더나 노트의 권한을 정합니다. 경로 `/` 는 볼트 전체입니다 |
 | `agent revoke <이름> <경로>` | 규칙을 지웁니다. 상위 규칙이나 `hidden` 이 다시 적용됩니다 |
+| `pkg check <폴더>` | 마켓 패키지 폴더를 검사합니다. 오류가 있으면 `1` 로 끝나고, 경고를 보여 줍니다 |
+| `pkg serve <폴더> [--host <주소>] [--port <포트>] [--rebuild-seconds <초>] [--name <이름>]` | 마켓 저장소를 내줍니다. 시작할 때와 주기마다 `index.json` 을 다시 만들고 `/index.json` 과 `/packages/…` 만 내줍니다. 마켓 서버 이미지가 씁니다 |
+| `pkg index <폴더> [--name <이름>]` | `<폴더>/packages/` 아래 패키지를 모두 검사하고 `<폴더>/index.json` 을 씁니다. 파일이 그대로면 건드리지 않습니다 |
 
 설정 파일이 바뀌면 서버가 다음 요청부터 다시 읽으므로 재시작할 필요가 없습니다.
+
+`pkg` 명령의 상대 경로는 명령을 실행한 폴더 기준입니다. 패키지와 저장소 형식은 [마켓 패키지 올리기](how-to/publish-packages.md)에 있습니다.
 
 ## 권한
 
@@ -139,6 +144,10 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | POST | `/api/review/:id/approve` · `/api/review/:id/reject` | `{reason?}` | 승인 / 거절(소유자) |
 | GET | `/api/sync/manifest` | | 동기화용 파일 목록 `{files: [{path, hash, size}]}`. 소유자와 기기. 서버가 만드는 위키 index·log 는 뺍니다 |
 | GET | `/api/plugins` · `/plugins/<이름>.js` | | 위젯 플러그인 목록 / 모듈(소유자 로그인) |
+| GET | `/api/market/index?repo=` | | 서버가 받아 검사한 마켓 저장소의 `index.json` → `{repo, index, ignored, error?}`. 5분 동안 캐시하고, 실패는 30초 동안 다시 묻지 않습니다. 소유자와 기기 |
+| POST | `/api/market/ensure` | `{id, entry: {version, repo, sha256}, sizes?}` | 패키지 판 하나를 서버 캐시에 받게 하고 파일마다 sha256 을 확인합니다 → `{ok: true}`. 잠금은 바꾸지 않습니다. 소유자와 기기 |
+| GET | `/api/market/file?id=&version=&path=&sha256=` | | 캐시의 패키지 파일. `sha256` 이 맞을 때만 줍니다. 브라우저가 실행하지 않게 `application/octet-stream`, `content-disposition: attachment`, sandbox CSP 로 보냅니다. 소유자와 기기 |
+| GET | `/api/market/status` | | 잠금의 패키지별 캐시 상태 → `{<id>: {state: ready\|fetching\|error, version, error?}}`. 서버가 읽지 못한 항목은 `market_lock_invalid` 인 `error` 로 보입니다. 캐시 파일의 바이트가 맞지 않으면 다시 받을 때까지 그 패키지가 `error` 입니다. 소유자와 기기 |
 
 ### 오류
 
@@ -312,8 +321,22 @@ ui:
   language: ko
   editorSize: 17
   keys: { daily: "Mod+Shift+J" }
+marketplace:
+  repos:
+    - url: https://keyring-notes-marketplace.develma.com/
+    - url: https://me.github.io/my-widgets/
+  packages:
+    "@me/clock": { version: 1.0.0, repo: https://me.github.io/my-widgets/, sha256: { keyring-package.json: "…", frame.js: "…" } }
 ---
 ```
+
+`marketplace` 에는 마켓 저장소 목록과 잠금이 있습니다.
+
+- `repos` 는 순서가 우선순위입니다. 없으면 공식 저장소를 씁니다. 빈 목록이면 저장소가 없는 것입니다.
+- `packages` 는 잠금입니다. 모든 기기와 서버가 이 판·이 파일을 그대로 씁니다. 파일을 손으로 고쳤거나 동기화로 바뀐 것이 와도 서버는 잠금에 적힌 것을 받고, 잠금에서 빠진 것은 24시간 뒤에 지웁니다.
+- 항목은 자기 `repo` 에서만 받습니다. 그 저장소가 `repos` 에 없어도 마찬가지입니다.
+- id·판·주소·파일 이름·체크섬이 잘못된 항목은 건너뜁니다. 그 항목으로는 아무것도 받거나 쓰거나 지우지 않고, `GET /api/market/status` 에 `market_lock_invalid` 로 보입니다. 다른 항목은 그대로 씁니다.
+- 두 기기가 같은 항목을 바꾸면 판이 높은 쪽의 항목이 통째로 남습니다. 한 기기가 지우고 다른 기기가 업데이트했으면 업데이트가 이깁니다.
 
 ## 백업 파일 형식
 
@@ -335,6 +358,7 @@ ui:
 | `vault/.keyring/index.db` | SQLite 인덱스: 본문 전체 텍스트 검색(FTS5 trigram), 태그, 링크, 할 일, 프런트매터. Git 이 추적하지 않습니다 |
 | `vault/.keyring-app/` | 데스크톱·모바일 앱 메타데이터: 변경 기록(`journal.jsonl`), 내용 스냅샷(`objects/`), 동기화 기준점(`sync.json`) |
 | `config/keyring.json` | 파일 권한 0600. 비밀번호는 scrypt 해시, 토큰은 sha256 해시, 패스키는 공개 키만 |
+| `packages/@<scope>/<name>/<version>/` | 받은 마켓 패키지. 잠금의 sha256 과 대조한 것입니다(`KEYRING_PACKAGES_DIR`). 캐시라서 지우면 서버가 잠금에 있는 패키지를 다시 받습니다 |
 
 점으로 시작하는 폴더(`.obsidian`, `.trash`, `.history`)는 트리에서 숨기고 API 로 닿을 수 없습니다.
 

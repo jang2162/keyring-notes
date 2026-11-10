@@ -11,6 +11,8 @@ export * from "./keyringWidget.js";
 export * from "./links.js";
 export * from "./local.js";
 export * from "./markdown.js";
+export * from "./marketFormat.js";
+export * from "./marketLock.js";
 export * from "./memory.js";
 export * from "./mentions.js";
 export * from "./merge.js";
