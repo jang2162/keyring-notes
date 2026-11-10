@@ -481,6 +481,23 @@
 
 > **── 검문 3 (Task 9–12): 앱 네이티브 받기, 화면 쪽 표·기기 캐시·잠금 맞추기, 문서와 실제 화면. Review Focus 2·4·5 를 화면으로, 「모드별로 누가 받는가」 다섯 줄을 하나씩 본다. ──**
 
+### Task 13: 마켓 서버 이미지·compose·운영 문서 (설계 「마켓 서버와 배포」 — 사용자 요청으로 더함)
+
+**Files:** 마켓 서버 Dockerfile(또는 기존 Dockerfile 의 별도 단계), 마켓용 compose 파일, `.env.example` 류(마켓용), `marketplace/packages/` 자리(빈 공식 패키지 폴더와 README 또는 예시 패키지 하나), `docs/manual/{en,ko}/how-to/` 의 「내 마켓플레이스 운영하기」·「패키지 만들기」, `docs/manual/{en,ko}/configuration.md` 마켓 서버 변수, `docs/guides/` 공식 마켓 배포(Komodo Stack 표), 앱의 공식 주소 상수 `https://keyring-notes-marketplace.develma.com/`.
+
+**Interfaces:**
+- Consumes: Task 5 의 `pkg check`·`pkg index`, Task 2 의 index·매니페스트 형식.
+- Produces: 운영자가 `docker compose -f <마켓 compose> up -d --build` 로 띄우면 `/index.json` 과 `/packages/...` 를 내주는 서버.
+
+- [ ] Step 1: 배포 지침을 읽는다 — `docs/guides/deploy-docker.md`, `docs/guides/deploy-komodo.md`, `docs/guideline/komodo/00-stack.md`·`01-environment.md`·`02-override.md`. 프록시·TLS 는 넣지 않고, `pull_policy: build`, `container_name` 없음, 서버별 값은 문서에 적지 않는다.
+- [ ] Step 2: 실패하는 시험 — 패키지 폴더에 판 하나를 넣고 서버를 띄우면 `index.json` 의 sha256 이 파일과 같다, 판을 하나 더 넣으면 다시 만든 `index.json` 에 보인다, `..`·심볼릭 링크로 폴더 밖 파일을 내주지 않는다, 응답 헤더(`index.json` 짧은 캐시, 패키지 파일 긴 캐시, `nosniff`).
+- [ ] Step 3: 이미지·compose 를 만든다(정적 서버 선택은 구현자 몫 — 앱 이미지·툴체인을 늘리지 않는 쪽). 시험이 통과한다.
+- [ ] Step 4: `docker compose ... up -d --build` 로 실제로 띄우고 Task 6~8 의 서버 받기가 그 마켓(로컬, `KEYRING_MARKET_ALLOW_HTTP`·사설 허용을 켠 시험 서버)에서 받는지 본다. 끄고 볼륨을 지운다.
+- [ ] Step 5: 문서 en·ko(public-docs 지침 — `docs/guideline/public-docs/02-manual.md`·`03-i18n.md`·`04-style.md`)와 개발 문서. README 의 문서 목록에 새 문서를 건다.
+- [ ] Step 6: 커밋.
+
+> 검문 3 에 이 Task 를 함께 본다.
+
 ## 설계 항목별 대응
 
 | 설계 항목 | Task |
