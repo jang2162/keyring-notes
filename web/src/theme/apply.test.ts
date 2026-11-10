@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { appliedTheme, applyThemeChoice, cacheAction, onThemeApplied, readThemeCache, setThemePackages, themePackages } from "./apply";
 import { resolveTheme, type ThemePackage } from "./resolve";
 
@@ -35,6 +35,39 @@ describe("cacheAction", () => {
     expect(cacheAction(resolveTheme("@me/sea", [], env), false)).toBe("clear");
     expect(cacheAction(resolveTheme("@me/sea", [sea], { ...env, escape: true }), true)).toBe("keep");
     expect(cacheAction(resolveTheme("dark", [sea], { ...env, escape: true }), true)).toBe("keep");
+  });
+});
+
+describe("DOM 쓰기", () => {
+  it("data-theme 과 토큰만 쓰고, 모드가 바뀌면 옛 토큰을 지운다", () => {
+    const attrs = new Map<string, string>();
+    const style = new Map<string, string>();
+    const metas = { light: { content: "" }, dark: { content: "" } };
+    vi.stubGlobal("document", {
+      documentElement: {
+        setAttribute: (k: string, v: string) => void attrs.set(k, v),
+        removeAttribute: (k: string) => void attrs.delete(k),
+        style: { setProperty: (k: string, v: string) => void style.set(k, v), removeProperty: (k: string) => void style.delete(k) },
+      },
+      querySelector: (sel: string) => (sel.includes("light") ? metas.light : sel.includes("dark") ? metas.dark : null),
+    });
+    try {
+      const light: ThemePackage = { ...sea, colors: { light: { "--bg": "#eef6ff", "--accent": "#1d6fb8" } } };
+      setThemePackages([light]);
+      applyThemeChoice("@me/sea");
+      expect(attrs.get("data-theme")).toBe("light");
+      expect(Object.fromEntries(style)).toEqual({ "--bg": "#eef6ff", "--accent": "#1d6fb8" });
+      expect(metas).toEqual({ light: { content: "#eef6ff" }, dark: { content: "#eef6ff" } });
+      setThemePackages([{ ...sea, colors: { dark: { "--bg": "#0d1b2a" } } }]);
+      expect(attrs.get("data-theme")).toBe("dark");
+      expect(Object.fromEntries(style)).toEqual({ "--bg": "#0d1b2a" });
+      applyThemeChoice("system");
+      expect(attrs.has("data-theme")).toBe(false);
+      expect(style.size).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+      setThemePackages([]);
+    }
   });
 });
 

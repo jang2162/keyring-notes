@@ -112,6 +112,15 @@ describe("마켓 언어 층", () => {
     expect(store.map.has("keyring:langpack-market-cache")).toBe(false);
   });
 
+  it("시작 캐시: 같은 id 의 이 기기 언어팩이 이기면 마켓 캐시를 지운다", async () => {
+    const i = await load();
+    i.setMarketPacks([entry("@me/ja", jaMarket)]);
+    i.setLanguagePref("ja");
+    expect(store.map.has("keyring:langpack-market-cache")).toBe(true);
+    i.putPack(pack("ja", { "settings.title": "設定(この端末)" }));
+    expect(store.map.has("keyring:langpack-market-cache")).toBe(false);
+  });
+
   it("시작 캐시가 깨졌거나 공식 id 면 쓰지 않는다", async () => {
     const bad = JSON.stringify({ pkgId: "@me/ko", pack: { meta: { id: "ko", name: "x" }, messages: {} } });
     const i = await load({ langs: ["ja-JP"], storage: { "keyring:langpack-market-cache": bad } });
