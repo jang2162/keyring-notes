@@ -1,0 +1,11 @@
+{
+  "id": "@keyring/hello",
+  "version": "1.0.0",
+  "type": "theme",
+  "name": { "en": "Hello" },
+  "description": { "en": "A reserved-scope test package (only valid from the official repository)" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": "*" },
+  "colors": { "light": { "--bg": "#ffffff" } }
+}

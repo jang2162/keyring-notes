@@ -1,0 +1,84 @@
+{
+  "format": 1,
+  "name": "Keyring test repository",
+  "packages": {
+    "@keyring/hello": {
+      "type": "theme",
+      "versions": {
+        "1.0.0": {
+          "engines": {
+            "keyring": "*"
+          },
+          "files": [
+            {
+              "path": "keyring-package.json",
+              "sha256": "53c0987c3c480063b63306e8301974329a1d5c92e7d51eec9920ea9628d91aff",
+              "size": 337
+            }
+          ]
+        }
+      }
+    },
+    "@me/clock": {
+      "type": "widget",
+      "versions": {
+        "1.0.0": {
+          "engines": {
+            "keyring": ">=0.1.0"
+          },
+          "files": [
+            {
+              "path": "frame.js",
+              "sha256": "e31c94312a0242fe48b73d638252c0e987bc6760fdda627f82bbcb61b90a1f80",
+              "size": 174
+            },
+            {
+              "path": "keyring-package.json",
+              "sha256": "8d7eb2504985e22a8245354426db1484712e07f204d23b51437f3a137611749e",
+              "size": 342
+            },
+            {
+              "path": "messages/ko.json",
+              "sha256": "a9bad08604cc2bf9adbbdad4d3723b3174ba54bc49a24441ee89c6f0c58ab905",
+              "size": 22
+            }
+          ]
+        },
+        "1.1.0": {
+          "engines": {
+            "keyring": ">=0.1.0"
+          },
+          "files": [
+            {
+              "path": "frame.js",
+              "sha256": "379e4e2a80e264438f1c026b6b32d1e85a1496552ab5a68782ddc2fe979c1e11",
+              "size": 183
+            },
+            {
+              "path": "keyring-package.json",
+              "sha256": "e710292d1d8de9c637792d9cb6da6e1002a5d55e9437b5a6b39a2f77a81f1584",
+              "size": 342
+            }
+          ]
+        }
+      }
+    },
+    "@me/sea": {
+      "type": "theme",
+      "versions": {
+        "0.1.0": {
+          "engines": {
+            "keyring": "*"
+          },
+          "files": [
+            {
+              "path": "keyring-package.json",
+              "sha256": "418b072d636007a93a32d6db3dedda2a1b2e415084e7d89ad9b0efe8fd300689",
+              "size": 323
+            }
+          ]
+        }
+      }
+    }
+  }
+}

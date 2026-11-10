@@ -1,0 +1,11 @@
+{
+  "id": "@me/sea",
+  "version": "0.1.0",
+  "type": "theme",
+  "name": { "en": "Sea" },
+  "description": { "en": "A test theme" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": "*" },
+  "colors": { "light": { "--bg": "#eef6ff", "--accent": "#1d6fb8" }, "dark": { "--bg": "#0d1b2a" } }
+}
