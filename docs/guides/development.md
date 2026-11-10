@@ -36,6 +36,8 @@ pnpm dev:web         # 웹: http://localhost:5173 (API 는 프록시)
 
 데스크톱 앱 개발 실행은 `pnpm app:dev`. 플랫폼별 준비물은 사용자 문서 `docs/manual/ko/how-to/build-the-desktop-app.md` 에 있다.
 
+`pnpm app:dev` 는 배포 앱과 같은 identifier 를 쓴다. 개발 실행(번들이 아닌 것)의 웹뷰 저장소(localStorage·IndexedDB — 동기화 서버 주소와 기기 토큰 `keyring:sync` 포함)는 `HOME` 을 바꿔도 실제 `~/Library/WebKit/keyring-notes` 에 간다 — macOS Foundation 은 `HOME` 을 따르지 않고, identifier 를 바꿔도 번들이 아니면 프로세스 이름으로 정해진다. 그 저장소에 동기화가 설정돼 있으면 시험으로 띄운 앱이 사람의 서버에 동기화하고 잠금 쓰기(마켓 설치)를 퍼뜨린다. 시험으로 띄우려면 identifier·`HOME`·devUrl 포트를 바꾸는 것에 더해 웹뷰 저장소를 따로 두어야 한다(Tauri `data_store_identifier`, macOS 14 이상). 그 장치가 없으면 띄우지 않는다. 배포 앱은 `~/Library/WebKit/com.develma.keyringnotes` 를 따로 쓴다.
+
 화면을 확인할 때는 사람의 데이터와 서버를 건드리지 않게 임시 `KEYRING_DATA` 와 다른 포트로 띄운다. 로그인 비밀번호는 띄우기 전에 `KEYRING_DATA=<임시 폴더> KEYRING_PASSWORD=<비밀번호> pnpm --filter @keyring-notes/server keyring passwd` 로 넣는다.
 
 ```bash
