@@ -23,7 +23,7 @@ Run the admin CLI with `pnpm keyring <command>` from a source checkout, or `dock
 
 The server re-reads the config file on the next request after it changes, so no restart is needed.
 
-The `pkg` commands read relative paths from the folder you run them in. The package and repository formats are in [Publish marketplace packages](how-to/publish-packages.md).
+The `pkg` commands read relative paths from the folder you run them in. The package and repository formats are in [Publish marketplace packages](how-to/publish-packages.md). Installing packages in the app is in [Install packages](how-to/install-packages.md).
 
 ## Permissions
 
@@ -143,7 +143,7 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | POST | `/api/review/:id/approve` · `/api/review/:id/reject` | `{reason?}` | Approve / reject (owner) |
 | GET | `/api/sync/manifest` | | File list for sync, `{files: [{path, hash, size}]}`. Owner and devices. Leaves out the server-generated wiki index and log |
 | GET | `/api/plugins` · `/plugins/<name>.js` | | Widget plugin list / module (owner login) |
-| GET | `/api/market/index?repo=` | | A marketplace repository's `index.json`, downloaded and checked by the server → `{repo, index, ignored, error?}`. Cached for 5 minutes, failures for 30 seconds. Owner and devices |
+| GET | `/api/market/index?repo=` | | A marketplace repository's `index.json`, downloaded and checked by the server → `{repo, index, ignored, error?}`. Cached for 5 minutes, failures for 30 seconds. With `&fresh=1` the server skips that cache, but downloads each repository at most once per 10 seconds. Owner and devices |
 | POST | `/api/market/ensure` | `{id, entry: {version, repo, sha256}, sizes?}` | Make the server download one package version into its cache and check every file's sha256 → `{ok: true}`. It does not change the lock. Owner and devices |
 | GET | `/api/market/file?id=&version=&path=&sha256=` | | A cached package file, only when `sha256` matches. Sent as `application/octet-stream` with `content-disposition: attachment` and a sandbox CSP, so the browser never runs it. Owner and devices |
 | GET | `/api/market/status` | | Cache state per locked package → `{<id>: {state: ready\|fetching\|error, version, error?}}`. Entries the server cannot read show as `error` with `market_lock_invalid`. A cached file whose bytes no longer match turns its package to `error` until the server downloads it again. Owner and devices |

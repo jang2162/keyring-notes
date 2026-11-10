@@ -27,7 +27,8 @@ export function marketMode(env: { local: boolean; kind: "app" | "browser" | null
 }
 
 export interface PackageSource {
-  index(repo: string): Promise<RepoIndexResult>;
+  /** fresh: 서버 쪽은 캐시를 건너뛰게 묻고, 네이티브는 캐시가 없어 늘 새로 받는다 */
+  index(repo: string, opts?: { fresh?: boolean }): Promise<RepoIndexResult>;
   /** 잠금 항목의 파일을 다 받아 sha256·크기 확인을 마친 묶음. 실패는 KeyedError(market_* 코드) */
   fetch(id: string, entry: LockEntry, sizes?: Record<string, number>): Promise<Map<string, Uint8Array>>;
 }
@@ -47,7 +48,7 @@ async function checkHashes(entry: LockEntry, files: Map<string, Uint8Array>): Pr
 export function serverSource(base: string, fetchFn: typeof fetch, token?: string): PackageSource {
   const api = marketClient(base, fetchFn, token);
   return {
-    index: (repo) => api.index(repo),
+    index: (repo, opts) => api.index(repo, opts),
     async fetch(id, entry, sizes) {
       await api.ensure(id, entry, sizes);
       const files = new Map<string, Uint8Array>();
@@ -161,13 +162,13 @@ function shouldFallback(e: unknown): boolean {
 
 export function fallbackSource(primary: PackageSource, secondary: PackageSource): PackageSource {
   return {
-    async index(repo) {
+    async index(repo, opts) {
       try {
-        const r = await primary.index(repo);
-        if (r.error && FALLBACK.has(r.error.code)) return secondary.index(repo);
+        const r = await primary.index(repo, opts);
+        if (r.error && FALLBACK.has(r.error.code)) return secondary.index(repo, opts);
         return r;
       } catch (e) {
-        if (shouldFallback(e)) return secondary.index(repo);
+        if (shouldFallback(e)) return secondary.index(repo, opts);
         throw e;
       }
     },
@@ -209,7 +210,16 @@ export function pickSource(mode: MarketMode, deps: SourceDeps): PackageSource | 
 
 const DEVICE_KEY = "keyring:market:device";
 
-/** 이 기기에서만(동기화되지 않음) 켜는 http·사설 주소 허용. 고치는 화면은 2단계 마켓 화면 */
+/** 마켓 화면의 「이 기기」(Tauri 앱만). 쓰기 실패는 조용히 — 읽는 쪽이 둘 다 false 로 본다 */
+export function writeDeviceMarketSettings(v: { allowHttp: boolean; allowPrivate: boolean }): void {
+  try {
+    localStorage.setItem(DEVICE_KEY, JSON.stringify({ allowHttp: v.allowHttp, allowPrivate: v.allowPrivate }));
+  } catch {
+    /* 저장소를 못 쓰는 환경 */
+  }
+}
+
+/** 이 기기에서만(동기화되지 않음) 켜는 http·사설 주소 허용. 고치는 화면은 마켓 화면의 「이 기기」 */
 export function readDeviceMarketSettings(): { allowHttp: boolean; allowPrivate: boolean } {
   try {
     const v = JSON.parse(localStorage.getItem(DEVICE_KEY) ?? "{}") as { allowHttp?: unknown; allowPrivate?: unknown };

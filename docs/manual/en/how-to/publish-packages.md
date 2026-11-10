@@ -5,7 +5,7 @@ This guide builds a marketplace repository of widgets, themes and languages that
 It is for people who make packages or run their own repository.
 
 > [!NOTE]
-> The app cannot install or use packages yet. Installing from the app, themes, languages and widgets arrive in later releases. You can already build and check repositories with the commands below.
+> The app installs and uses themes and languages, see [Install packages](install-packages.md). Widget installation comes in a later release. You can already publish widget packages.
 
 ## How a repository is laid out
 
@@ -80,10 +80,83 @@ The `colors` object of a theme has `light`, `dark` or both. Each maps a color to
 }
 ```
 
-- Token names look like `--bg`: two dashes, then lowercase letters, digits and `-`. Size, font and spacing tokens (`--fs-*`, `--font-*`, `--radius-*`, `--*-h`, `--*-w`) are refused. Themes change colors only. The list of tokens the app reads is published with theme support.
+- Token names look like `--bg`: two dashes, then lowercase letters, digits and `-`. Size, font and spacing tokens (`--fs-*`, `--font-*`, `--radius-*`, `--*-h`, `--*-w`) are refused. Themes change colors only. The app reads only the tokens in the table below. Other tokens are ignored, and `pkg check` warns about them (`unknown_tokens`).
 - Values are `#rgb`, `#rrggbb`, `#rrggbbaa`, or `rgb()`, `rgba()`, `hsl()`, `hsla()`, `oklch()`, `oklab()` with numbers, `%`, `deg`, spaces, `,` and `/` inside. Anything else is refused, including names such as `red`, `var(…)`, `url(…)` and values with `;`, `{`, `}` or `!`.
+- A token the theme leaves out keeps the default value of that mode.
+- If a theme has only `light` or only `dark`, the app always draws it in that mode, whatever the system setting is.
+
+#### Theme tokens
+
+| Token | Used for | Light default | Dark default |
+| --- | --- | --- | --- |
+| `--bg` | Page background | `#ffffff` | `#17191c` |
+| `--bg-soft` | Side panels, code blocks, inputs | `#f6f7f9` | `#1f2226` |
+| `--fg` | Body text | `#1f2328` | `#e6e6e6` |
+| `--muted` | Secondary text | `#6b7280` | `#9aa0a6` |
+| `--border` | Lines and borders | `#e3e6ea` | `#30343a` |
+| `--accent` | Links, buttons, selection | `#3b6fd8` | `#7aa2f7` |
+| `--hover` | Hovered rows | `rgb(0 0 0 / 0.05)` | `rgb(255 255 255 / 0.06)` |
+| `--active` | Selected rows | `rgb(59 111 216 / 0.12)` | `rgb(122 162 247 / 0.16)` |
+| `--focus-ring` | Keyboard focus ring | `rgb(59 111 216 / 0.55)` | `rgb(122 162 247 / 0.6)` |
+| `--warn-bg` | Warning background | `#fff4e5` | `#3a2a12` |
+| `--warn-fg` | Warning text | `#8a4b00` | `#f5c27a` |
+| `--info-bg` | Notice background | `#eef4ff` | `#1d2a42` |
+| `--danger` | Errors and destructive actions | `#c0392b` | `#ff8a80` |
+| `--danger-bg` | Error background | `#fdeceb` | `#3a1c1a` |
+| `--notice` | Notification dot (for example a new version) | `#e8590c` | `#ff9f43` |
+| `--success` | Success text | `#1d7438` | `#84d39f` |
+| `--success-bg` | Success background | `#eaf6ed` | `#16281c` |
+| `--series` | Chart series | `#3b6fd8` | `#5b8def` |
+| `--cat-1` | Graph topic color 1 | `#2a78d6` | `#3987e5` |
+| `--cat-2` | Graph topic color 2 | `#eb6834` | `#d95926` |
+| `--cat-3` | Graph topic color 3 | `#1baf7a` | `#199e70` |
+| `--cat-other` | Graph: other topics | `#a3a29d` | `#6b6a66` |
+| `--grid` | Chart grid | `#eceef1` | `#26292e` |
+| `--axis` | Chart axis | `#c9ced6` | `#3a3f46` |
+| `--find-match` | Find in note: matches | `rgb(250 204 21 / 0.4)` | `rgb(250 204 21 / 0.22)` |
+| `--find-current` | Find in note: current match | `rgb(249 115 22 / 0.45)` | `rgb(249 115 22 / 0.5)` |
+| `--tok-keyword` | Code: keywords | `#8250df` | `#ff7b72` |
+| `--tok-string` | Code: strings | `#0a3069` | `#a5d6ff` |
+| `--tok-string2` | Code: other literals | `#116329` | `#7ee787` |
+| `--tok-number` | Code: numbers | `#0550ae` | `#79c0ff` |
+| `--tok-comment` | Code: comments | `#6e7781` | `#8b949e` |
+| `--tok-def` | Code: definitions | `#6639ba` | `#d2a8ff` |
+| `--tok-type` | Code: types | `#953800` | `#ffa657` |
+| `--tok-prop` | Code: properties | `#0550ae` | `#79c0ff` |
+| `--tok-meta` | Code: meta | `#57606a` | `#8b949e` |
+| `--tok-deleted` | Code: deleted | `#82071e` | `#ffa198` |
+| `--tok-invalid` | Code: invalid | `#cf222e` | `#ff7b72` |
+| `--co-blue` | Callout (blue): title | `#2f63c4` | `#8eb6ff` |
+| `--co-blue-bg` | Callout (blue): background | `#eef4ff` | `#1a2436` |
+| `--co-teal` | Callout (teal): title | `#0d7377` | `#74d2d5` |
+| `--co-teal-bg` | Callout (teal): background | `#e7f5f5` | `#142728` |
+| `--co-green` | Callout (green): title | `#1d7438` | `#84d39f` |
+| `--co-green-bg` | Callout (green): background | `#eaf6ed` | `#16281c` |
+| `--co-yellow` | Callout (yellow): title | `#845c00` | `#efcb6c` |
+| `--co-yellow-bg` | Callout (yellow): background | `#fff6d9` | `#2b2512` |
+| `--co-orange` | Callout (orange): title | `#9c4700` | `#f4b07c` |
+| `--co-orange-bg` | Callout (orange): background | `#fff0e1` | `#31220f` |
+| `--co-red` | Callout (red): title | `#b42318` | `#ff9c93` |
+| `--co-red-bg` | Callout (red): background | `#fdeceb` | `#331919` |
+| `--co-purple` | Callout (purple): title | `#6a3ec0` | `#c6aaff` |
+| `--co-purple-bg` | Callout (purple): background | `#f3eefe` | `#241c36` |
+| `--co-gray` | Callout (gray): title | `#565d69` | `#b5bbc5` |
+| `--co-gray-bg` | Callout (gray): background | `#f3f4f6` | `#22252a` |
+| `--mark-bg` | Highlight background (==text==) | `#fff0a0` | `#5c4d00` |
+| `--mark-fg` | Highlight text | `#1f2328` | `#fff4c4` |
+
+The editor's selection and current-line colors, shadows and the dark-mode tints inside the editor follow the mode (light or dark), not the tokens.
+
+#### Contrast
+
+The app measures the contrast of body text (`--fg`) on the background (`--bg`) in each mode the theme draws, with the WCAG 2 formula. A missing token counts as the default value of that mode, and a see-through `--bg` is laid over the default background. Below 4.5:1, `pkg check` warns (`contrast: light 3.2`), and the app shows a warning when the theme is installed or chosen. The theme still installs. The ratio is rounded down, so a warning never shows 4.5. If a value passes the format check but the app cannot read it as a color, the warning shows `?` instead of a ratio.
 
 A `language` package's `messages.json` uses the same format as a language pack file (`meta` and `messages`). Missing keys are allowed and fall back to the base language.
+
+- `meta.id` is the language tag that users pick, such as `ja` or `pt-BR`. It cannot be an official language (`en`, `ko`).
+- The app uses only keys that exist in the base language, with string values and the same `{name}` placeholders as the base language. Other keys are dropped, and those messages are shown in the base language. `pkg check` lists them as warnings.
+- Values are always shown as plain text, even when they look like HTML.
+- If a device has an unofficial language pack with the same `meta.id`, that device uses its own pack. If two installed packages have the same `meta.id`, the one installed first is used.
 
 ### A minimal widget
 
@@ -142,6 +215,10 @@ self.keyringWidgetRegister((el, ctx, api) => {
       "versions": {
         "1.0.0": {
           "engines": { "keyring": ">=0.13.0" },
+          "name": { "en": "Clock", "ko": "시계" },
+          "description": { "en": "A desk clock" },
+          "author": "me",
+          "license": "MIT",
           "files": [
             { "path": "frame.js", "sha256": "…", "size": 20480 },
             { "path": "keyring-package.json", "sha256": "…", "size": 812 }
@@ -156,6 +233,16 @@ self.keyringWidgetRegister((el, ctx, api) => {
 - `format` is `1`.
 - `files` lists every file of the version, including `keyring-package.json`. `sha256` is 64 lowercase hexadecimal digits. `size` is in bytes.
 - The app skips a version that breaks these rules and keeps the rest of the repository.
+- `name`, `description`, `author` and `license` are optional copies of the manifest fields. They are for browsing only, so the marketplace can show a whole repository from one download. Once a package is installed, the app shows the manifest (checked against its checksum) instead. `pkg index` copies them for you.
+
+| Display field | Type | Limit |
+| --- | --- | --- |
+| `name` | object, language tag → text | 20 languages, 100 characters each |
+| `description` | object, language tag → text | 20 languages, 500 characters each |
+| `author` | string | 100 characters |
+| `license` | string | 100 characters |
+
+The app drops a display field that breaks these rules and keeps the version; the package is then shown by its id. `pkg index` does not shorten a field that is too long: it leaves the field out of `index.json` and prints a warning (`display_too_long: description.en`). `pkg check` prints the same warning.
 
 ### Limits
 
@@ -194,8 +281,8 @@ pnpm keyring pkg check my-repo/packages/me/clock/1.0.0
 pnpm keyring pkg index my-repo --name "My widgets"
 ```
 
-- `pkg check <folder>` checks the manifest, the required and allowed files, theme colors and language keys. It exits with code `1` on an error and prints warnings, such as missing language keys, without failing.
-- `pkg index <folder>` checks every package under `packages/`, measures each file and writes `index.json`. It keeps the `name` of an existing `index.json`, then uses `--name`, then the folder name. Running it again on unchanged files leaves `index.json` untouched.
+- `pkg check <folder>` checks the manifest, the required and allowed files, theme colors and language keys. It exits with code `1` on an error and prints warnings, such as missing language keys, unknown theme tokens or low contrast, without failing.
+- `pkg index <folder>` checks every package under `packages/`, measures each file, copies the display fields from each manifest and writes `index.json`. It keeps the `name` of an existing `index.json`, then uses `--name`, then the folder name. Running it again on unchanged files leaves `index.json` untouched.
 
 With Docker, run the same commands in the container. The folder must be inside the data volume (`/data`) or another volume mounted into the container.
 

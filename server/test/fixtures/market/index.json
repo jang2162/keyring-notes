@@ -9,6 +9,14 @@
           "engines": {
             "keyring": "*"
           },
+          "name": {
+            "en": "Hello"
+          },
+          "description": {
+            "en": "A reserved-scope test package (only valid from the official repository)"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
           "files": [
             {
               "path": "keyring-package.json",
@@ -26,6 +34,15 @@
           "engines": {
             "keyring": ">=0.1.0"
           },
+          "name": {
+            "en": "Clock",
+            "ko": "시계"
+          },
+          "description": {
+            "en": "A test clock widget"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
           "files": [
             {
               "path": "frame.js",
@@ -48,6 +65,15 @@
           "engines": {
             "keyring": ">=0.1.0"
           },
+          "name": {
+            "en": "Clock",
+            "ko": "시계"
+          },
+          "description": {
+            "en": "A test clock widget"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
           "files": [
             {
               "path": "frame.js",
@@ -63,6 +89,91 @@
         }
       }
     },
+    "@me/fog": {
+      "type": "theme",
+      "versions": {
+        "0.1.0": {
+          "engines": {
+            "keyring": "*"
+          },
+          "name": {
+            "en": "Fog",
+            "ko": "안개"
+          },
+          "description": {
+            "en": "Unreadable on purpose: text and background are the same color",
+            "ko": "일부러 읽을 수 없게: 글과 바탕이 같은 색"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
+          "files": [
+            {
+              "path": "keyring-package.json",
+              "sha256": "218d88549bc59cfeb9149b07e600abf407b6db7d6468923761b0bf8a45229508",
+              "size": 479
+            }
+          ]
+        }
+      }
+    },
+    "@me/ja": {
+      "type": "language",
+      "versions": {
+        "0.1.0": {
+          "engines": {
+            "keyring": "*"
+          },
+          "name": {
+            "en": "Japanese (test)",
+            "ja": "日本語(テスト)"
+          },
+          "description": {
+            "en": "A partial test language package"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
+          "files": [
+            {
+              "path": "keyring-package.json",
+              "sha256": "92154a19fc9b863d31a144b251d9d3f94917b389e82496fb234640e2b75daba4",
+              "size": 284
+            },
+            {
+              "path": "messages.json",
+              "sha256": "69f071b5fcf181f6a146fbd759339237a66f3b74ebfb5f1c24922f9e623a0e6b",
+              "size": 368
+            }
+          ]
+        }
+      }
+    },
+    "@me/paper": {
+      "type": "theme",
+      "versions": {
+        "0.1.0": {
+          "engines": {
+            "keyring": "*"
+          },
+          "name": {
+            "en": "Paper",
+            "ko": "종이"
+          },
+          "description": {
+            "en": "A light-only test theme",
+            "ko": "밝음만 있는 시험 테마"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
+          "files": [
+            {
+              "path": "keyring-package.json",
+              "sha256": "4ef38e98f0137ad8135b5d3b6770c3be5deb7a862a4d171d08f7eba284d02d36",
+              "size": 543
+            }
+          ]
+        }
+      }
+    },
     "@me/sea": {
       "type": "theme",
       "versions": {
@@ -70,6 +181,14 @@
           "engines": {
             "keyring": "*"
           },
+          "name": {
+            "en": "Sea"
+          },
+          "description": {
+            "en": "A test theme"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
           "files": [
             {
               "path": "keyring-package.json",

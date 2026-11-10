@@ -21,6 +21,11 @@ export async function removeProperty(key: string, apply: (fn: (content: string) 
   if (await confirmDialog(t("props.removeAsk", { key }), t("common.delete"))) apply((c) => setFrontmatterField(c, key, null));
 }
 
+/** 마켓 화면의 「제거」: 확인하면 true. 지우는 일(잠금·캐시·고르기 값)은 부르는 쪽(MarketSettings)이 한다 */
+export function askUninstallPackage(name: string): Promise<boolean> {
+  return confirmDialog(t("market.uninstallConfirm", { name }), t("market.uninstall"));
+}
+
 /** 설정의 「이 기기 설정 초기화」: 패널 폭·트리 상태·이 기기만 덮어쓴 값을 지운다(localStorage 라 되살릴 수 없다) */
 export async function resetDevice() {
   if (await confirmDialog(t("settings.resetDeviceAsk"), t("common.reset"))) resetDevicePrefs();

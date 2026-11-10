@@ -298,7 +298,7 @@ describe("index", () => {
     const c = cache({ fetch: f, now: () => now });
     const r = await c.index(REPO);
     expect(r.error).toBeUndefined();
-    expect(Object.keys(r.index!.packages).sort()).toEqual(["@me/clock", "@me/sea"]);
+    expect(Object.keys(r.index!.packages).sort()).toEqual(["@me/clock", "@me/fog", "@me/ja", "@me/paper", "@me/sea"]);
     expect(r.ignored).toEqual(["@keyring/hello: scope_reserved"]);
     now += 4 * 60 * 1000;
     await c.index("https://repo.test/m");
@@ -315,6 +315,36 @@ describe("index", () => {
     expect(bad.calls).toHaveLength(1);
     now += 15 * 1000;
     await d.index("https://down.test/");
+    expect(bad.calls).toHaveLength(2);
+  });
+
+  it("fresh 는 5분 캐시를 건너뛰되 저장소마다 10초에 한 번까지", async () => {
+    let now = 0;
+    const f = fakeFetch();
+    const c = cache({ fetch: f, now: () => now });
+    await c.index(REPO);
+    expect(f.calls).toHaveLength(1);
+    now += 60_000;
+    await c.index(REPO);
+    expect(f.calls).toHaveLength(1);
+    now += 60_000;
+    await c.index(REPO, { fresh: true });
+    expect(f.calls).toHaveLength(2);
+    now += 5_000;
+    await c.index(REPO, { fresh: true });
+    expect(f.calls).toHaveLength(2);
+    now += 6_000;
+    await c.index(REPO, { fresh: true });
+    expect(f.calls).toHaveLength(3);
+
+    const bad = fakeFetch({ "https://down.test/index.json": new PathError("market_timeout") });
+    const d = cache({ fetch: bad, now: () => now });
+    await d.index("https://down.test/");
+    now += 5_000;
+    await d.index("https://down.test/", { fresh: true });
+    expect(bad.calls).toHaveLength(1);
+    now += 6_000;
+    await d.index("https://down.test/", { fresh: true });
     expect(bad.calls).toHaveLength(2);
   });
 

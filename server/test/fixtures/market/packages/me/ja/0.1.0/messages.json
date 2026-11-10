@@ -1,0 +1,11 @@
+{
+  "meta": { "id": "ja", "name": "日本語(マーケット)", "base": "en" },
+  "messages": {
+    "common.cancel": "キャンセル",
+    "common.save": "<b>保存</b>",
+    "settings.general": "一般",
+    "settings.title": "設定",
+    "lang.pack.added": "言語パック「{nombre}」を追加しました。",
+    "zz.notInBase": "基準にないキー"
+  }
+}

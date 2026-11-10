@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,6 +150,50 @@ describe("buildRepoIndex", () => {
     expect(first.toString("utf8")).toContain('\n  "format": 1,');
   });
 
+  it("판마다 매니페스트의 표시 필드를 옮겨 쓰고, 키 순서가 고정이다", async () => {
+    const { index, warnings } = await buildRepoIndex(repo);
+    expect(warnings).toEqual([]);
+    expect(index.packages["@me/sea"]!.versions["0.1.0"]).toMatchObject({ name: { en: "Clock" }, description: { en: "A clock" }, author: "me", license: "MIT" });
+    const text = await readFile(path.join(repo, "index.json"), "utf8");
+    const ver = JSON.parse(text).packages["@me/sea"].versions["0.1.0"];
+    expect(Object.keys(ver)).toEqual(["engines", "name", "description", "author", "license", "files"]);
+  });
+
+  it("상한을 넘는 필드는 index 에 쓰지 않고(자르지 않음) 경고로 돌려준다, 두 번째는 written: false", async () => {
+    await put(path.join(repo, "packages", "me", "sea", "0.1.0"), {
+      "keyring-package.json": {
+        ...base,
+        description: { en: "d".repeat(501), ko: "짧음" },
+        author: "a".repeat(101),
+        id: "@me/sea",
+        version: "0.1.0",
+        type: "theme",
+        colors: { light: { "--bg": "#e0f0ff" } },
+      },
+    });
+    const first = await buildRepoIndex(repo);
+    expect(first.written).toBe(true);
+    expect(first.warnings).toEqual(["@me/sea@0.1.0: display_too_long: description.en", "@me/sea@0.1.0: display_too_long: author"]);
+    const ver = first.index.packages["@me/sea"]!.versions["0.1.0"]!;
+    expect(ver.description).toBeUndefined();
+    expect(ver.author).toBeUndefined();
+    expect(ver.name).toEqual({ en: "Clock" });
+    expect(ver.license).toBe("MIT");
+    const again = await buildRepoIndex(repo);
+    expect(again.written).toBe(false);
+    expect(again.warnings).toEqual(first.warnings);
+  });
+
+  it("커밋된 시험 픽스처 index.json 은 패키지 폴더와 맞다(pkg index 를 다시 돌려도 바뀌지 않음)", async () => {
+    const copy = path.join(repo, "fixture");
+    await cp(path.join(serverDir, "test", "fixtures", "market"), copy, { recursive: true });
+    const r = await buildRepoIndex(copy);
+    expect(r.written).toBe(false);
+    expect(r.warnings).toEqual([]);
+    expect(Object.keys(r.index.packages)).toEqual(["@keyring/hello", "@me/clock", "@me/fog", "@me/ja", "@me/paper", "@me/sea"]);
+    expect(r.index.packages["@me/paper"]!.versions["0.1.0"]!.name).toEqual({ en: "Paper", ko: "종이" });
+  });
+
   it("이름이 없으면 폴더 이름", async () => {
     const { index } = await buildRepoIndex(repo);
     expect(index.name).toBe(path.basename(repo));
@@ -192,6 +236,24 @@ describe("cli pkg", () => {
     expect(bad.stderr).toContain("no_frame_js");
   }, 30000);
 
+  it("pkg check: 테마의 모르는 토큰·낮은 대비는 경고 줄이고 종료 코드 0", async () => {
+    const dir = path.join(repo, "packages", "me", "fog", "0.1.0");
+    await put(dir, {
+      "keyring-package.json": {
+        ...base,
+        id: "@me/fog",
+        version: "0.1.0",
+        type: "theme",
+        colors: { light: { "--fg": "#eee", "--bg": "#eee", "--zz": "#000" } },
+      },
+    });
+    const r = await cli(["pkg", "check", dir]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("@me/fog@0.1.0");
+    expect(r.stdout).toMatch(/warning: unknown_tokens: --zz/i);
+    expect(r.stdout).toMatch(/warning: contrast: light 1\.0/i);
+  }, 30000);
+
   it("pkg index: --name 과 결과 줄, 상대 경로는 INIT_CWD 기준", async () => {
     const r = await cli(["pkg", "index", repo, "--name", "CLI 저장소"]);
     expect(r.code).toBe(0);
@@ -206,5 +268,14 @@ describe("cli pkg", () => {
     );
     expect(again.code).toBe(0);
     expect(again.stdout).toMatch(/unchanged/);
+  }, 30000);
+
+  it("pkg index: 상한을 넘는 표시 필드는 경고 줄", async () => {
+    await put(path.join(repo, "packages", "me", "sea", "0.1.0"), {
+      "keyring-package.json": { ...base, author: "a".repeat(101), id: "@me/sea", version: "0.1.0", type: "theme", colors: { light: { "--bg": "#e0f0ff" } } },
+    });
+    const r = await cli(["pkg", "index", repo]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/warning: @me\/sea@0\.1\.0: display_too_long: author/i);
   }, 30000);
 });

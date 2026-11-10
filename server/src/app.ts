@@ -414,7 +414,7 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
     if (!v) throw new PathError("field_required", { field });
     return v;
   };
-  api.get("/market/index", async (c) => c.json(await marketOf(c).index(queryOf(c, "repo"))));
+  api.get("/market/index", async (c) => c.json(await marketOf(c).index(queryOf(c, "repo"), { fresh: c.req.query("fresh") === "1" })));
   api.get("/market/status", (c) => c.json(marketOf(c).status()));
   api.post("/market/ensure", async (c) => {
     const m = marketOf(c);

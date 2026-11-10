@@ -26,6 +26,8 @@
   --success-bg: #eaf6ed;
   --hover: rgb(0 0 0 / 0.05);
   --active: rgb(59 111 216 / 0.12);
+  /* 초점 고리 색. --focus(그림자 꼴)는 테마 토큰이 아니므로 색만 떼어 테마가 바꿀 수 있게 둔다 */
+  --focus-ring: rgb(59 111 216 / 0.55);
   /* 노트 안 찾기: 일치·지금 일치 */
   --find-match: rgb(250 204 21 / 0.4);
   --find-current: rgb(249 115 22 / 0.45);
@@ -36,7 +38,7 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
   --shadow: 0 4px 16px rgb(0 0 0 / 0.12);
   --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.2);
-  --focus: 0 0 0 2px var(--bg), 0 0 0 4px rgb(59 111 216 / 0.55);
+  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring);
   --font-sans: system-ui, -apple-system, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
   --font-serif: "Iowan Old Style", "Apple Myungjo", "Noto Serif KR", Georgia, serif;
   --font-mono: ui-monospace, "SF Mono", "D2Coding", Menlo, monospace;
@@ -85,7 +87,7 @@
     --find-current: rgb(249 115 22 / 0.5);
     --shadow: 0 4px 16px rgb(0 0 0 / 0.45);
     --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.55);
-    --focus: 0 0 0 2px var(--bg), 0 0 0 4px rgb(122 162 247 / 0.6);
+    --focus-ring: rgb(122 162 247 / 0.6);
     color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -117,7 +119,7 @@
     --find-current: rgb(249 115 22 / 0.5);
     --shadow: 0 4px 16px rgb(0 0 0 / 0.45);
     --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.55);
-    --focus: 0 0 0 2px var(--bg), 0 0 0 4px rgb(122 162 247 / 0.6);
+    --focus-ring: rgb(122 162 247 / 0.6);
     color-scheme: dark;
   }
 }
@@ -1447,6 +1449,31 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .pack-report.error { border-color: var(--danger); }
 .pack-report ul { margin: 6px 0; padding-left: 20px; }
 .pack-report li.warn { color: var(--warn-fg); }
+/* 설정 → 마켓플레이스(MarketSettings.tsx): 넓으면 「글 | 단추」, 좁으면 쌓는다. 새 색은 토큰만 */
+.market { display: flex; flex-direction: column; gap: var(--sp-6); }
+.market-section h3 { font-size: var(--fs-lg); margin: 0 0 var(--sp-2); }
+.market-row { display: flex; gap: var(--sp-3); align-items: flex-start; justify-content: space-between; padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
+.market-text { min-width: 0; flex: 1; }
+.market-name { font-weight: 600; display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); align-items: baseline; overflow-wrap: anywhere; }
+.market-name code { font-weight: 400; font-size: var(--fs-sm); color: var(--muted); }
+.market-version { font-weight: 400; font-size: var(--fs-sm); color: var(--muted); }
+.market-desc { font-size: var(--fs-md); margin-top: 2px; overflow-wrap: anywhere; }
+.market-repo, .market-url { word-break: break-all; }
+.market-url { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: baseline; font-family: var(--font-mono); font-size: var(--fs-md); }
+.market-note { font-size: var(--fs-sm); color: var(--muted); margin-top: 2px; }
+.market-note.warn { color: var(--warn-fg); background: var(--warn-bg); padding: 2px 6px; border-radius: var(--radius-sm); }
+.market-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: flex-end; flex-shrink: 0; }
+.market-toolbar, .market-add { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; margin-bottom: var(--sp-2); }
+.market-add { margin-top: var(--sp-3); }
+.market-add input { flex: 1; min-width: 0; font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--fg); }
+.market-check { display: flex; gap: var(--sp-2); align-items: center; padding: var(--sp-1) 0; }
+@media (max-width: 480px) {
+  .market-row { flex-direction: column; }
+  .market-actions { justify-content: flex-start; }
+}
+/* 설정 테마 줄 아래의 대비 경고·없음 안내 */
+.theme-notes { display: flex; flex-direction: column; gap: 2px; margin-top: var(--sp-1); }
+.theme-note.warn { color: var(--warn-fg); background: var(--warn-bg); padding: 2px 6px; border-radius: var(--radius-sm); }
 .pack-row .setting-control button { font-size: var(--fs-sm); }
 
 @media (max-width: 640px) {

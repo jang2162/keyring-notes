@@ -1,23 +1,16 @@
-import type { Prefs } from "./prefs";
+import { THEME_DEFAULTS } from "@keyring-notes/core";
 
 /**
- * 설치한 웹 앱(PWA)의 상단 상태 표시줄·하단 영역 색. styles.css 의 `--bg`(밝은·어두운 테마)와 같은 값이다 — 시험이 둘을 맞춰 본다.
- * index.html 의 theme-color 메타 두 벌(prefers-color-scheme light·dark)의 처음 값도 이것이다.
+ * 설치한 웹 앱(PWA)의 상단 상태 표시줄·하단 영역 색 = 기본 테마의 `--bg`(밝은·어두운).
+ * index.html 의 theme-color 메타 두 벌(prefers-color-scheme light·dark)의 처음 값도 이것이다(손으로 맞춘다).
+ * THEME_DEFAULTS 와 styles.css 가 같은지는 theme/tokens.test.ts 가 본다. 테마마다의 두 색은 theme/resolve.ts 가 정한다.
  */
-export const THEME_BG = { light: "#ffffff", dark: "#17191c" } as const;
+export const THEME_BG = { light: THEME_DEFAULTS.light["--bg"]!, dark: THEME_DEFAULTS.dark["--bg"]! } as const;
 
-/** 테마 설정에 따른 두 메타(light·dark 미디어 쿼리)의 content. 직접 고른 테마면 시스템 설정과 상관없이 둘 다 그 색 */
-export function themeColorContents(theme: Prefs["theme"]): { light: string; dark: string } {
-  if (theme === "light") return { light: THEME_BG.light, dark: THEME_BG.light };
-  if (theme === "dark") return { light: THEME_BG.dark, dark: THEME_BG.dark };
-  return { light: THEME_BG.light, dark: THEME_BG.dark };
-}
-
-/** 테마가 바뀔 때 theme-color 메타를 맞춘다. 메타가 없는 문서(시험·다른 진입점)에서는 아무것도 하지 않는다 */
-export function applyThemeColor(theme: Prefs["theme"], doc: Document = document): void {
-  const c = themeColorContents(theme);
+/** theme-color 메타(media 가 light·dark 인 두 벌)에 각각 쓴다. 메타가 없는 문서(시험·다른 진입점)에서는 아무것도 하지 않는다 */
+export function applyThemeColor(metaBg: { light: string; dark: string }, doc: Document = document): void {
   const light = doc.querySelector<HTMLMetaElement>('meta[name="theme-color"][media*="light"]');
   const dark = doc.querySelector<HTMLMetaElement>('meta[name="theme-color"][media*="dark"]');
-  if (light) light.content = c.light;
-  if (dark) dark.content = c.dark;
+  if (light) light.content = metaBg.light;
+  if (dark) dark.content = metaBg.dark;
 }

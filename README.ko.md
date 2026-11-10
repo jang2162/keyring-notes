@@ -70,7 +70,7 @@ curl http://127.0.0.1:8787/api/health
 ## 문서
 
 - [시작하기](docs/manual/ko/getting-started.md)
-- [방법 안내](docs/manual/ko/how-to/): 노트 정리, 에이전트 연결, LLM Wiki, 마켓플레이스 운영, 백업 등
+- [방법 안내](docs/manual/ko/how-to/): 노트 정리, 에이전트 연결, LLM Wiki, 패키지 설치, 마켓플레이스 운영, 백업 등
 - [설정값](docs/manual/ko/configuration.md): 환경 변수와 `.env` 키
 - [참조](docs/manual/ko/reference.md): CLI, MCP 도구, REST API, 파일 형식, 단축키
 - [문제 해결](docs/manual/ko/troubleshooting.md)

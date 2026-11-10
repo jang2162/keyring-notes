@@ -6,6 +6,7 @@ import { DataFileError, dataFileOptions, openDataFile, type DataFileHandle, type
 import { apiDataFileIO } from "./dataFileIo";
 import { mountFrame } from "./frame/mountFrame";
 import { THEME_TOKEN_NAMES } from "./frame/themeTokens";
+import { widgetThemeValue } from "./themeValue";
 import { widgetMessages } from "./messages";
 import { isFrameEntry, resolveWidgetView, widgetViewChange, type WidgetView } from "./registry";
 import { focusOutAction, widgetKeyAction, WidgetSession } from "./session";
@@ -53,7 +54,7 @@ export const THEME_TOKENS = THEME_TOKEN_NAMES;
 function readTheme(): Record<string, string> {
   const cs = getComputedStyle(document.documentElement);
   const out: Record<string, string> = {};
-  for (const k of THEME_TOKENS) out[k] = cs.getPropertyValue(k).trim();
+  for (const k of THEME_TOKENS) out[k] = widgetThemeValue(cs.getPropertyValue(k));
   return out;
 }
 
@@ -279,7 +280,8 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
     };
     const offLang = onLanguageChange(() => fire());
     const themeObserver = new MutationObserver(onTheme);
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    // 받은 테마는 토큰을 documentElement.style 에 쓴다 — data-theme 이 그대로여도 style 바뀜으로 다시 읽는다
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style"] });
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     media.addEventListener("change", onTheme);
 

@@ -123,6 +123,7 @@ import { commandKey, formatCombo, keyCapture, matchCommand, type Command } from 
 import { IconButton, Menu, Resizer, Segmented, type MenuEntry } from "./ui";
 import { childSortItems, folderMenuItem, invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
 import { SettingsModal, KeySettings, type SettingsSection, type WorkspaceOps } from "./Settings";
+import { setMarketFocus } from "./MarketSettings";
 import { attemptCloseTopModal, Modal } from "./Modal";
 import {
   ensureVaultSettings,
@@ -2630,6 +2631,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     else void backStack.navigate(`${SETTINGS_HASH}/${s}`);
     setSettings(s);
   };
+  /** 마켓 화면을 연다. id 를 주면 둘러보기를 그 패키지로 걸러 보인다(3단계의 「찾을 수 없음」 옆 「설치」 가 이것만 부른다) */
+  const openMarket = (id?: string) => {
+    setMarketFocus(id ?? null);
+    openSettings("marketplace");
+  };
   /** restore: 지금 문서 주소로 되돌린다(아니면 곧 다른 문서를 여는 중이라 비워 둔다) */
   const closeSettings = (restore = true) => {
     setSettings(null);
@@ -2904,8 +2910,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       id: "theme",
       group: g.view,
       label: t("cmd.theme"),
+      // 받은 테마에서는 system 으로(system → light → dark → system)
       run: () => setPrefs((p) => ({ theme: p.theme === "system" ? "light" : p.theme === "light" ? "dark" : "system" })),
     },
+    // 늘 있다 — 받은 테마로 화면을 읽을 수 없어도 명령 팔레트에서 이름으로 찾아 돌아온다(설계 「테마 토큰」)
+    { id: "themeReset", group: g.view, label: t("cmd.themeReset"), run: () => setPrefs({ theme: "system" }) },
     { id: "graph", group: g.tool, label: t("tool.graph"), run: () => setGraphOpen(true) },
     { id: "lint", group: g.tool, label: t("tool.lint"), run: () => setLintOpen(true) },
     { id: "trash", group: g.tool, label: t("tool.trash"), run: () => setTrashOpen(true) },
@@ -2917,6 +2926,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
           { id: "admin", group: g.tool, label: t("cmd.admin"), run: () => openSettings("server-status") },
         ]),
     { id: "settings", group: g.tool, label: t("settings.title"), keys: "Mod+,", run: () => openSettings() },
+    { id: "marketplace", group: g.tool, label: t("cmd.marketplace"), run: () => openMarket() },
     { id: "keys", group: g.tool, label: t("cmd.keys"), keys: "Mod+/", run: () => setKeysOpen(true) },
   ];
   const commandsRef = useRef(commands);

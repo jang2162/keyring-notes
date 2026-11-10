@@ -30,7 +30,7 @@ Each token has a per-path permission table: \`hidden\` < \`read\` < \`append\` <
 - The most specific (longest) path rule wins. A rule on \`Work/Project\` covers \`Work/Project/…\` and the node note \`Work/Project.md\`.
 - A wiki topic's \`SCHEMA.md\` and the vault's \`keyring-settings.md\` are read-only for agents.
 - Call \`whoami\` (MCP) or \`GET /api/whoami\` first to see your table.
-- Marketplace endpoints (\`/api/market/*\`) are owner only: agent tokens get 403 \`market_owner_only\`. Packages are installed by editing the lock in \`keyring-settings.md\`, which agents cannot write.
+- Marketplace endpoints (\`/api/market/*\`) are owner only: agent tokens get 403 \`market_owner_only\`. Packages are installed by editing the lock in \`keyring-settings.md\`, which agents cannot write. \`GET /api/market/index?repo=\` is cached for 5 minutes; \`&fresh=1\` skips that cache, at most once per 10 seconds per repository.
 
 ## Main tasks
 

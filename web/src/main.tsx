@@ -2,12 +2,14 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { isTauri } from "@tauri-apps/api/core";
 import { App } from "./App";
+import { registerLanguageKind } from "./i18nMarket";
 import { backStack } from "./backStack";
 import { startLocal, wantsLocal } from "./local/boot";
 import { hasOwnNotes, syncSetupRedirect } from "./local/mode";
 import { startMarket } from "./market/start";
 import { browserEnv, watchUpdates } from "./pwaUpdate";
 import { SOLO } from "./soloWindow";
+import { registerThemeKind } from "./theme/marketThemes";
 import { watchTrafficLights } from "./windowChrome";
 import "./styles.css";
 import { t } from "./i18n";
@@ -59,7 +61,9 @@ async function boot() {
     }
   }
   // 마켓 상태: 공통 설정(잠금)을 읽으면 기기 캐시를 맞춘다. 서버 모드는 로그인 뒤 설정이 읽혀야 돈다
-  startMarket();
+  const m = startMarket();
+  registerThemeKind(m);
+  registerLanguageKind(m);
   root.render(
     <StrictMode>
       <App />

@@ -11,6 +11,7 @@ import {
   PenLine,
   RefreshCw,
   Search,
+  Store,
   SlidersHorizontal,
   Trash2,
   Upload,
@@ -35,6 +36,10 @@ import {
   workspaceSettings,
   ymd,
   APP_VERSION,
+  CONTRAST_MIN,
+  contrastLabel,
+  displayText,
+  themeContrast,
   type FormatProblem,
   type LanguagePack,
   type OfficialLang,
@@ -57,9 +62,14 @@ import { getPack, languages, PSEUDO, putPack, removePack, systemLanguage, t, use
 import { confirmDialog, promptDialog } from "./dialog";
 import { tipProps } from "./Tooltip";
 import { admin } from "./api";
+import { market } from "./market/start";
+import { MarketSettings } from "./MarketSettings";
+import type { InstalledPackage } from "./market/state";
+import { useAppliedTheme, useThemePackages } from "./theme/apply";
+import { themeModes } from "./theme/resolve";
 import { available, checkForUpdate, showUpdate, updatesSupported, useAvailableUpdate } from "./update";
 
-export type SettingsSection = "general" | "language" | "editor" | "files" | "workspaces" | "keys" | "device" | "about" | ServerSection;
+export type SettingsSection = "general" | "language" | "marketplace" | "editor" | "files" | "workspaces" | "keys" | "device" | "about" | ServerSection;
 
 /** 모바일(좁은 터치 화면)에서는 단축키 화면을 숨긴다(단축키는 데스크톱·웹만 따라간다) */
 const isMobile = () => typeof window !== "undefined" && (window.matchMedia?.("(pointer: coarse)").matches ?? false) && window.innerWidth < 900;
@@ -77,6 +87,8 @@ const SECTIONS: {
 }[] = [
   { id: "general", label: "settings.general", icon: SlidersHorizontal },
   { id: "language", label: "settings.language", icon: Languages, keywords: "settings.languageKeywords" },
+  // 모든 모드에 보인다 — 받을 수 없는 곳(브라우저 기기 볼트, 동기화 없음)은 화면 안에서 market.unavailable
+  { id: "marketplace", label: "settings.marketplace", icon: Store, keywords: "settings.marketplaceKeywords" },
   { id: "editor", label: "settings.editor", icon: PenLine },
   { id: "files", label: "settings.files", icon: Folder },
   { id: "workspaces", label: "settings.workspaces", icon: LayoutGrid, keywords: "settings.workspacesKeywords" },
@@ -187,6 +199,97 @@ function Choice<T extends string>({
         </option>
       ))}
     </select>
+  );
+}
+
+/** 마켓 상태의 한 패키지(설치·받기·오류 바뀜을 따라간다). 마켓을 시작하지 않은 화면에서는 null */
+function useMarketPackage(id: string | null): InstalledPackage | null {
+  const [, force] = useState(0);
+  useEffect(() => {
+    try {
+      return market().onPackagesChange(() => force((n) => n + 1));
+    } catch {
+      return undefined;
+    }
+  }, []);
+  if (!id) return null;
+  try {
+    return (
+      market()
+        .installedPackages()
+        .find((p) => p.id === id) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 일반 → 테마 줄과 「기본 테마로 돌아가기」 줄. 고르기는 「시스템·밝게·어둡게」 와 이 기기에 있는 받은 테마 중 하나(select —
+ * 받은 테마가 늘면 단추 묶음은 좁은 화면에서 넘친다). 돌아가기 단추는 늘 보인다 — 받은 테마로 화면을 읽기 어려워도 찾을 수 있게.
+ */
+function ThemeRows({ query }: { query: string }) {
+  const prefs = usePrefs();
+  const lang = useLang();
+  const pkgs = useThemePackages();
+  const applied = useAppliedTheme();
+  const nameOf = (id: string) => displayText(pkgs.find((p) => p.id === id)?.name, lang) ?? id;
+  const label = (v: Prefs["theme"]) => (v === "system" || v === "light" || v === "dark" ? t(`theme.${v}`) : t("theme.package", { name: nameOf(v) }));
+  const sorted = [...pkgs].sort((a, b) => (displayText(a.name, lang) ?? a.id).localeCompare(displayText(b.name, lang) ?? b.id, lang));
+  const options: { value: Prefs["theme"]; label: string }[] = (["system", "light", "dark"] as const).map((v) => ({ value: v, label: label(v) }));
+  for (const p of sorted) {
+    const modes = themeModes(p);
+    const only = modes.length === 1 ? ` · ${t(modes[0] === "light" ? "theme.onlyLight" : "theme.onlyDark")}` : "";
+    options.push({ value: p.id as Prefs["theme"], label: `${label(p.id as Prefs["theme"])}${only}` });
+  }
+  const isPackage = !["system", "light", "dark"].includes(prefs.theme);
+  // 고른 것이 이 기기에 없으면 그 값도 한 줄로 — 목록에서 사라져 다른 값이 골라진 것처럼 보이지 않게
+  if (isPackage && !pkgs.some((p) => p.id === prefs.theme)) options.push({ value: prefs.theme, label: t("theme.packageAbsent", { name: prefs.theme }) });
+  const chosen = isPackage ? (pkgs.find((p) => p.id === prefs.theme) ?? null) : null;
+  const status = useMarketPackage(applied.missing);
+  const notes: { text: string; warn: boolean }[] = [];
+  if (chosen)
+    for (const mode of themeModes(chosen)) {
+      const ratio = themeContrast(chosen.colors, mode);
+      if (ratio === null) notes.push({ text: `${t(`theme.${mode}`)}: ${t("theme.contrastUnknown")}`, warn: true });
+      else if (ratio < CONTRAST_MIN) notes.push({ text: `${t(`theme.${mode}`)}: ${t("theme.contrastLow", { ratio: contrastLabel(ratio) })}`, warn: true });
+    }
+  if (applied.missing) {
+    notes.push({ text: t("theme.packageMissing", { name: nameOf(applied.missing) }), warn: false });
+    if (status) notes.push({ text: t(`market.status.${status.status}`), warn: status.status !== "ready" });
+  }
+  const shared = sharedPref("theme");
+  return (
+    <>
+      <Row
+        label="settings.theme"
+        hint="settings.themeHint"
+        hintNode={
+          <>
+            {t("settings.themeHint")}
+            {notes.length > 0 && (
+              <span className="theme-notes" role="status">
+                {notes.map((n) => (
+                  <span key={n.text} className={n.warn ? "theme-note warn" : "theme-note"}>
+                    {n.text}
+                  </span>
+                ))}
+              </span>
+            )}
+          </>
+        }
+        query={query}
+        synced="theme"
+        sharedText={label(shared)}
+      >
+        <Choice label={t("settings.theme")} value={prefs.theme} onChange={(v) => setPrefs({ theme: v })} options={options} />
+      </Row>
+      <Row label="theme.reset" hint="theme.resetHint" query={query}>
+        <button type="button" disabled={!isPackage} onClick={() => setPrefs({ theme: "system" })}>
+          {t("theme.reset")}
+        </button>
+      </Row>
+    </>
   );
 }
 
@@ -423,20 +526,12 @@ function SectionBody({
     <K extends keyof Prefs>(k: K) =>
     (v: Prefs[K]) =>
       setPrefs({ [k]: v } as Partial<Prefs>);
-  const themeLabel = (v: Prefs["theme"]) => t(`theme.${v}`);
   const onOff = (v: boolean) => (v ? t("common.on") : t("common.off"));
   switch (id) {
     case "general":
       return (
         <>
-          <Row label="settings.theme" hint="settings.themeHint" query={query} synced="theme" sharedText={themeLabel(sharedPref("theme"))}>
-            <Choice
-              label={t("settings.theme")}
-              value={prefs.theme}
-              onChange={set("theme")}
-              options={(["system", "light", "dark"] as const).map((v) => ({ value: v, label: themeLabel(v) }))}
-            />
-          </Row>
+          <ThemeRows query={query} />
           <Row label="settings.showIcons" hint="settings.showIconsHint" query={query} synced="showIcons" sharedText={onOff(sharedPref("showIcons"))}>
             <Toggle label={t("settings.showIcons")} value={prefs.showIcons} onChange={set("showIcons")} />
           </Row>
@@ -468,6 +563,8 @@ function SectionBody({
       );
     case "language":
       return <LanguageSettings query={query} shared={shared} local={local} />;
+    case "marketplace":
+      return <MarketSettings />;
     case "editor":
       return (
         <>
@@ -997,7 +1094,7 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
           {list.map((l) => (
             <option key={l.id} value={l.id}>
               {l.name}
-              {l.official ? "" : ` (${t("lang.unofficial")})`}
+              {l.source === "official" ? "" : l.source === "market" ? ` (${t("lang.market")})` : ` (${t("lang.unofficial")})`}
             </option>
           ))}
           <option value={PSEUDO}>{nameOf(PSEUDO)}</option>
@@ -1037,7 +1134,7 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
       </Row>
       {report && <PackReportView state={report} onClose={() => setReport(null)} />}
       {list
-        .filter((l) => !l.official)
+        .filter((l) => l.source === "device")
         .map((l) => {
           const pack = getPack(l.id)!;
           const missing = missingKeys(pack);
@@ -1051,6 +1148,7 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
                 <div className="setting-hint">
                   {t("lang.pack.info", { base: OFFICIAL_NAMES[pack.meta.base], version: pack.meta.appVersion || "?", author: pack.meta.author || "-" })}
                   {missing.length > 0 && <> · {t("lang.pack.missing", { count: missing.length })}</>}
+                  {l.shadows && <> · {t("lang.shadowed", { id: l.shadows })}</>}
                 </div>
               </div>
               <div className="setting-control">

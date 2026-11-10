@@ -36,8 +36,9 @@ export function marketClient(base: string, fetchFn: typeof fetch, token?: string
     throw new MarketHttpError(code, params, res.status);
   };
   return {
-    async index(repo: string): Promise<RepoIndexResult> {
-      return (await (await call(`index?repo=${encodeURIComponent(repo)}`)).json()) as RepoIndexResult;
+    /** fresh: 서버의 5분 캐시를 건너뛴다(저장소마다 10초에 한 번까지 — 서버가 지킨다) */
+    async index(repo: string, opts: { fresh?: boolean } = {}): Promise<RepoIndexResult> {
+      return (await (await call(`index?repo=${encodeURIComponent(repo)}${opts.fresh ? "&fresh=1" : ""}`)).json()) as RepoIndexResult;
     },
     async ensure(id: string, entry: LockEntry, sizes?: Record<string, number>): Promise<void> {
       await call("ensure", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, entry, sizes }) });

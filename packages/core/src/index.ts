@@ -1,5 +1,6 @@
 export * from "./analysis.js";
 export * from "./childSort.js";
+export * from "./color.js";
 export * from "./folderNote.js";
 export * from "./daily.js";
 export * from "./edited.js";
@@ -25,6 +26,7 @@ export * from "./rank.js";
 export * from "./search.js";
 export * from "./sync.js";
 export * from "./templates.js";
+export * from "./themeTokens.js";
 export * from "./trash.js";
 export * from "./vaultText.js";
 export * from "./types.js";
