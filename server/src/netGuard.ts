@@ -3,9 +3,8 @@ import type { LookupFunction } from "node:net";
 import { PathError } from "@keyring-notes/core";
 
 /**
- * 마켓 받기의 나가는 요청 지킴. 판정은 **접속에 쓰는 이름 풀이 결과 자체**로 한다(guardedLookup 을 http.request 의
- * lookup 으로 준다) — 판정한 뒤 접속이 이름을 다시 풀면 둘째 풀이가 사설 주소를 줄 수 있다(DNS 재바인딩).
- * 웹 클립(convert.ts)의 판정은 이 꼴이 아니다 — docs/guides/development.md 「알려진 한계」.
+ * 나가는 요청 지킴(마켓 받기 marketFetch.ts, URL 수집 convert.ts fetchUrl). 판정은 **접속에 쓰는 이름 풀이 결과 자체**로
+ * 한다(guardedLookup 을 http.request 의 lookup 으로 준다) — 판정한 뒤 접속이 이름을 다시 풀면 둘째 풀이가 사설 주소를 줄 수 있다(DNS 재바인딩).
  *
  * 주소 판정 표의 원본은 docs/guides/development.md 「마켓 받기와 나가는 요청」 이고,
  * Rust market_fetch(app/src-tauri) 가 같은 표·같은 시험 벡터를 쓴다. 한쪽을 고치면 다른 쪽도 고친다.
@@ -135,7 +134,13 @@ const systemResolve: LookupFn = async (host) =>
  * http.request 의 lookup 옵션. 풀이 결과 중 하나라도 사설이면(허용이 아니면) 오류 — 이 결과가 곧 접속 주소다.
  * Node 는 autoSelectFamily(기본 켜짐) 때 `{ all: true }` 로 부르고 콜백에 목록을 기대한다. 두 꼴 다 받는다.
  */
-export function guardedLookup(opts: { allowPrivate: boolean; resolve?: LookupFn; isPrivate?: (ip: string) => boolean }): LookupFunction {
+export function guardedLookup(opts: {
+  allowPrivate: boolean;
+  resolve?: LookupFn;
+  isPrivate?: (ip: string) => boolean;
+  /** 사설일 때의 오류(기본 market_private_address) */
+  privateError?: (host: string) => Error;
+}): LookupFunction {
   const resolve = opts.resolve ?? systemResolve;
   const isPrivate = opts.isPrivate ?? isPrivateAddress;
   return ((hostname: string, options: unknown, callback: (...args: unknown[]) => void) => {
@@ -145,7 +150,8 @@ export function guardedLookup(opts: { allowPrivate: boolean; resolve?: LookupFn;
       (all) => {
         const list = family ? all.filter((a) => a.family === family) : all;
         if (list.length === 0) return callback(Object.assign(new Error(`ENOTFOUND ${hostname}`), { code: "ENOTFOUND" }));
-        if (!opts.allowPrivate && all.some((a) => isPrivate(a.address))) return callback(new PathError("market_private_address", { host: hostname }));
+        if (!opts.allowPrivate && all.some((a) => isPrivate(a.address)))
+          return callback(opts.privateError ? opts.privateError(hostname) : new PathError("market_private_address", { host: hostname }));
         if (o.all) callback(null, list);
         else callback(null, list[0]!.address, list[0]!.family);
       },

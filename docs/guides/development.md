@@ -125,6 +125,8 @@ keyring-widget 중 앱 코드가 아니거나 인라인 기준을 넘는 위젯(
 
 리다이렉트는 손으로 따라가며 홉마다 다시 판정한다. 접속한 소켓 주소도 한 번 더 본다(둘째 줄). 시간 상한은 요청 하나 전체(리다이렉트 포함)에 하나다. 크기는 받는 동안 세고 넘으면 끊는다. `accept-encoding: identity` 를 보내고, 압축된 응답은 거부한다(압축 폭탄 면이 없다).
 
+**URL 수집도 같은 지킴을 탄다.** 위키의 URL 수집(`server/src/convert.ts` `fetchUrl`, `ingest.ts` 가 부름)은 `guardedLookup`·`isPrivateAddress`·IP 글자 판정·리다이렉트마다 다시·소켓 주소 둘째 줄·`agent: false` 를 마켓과 같이 쓴다. 시험은 `server/test/clipFetch.test.ts`. 마켓과 다른 것은 URL 수집의 원래 동작이다: `http:` 도 받는다, 2xx 면 받는다, gzip·deflate·br 은 풀고 **풀린 크기**로 상한(기본 20MB)을 잰다, 시간 상한(기본 20초)은 홉마다다, 리다이렉트는 다섯 번까지다. 사설 허용은 `KEYRING_FETCH_ALLOW_PRIVATE` 하나다. 웹 클리퍼(북마클릿)는 브라우저가 가진 HTML 을 보내므로 서버가 그 페이지에 요청하지 않는다.
+
 **주소 판정 표**(서버 `netGuard.ts`·Rust `market.rs` 가 같다. 시험 벡터는 둘 다 `server/test/fixtures/address-vectors.json` 하나를 읽는다 — 한쪽만 고치지 않는다):
 
 - 판정 방법: 주소를 바이트로 파싱해 CIDR 로 본다. 앞뒤 `[`·`]` 와 zone id(`%en0`·`%25en0`)는 벗긴다. 파싱하지 못하면 막는다(fail-closed). IPv4 의 앞자리 0(`01.1.1.1`)도 파싱 실패다.
@@ -132,7 +134,7 @@ keyring-widget 중 앱 코드가 아니거나 인라인 기준을 넘는 위젯(
 - IPv6: `::/96` 전체, `fc00::/7`·`fe80::/10`·`fec0::/10`·`ff00::/8`, `64:ff9b:1::/48`, `2001::/32`(Teredo)·`2001:db8::/32`·`2001:2::/48`·`100::/64`.
 - IPv4 를 품은 꼴은 품은 IPv4 로 다시 판정한다: `::ffff:0:0/96`(사상)·`::ffff:0:0:0/96`(SIIT)·`64:ff9b::/96`(NAT64)·`2002::/16`(6to4).
 
-**`http:`·사설 주소는 운영자·그 기기만.** 서버는 `KEYRING_MARKET_ALLOW_HTTP`·`KEYRING_MARKET_ALLOW_PRIVATE`(웹 클립의 `KEYRING_FETCH_ALLOW_PRIVATE` 와 따로), 앱은 이 기기의 `localStorage` `keyring:market:device`. 볼트의 공통 설정에 두지 않는다 — 볼트를 고칠 수 있는 기기·사람이 서버를 내부망으로 보내는 통로가 된다.
+**`http:`·사설 주소는 운영자·그 기기만.** 서버는 `KEYRING_MARKET_ALLOW_HTTP`·`KEYRING_MARKET_ALLOW_PRIVATE`(URL 수집의 `KEYRING_FETCH_ALLOW_PRIVATE` 와 따로), 앱은 이 기기의 `localStorage` `keyring:market:device`. 볼트의 공통 설정에 두지 않는다 — 볼트를 고칠 수 있는 기기·사람이 서버를 내부망으로 보내는 통로가 된다.
 
 **패키지 파일은 실행할 수 없는 꼴로만 낸다.** `/api/market/file` 은 `application/octet-stream` + `content-disposition: attachment` + `content-security-policy: default-src 'none'; sandbox` 다. 앱 페이지 CSP 가 `script-src 'self'` 라, 같은 출처에서 JS 타입으로 내면 HTML 주입 하나로 제3자 `frame.js` 가 앱 권한으로 돈다. 화면은 바이트로 받아 iframe 에 글로 건넨다.
 
@@ -154,9 +156,8 @@ keyring-widget 중 앱 코드가 아니거나 인라인 기준을 넘는 위젯(
 
 **알려진 한계.**
 
-- 웹 클립(`server/src/convert.ts` `fetchUrl`)은 아직 DNS 재바인딩에 열려 있다(판정 뒤 `fetch` 가 이름을 다시 푼다). 마켓 받기는 이 함수를 쓰지 않는다.
 - identity 요청을 따르지 않고 압축해 보내는 호스팅은 쓸 수 없다(서버·앱 둘 다 거부).
-- HTTP 프록시 뒤에서만 바깥에 나갈 수 있는 서버는 받지 못한다(`agent: false`).
+- HTTP 프록시 뒤에서만 바깥에 나갈 수 있는 서버는 받지 못한다(`agent: false`). URL 수집도 같다.
 - 공식 저장소 주소는 `https://keyring-notes-marketplace.develma.com/`(core `OFFICIAL_REPO_URL`)다. 마켓 서버를 배포하기 전까지는 이 주소가 저장소를 내주지 않는다.
 - 공식 마켓 배포는 `docs/guides/deploy-marketplace.md`.
 

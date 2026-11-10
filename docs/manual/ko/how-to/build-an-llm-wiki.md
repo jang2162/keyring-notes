@@ -46,7 +46,7 @@ pnpm keyring agent grant <이름> 업무/경제/SCHEMA.md read
 
 원본은 `<토픽>/raw/<날짜> <제목>.md` 로 저장되고, 프런트매터에 `source_type`, `source_url`, `original`, `ingested_at`, `ingested_by` 가 붙습니다.
 
-`KEYRING_FETCH_ALLOW_PRIVATE=1` 이 없으면 URL 수집은 사설·루프백 주소에 닿지 않습니다.
+`KEYRING_FETCH_ALLOW_PRIVATE=1` 이 없으면 URL 수집은 사설·루프백 주소에 닿지 않습니다. 그런 주소로 보내는 리다이렉트와 그런 주소로 풀리는 호스트 이름도 막힙니다. URL 수집은 직접 접속하고 HTTP 프록시 설정을 쓰지 않습니다.
 
 ## index 와 log 는 저절로 바뀝니다
 

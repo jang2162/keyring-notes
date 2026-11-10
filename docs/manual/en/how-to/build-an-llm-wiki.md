@@ -45,7 +45,7 @@ Use **Import** on the rail, or the MCP tools `ingest_url` and `ingest_text`.
 
 Sources are saved as `<topic>/raw/<date> <title>.md`, with `source_type`, `source_url`, `original`, `ingested_at` and `ingested_by` in the frontmatter.
 
-URL collection cannot reach private or loopback addresses unless `KEYRING_FETCH_ALLOW_PRIVATE=1` is set.
+URL collection cannot reach private or loopback addresses unless `KEYRING_FETCH_ALLOW_PRIVATE=1` is set. This also covers links that redirect to such an address and host names that resolve to one. URL collection connects directly and does not use HTTP proxy settings.
 
 ## Let the index and log update themselves
 
