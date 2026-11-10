@@ -201,3 +201,30 @@ describe("설치·제거·파일", () => {
     expect((await t.state.repoIndexes()).map((r) => r.repo)).toEqual([OFFICIAL_REPO_URL, REPO]);
   });
 });
+
+describe("ready", () => {
+  it("설정을 못 읽은 동안 거짓, 첫 맞추기 뒤 참(받지 못한 것이 있어도)", async () => {
+    const t = setup({ packages: { "@me/sea": lockOf("@me/sea", "0.1.0") }, source: fakeSource(new Error("down")) });
+    const s = t.settings;
+    t.setSettings(null);
+    await t.state.reconcile();
+    expect(t.state.ready()).toBe(false);
+    t.setSettings(s);
+    await t.state.reconcile();
+    expect(ids(t.state.installedPackages())).toEqual(["@me/sea@0.1.0:error"]);
+    expect(t.state.ready()).toBe(true);
+    // 한 번 참이면 계속 참
+    t.setSettings(null);
+    await t.state.reconcile();
+    expect(t.state.ready()).toBe(true);
+  });
+
+  it("첫 맞추기의 notify 가 부른 적용자는 이미 ready() 가 참이다", async () => {
+    const t = setup({ packages: { "@me/sea": lockOf("@me/sea", "0.1.0") } });
+    const seen: [boolean, string[]][] = [];
+    t.state.registerPackageKind("theme", { apply: (pkgs) => void seen.push([t.state.ready(), pkgs.map((p) => p.id)]) });
+    await t.state.reconcile();
+    expect(seen[0]).toEqual([false, []]);
+    expect(seen.find(([, l]) => l.includes("@me/sea"))).toEqual([true, ["@me/sea"]]);
+  });
+});

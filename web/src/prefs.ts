@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { onVaultSettings, updateVaultSetting } from "./vaultSettings";
 import { setLanguage, systemLanguage, urlLanguage } from "./i18n";
 import { PACKAGE_ID_RE } from "@keyring-notes/core";
-import { resolveTheme } from "./theme/resolve";
-import { applyThemeColor } from "./themeColor";
+import { applyThemeChoice } from "./theme/apply";
 
 /**
  * 화면 설정. 두 가지로 나뉜다.
@@ -199,7 +198,8 @@ function publish() {
   const prev = current;
   current = resolve();
   if (prev.language !== current.language || !applied) applyLanguage(current.language);
-  if (prev.theme !== current.theme || !applied) applyTheme(current.theme);
+  // 테마는 theme/apply.ts 가 그린다(data-theme·토큰·PWA 색·시작 캐시)
+  if (prev.theme !== current.theme || !applied) applyThemeChoice(current.theme);
   applied = true;
   for (const l of listeners) l(current);
 }
@@ -316,17 +316,6 @@ export function usePrefs(): Prefs {
     };
   }, []);
   return p;
-}
-
-/** 테마: html[data-theme]에 둔다(system이면 지운다 → prefers-color-scheme). PWA 상하단 색(theme-color)도 따라간다 */
-export function applyTheme(theme: Prefs["theme"]) {
-  // DOM 없는 곳(시험)에서 이 모듈을 읽어도 시작 publish() 가 던지지 않게
-  if (typeof document === "undefined") return;
-  const r = resolveTheme(theme, [], { systemDark: false, escape: false });
-  const root = document.documentElement;
-  if (r.dataTheme === null) root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", r.dataTheme);
-  applyThemeColor(r.metaBg);
 }
 
 // 공통 설정 파일이 바뀌면(읽기·동기화·다른 기기) 따라간다. 이 기기 캐시도 바꿔 다음 시작 때 먼저 쓴다

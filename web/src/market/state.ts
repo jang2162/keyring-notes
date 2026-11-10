@@ -42,6 +42,11 @@ export interface MarketState {
   uninstallPackage(id: string): Promise<void>;
   marketAvailability(): "ok" | "unavailable";
   reconcile(): Promise<void>;
+  /**
+   * 공통 설정(잠금)을 읽고 첫 맞추기를 마쳤는가(한 번 참이면 계속 참). 거짓인 동안 적용자가 받는 빈 목록은 「아직 모름」 이라
+   * 테마·언어 적용자는 시작 캐시를 지우지 않는다 — 오프라인에서 이미 깐 것이 사라지지 않게.
+   */
+  ready(): boolean;
 }
 
 export interface MarketDeps {
@@ -66,6 +71,7 @@ export function createMarketState(deps: MarketDeps): MarketState {
   const appliers = new Map<PackageType, Set<{ apply(pkgs: InstalledPackage[]): void | Promise<void> }>>();
   let running: Promise<void> | null = null;
   let again = false;
+  let isReady = false;
 
   const notify = async () => {
     for (const [type, set] of appliers) {
@@ -123,6 +129,8 @@ export function createMarketState(deps: MarketDeps): MarketState {
     // 기기 캐시는 잠금을 읽은 뒤에만, 잠금에 없는 판을 바로 지운다(받지 못한 것과 상관없이 — 정리는 캐시만 본다)
     for (const r of plan.remove) await deps.cache.remove(r.id, r.version);
     installed = next;
+    // notify 앞에 세운다 — 적용자는 notify 안에서 불리므로, 뒤에 세우면 첫 맞추기 결과를 받은 적용자가 거짓을 보고 돌아간다
+    isReady = true;
     await notify();
   };
 
@@ -218,6 +226,7 @@ export function createMarketState(deps: MarketDeps): MarketState {
     },
     marketAvailability: () => (deps.source() ? "ok" : "unavailable"),
     reconcile,
+    ready: () => isReady,
   };
   return state;
 }
