@@ -2,9 +2,11 @@
  * 마켓플레이스 저장소 형식의 단일 원본: 패키지 id·semver·engines·저장소 주소·패키지 파일 경로.
  * 서버·앱·CLI 가 같이 쓰므로 Node 전용 API 를 쓰지 않는다. 설계 docs/superpowers/specs/2026-11-10-marketplace-design.md 「저장소 형식」.
  */
+import { CONTRAST_MIN, contrastLabel, isThemeColor, themeContrast } from "./color.js";
 import { PathError } from "./errors.js";
 import { fromUtf8 } from "./hash.js";
 import { checkPack } from "./i18n.js";
+import { THEME_TOKENS } from "./themeTokens.js";
 
 /** 위젯 ref 의 조각 꼴(`parseWidgetRef`)과 같게 둔다 — 3단계가 `@scope/name@N` 을 받을 때 그대로 쓴다. */
 export const PACKAGE_ID_RE = /^@([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9-]*)$/;
@@ -429,19 +431,8 @@ export function parseManifest(raw: unknown): PackageManifest {
 
 // ── 테마 색 ──
 
-/**
- * 색 값의 엄격한 꼴만 받는다 — 값은 CSS 에 그대로 들어가므로 이 검사가 CSS 주입을 막는 유일한 자리다.
- * 금지 글자는 꼴 검사 전에 거부한다(꼴 정규식이 넓어져도 이 줄이 남게).
- */
-const COLOR_FORBIDDEN_RE = /[;{}\\!<>"'\n\r]|url\(|var\(/i;
-const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-// 괄호 안은 숫자·부호·%·deg·.·빈칸·,·/ 만(oklab 의 a·b 는 음수일 수 있다)
-const FUNC_COLOR_RE = /^(?:rgb|rgba|hsl|hsla|oklch|oklab)\((?=[^)]*[0-9])(?:[0-9.%\s,/+-]|deg)+\)$/;
-
-export function isThemeColor(value: string): boolean {
-  if (typeof value !== "string" || value.length > 100 || COLOR_FORBIDDEN_RE.test(value)) return false;
-  return HEX_COLOR_RE.test(value) || FUNC_COLOR_RE.test(value);
-}
+// 색 값의 꼴 검사(주입을 막는 유일한 자리)는 color.ts 의 isThemeColor 다 — 이름을 지키려고 여기서도 내보낸다.
+export { isThemeColor };
 
 const TOKEN_RE = /^--[a-z][a-z0-9-]*$/;
 // 테마는 색만 바꾼다(사용자 ①) — 크기·글꼴·간격 꼴은 받지 않는다
@@ -513,6 +504,16 @@ export function checkPackageFiles(
     if (placeholderMismatch.length) warnings.push(`placeholder: ${placeholderMismatch.join(", ")}`);
     if (notString.length) warnings.push(`not_string: ${notString.join(", ")}`);
     if (htmlLike.length) warnings.push(`html: ${htmlLike.join(", ")}`);
+  }
+  if (manifest.type === "theme") {
+    const { unknownTokens } = checkThemeColors(manifest.colors, THEME_TOKENS);
+    if (unknownTokens.length) warnings.push(`unknown_tokens: ${unknownTokens.join(", ")}`);
+    // 대비는 막지 않는다(설계 「테마 토큰」) — 테마가 그리는 모드만 잰다
+    for (const mode of ["light", "dark"] as const) {
+      if (!manifest.colors?.[mode]) continue;
+      const ratio = themeContrast(manifest.colors, mode);
+      if (ratio === null || ratio < CONTRAST_MIN) warnings.push(`contrast: ${mode} ${ratio === null ? "?" : contrastLabel(ratio)}`);
+    }
   }
   return { manifest, warnings };
 }

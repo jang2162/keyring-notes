@@ -192,6 +192,24 @@ describe("cli pkg", () => {
     expect(bad.stderr).toContain("no_frame_js");
   }, 30000);
 
+  it("pkg check: 테마의 모르는 토큰·낮은 대비는 경고 줄이고 종료 코드 0", async () => {
+    const dir = path.join(repo, "packages", "me", "fog", "0.1.0");
+    await put(dir, {
+      "keyring-package.json": {
+        ...base,
+        id: "@me/fog",
+        version: "0.1.0",
+        type: "theme",
+        colors: { light: { "--fg": "#eee", "--bg": "#eee", "--zz": "#000" } },
+      },
+    });
+    const r = await cli(["pkg", "check", dir]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("@me/fog@0.1.0");
+    expect(r.stdout).toMatch(/warning: unknown_tokens: --zz/i);
+    expect(r.stdout).toMatch(/warning: contrast: light 1\.0/i);
+  }, 30000);
+
   it("pkg index: --name 과 결과 줄, 상대 경로는 INIT_CWD 기준", async () => {
     const r = await cli(["pkg", "index", repo, "--name", "CLI 저장소"]);
     expect(r.code).toBe(0);

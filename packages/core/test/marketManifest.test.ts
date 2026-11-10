@@ -171,4 +171,21 @@ describe("checkPackageFiles", () => {
     expect(reason(() => checkPackageFiles(files({ "keyring-package.json": { ...theme, colors: { light: { "--bg": "url(x)" } } } })))).toBeDefined();
     expect(reason(() => checkPackageFiles(files({ "keyring-package.json": { ...theme, colors: {} } })))).toBeDefined();
   });
+
+  it("테마: 모르는 토큰과 낮은 대비는 경고(막지 않음), 주입 값은 여전히 오류", () => {
+    const theme = { ...base, id: "@me/fog", type: "theme" };
+    const check = (colors: unknown) => checkPackageFiles(files({ "keyring-package.json": { ...theme, colors } })).warnings;
+    expect(check({ light: { "--bg": "#fff", "--zz": "#000" } })).toEqual(["unknown_tokens: --zz"]);
+    expect(check({ light: { "--fg": "#fff", "--bg": "#fff" } })).toEqual(["contrast: light 1.0"]);
+    // 테마가 그리지 않는 모드는 재지 않는다
+    expect(check({ dark: { "--fg": "#000", "--bg": "#000" } })).toEqual(["contrast: dark 1.0"]);
+    // 기본 대비 이상이면 경고 없음
+    expect(check({ light: { "--accent": "#ff0000" }, dark: { "--bg": "#000" } })).toEqual([]);
+    expect(check({ light: { "--fg": "#777" } })).toEqual(["contrast: light 4.4"]);
+    // 꼴은 지났는데 읽을 수 없음
+    expect(check({ light: { "--fg": "rgb(1 2)" } })).toEqual(["contrast: light ?"]);
+    expect(reason(() => checkPackageFiles(files({ "keyring-package.json": { ...theme, colors: { light: { "--bg": "#fff; x: url(y)" } } } })))).toMatch(
+      /^colors/,
+    );
+  });
 });

@@ -1,5 +1,6 @@
 export * from "./analysis.js";
 export * from "./childSort.js";
+export * from "./color.js";
 export * from "./folderNote.js";
 export * from "./daily.js";
 export * from "./edited.js";
