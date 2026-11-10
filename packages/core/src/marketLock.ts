@@ -2,7 +2,22 @@
  * 공통 설정의 `marketplace`(저장소 목록·잠금)와 그 위의 판정. 잠금이 원천이다 — 설계 docs/superpowers/specs/2026-11-10-marketplace-design.md 「설정과 잠금」.
  * settings.ts 가 이 파일을 쓴다(반대로 쓰면 순환).
  */
-import { MANIFEST_FILE, normalizeRepoUrl, OFFICIAL_REPO_URL, PACKAGE_TYPES, packageFileAllowed, parsePackageId, parseSemver } from "./marketFormat.js";
+import {
+  compareSemver,
+  isOfficialRepo,
+  latestVersion,
+  MANIFEST_FILE,
+  normalizeRepoUrl,
+  OFFICIAL_REPO_URL,
+  PACKAGE_TYPES,
+  packageFileAllowed,
+  parsePackageId,
+  parseSemver,
+  satisfies,
+  type PackageManifest,
+  type PackageType,
+  type RepoIndex,
+} from "./marketFormat.js";
 
 /** sha256 의 키 = 받을 파일 전부 */
 export interface LockEntry {
@@ -77,4 +92,84 @@ export function lockEntryValue(e: LockEntry): Record<string, unknown> {
   const sha256: Record<string, string> = {};
   for (const k of Object.keys(e.sha256).sort()) sha256[k] = e.sha256[k]!;
   return { version: e.version, repo: e.repo, sha256 };
+}
+
+// ── 설치 판정 ──
+
+export interface RepoIndexResult {
+  repo: string;
+  index: RepoIndex | null;
+  ignored: string[];
+  error?: { code: string; params: Record<string, string | number> };
+}
+
+type InstallFail = { ok: false; code: "market_not_found" | "market_scope_reserved" | "market_engines"; params: Record<string, string> };
+
+/**
+ * 저장소 순서가 우선순위. 이미 잠금에 있으면 그 repo 에서만(opts.repo 로 바꿀 수 없다 — 바꾸려면 먼저 제거).
+ * 판을 안 주면 latestVersion. @keyring 은 index 가 이미 걸렀어도 고른 repo 로 한 번 더 막는다.
+ */
+export function resolveInstall(
+  indexes: RepoIndexResult[],
+  lock: Record<string, LockEntry>,
+  id: string,
+  appVersion: string,
+  opts: { version?: string; repo?: string } = {},
+): { ok: true; entry: LockEntry; sizes: Record<string, number>; type: PackageType; alsoIn: string[] } | InstallFail {
+  const pid = parsePackageId(id);
+  if (!pid) return { ok: false, code: "market_not_found", params: { id } };
+  const pinned = lock[id]?.repo ?? (opts.repo !== undefined ? repoOf(opts.repo) : null);
+  if (pid.scope === "keyring" && pinned !== null && !isOfficialRepo(pinned)) return { ok: false, code: "market_scope_reserved", params: { id } };
+  const having = indexes.filter((r) => r.index?.packages[id] && (pid.scope !== "keyring" || isOfficialRepo(r.repo)));
+  const chosen = pinned === null ? having[0] : having.find((r) => repoOf(r.repo) === pinned);
+  if (!chosen) return { ok: false, code: "market_not_found", params: { id } };
+  const pkg = chosen.index!.packages[id]!;
+  let version = opts.version;
+  if (version === undefined) {
+    version = latestVersion(chosen.index!, id, appVersion) ?? undefined;
+    if (version === undefined) {
+      // 판은 있는데 이 앱에 맞는 것이 없다 — 가장 높은 판의 범위를 알린다
+      const top = Object.keys(pkg.versions).sort(compareSemver).pop()!;
+      return { ok: false, code: "market_engines", params: { range: pkg.versions[top]!.engines.keyring, version: appVersion } };
+    }
+  }
+  const ver = pkg.versions[version];
+  if (!ver) return { ok: false, code: "market_not_found", params: { id, version } };
+  if (!satisfies(appVersion, ver.engines.keyring)) return { ok: false, code: "market_engines", params: { range: ver.engines.keyring, version: appVersion } };
+  return {
+    ok: true,
+    entry: { version, repo: repoOf(chosen.repo) ?? chosen.repo, sha256: Object.fromEntries(ver.files.map((f) => [f.path, f.sha256])) },
+    sizes: Object.fromEntries(ver.files.map((f) => [f.path, f.size])),
+    type: pkg.type,
+    alsoIn: having.filter((r) => r !== chosen).map((r) => r.repo),
+  };
+}
+
+export interface CachedVersion {
+  id: string;
+  version: string;
+  sha256: Record<string, string>;
+}
+
+const sameHashes = (a: Record<string, string>, b: Record<string, string>) => {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
+};
+
+/** 잠금 ↔ 캐시: 받을 것(없거나 sha 가 다름), 지울 것(잠금에 없는 id·판) */
+export function planCache(
+  lock: Record<string, LockEntry>,
+  cached: CachedVersion[],
+): { fetch: { id: string; entry: LockEntry }[]; remove: { id: string; version: string }[] } {
+  const fetch: { id: string; entry: LockEntry }[] = [];
+  for (const [id, entry] of Object.entries(lock)) {
+    const have = cached.find((c) => c.id === id && c.version === entry.version);
+    if (!have || !sameHashes(have.sha256, entry.sha256)) fetch.push({ id, entry });
+  }
+  const remove = cached.filter((c) => lock[c.id]?.version !== c.version).map((c) => ({ id: c.id, version: c.version }));
+  return { fetch, remove };
+}
+
+export function enginesOk(manifest: Pick<PackageManifest, "engines">, appVersion: string): boolean {
+  return satisfies(appVersion, manifest.engines.keyring);
 }
