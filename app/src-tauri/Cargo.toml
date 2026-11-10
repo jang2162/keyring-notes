@@ -18,6 +18,11 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-http = "2"
+# 마켓 네이티브 받기(market.rs). tauri-plugin-http 가 쓰는 판·TLS(rustls)와 같게 둔다 — TLS 가 둘 들어가지 않게.
+# 압축 기능은 켜지 않는다(identity 만 받는다)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# 이름 풀이(tokio::net::lookup_host) — tauri 가 이미 끌어오는 tokio 1
+tokio = { version = "1", features = ["net"] }
 # generate_context!가 설정(plugins 등)을 JSON으로 넣는다
 serde_json = "1"
 # 화면이 넘기는 값(창 닫기 지킴의 대화상자 글)

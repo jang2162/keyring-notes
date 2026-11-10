@@ -1,73 +1,17 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PathError } from "@keyring-notes/core";
 import { guardedLookup, isPrivateAddress, type LookupFn } from "../src/netGuard.js";
 
-// 계획 「주소 판정 표」 의 공통 벡터 — Rust market.rs 시험이 같은 목록을 쓴다
-export const BLOCKED = [
-  "127.0.0.1",
-  "10.1.2.3",
-  "100.64.0.1",
-  "169.254.169.254",
-  "172.31.255.255",
-  "192.168.0.1",
-  "198.19.0.1",
-  "0.0.0.0",
-  "224.0.0.1",
-  "255.255.255.255",
-  "::1",
-  "::",
-  "0:0:0:0:0:0:0:1",
-  "::7f00:1",
-  "fd00::1",
-  "fe80::1",
-  "fe80::1%en0",
-  "fec0::1",
-  "ff02::1",
-  "::ffff:127.0.0.1",
-  "::ffff:7f00:1",
-  "::ffff:0:7f00:1",
-  "::ffff:0:127.0.0.1",
-  "64:ff9b::a00:1",
-  "64:ff9b:1::a00:1",
-  "2002:c0a8:1::1",
-  "[::1]",
-  "",
-  "abc",
-  "1.2.3",
-  "256.1.1.1",
-  "::g",
-  "010.0.0.1",
-  "01.1.1.1",
-  "1:2:3:4:5:6:7:8:9",
-  // 표 밖이었던 특수 대역(리뷰 L4): Teredo·문서용·벤치마크·버림·6to4 릴레이 — 공개 저장소가 쓸 일이 없다
-  "2001::1",
-  "2001:0:4136:e378:8000:63bf:3fff:fdd2",
-  "2001:db8::1",
-  "2001:2::1",
-  "100::1",
-  "192.88.99.1",
-  "192.0.2.1",
-  "198.51.100.1",
-  "203.0.113.1",
-  "1::2::3",
-];
-export const ALLOWED = [
-  "1.1.1.1",
-  "93.184.216.34",
-  "172.32.0.1",
-  "100.128.0.1",
-  "2606:4700::1111",
-  "::ffff:1.1.1.1",
-  "::ffff:0:101:101",
-  "64:ff9b::101:101",
-  "[2606:4700::1111]",
-  "2606:4700::1111%25en0",
-  "2001:4860:4860::8888",
-  "192.88.100.1",
-  "203.0.114.1",
-  "198.51.101.1",
-  "100:1::1",
-];
+// 공통 벡터 — Rust market.rs 시험도 같은 파일을 읽는다(한쪽만 고치지 않게)
+const vectors = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "address-vectors.json"), "utf8")) as {
+  blocked: string[];
+  allowed: string[];
+};
+const BLOCKED = vectors.blocked;
+const ALLOWED = vectors.allowed;
 
 describe("isPrivateAddress", () => {
   it("막음", () => {
