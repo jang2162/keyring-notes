@@ -1,6 +1,6 @@
 /**
  * keyring-widget 위젯과 앱 사이의 API. 정본은 docs/superpowers/specs/2026-11-09-keyring-widget-design.md 「공통 API」 —
- * 인라인과 iframe(2단계)이 같은 모양을 쓴다. dataFile·file·toggleFullscreen 은 2단계가 채운다.
+ * 인라인과 iframe 이 같은 모양을 쓴다.
  */
 
 export interface WidgetDefinition {
@@ -11,7 +11,11 @@ export interface WidgetDefinition {
   isolation: "inline" | "frame";
   /** 블록에 display 가 없을 때 */
   display: "block" | "inline";
-  dataFile?: { ext: string };
+  /**
+   * 큰 상태는 노트 첨부인 데이터 파일(state.file)에 둔다. ext 는 "." 으로 시작한다. 서버가 빈 첨부를 거절하므로 처음 내용(initial)이 있어야 하고,
+   * 파일 이름 앞부분은 name[볼트 언어] ?? title[볼트 언어] ?? title.en
+   */
+  dataFile?: { ext: string; initial(): Uint8Array; name?: Record<string, string> };
   /** 「위젯 넣기」 때, 그리고 블록에 state 가 없을 때 */
   defaultState(): unknown;
   migrate?(state: unknown, from: number): unknown;
@@ -31,6 +35,8 @@ export interface WidgetContext {
   theme: Record<string, string>;
   /** 이력 보기 등 */
   readOnly: boolean;
+  /** 전체 화면 중(위젯이 높이를 정하게) */
+  fullscreen?: boolean;
 }
 
 export interface WidgetApi {

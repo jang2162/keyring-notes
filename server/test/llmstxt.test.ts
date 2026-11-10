@@ -111,6 +111,19 @@ describe("앱 화면(web dist) 응답", () => {
     expect((await app.request("/api/nope")).status).toBe(404);
   });
 
+  it("없는 /widget-frame 파일은 404, 있는 것은 그대로(iframe 묶음 — SW 가 HTML 을 묶음으로 캐시하지 않게)", async () => {
+    await mkdir(path.join(web.dir, "widget-frame"));
+    await writeFile(path.join(web.dir, "widget-frame", "runtime-a.js"), "1;");
+    const app = new Hono();
+    mountWebApp(app, web.dir);
+    const gone = await app.request("/widget-frame/gone.js");
+    expect(gone.status).toBe(404);
+    expect(gone.headers.get("content-type") ?? "").not.toContain("text/html");
+    const ok = await app.request("/widget-frame/runtime-a.js");
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toBe("1;");
+  });
+
   it("dist 가 없으면 아무것도 달지 않는다", async () => {
     const app = new Hono();
     expect(mountWebApp(app, path.join(web.dir, "missing"))).toBe(false);

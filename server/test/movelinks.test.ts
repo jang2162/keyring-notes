@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { withoutEdited } from "@keyring-notes/core";
+import { sha256Hex, withoutEdited } from "@keyring-notes/core";
 import { ConfigStore } from "../src/config.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { ReviewQueue } from "../src/review.js";
@@ -43,6 +43,18 @@ afterEach(async () => {
 });
 
 describe("이동 때 링크 자동 갱신(서버)", () => {
+  it("첨부 이동: keyring-widget 블록의 state.file 이 같은 커밋에서 고쳐진다", async () => {
+    const blk = (f: string) => `# 그림\n\n\`\`\`keyring-widget\n{"widget": "keyring/excalidraw@1", "state": {"file": "${f}"}}\n\`\`\`\n`;
+    const data = new TextEncoder().encode("{}");
+    await owner.batch([
+      { op: "write", path: "업무/그림.md", content: blk("업무/스케치-3f9a.excalidraw.json"), baseHash: null },
+      { op: "put", path: "업무/스케치-3f9a.excalidraw.json", data },
+    ]);
+    await owner.move("업무/스케치-3f9a.excalidraw.json", "보관/스케치.excalidraw.json", await sha256Hex(data));
+    expect(withoutEdited((await owner.read("업무/그림.md")).content)).toBe(blk("보관/스케치.excalidraw.json"));
+    expect(git("log", "-1", "--format=%b")).toContain("링크 갱신: 업무/그림.md");
+  });
+
   it("이동과 링크 갱신이 한 커밋에 들어간다", async () => {
     const plan = await owner.read("업무/계획.md");
     const r = await owner.move("업무/계획.md", "보관/2026 계획.md", plan.hash);

@@ -5,6 +5,7 @@ import { gzipSync } from "node:zlib";
 import path from "node:path";
 import { defaultClientConditions, defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { widgetFrames } from "./frameBuild.ts";
 import { licenseNotices } from "./licenses/plugin.ts";
 import { buildCatalog } from "./src/emojiCatalog.ts";
 import { HAND_WORDS } from "./src/emojiWords.ts";
@@ -84,8 +85,26 @@ function emojiData(): Plugin {
   };
 }
 
+/** keyring-widget iframe 묶음(/widget-frame/). dev 표시는 import.meta.env.DEV 와 같은 때(개발 서버·NODE_ENV=development 빌드)만 — 배포 빌드에는 없다 */
+const frames = widgetFrames([
+  { name: "runtime", entry: "src/widgets/frame/runtimeEntry.ts" },
+  { name: "dday", entry: "src/widgets/frame/ddayEntry.ts", dev: true },
+  {
+    name: "excalidraw",
+    entry: "src/widgets/excalidraw/frame.tsx",
+    // Mermaid 변환(gzip 약 1MB)은 싣지 않는다
+    alias: { "@excalidraw/mermaid-to-excalidraw": path.resolve(import.meta.dirname, "src/widgets/excalidraw/mermaidStub.ts") },
+    css: "node_modules/@excalidraw/excalidraw/dist/prod/index.css",
+    fontsDir: "node_modules/@excalidraw/excalidraw/dist/prod/fonts",
+    // Xiaolai(CJK, 약 13MB)는 뺀다 — 한글은 시스템 글꼴로 보인다. Liberation(1.05 — GPLv2 + font exception)과
+    // Excalifont(파일·원저장소에 라이선스 표기 없음)는 싣지 않는다(사용자 결정) — 그 글꼴로 쓴 글은 시스템 글꼴로 보인다
+    fontsSkip: ["Xiaolai", "Liberation", "Excalifont"],
+  },
+]);
+
 export default defineConfig({
-  plugins: [react(), stampServiceWorker(), emojiData(), licenseNotices(), inlineWidgetBudget()],
+  // frames 를 licenseNotices 앞에 둔다 — 고지 수집(generateBundle)이 iframe 묶음의 모듈까지 본다
+  plugins: [react(), stampServiceWorker(), emojiData(), frames, licenseNotices({ extraModules: () => frames.modules() }), inlineWidgetBudget()],
   define: { __KEYRING_BUILD__: JSON.stringify(BUILD) },
   // 시험에서 styles.css 만 CSS 처리를 켠다 — 끈 기본값에서는 styles.css?raw 가 빈 글이다(themeColor.test.ts 가 --bg 를 읽는다)
   test: { css: { include: [/styles\.css/] } },

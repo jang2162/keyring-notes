@@ -65,6 +65,30 @@ When the block can't be drawn, the source and a one-line message are shown inste
 
 The block format is in [Reference](../reference.md#keyring-widget-blocks).
 
+## Add a drawing (Excalidraw)
+
+An Excalidraw sketch is a note widget that keeps the drawing in its own file. The note holds only the file's path.
+
+1. Place the cursor where the drawing should go.
+2. Open the command palette and run **Insert widget**.
+3. Choose **Excalidraw sketch**.
+
+A file such as `sketch-3f9a.excalidraw.json` is created in the note's attachment folder, and the block records its path in `state.file`.
+
+Draw in place. The drawing is saved when you stop for the autosave delay, the same rule as notes. It is also saved when you leave the widget, hide the window, close the tab or switch the note. With autosave off, the widget shows **Unsaved drawing** until you press `Mod+S`. Closing the tab or switching the note saves the drawing even with autosave off. If it can't be saved, you are asked whether to close without it. Opening a drawing without changing it does not rewrite the file.
+
+Click **Full screen** above the drawing to make it fill the window. `Esc` first does what it does in Excalidraw, such as clearing the selection or finishing text. When there is nothing left for it to do, `Esc` closes full screen.
+
+- **Changed elsewhere:** If the file was changed in another window or on another device, your version is saved next to it as a conflict copy, and the original is read again. Nothing is overwritten.
+- **Two panes:** If the same drawing is open twice, drawing in one makes the other read-only with **Being edited in another pane**. It reloads once your strokes are saved. With autosave off, it stays read-only until you press `Mod+S` or close that tab. On a server vault without a connection, it stays read-only until the connection is back.
+- **Offline:** The drawing code is downloaded the first time you open a drawing. Without a connection before that, the block's source is shown with **Couldn't load the widget**. After one open, the drawing code loads offline too, until the app has updated twice. On a server vault, the drawing file itself still needs a connection: without one, a drawing you open shows **Couldn't read the drawing**, and one already open is not saved and shows **Couldn't save the file**. It is saved when you draw again or leave the widget after the connection is back. This is different from notes, which are kept on the device until the connection is back.
+- **Redrawn widget:** When another pane changes the note while you draw in the preview, or you scroll a long note so the drawing leaves the screen, the drawing is opened again. Saved and unsaved strokes are kept, but Excalidraw's undo history and the scroll position are lost.
+- **Keys:** Inside the drawing, only `Esc` and `Mod+S` reach the app. Other app shortcuts don't work while the drawing has the focus.
+- **Not available:** Exporting an image, copying as PNG and clipboard permissions are turned off. Links on elements don't open.
+- **Fonts:** The Excalifont and Liberation Sans fonts and the CJK font are not included. Text in those fonts is shown in a system font. New text uses Virgil.
+- **History:** History view shows the path instead of the drawing. Open the file's history to see older drawings.
+- **Files:** Moving or renaming the file updates the block. Deleting the block keeps the file; delete it from the note's files. If the file is missing, the widget shows **File not found** and does not create a new one. The broken-link check can miss a missing drawing when another file ends with the same name.
+
 ## Add your own widget type
 
 A widget plugin is one ES module in the server's plugin folder (`KEYRING_PLUGINS_DIR`). See [examples/plugins](../../../../examples/plugins/README.md) for the format and a kanban example.

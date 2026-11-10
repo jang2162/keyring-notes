@@ -1,0 +1,85 @@
+/**
+ * Excalidraw 위젯의 순수 부분(앱 묶음·iframe 묶음 둘 다 쓴다 — Excalidraw 패키지를 import 하지 않는다).
+ */
+
+/** 새 그림 파일의 처음 내용. 서버가 빈 첨부를 거절하므로 비어 있지 않은 장면을 쓴다 */
+export const EMPTY_SCENE = '{"type":"excalidraw","version":2,"source":"keyring-notes","elements":[],"appState":{},"files":{}}';
+
+export interface ParsedScene {
+  elements: unknown[];
+  appState: object;
+  files: object;
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** 깨졌거나 Excalidraw 장면이 아니면 null — 위젯은 그 파일을 쓰지 않는다 */
+export function parseScene(bytes: Uint8Array): ParsedScene | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+  if (!isObj(raw) || raw.type !== "excalidraw") return null;
+  const elements = raw.elements ?? [];
+  const appState = raw.appState ?? {};
+  const files = raw.files ?? {};
+  if (!Array.isArray(elements) || !isObj(appState) || !isObj(files)) return null;
+  return { elements, appState, files };
+}
+
+/**
+ * serializeAsJSON(…, "local") 이 파일에 싣는 appState 키(@excalidraw/excalidraw 0.18.1 의 APP_STATE_STORAGE_CONF 에서 export: true 인 것).
+ * 다시 재기: dist/prod/*.js 에서 `export:!0` 인 항목을 찾는다. 판을 올리면 다시 잰다
+ */
+export const EXPORTED_APP_STATE_KEYS = ["gridModeEnabled", "gridSize", "gridStep", "viewBackgroundColor"] as const;
+
+/** onChange 마다 직렬화하지 않으려고 먼저 보는 값싼 열쇠 — 장면 판 + 파일 id + 내보내는 appState(배경색·격자만 바꿔도 저장되게) */
+export function sceneKey(sceneVersion: number, fileIds: string[], appState: Record<string, unknown>): string {
+  const exported: Record<string, unknown> = {};
+  for (const k of [...EXPORTED_APP_STATE_KEYS].sort()) if (k in appState) exported[k] = appState[k];
+  return `${sceneVersion}:${[...fileIds].sort().join(",")}:${JSON.stringify(exported)}`;
+}
+
+/**
+ * 열기만 해서는 쓰지 않게: 불러온 장면의 직렬화를 기준선으로 두고, 열쇠가 바뀐 때만 직렬화해 글이 기준과 다를 때만 쓴다.
+ * Excalidraw 는 처음 그릴 때도 onChange 를 부르고 선택·확대만 바뀌어도 부른다
+ */
+export class SceneGate {
+  constructor(
+    private key: string,
+    private text: string,
+  ) {}
+
+  next(key: string, serialize: () => string): string | null {
+    if (key === this.key) return null;
+    this.key = key;
+    const text = serialize();
+    if (text === this.text) return null;
+    this.text = text;
+    return text;
+  }
+}
+
+/**
+ * Excalidraw 는 할 일이 없는 Esc 도 preventDefault 해 런타임의 「처리하지 않은 Esc → 부모(전체 화면 닫기)」 길이 열리지 않는다.
+ * 또 0.18.1 은 Esc 로 선택을 풀지 않는다 — 그대로 두면 무엇이든 고른 동안 Esc 로 전체 화면이 닫히지 않는다.
+ * 그래서 Excalidraw 에 할 일(글 편집 끝·도구 되돌리기·메뉴 닫기·그리던 것 끝)이 있으면 맡기고, 고른 것만 남았으면 위젯이 풀고(clearSelection),
+ * 아무것도 없을 때만 전체 화면을 닫는다(close)
+ */
+export function escapeAction(s: Record<string, unknown>): "excalidraw" | "clearSelection" | "close" {
+  if ((s.activeTool as { type?: string } | undefined)?.type !== "selection") return "excalidraw";
+  const busy = [s.editingTextElement, s.openMenu, s.openPopup, s.openDialog, s.contextMenu, s.newElement, s.multiElement];
+  if (!busy.every((v) => v === null || v === undefined)) return "excalidraw";
+  const any = (m: unknown) => !!m && Object.values(m as Record<string, boolean>).some(Boolean);
+  return any(s.selectedElementIds) || any(s.selectedGroupIds) ? "clearSelection" : "close";
+}
+
+/**
+ * 쓰기가 거절된 뒤에도 그리기를 계속 저장할지. failed(네트워크·오프라인·5xx)는 호스트가 바이트를 지우지 않고 다음 쓰기 때 다시 시도하므로
+ * 멈추면 다시 연결해도 저장되지 않는다. 충돌·파일 없음·거부는 호스트가 위젯을 다시 그리므로 멈춘다
+ */
+export function keepsWriting(e: unknown): boolean {
+  return (e as { code?: unknown } | null | undefined)?.code === "failed";
+}

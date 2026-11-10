@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
   type MutableRefObject,
@@ -136,7 +137,20 @@ import { DocIcon, IconLookup, IconPicker } from "./IconPicker";
 import { getFolds, moveFolds, onFoldsChange, resolveFolds } from "./folds";
 import { FileViewer } from "./Aside";
 import { fmtDateTime, fmtNumber, language, missingPack, t, timeAgo, useLang } from "./i18n";
-import { widgetPaletteItems } from "./widgets/registry";
+import {
+  createDataFile,
+  dataFileStem,
+  discardDataFiles,
+  flushDataFiles,
+  onDataFilesChange,
+  renameDataFileOwner,
+  setDataFileOptions,
+  unsavedDataFiles,
+} from "./widgets/dataFile";
+import { apiDataFileIO } from "./widgets/dataFileIo";
+import { OPEN_PATH_EVENT } from "./widgets/mount";
+import { widgetInsertText, widgetPaletteItems } from "./widgets/registry";
+import type { WidgetDefinition } from "./widgets/types";
 import { tipProps } from "./Tooltip";
 import { AttachmentList } from "./Attachments";
 import { mirrorTargets } from "./mirror";
@@ -229,6 +243,7 @@ import {
   dropAutosaves,
   listenCloseAsks,
   listenRestartCancelled,
+  closeGuarded,
   reloadAfterSaving,
   savesHeld,
   setCloseGuard,
@@ -1035,6 +1050,26 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   );
   const saveRef = useRef(save);
   saveRef.current = save;
+  /** 「저장」(Mod+S·명령·iframe 위젯 안 Mod+S): 지금 노트와 그림(데이터 파일)을 함께 */
+  const saveWithDrawings = async () => {
+    await saveRef.current();
+    await flushDataFiles();
+  };
+  const saveWithDrawingsRef = useRef(saveWithDrawings);
+  saveWithDrawingsRef.current = saveWithDrawings;
+  useEffect(() => {
+    const onSave = () => void saveWithDrawingsRef.current();
+    const onOpenPath = (e: Event) => {
+      const p = (e as CustomEvent<unknown>).detail;
+      if (typeof p === "string") void openRef.current(p);
+    };
+    window.addEventListener("keyring:save", onSave);
+    window.addEventListener(OPEN_PATH_EVENT, onOpenPath);
+    return () => {
+      window.removeEventListener("keyring:save", onSave);
+      window.removeEventListener(OPEN_PATH_EVENT, onOpenPath);
+    };
+  }, []);
 
   /** 다른 일(이동·이름 바꾸기·워크스페이스 바꾸기) 전에 문서를 저장한다(기본은 저장 안 한 문서 전부). 못 한 것이 있으면 false */
   const flush = async (paths?: string[]): Promise<boolean> => {
@@ -1048,6 +1083,18 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
 
   /** 창 닫기 물음이 떠 있거나 닫기로 정해 창이 사라지는 중이다(그동안 자동 저장을 멈춘다. 아래 「창 닫기」) */
   const closeHold = useRef<SaveHold>({ asking: false, closing: false });
+
+  // keyring-widget 데이터 파일(그림)의 쓰기 규칙: 노트와 같은 자동 저장 설정, 닫기 묻는 동안은 쓰지 않는다. 위젯 호스트는 Workspace 를 모르므로 한 번 건다
+  useEffect(() => {
+    setDataFileOptions({
+      autosave: () => prefsRef.current.autosave,
+      delay: () => prefsRef.current.autosaveDelay,
+      conflictLabel: () => vaultText(vaultLang()).conflictCopy,
+      held: () => savesHeld(closeHold.current),
+    });
+  }, []);
+  /** 저장 안 한 그림 경로(모듈 표). 바뀌면 다시 그려 닫기 지킴을 다시 계산한다 */
+  const unsavedFiles = useSyncExternalStore(onDataFilesChange, () => unsavedDataFiles().join("\0"));
 
   // 자동 저장: 문서마다 타이머 하나. 그 문서의 입력이 멈추고 잠시 뒤. 충돌·과거 판 보기 중인 문서는 건너뛴다
   const autosaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -1085,7 +1132,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     if (!prefs.autosave) return;
     const go = () => savesHeld(closeHold.current) || void flushRef.current();
-    const vis = () => document.visibilityState === "hidden" && go();
+    // 그림은 창 blur 로는 비우지 않는다 — iframe 으로 포커스가 들어가도 창 blur 가 난다. 숨김(visibilitychange)에만
+    const hidden = () => savesHeld(closeHold.current) || void flushDataFiles();
+    const vis = () => document.visibilityState === "hidden" && (go(), hidden());
     window.addEventListener("blur", go);
     document.addEventListener("visibilitychange", vis);
     return () => {
@@ -1134,6 +1183,12 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       if (replaced && replaced !== path && titlePendingIn(titleHandles(), replaced)) {
         if ((await settleTitles(titleHandles(), replaced)) === null) return;
         return openRef.current(path, opts);
+      }
+      // 노트 바꾸기: 앞 노트가 다른 칸에 없으면 그 노트가 연 그림을 비운다. 노트 초안은 저장소에 남아 자동 저장이 이어지지만
+      // 그림은 위젯이 사라지면 화면에 안 보이는 바이트만 남으므로 — 노트 선례가 아니라 코디네이터 결정의 새 규칙이다
+      if (replaced && replaced !== path && !beforePanes.some((p) => p.id !== pane && p.tabs.includes(replaced)) && !(await flushDataFiles(replaced))) {
+        if (!(await confirmDialog(t("kw.discardDrawingClose", { name: stemOf(replaced) }), t("tab.discardCloseButton")))) return;
+        discardDataFiles(replaced);
       }
       // 읽은 문서를 저장소와 배치에 같은 틈에 넣는다(안 쓰는 문서 정리가 그 사이에 치우지 않게)
       const fresh = docsRef.current[path] ? null : await fetchDoc(path);
@@ -1241,13 +1296,20 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (path === null) return;
     const elsewhere = panesOf(curLayout()).some((p) => p.id !== pane && p.tabs.includes(path));
     let discard = false;
+    let noteLeft = false;
     if (!elsewhere && docsRef.current[path] && isDirty(docsRef.current[path])) {
       await flush([path]);
       const after = docsRef.current[path];
-      if (after && isDirty(after)) {
-        if (!(await confirmDialog(t("tab.discardClose", { name: stemOf(path) }), t("tab.discardCloseButton")))) return;
-        discard = true;
-      }
+      noteLeft = !!after && isDirty(after);
+    }
+    // 그 노트가 연 그림은 자동 저장 설정과 상관없이 비운다(코디네이터 결정 — 화면에 안 보이는 「메모리에만 남은 그림」 을 만들지 않는다)
+    const drawingsLeft = !elsewhere && !(await flushDataFiles(path));
+    if (noteLeft || drawingsLeft) {
+      // 둘 다 남았으면 노트 물음 하나로 묻는다
+      const ask = noteLeft ? t("tab.discardClose", { name: stemOf(path) }) : t("kw.discardDrawingClose", { name: stemOf(path) });
+      if (!(await confirmDialog(ask, t("tab.discardCloseButton")))) return;
+      discard = noteLeft;
+      if (drawingsLeft) discardDataFiles(path);
     }
     closedTabs.current = [path, ...closedTabs.current.filter((p) => p !== path)].slice(0, 20);
     setLayout((l) => closeIn(l, pane, path));
@@ -1411,13 +1473,19 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 묻는 동안과 닫기로 정한 뒤에는 자동 저장을 멈춘다 — 「저장하지 않고 닫기」를 고를 수 있으므로.
    * 닫기로 정했으면 아래 beforeunload 경고도 다시 묻지 않는다
    */
-  const guarded = canCloseWindow() && dirtyPaths(docs).length > 0;
+  const guarded = closeGuarded({
+    desktop: canCloseWindow(),
+    dirtyDocs: dirtyPaths(docs).length,
+    unsavedFiles: unsavedFiles ? unsavedFiles.split("\0").length : 0,
+  });
   /** 저장 안 한 문서를 자동 저장 설정과 상관없이 모두 저장한다. 자동 저장이 저장하던 문서는 끝나기를 기다렸다가 다시 저장한다(창 닫기·PWA 새로 고침) */
   const saveAllDirty = async () => {
     for (const p of dirtyPaths(docsRef.current)) {
       while (savingRef.current.has(p)) await new Promise((r) => setTimeout(r, 50));
       await saveRef.current(p);
     }
+    // 그림(데이터 파일)도 자동 저장 설정과 상관없이
+    await flushDataFiles();
   };
   useEffect(() => {
     if (!canCloseWindow()) return;
@@ -1429,7 +1497,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     if (!canCloseWindow()) return;
     const onAsk = closeAskHandler({
       ack: ackCloseAsk,
-      dirty: () => dirtyPaths(docsRef.current),
+      dirty: () => [...dirtyPaths(docsRef.current), ...unsavedDataFiles()],
       ask: async (paths) => {
         const { names, count, more } = unsavedSummary(paths, stemOf);
         return chooseDialog(t(more ? "window.unsavedMore" : "window.unsaved", { names, count }), { value: "save", label: t("window.closeSave") }, [
@@ -1457,7 +1525,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const reloadSafely = () =>
     reloadAfterSaving({
       autosave: () => prefsRef.current.autosave,
-      dirty: () => dirtyPaths(docsRef.current),
+      dirty: () => [...dirtyPaths(docsRef.current), ...unsavedDataFiles()],
       ask: async (paths) => {
         const { names, count, more } = unsavedSummary(paths, stemOf);
         return chooseDialog(t(more ? "pwa.unsavedMore" : "pwa.unsaved", { names, count }), { value: "save", label: t("pwa.reloadSave") }, [
@@ -1492,8 +1560,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   // 저장 안 한 변경(지금 문서 또는 뒤에 있는 탭)이 있으면 창을 닫기 전에 저장을 시도하고 묻는다
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
-      if (closeHold.current.closing || !dirtyPaths(docsRef.current).length) return;
+      if (closeHold.current.closing || !(dirtyPaths(docsRef.current).length + unsavedDataFiles().length)) return;
       void flushRef.current();
+      if (prefsRef.current.autosave) void flushDataFiles();
       e.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
@@ -1634,6 +1703,23 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    * 넣을 링크: 이미지는 ![[이름]], 나머지는 [[이름]]. 같은 이름이 볼트에 또 있으면 전체 경로로.
    * workspace: 올릴 워크스페이스(기본은 from 이 든 곳)
    */
+  /** 「위젯 넣기」 의 데이터 파일 위젯: 그 노트의 첨부 위치에 처음 내용으로 파일을 만든 뒤 경로를 담은 블록을 넣는다. 못 만들면 넣지 않는다 */
+  const insertDataFileWidget = async (def: WidgetDefinition) => {
+    const df = def.dataFile;
+    const workspace = wsOfPath(doc?.path);
+    if (!df || !workspace) return;
+    const vl = vaultLang();
+    const stem = dataFileStem(df.name?.[vl] ?? def.title[vl] ?? def.title.en ?? "widget") || "widget";
+    try {
+      const file = await createDataFile(apiDataFileIO(api), attachmentDirFor(getVaultSettings(), workspace, uiLang), stem, df.ext, df.initial());
+      editorHandle.current?.insertWidget(widgetInsertText(def, { ...(def.defaultState() as object), file }));
+      vaultChanged();
+      void refreshTree();
+    } catch (e) {
+      toastError(e);
+    }
+  };
+
   const uploadFiles = async (files: File[], from = doc?.path, workspace = wsOfPath(from)): Promise<string[]> => {
     if (!workspace) return [];
     const dir = attachmentDirFor(getVaultSettings(), workspace, uiLang);
@@ -1908,6 +1994,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   /** 이동이 끝난 뒤: 탭·열린 문서·기록의 경로를 바꾼다. content가 null이면(여러 개를 옮김) 그 문서를 다시 읽는다 */
   const afterMove = async (from: string, to: string, content: string | null, hash: string | null) => {
     moveFolds(from, to);
+    // 그 노트가 연 그림의 주인도 따라간다 — 안 하면 탭 닫기가 새 경로로 비우려 해 그림이 남는다
+    renameDataFileOwner(from, to);
     // 이름을 바꾼(옮긴) 새 노트는 사람이 손댄 것이다
     createdRef.current.touched(from);
     setAllLayouts((l) => renamePath(l, from, to));
@@ -2681,7 +2769,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       ? [
           { id: "tpl-insert", group: g.doc, label: t("cmd.templateInsert"), run: () => setPalette("templates") },
           { id: "widget-insert", group: g.doc, label: t("cmd.widgetInsert"), run: () => setPalette("widgets") },
-          { id: "save", group: g.doc, label: t("cmd.save"), keys: "Mod+S", run: () => void save() },
+          { id: "save", group: g.doc, label: t("cmd.save"), keys: "Mod+S", run: () => void saveWithDrawings() },
           { id: "rename", group: g.doc, label: t("common.rename"), keys: "F2", inInputs: false, run: () => focusTitle(doc.path) },
           { id: "icon", group: g.doc, label: docIcon ? t("title.changeIcon") : t("title.addIcon"), run: () => openIconPicker(stripMd(doc.path)) },
           { id: "new-child", group: g.doc, label: t("tree.newChild"), run: () => void createDoc(stripMd(doc.path)) },
@@ -3484,7 +3572,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   const docTreeNode = doc && !isWsDoc ? findNode(nodeTree, docNode) : null;
   const docMenuItems: MenuEntry[] = doc
     ? [
-        { label: t("cmd.save"), icon: Pencil, keys: keyOf("save"), disabled: !dirty || doc.generated, run: () => void save() },
+        { label: t("cmd.save"), icon: Pencil, keys: keyOf("save"), disabled: !dirty || doc.generated, run: () => void saveWithDrawings() },
         { label: t("common.rename"), keys: keyOf("rename"), disabled: doc.generated || isWsDoc, run: () => focusTitle(doc.path) },
         {
           label: docIcon ? t("title.changeIcon") : t("title.addIcon"),
@@ -3921,7 +4009,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
   // 누르면 할 일과 아이콘은 id 로 꽂는다(줄·항목의 조건과 글은 moreMenu.ts)
   const statusRun: Partial<Record<MoreStatusId, () => void>> = {
-    save: () => void save(),
+    save: () => void saveWithDrawings(),
     outbox: () => void flushOutbox(),
     sync: () => openSettings("device"),
     "review-waiting": () => setReviewOpen(true),
@@ -4294,7 +4382,11 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
                             }))
                           : palette === "widgets"
                             ? // insertText(…, { ownLine }) 는 커서를 닫는 펜스 줄 끝에 두어 막 넣은 블록이 원문으로 보이므로 쓰지 않는다
-                              widgetPaletteItems(language(), (text) => editorHandle.current?.insertWidget(text))
+                              widgetPaletteItems(
+                                language(),
+                                (text) => editorHandle.current?.insertWidget(text),
+                                (def) => void insertDataFileWidget(def),
+                              )
                             : templatePaths.map((p) => ({
                                 id: p,
                                 label: stemOf(p),

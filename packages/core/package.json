@@ -8,6 +8,11 @@
       "keyring-source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./lookup": {
+      "keyring-source": "./src/lookup.ts",
+      "types": "./dist/lookup.d.ts",
+      "default": "./dist/lookup.js"
     }
   },
   "scripts": {

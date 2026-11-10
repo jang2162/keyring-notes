@@ -84,10 +84,12 @@ export interface SyncState {
 
 const STATE = "sync.json";
 
-export function conflictCopyPath(path: string, label: string, exists: (p: string) => boolean, now = new Date()): string {
+/** ext(기본 ".md") 앞에 ` (label stamp[ n])` 를 넣는다. ext 는 대소문자를 가리지 않고 원래 글자를 지킨다 */
+export function conflictCopyPath(path: string, label: string, exists: (p: string) => boolean, now = new Date(), ext = ".md"): string {
   const stamp = now.toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
+  const cut = path.toLowerCase().endsWith(ext.toLowerCase()) ? path.length - ext.length : path.length;
   for (let i = 1; ; i++) {
-    const p = path.replace(/\.md$/i, ` (${label} ${stamp}${i > 1 ? ` ${i}` : ""}).md`);
+    const p = `${path.slice(0, cut)} (${label} ${stamp}${i > 1 ? ` ${i}` : ""})${path.slice(cut)}`;
     if (!exists(p)) return p;
   }
 }

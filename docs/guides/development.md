@@ -95,6 +95,20 @@ pnpm build
 - README 는 `README.md`(영어 원본)와 `README.ko.md`(번역)다. 번역본마다 맨 위에 기준 원본과 판을 적는다 — `README.ko.md` 는 `<!-- source: README.md @ vX.Y.Z -->`, `docs/manual/ko/<경로>` 는 `<!-- source: docs/manual/en/<같은 경로> @ vX.Y.Z -->`, `examples/plugins/README.ko.md` 는 `<!-- source: examples/plugins/README.md @ vX.Y.Z -->`. 판은 그 번역을 맞춘 원본이 실린 릴리스 버전이다. 아직 릴리스하지 않은 원본에 맞췄으면 판을 그대로 두고, 릴리스할 때 한꺼번에 올린다(`docs/guides/release-macos.md` 「버전 올리고 릴리스하기」 절). 판을 미리 다음 버전으로 적지 않는다 — 릴리스 버전이 바뀌면 전부 틀린 값이 된다.
 - 영어↔한국어 용어는 `docs/manual/glossary.md` 에 모은다. 한국어 문서의 화면 이름은 `packages/core/src/messages/ko.json` 의 실제 글을 쓴다.
 
+## 위젯 iframe 과 CSP
+
+keyring-widget 중 앱 코드가 아니거나 인라인 기준을 넘는 위젯(내장 Excalidraw, 앞으로의 제3자 위젯)은 `sandbox="allow-scripts"` + `srcdoc` iframe 하나에서 돈다(`allow-same-origin`·`allow-popups`·`allow-forms`·`allow`·`src` 없음). 설계는 `docs/superpowers/specs/2026-11-09-keyring-widget-design.md` 「iframe」·「제약」, 구현 계획은 `docs/superpowers/plans/2026-11-09-keyring-widget-phase2.md`.
+
+**고른 방법과 근거.** srcdoc iframe 은 부모 CSP 를 물려받는다. 그래서 서버 앱 페이지 CSP(`server/src/app.ts` 의 `APP_CSP`)와 데스크톱 앱 CSP(`app/src-tauri/tauri.conf.json` 의 `security.csp`)의 `script-src` 에 부트스트랩 해시와 `blob:` 을 더하고, srcdoc 안 meta CSP 가 `default-src 'none'; script-src <해시> blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:` 로 다시 좁힌다. 부트스트랩(`web/src/widgets/frame/bootstrap.ts`)은 부모가 `postMessage` 로 건넨 코드 글(런타임 → 위젯)을 iframe 안 `blob:` 스크립트로 붙일 뿐이다. iframe 은 URL 로 아무것도 받지 않는다 — 코드·CSS·글꼴 바이트는 부모가 `/widget-frame/` 에서 받아 건넨다. 별도 `frame.html`(`src`) 방식은 버렸다: 샌드박스(불투명 출처) iframe 의 요청은 Chromium·WebKit 모두 서비스 워커를 타지 않아 오프라인 PWA·기기 볼트에서 열리지 않고, 데스크톱 앱은 Tauri 가 HTML 응답마다 앱 CSP 를 붙여 iframe 문서의 자체 CSP 를 쓸 수 없다. 실험 표(srcdoc+인라인·해시·`blob:`·`src`·SW·Excalidraw 글꼴)는 계획 문서 「CSP 실험」.
+
+**부트스트랩을 고칠 때.** 글자 하나라도 바꾸면 `web/src/widgets/frame/bootstrap.test.ts` 가 새 해시를 찍으며 떨어진다. 그 값을 `packages/core/src/widgetFrame.ts` 의 `WIDGET_FRAME_SCRIPT_HASH` 와 `app/src-tauri/tauri.conf.json` 의 `security.csp` 에 넣는다(서버 `APP_CSP` 는 core 상수를 쓴다). 같은 해시가 앱 페이지에도 허용되므로 부트스트랩은 최상위 창에서 돌면 아무것도 하지 않는다.
+
+**묶음 빌드.** `web/frameBuild.ts`(vite 플러그인)가 진입마다 중첩 `build()` 로 IIFE 한 파일을 만들어 `dist/widget-frame/` 에 내고, 주소 표는 `virtual:widget-frames` 다. 중첩 빌드는 늘 배포판이다(`mode: "production"`, JSX `development: false`) — 바깥이 개발 모드여도 React 배포판과 `jsxDEV` 가 어긋나지 않게. 크기 한도는 `web/src/widgetFrames.ts`: 런타임 gzip 20,480 B, 위젯 묶음 gzip 2,097,152 B(넘으면 빌드 실패). 런타임이 커지면 core 본체나 `web/src/i18n.ts` 가 끌려온 것이다 — 런타임 쪽 import 는 `@keyring-notes/core/lookup`·`widgetT.ts`·`protocol.ts`·`session.ts` 의 `widgetKeyAction` 뿐이어야 한다. `dev: true` 진입(개발용 `keyring/dday-frame`)은 개발 서버와 `NODE_ENV=development` 빌드에만 실린다. `/widget-frame/` 의 없는 주소는 서버가 404 로 답하고 서비스 워커는 HTML 응답을 캐시하지 않는다. 묶음은 처음 쓸 때 서비스 워커가 캐시한다(설치 때 받기 목록에는 없다).
+
+**메시지 다리와 차단.** 부모는 만들 때 잡아 둔 그 iframe 의 WindowProxy 에서 온 것만, 출처가 `"null"` 인 것만, 인스턴스 id 가 맞고 `parseFrameMsg` 를 지난 것만 받는다(`web/src/widgets/frame/layout.ts` 의 `routeFrameMessage`). 같은 창인데 출처가 `"null"` 이 아니거나, 두 번째 `load`·`ready` 가 오면(`frameGuard` — 위젯이 자기 iframe 을 다른 주소로 옮김) iframe 을 지우고 「위젯이 다른 페이지로 이동하려 해 멈췄습니다」 를 보이며 그 인스턴스에 더 답하지 않는다. iframe 이 부모로 넘기는 키는 `Esc`(위젯이 처리하지 않은 것)와 `Mod+S` 둘뿐이다.
+
+**알려진 한계.** 위젯이 이미 가진 상태·파일 바이트를 자기 iframe 의 탐색 URL(탐색이 시작되는 순간 주소에 실어)이나 WebRTC(`RTCPeerConnection` 의 STUN)로 밖에 내보내는 것은 CSP·sandbox 로 막을 수 없다. 내장 위젯은 앱 코드라 믿고, 제3자 위젯은 마켓플레이스 설계에서 다룬다(검토·서명·권한 표시 등). 데스크톱 앱(WKWebView)에서는 iframe 에도 `webkit.messageHandlers.ipc` 가 보이지만, 호출 키가 없는 요청은 답도 부수 효과도 없었다(Task 8 확인 — 키는 부모 창의 `__TAURI_INTERNALS__` 에만 있다).
+
 ## 의존성과 라이선스 고지
 
 웹 빌드(`vite build`)가 빌드 결과에 제3자 라이선스 고지 `web/dist/licenses.txt` 를 함께 낸다. 서버는 그것을 `/licenses.txt` 로 내주고, 화면은 설정 「정보」 의 「오픈 소스 라이선스」 에서 모달로 연다. 웹은 서비스 워커가 지연 자산과 함께 받아 두어 오프라인에서도 열린다. 생성물이라 커밋하지 않는다. 개발 서버(`vite`)에는 없다. 서버는 `/licenses.txt` 를 인증 없이 내준다 — 로그인 전에도 서버 의존성의 이름과 판이 보인다.

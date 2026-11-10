@@ -23,6 +23,8 @@ export class KeyringBlockWidget extends WidgetType {
   constructor(
     readonly body: string,
     readonly from: number,
+    /** 이 편집기의 노트 경로(데이터 파일 쓰기의 주인) — 편집기의 renderContext 로 읽는다 */
+    readonly owner: () => string = () => "",
   ) {
     super();
   }
@@ -41,6 +43,7 @@ export class KeyringBlockWidget extends WidgetType {
     const m = mountKeyringWidget(dom, {
       body: this.body,
       readOnly: view.state.readOnly,
+      owner: this.owner(),
       resume,
       write: (state, version) => {
         const b = block();

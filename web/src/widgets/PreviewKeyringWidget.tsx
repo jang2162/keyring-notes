@@ -16,9 +16,13 @@ export function PreviewKeyringWidget(p: {
   body: string;
   line: number;
   readOnly: boolean;
+  /** 이력 보기(데이터 파일 위젯은 그리지 않는다) */
+  history: boolean;
+  /** 이 노트 경로 — 데이터 파일 쓰기의 주인 */
+  owner: string;
   handle: MutableRefObject<EditorHandle | null>;
 }): null {
-  const { el, body, line, readOnly, handle } = p;
+  const { el, body, line, readOnly, history, owner, handle } = p;
   useEffect(() => {
     const h = () => handle.current;
     const edit = readOnly ? null : h()?.widgetEdit();
@@ -27,6 +31,8 @@ export function PreviewKeyringWidget(p: {
     const m = mountKeyringWidget(el, {
       body,
       readOnly: readOnly || !h(),
+      history,
+      owner,
       resume,
       write: (state, version) => h()?.writeWidget(line, state, version) ?? false,
       edit: {
@@ -37,6 +43,6 @@ export function PreviewKeyringWidget(p: {
       },
     });
     return () => m.destroy();
-  }, [el, body, line, readOnly, handle]);
+  }, [el, body, line, readOnly, history, owner, handle]);
   return null;
 }

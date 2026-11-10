@@ -76,10 +76,11 @@ self.addEventListener("message", (e) => {
   if (e.data && e.data.type === "build" && e.ports && e.ports[0]) e.ports[0].postMessage(BUILD);
 });
 
-// /assets 에 HTML 이 오면(없는 조각에 SPA 대체 응답을 주는 프록시·옛 서버) 캐시하지 않는다 — 넣으면 그 주소가 계속 HTML 로 깨진다
+// /assets·/widget-frame(위젯 iframe 묶음)에 HTML 이 오면(없는 조각에 SPA 대체 응답을 주는 프록시·옛 서버) 캐시하지 않는다 —
+// 넣으면 그 주소가 계속 HTML 로 깨진다
 function isHtmlForAsset(req, res) {
   const pathname = typeof req === "string" ? req : new URL(req.url).pathname;
-  return pathname.startsWith("/assets/") && (res.headers.get("content-type") || "").includes("text/html");
+  return (pathname.startsWith("/assets/") || pathname.startsWith("/widget-frame/")) && (res.headers.get("content-type") || "").includes("text/html");
 }
 
 function remember(req, res) {

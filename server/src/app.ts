@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { PLUGIN_NAME_RE } from "@keyring-notes/core";
+import { PLUGIN_NAME_RE, WIDGET_FRAME_SCRIPT_HASH } from "@keyring-notes/core";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -58,7 +58,8 @@ export interface AppOptions {
 /** 앱 페이지에 거는 보안 헤더. 첨부 파일(/api/raw)은 자기 CSP(sandbox)를 따로 건다. */
 const APP_CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  // keyring-widget iframe(srcdoc)이 이 CSP 를 물려받는다 — 부트스트랩 해시와 그것이 붙이는 blob: 위젯 코드(core widgetFrame.ts)
+  `script-src 'self' ${WIDGET_FRAME_SCRIPT_HASH} blob:`,
   // CodeMirror가 <style>을 넣고, 차트 툴팁이 style 속성을 쓴다
   "style-src 'self' 'unsafe-inline'",
   // 클립한 문서의 원격 이미지

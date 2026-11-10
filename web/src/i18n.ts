@@ -102,6 +102,11 @@ export function missingPack(): string | null {
   return wanted !== current && wanted !== PSEUDO && !isOfficialLang(wanted) ? wanted : null;
 }
 
+/** 지금 화면 언어 사슬(lookup 이 쓰는 것) — 위젯 글(widgets/messages.ts)이 앞머리 키만 떼어 쓴다 */
+export function messageChain(): { messages: Messages; locale: string }[] {
+  return chain.slice();
+}
+
 /** 메시지. params.count가 숫자면 복수형 */
 export function t(key: string, params?: Params): string {
   return lookup(chain, key, params);

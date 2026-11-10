@@ -169,3 +169,55 @@ describe("블록 단위 출처", () => {
     expect(s.sources[0]).toEqual({ target: "기사", path: "raw/기사.md", anchor: "^p1" });
   });
 });
+
+import { analyze as analyzeDoc, linkingDocs, lintVault, type DocMeta } from "../src/index.js";
+
+describe("keyring-widget 의 state.file 은 첨부 링크", () => {
+  const A = "x/a.excalidraw.json";
+  const B = "y/b.excalidraw.json";
+  const wctx: LinkRewriteContext = { moves: new Map([[A, B]]), before: ["n.md", A], after: ["n.md", B] };
+  const oneLine = '```keyring-widget\n{"widget": "keyring/excalidraw@1", "state": {"file": "x/a.excalidraw.json"}}\n```';
+  const multi = '```keyring-widget\n{\n  "widget": "keyring/excalidraw@1",\n  "state": {"file": "x/a.excalidraw.json"}\n}\n```';
+
+  it("한 줄 꼴·여러 줄 꼴 블록의 경로만 바뀐다", () => {
+    for (const blk of [oneLine, multi]) {
+      const c = `# 노트\n\n${blk}\n\n끝 [[n]]\n`;
+      const r = rewriteLinks(c, "n.md", "n.md", wctx);
+      expect(r?.count).toBe(1);
+      expect(r?.content).toBe(c.replace(A, B));
+    }
+  });
+  it("목록 안 펜스도 바뀐다", () => {
+    const c = '- 항목\n  ```keyring-widget\n  {"widget": "a/b@1", "state": {"file": "x/a.excalidraw.json"}}\n  ```\n';
+    expect(rewriteLinks(c, "n.md", "n.md", wctx)?.content).toBe(c.replace(A, B));
+  });
+  it("json 펜스 안은 그대로, 이동하지 않은 경로는 null", () => {
+    const c = '```json\n{"file": "x/a.excalidraw.json"}\n```\n';
+    expect(rewriteLinks(c, "n.md", "n.md", wctx)).toBeNull();
+    const other = '```keyring-widget\n{"widget": "a/b@1", "state": {"file": "z.excalidraw.json"}}\n```\n';
+    expect(rewriteLinks(other, "n.md", "n.md", { ...wctx, before: ["n.md", A, "z.excalidraw.json"], after: ["n.md", B, "z.excalidraw.json"] })).toBeNull();
+  });
+  it("이스케이프로 쓴 경로도 바뀐다(빠른 거르기를 지난다)", () => {
+    const c = "```keyring-widget\n" + String.raw`{"widget": "a/b@1", "state": {"file": "\u0078/\u0061.excalidraw.json"}}` + "\n```\n";
+    const r = rewriteLinks(c, "n.md", "n.md", wctx);
+    expect(r?.count).toBe(1);
+    expect(r?.content).toBe('```keyring-widget\n{"widget": "a/b@1", "state": {"file": "y/b.excalidraw.json"}}\n```\n');
+  });
+  it("기대 대상이 이동 후에 없으면(같은 일괄 쓰기에서 삭제) 그대로 둔다", () => {
+    expect(rewriteLinks(oneLine, "n.md", "n.md", { ...wctx, after: ["n.md"] })).toBeNull();
+  });
+  it("linkingDocs 가 가리키는 노트로 센다", () => {
+    expect(linkingDocs([{ path: "n.md", content: oneLine }], A, ["n.md", A])).toEqual([{ path: "n.md", count: 1 }]);
+  });
+  it("analyze().links 와 깨진 링크", () => {
+    const a = analyzeDoc("n.md", oneLine);
+    expect(a.links).toContain(A);
+    const doc: DocMeta = { path: "n.md", title: a.title, summary: a.summary, hash: "h", mtime: 0, size: 1, frontmatter: a.frontmatter, tags: a.tags };
+    const links = a.links.map((target) => ({ src: "n.md", target, kind: "link" as const }));
+    const lint = (files: string[]) => lintVault({ docs: [doc], files, links, canRead: () => true, folder: "" }).issues.filter((i) => i.kind === "broken_link");
+    expect(lint(["n.md"])).toEqual([{ kind: "broken_link", path: "n.md", target: A }]);
+    expect(lint(["n.md", A])).toEqual([]);
+    // 알려진 한계: lintVault 는 resolveLink(대소문자 무시·끝 일치)로 풀어 files 에 A 가 없고 "y/x/a.excalidraw.json" 이 있으면
+    // 깨진 링크로 잡지 않는다. 위젯은 정확한 경로만 읽는다. 나중의 정확 일치 개선을 막지 않게 이 경우는 단언하지 않는다.
+  });
+});

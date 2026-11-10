@@ -4,6 +4,7 @@ import {
   widgetPaletteItems,
   effectiveIsolation,
   findWidget,
+  isFrameEntry,
   registerWidget,
   resetWidgetsForTest,
   resolveWidgetView,
@@ -53,11 +54,43 @@ describe("레지스트리", () => {
     expect(effectiveIsolation(entry({ id: "t/z", isolation: "frame" }))).toBe("frame");
   });
 
-  it("frame 위젯(1단계)·같은 id 는 등록을 거부", () => {
-    expect(() => registerWidget(entry({ id: "t/f", isolation: "frame" }))).toThrow();
-    expect(() => registerWidget(entry({ id: "t/g" }, { builtIn: false }))).toThrow();
+  it("같은 id 는 등록을 거부", () => {
     expect(() => registerWidget(entry({ id: "t/x" }))).toThrow();
     expect(widgetList()).toEqual([X]);
+  });
+
+  it("iframe 위젯: 코드 원천·제3자 글 자리", () => {
+    const frame = async () => ({ kind: "text" as const, js: "" });
+    const table = { en: { a: "A" } };
+    const third: WidgetEntry = { def: entry({ id: "t/third" }).def, builtIn: false, messages: table, frame };
+    registerWidget(third);
+    expect(effectiveIsolation(third)).toBe("frame");
+    expect(isFrameEntry(third)).toBe(true);
+    // 제3자가 load 만 → 앱 창에서 돌 길이 없다
+    expect(() => registerWidget(entry({ id: "t/g" }, { builtIn: false, messages: table }))).toThrow();
+    // 제3자가 앱 메시지 앞머리 → 앱 글을 읽게 되므로 거부
+    expect(() => registerWidget({ def: entry({ id: "t/h" }).def, builtIn: false, messages: "x.y", frame })).toThrow();
+    // frame 인데 load 만
+    expect(() => registerWidget(entry({ id: "t/f", isolation: "frame" }))).toThrow();
+    // 내장 frame 위젯(1단계에서는 throw)
+    const builtinFrame: WidgetEntry = { def: entry({ id: "t/bf", isolation: "frame" }).def, builtIn: true, messages: "kw.test", frame };
+    registerWidget(builtinFrame);
+    expect(isFrameEntry(builtinFrame)).toBe(true);
+    expect(isFrameEntry(X)).toBe(false);
+    // inline 인데 load 없음
+    expect(() => registerWidget({ def: entry({ id: "t/i" }).def, builtIn: true, messages: "kw.test", frame } as WidgetEntry)).toThrow();
+    // dataFile.ext 는 "." 로 시작
+    const df = (ext: string) => ({ ext, initial: () => new Uint8Array([1]) });
+    expect(() =>
+      registerWidget({ def: entry({ id: "t/d", isolation: "frame", dataFile: df("json") }).def, builtIn: true, messages: "kw.test", frame }),
+    ).toThrow();
+    registerWidget({ def: entry({ id: "t/e", isolation: "frame", dataFile: df(".x.json") }).def, builtIn: true, messages: "kw.test", frame });
+  });
+
+  it("widgetInsertText 에 상태를 주면 그것으로(데이터 파일 경로)", () => {
+    const text = widgetInsertText(X.def, { file: "a/b.x.json" });
+    const r = parseWidgetBlock(text.split("\n").slice(1, -1).join("\n"));
+    expect(r.ok && r.block.state).toEqual({ file: "a/b.x.json" });
   });
 
   it("widgetInsertText", () => {
