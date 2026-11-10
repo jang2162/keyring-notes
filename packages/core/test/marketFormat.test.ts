@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   compareSemver,
+  displayText,
+  INDEX_TEXT_LIMITS,
   isOfficialRepo,
   latestVersion,
   normalizeRepoUrl,
@@ -237,6 +239,75 @@ describe("parseRepoIndex", () => {
     expect(code(() => parseRepoIndex({ format: 2, name: "x", packages: {} }, { official: true }))).toBe("market_index_invalid");
     expect(code(() => parseRepoIndex([], { official: true }))).toBe("market_index_invalid");
     expect(code(() => parseRepoIndex({ format: 1, name: "x" }, { official: true }))).toBe("market_index_invalid");
+  });
+});
+
+describe("index.json 표시 필드", () => {
+  const files = [{ path: "keyring-package.json", sha256: "a".repeat(64), size: 1 }];
+  const read = (extra: Record<string, unknown>) =>
+    parseRepoIndex(
+      { format: 1, name: "x", packages: { "@me/sea": { type: "theme", versions: { "1.0.0": { engines: { keyring: "*" }, files, ...extra } } } } },
+      { official: false },
+    );
+
+  it("있으면 그대로 읽는다", () => {
+    const { index, ignored } = read({ name: { en: "Sea", ko: "바다" }, description: { en: "Blue" }, author: "me", license: "MIT" });
+    expect(ignored).toEqual([]);
+    expect(index.packages["@me/sea"]!.versions["1.0.0"]).toEqual({
+      engines: { keyring: "*" },
+      name: { en: "Sea", ko: "바다" },
+      description: { en: "Blue" },
+      author: "me",
+      license: "MIT",
+      files,
+    });
+  });
+
+  it("틀린 필드는 그 필드만 버리고 판·files 는 그대로, ignored 에 세지 않는다", () => {
+    const tags = Object.fromEntries(Array.from({ length: INDEX_TEXT_LIMITS.tags + 1 }, (_, i) => [`l${String.fromCharCode(97 + i)}`, "t"]));
+    for (const bad of [
+      { name: { en: "" } },
+      { name: "Sea" },
+      { name: { "not a tag": "Sea" } },
+      { name: { en: "x".repeat(INDEX_TEXT_LIMITS.name + 1) } },
+      { name: tags },
+      { name: {} },
+      { author: 3 },
+      { author: "a".repeat(INDEX_TEXT_LIMITS.author + 1) },
+      { license: ["MIT"] },
+      { description: { en: "d".repeat(INDEX_TEXT_LIMITS.description + 1) } },
+    ] as Record<string, unknown>[]) {
+      const { index, ignored } = read({ license: "MIT", ...bad });
+      const ver = index.packages["@me/sea"]!.versions["1.0.0"]!;
+      expect(ignored, JSON.stringify(bad)).toEqual([]);
+      expect(ver.files).toEqual(files);
+      const field = Object.keys(bad)[0] as "name" | "author" | "license" | "description";
+      expect(ver[field], JSON.stringify(bad)).toBeUndefined();
+      if (field !== "license") expect(ver.license).toBe("MIT");
+    }
+  });
+
+  it("상한 안의 글은 읽는다", () => {
+    const { index } = read({ description: { en: "d".repeat(INDEX_TEXT_LIMITS.description) }, name: { en: "n".repeat(INDEX_TEXT_LIMITS.name) } });
+    expect(index.packages["@me/sea"]!.versions["1.0.0"]!.description!.en).toHaveLength(INDEX_TEXT_LIMITS.description);
+  });
+
+  it("필드가 없는 옛 index 도 그대로", () => {
+    const { index, ignored } = read({});
+    expect(ignored).toEqual([]);
+    expect(index.packages["@me/sea"]!.versions["1.0.0"]).toEqual({ engines: { keyring: "*" }, files });
+  });
+});
+
+describe("displayText", () => {
+  it("같은 태그 → 같은 첫 조각 → en → 처음 것", () => {
+    expect(displayText({ en: "Sea", ko: "바다" }, "ko")).toBe("바다");
+    expect(displayText({ en: "Sea", ko: "바다" }, "ko-KR")).toBe("바다");
+    expect(displayText({ en: "Sea", ko: "바다" }, "ja")).toBe("Sea");
+    expect(displayText({ fr: "Mer" }, "ja")).toBe("Mer");
+    expect(displayText({ "pt-BR": "Mar", en: "Sea" }, "pt-BR")).toBe("Mar");
+    expect(displayText(undefined, "en")).toBeNull();
+    expect(displayText({}, "en")).toBeNull();
   });
 });
 

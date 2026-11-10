@@ -1,0 +1,21 @@
+{
+  "id": "@me/paper",
+  "version": "0.1.0",
+  "type": "theme",
+  "name": { "en": "Paper", "ko": "종이" },
+  "description": { "en": "A light-only test theme", "ko": "밝음만 있는 시험 테마" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": "*" },
+  "colors": {
+    "light": {
+      "--bg": "#fbf8f1",
+      "--bg-soft": "#f3eee2",
+      "--fg": "#2b2925",
+      "--muted": "#6d685d",
+      "--border": "#e4ddcc",
+      "--accent": "#8a5a17",
+      "--focus-ring": "rgb(138 90 23 / 0.5)"
+    }
+  }
+}

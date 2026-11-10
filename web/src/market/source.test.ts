@@ -223,7 +223,7 @@ describe("nativeSource", () => {
 
   it("index 는 index.json 을 받아 parseRepoIndex(개인 저장소의 @keyring 은 ignored)", async () => {
     const r = await nativeSource(device, fakeInvoke()).index(REPO);
-    expect(Object.keys(r.index!.packages).sort()).toEqual(["@me/clock", "@me/sea"]);
+    expect(Object.keys(r.index!.packages).sort()).toEqual(["@me/clock", "@me/fog", "@me/ja", "@me/paper", "@me/sea"]);
     expect(r.ignored).toEqual(["@keyring/hello: scope_reserved"]);
     expect((await nativeSource(device, fakeInvoke()).index("http://repo.test/")).error?.code).toBe("market_url_protocol");
   });

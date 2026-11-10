@@ -1,0 +1,10 @@
+{
+  "id": "@me/ja",
+  "version": "0.1.0",
+  "type": "language",
+  "name": { "en": "Japanese (test)", "ja": "日本語(テスト)" },
+  "description": { "en": "A partial test language package" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": "*" }
+}

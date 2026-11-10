@@ -221,9 +221,83 @@ export interface IndexFile {
   sha256: string;
   size: number;
 }
+/**
+ * 판마다의 표시 필드(name·description·author·license)는 둘러보기 표시용일 뿐이다 — 설치 판정·적용은 sha256 을 확인한
+ * 매니페스트가 원본이고, 둘이 다르면 설치 뒤 화면은 매니페스트를 보인다. 설계 「저장소 형식」.
+ */
 export interface IndexVersion {
   engines: { keyring: string };
+  name?: Record<string, string>;
+  description?: Record<string, string>;
+  author?: string;
+  license?: string;
   files: IndexFile[];
+}
+
+/** index 표시 필드의 상한(글자 수는 UTF-16 길이). 읽기(parseRepoIndex)·쓰기(pkg index)·검사(checkPackageFiles 경고)가 같이 본다 */
+export const INDEX_TEXT_LIMITS = { tags: 20, name: 100, description: 500, author: 100, license: 100 } as const;
+
+type DisplayFields = Pick<IndexVersion, "name" | "description" | "author" | "license">;
+
+/** 언어 태그 → 비지 않은 글자(상한 안). 틀리면 이유 */
+function langTextProblem(v: unknown, max: number): string | null {
+  if (!isRecord(v)) return "";
+  const entries = Object.entries(v);
+  if (!entries.length) return "";
+  if (entries.length > INDEX_TEXT_LIMITS.tags) return "";
+  for (const [k, t] of entries) {
+    if (!LANG_TAG_RE.test(k) || typeof t !== "string" || !t.trim()) return "";
+    if (t.length > max) return `.${k}`;
+  }
+  return null;
+}
+
+/** index 판의 표시 필드 읽기 — 틀린 필드는 그것만 뺀다(던지지 않는다, ignored 에 세지 않는다) */
+function readDisplay(raw: Record<string, unknown>): DisplayFields {
+  const out: DisplayFields = {};
+  for (const f of ["name", "description"] as const)
+    if (raw[f] !== undefined && langTextProblem(raw[f], INDEX_TEXT_LIMITS[f]) === null) out[f] = { ...(raw[f] as Record<string, string>) };
+  for (const f of ["author", "license"] as const) {
+    const v = raw[f];
+    if (typeof v === "string" && v.length <= INDEX_TEXT_LIMITS[f]) out[f] = v;
+  }
+  return out;
+}
+
+/**
+ * 매니페스트에서 index 에 옮길 표시 필드와, 상한을 넘어 옮기지 않는 필드(`display_too_long: <필드>[.<태그>]`).
+ * 넘는 필드는 자르지 않고 통째로 뺀다 — 작성자의 글을 몰래 바꾸지 않게. 매니페스트 검사 자체는 상한이 없다(이미 받은 패키지를 깨지 않게).
+ */
+export function manifestDisplay(m: PackageManifest): { fields: DisplayFields; tooLong: string[] } {
+  const fields: DisplayFields = {};
+  const tooLong: string[] = [];
+  for (const f of ["name", "description"] as const) {
+    const p = langTextProblem(m[f], INDEX_TEXT_LIMITS[f]);
+    if (p === null) fields[f] = { ...m[f] };
+    else tooLong.push(`display_too_long: ${f}${p}`);
+  }
+  for (const f of ["author", "license"] as const) {
+    if (!m[f]) continue;
+    if (m[f].length <= INDEX_TEXT_LIMITS[f]) fields[f] = m[f];
+    else tooLong.push(`display_too_long: ${f}`);
+  }
+  return { fields, tooLong };
+}
+
+/** 언어 태그 → 글 묶음에서 보일 글: 같은 태그 → 같은 첫 조각(`ko-KR` → `ko`) → `en` → 처음 것. 없으면 null */
+export function displayText(rec: Record<string, string> | undefined, lang: string): string | null {
+  if (!rec) return null;
+  const keys = Object.keys(rec);
+  if (!keys.length) return null;
+  const lower = lang.toLowerCase();
+  const first = lower.split("-")[0];
+  const pick =
+    keys.find((k) => k.toLowerCase() === lower) ??
+    keys.find((k) => k.toLowerCase() === first) ??
+    keys.find((k) => k.toLowerCase().split("-")[0] === first) ??
+    keys.find((k) => k.toLowerCase() === "en") ??
+    keys[0]!;
+  return rec[pick]!;
 }
 export interface RepoIndex {
   format: 1;
@@ -277,7 +351,7 @@ function parseIndexVersion(type: PackageType, raw: unknown): IndexVersion | stri
   );
   if (problem) return problem;
   if (total > MARKET_LIMITS.packageBytes) return "too_large";
-  return { engines: { keyring: engines.keyring }, files };
+  return { engines: { keyring: engines.keyring }, ...readDisplay(raw), files };
 }
 
 /**
@@ -484,7 +558,7 @@ export function checkPackageFiles(
     total += b.byteLength;
   }
   if (total > MARKET_LIMITS.packageBytes) throw invalid("too_large");
-  const warnings: string[] = [];
+  const warnings: string[] = [...manifestDisplay(manifest).tooLong];
   if (manifest.type === "widget") {
     if (!files.has("frame.js")) throw invalid("no_frame_js");
     for (const [p, b] of files) {

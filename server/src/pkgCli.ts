@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   checkPackageFiles,
   compareSemver,
+  manifestDisplay,
   MARKET_LIMITS,
   parsePackageId,
   parseRepoIndex,
@@ -71,6 +72,10 @@ function serialize(index: RepoIndex): string {
       const ver = p.versions[v]!;
       versions[v] = {
         engines: { keyring: ver.engines.keyring },
+        ...(ver.name && { name: ver.name }),
+        ...(ver.description && { description: ver.description }),
+        ...(ver.author && { author: ver.author }),
+        ...(ver.license && { license: ver.license }),
         files: [...ver.files].sort((a, b) => (a.path < b.path ? -1 : 1)).map((f) => ({ path: f.path, sha256: f.sha256, size: f.size })),
       };
     }
@@ -79,8 +84,13 @@ function serialize(index: RepoIndex): string {
   return `${JSON.stringify({ format: 1, name: index.name, packages }, null, 2)}\n`;
 }
 
-/** packages/<scope>/<name>/<version>/ 를 훑어 index.json 을 쓴다(바뀌었을 때만). 이름은 기존 index.json → opts.name → 폴더 이름 */
-export async function buildRepoIndex(repoDir: string, opts: { name?: string } = {}): Promise<{ index: RepoIndex; written: boolean }> {
+/**
+ * packages/<scope>/<name>/<version>/ 를 훑어 index.json 을 쓴다(바뀌었을 때만). 이름은 기존 index.json → opts.name → 폴더 이름.
+ * 판마다 매니페스트의 표시 필드를 옮겨 쓰고, 상한을 넘어 빼는 필드는 warnings(`<id>@<판>: display_too_long: …`)로 돌려준다 —
+ * 앱이 그 필드를 조용히 버려 id 만 보이는 것을 작성자가 알게.
+ */
+export async function buildRepoIndex(repoDir: string, opts: { name?: string } = {}): Promise<{ index: RepoIndex; written: boolean; warnings: string[] }> {
+  const warnings: string[] = [];
   const root = path.join(repoDir, "packages");
   try {
     if (!(await lstat(root)).isDirectory()) throw new Error();
@@ -105,7 +115,9 @@ export async function buildRepoIndex(repoDir: string, opts: { name?: string } = 
           if (pkg.type !== manifest.type) throw new Error(serverText("cli.pkg_type_mismatch", { type: manifest.type, other: pkg.type as PackageType }));
           const list = [];
           for (const [p, bytes] of files) list.push({ path: p, sha256: await sha256Hex(bytes), size: bytes.byteLength });
-          pkg.versions[version] = { engines: { keyring: manifest.engines.keyring }, files: list };
+          const { fields, tooLong } = manifestDisplay(manifest);
+          for (const w of tooLong) warnings.push(`${id}@${version}: ${w}`);
+          pkg.versions[version] = { engines: { keyring: manifest.engines.keyring }, ...fields, files: list };
         } catch (e) {
           throw new Error(serverText("cli.pkg_in_folder", { folder, message: e instanceof Error ? e.message : String(e) }));
         }
@@ -122,11 +134,11 @@ export async function buildRepoIndex(repoDir: string, opts: { name?: string } = 
   } catch {
     before = null;
   }
-  if (before === text) return { index: JSON.parse(text) as RepoIndex, written: false };
+  if (before === text) return { index: JSON.parse(text) as RepoIndex, written: false, warnings };
   const tmp = `${indexFile}.tmp-${process.pid}`;
   await writeFile(tmp, text);
   await rename(tmp, indexFile);
-  return { index: JSON.parse(text) as RepoIndex, written: true };
+  return { index: JSON.parse(text) as RepoIndex, written: true, warnings };
 }
 
 /** `pnpm keyring` 은 server 폴더에서 돈다 — 상대 경로는 명령을 친 자리(INIT_CWD) 기준으로 */
@@ -144,7 +156,8 @@ export async function runPkg(args: string[]): Promise<void> {
   }
   if (sub === "index" && dir && (rest.length === 0 || (rest.length === 2 && rest[0] === "--name" && rest[1]))) {
     const repoDir = resolveArg(dir);
-    const { index, written } = await buildRepoIndex(repoDir, rest.length ? { name: rest[1] } : {});
+    const { index, written, warnings } = await buildRepoIndex(repoDir, rest.length ? { name: rest[1] } : {});
+    for (const w of warnings) console.log(serverText("cli.pkg_warning", { message: w }));
     const versions = Object.values(index.packages).reduce((n, p) => n + Object.keys(p.versions).length, 0);
     const params = { packages: Object.keys(index.packages).length, versions, path: path.join(repoDir, "index.json") };
     console.log(serverText(written ? "cli.pkg_index_written" : "cli.pkg_index_unchanged", params));

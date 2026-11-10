@@ -1,0 +1,14 @@
+{
+  "id": "@me/fog",
+  "version": "0.1.0",
+  "type": "theme",
+  "name": { "en": "Fog", "ko": "안개" },
+  "description": { "en": "Unreadable on purpose: text and background are the same color", "ko": "일부러 읽을 수 없게: 글과 바탕이 같은 색" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": "*" },
+  "colors": {
+    "light": { "--bg": "#c8ccd2", "--fg": "#c8ccd2" },
+    "dark": { "--bg": "#3a3d42", "--fg": "#3a3d42" }
+  }
+}

@@ -172,6 +172,20 @@ describe("checkPackageFiles", () => {
     expect(reason(() => checkPackageFiles(files({ "keyring-package.json": { ...theme, colors: {} } })))).toBeDefined();
   });
 
+  it("표시 필드가 index 상한을 넘으면 오류 없이 display_too_long 경고", () => {
+    const theme = { ...base, id: "@me/sea", type: "theme", colors: { light: { "--bg": "#fff" } } };
+    const check = (extra: object) => checkPackageFiles(files({ "keyring-package.json": { ...theme, ...extra } })).warnings;
+    expect(check({ description: { en: "d".repeat(501) } })).toEqual(["display_too_long: description.en"]);
+    expect(check({ description: { en: "d".repeat(500) } })).toEqual([]);
+    expect(check({ name: { en: "Sea", ko: "바".repeat(101) }, author: "a".repeat(101), license: "l".repeat(101) })).toEqual([
+      "display_too_long: name.ko",
+      "display_too_long: author",
+      "display_too_long: license",
+    ]);
+    const many = Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`l${String.fromCharCode(97 + i)}`, "t"]));
+    expect(check({ name: many })).toEqual(["display_too_long: name"]);
+  });
+
   it("테마: 모르는 토큰과 낮은 대비는 경고(막지 않음), 주입 값은 여전히 오류", () => {
     const theme = { ...base, id: "@me/fog", type: "theme" };
     const check = (colors: unknown) => checkPackageFiles(files({ "keyring-package.json": { ...theme, colors } })).warnings;
