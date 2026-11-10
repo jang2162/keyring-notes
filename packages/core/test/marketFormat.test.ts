@@ -275,6 +275,8 @@ describe("index.json 표시 필드", () => {
       { author: 3 },
       { author: "a".repeat(INDEX_TEXT_LIMITS.author + 1) },
       { license: ["MIT"] },
+      { author: "" },
+      { author: "   " },
       { description: { en: "d".repeat(INDEX_TEXT_LIMITS.description + 1) } },
     ] as Record<string, unknown>[]) {
       const { index, ignored } = read({ license: "MIT", ...bad });

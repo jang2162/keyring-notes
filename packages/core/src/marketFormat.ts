@@ -259,7 +259,8 @@ function readDisplay(raw: Record<string, unknown>): DisplayFields {
     if (raw[f] !== undefined && langTextProblem(raw[f], INDEX_TEXT_LIMITS[f]) === null) out[f] = { ...(raw[f] as Record<string, string>) };
   for (const f of ["author", "license"] as const) {
     const v = raw[f];
-    if (typeof v === "string" && v.length <= INDEX_TEXT_LIMITS[f]) out[f] = v;
+    // 빈 글은 보일 것이 없다 — pkg index 도 쓰지 않는다(manifestDisplay)
+    if (typeof v === "string" && v.trim() && v.length <= INDEX_TEXT_LIMITS[f]) out[f] = v;
   }
   return out;
 }
