@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
 import { THEME_DEFAULTS, THEME_TOKENS } from "@keyring-notes/core";
 import { describe, expect, it } from "vitest";
+import stylesCss from "../styles.css?raw";
 
-const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const css = stylesCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
 /** 선택자가 정확히 sel 인 블록(중첩 없음)들의 선언을 모은다. media 가 주어지면 그 @media 블록 안에서만 */
 function decls(sel: string, media?: string): Record<string, string> {
