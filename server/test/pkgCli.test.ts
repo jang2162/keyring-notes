@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,6 +65,55 @@ describe("checkPackageDir", () => {
   it("숨김 파일도 허용 꼴이 아니면 오류(이유에 이름)", async () => {
     await writeFile(path.join(widgetDir("1.0.0"), ".DS_Store"), "x");
     expect(await reason(checkPackageDir(widgetDir("1.0.0")))).toContain(".DS_Store");
+  });
+});
+
+describe("심볼릭 링크·종류·판 이름", () => {
+  it("판 폴더 안의 링크 파일은 오류(이유에 이름)", async () => {
+    const outside = path.join(repo, "outside.js");
+    await writeFile(outside, "x");
+    await rm(path.join(widgetDir("1.0.0"), "frame.js"));
+    await symlink(outside, path.join(widgetDir("1.0.0"), "frame.js"));
+    expect(await reason(checkPackageDir(widgetDir("1.0.0")))).toContain("frame.js");
+    expect(await reason(buildRepoIndex(repo))).toContain("frame.js");
+  });
+
+  it("링크된 판·이름·범위 폴더는 건너뛰지 않고 오류", async () => {
+    const elsewhere = await mkdtemp(path.join(os.tmpdir(), "keyring-pkg-link-"));
+    try {
+      await put(path.join(elsewhere, "2.0.0"), {
+        "keyring-package.json": { ...base, id: "@me/clock", version: "2.0.0", type: "widget", widget: { stateVersion: 1, display: "block", defaultState: {} } },
+        "frame.js": "x",
+      });
+      await symlink(path.join(elsewhere, "2.0.0"), path.join(repo, "packages", "me", "clock", "2.0.0"));
+      expect(await reason(buildRepoIndex(repo))).toContain(path.join("packages", "me", "clock", "2.0.0"));
+      await rm(path.join(repo, "packages", "me", "clock", "2.0.0"));
+      await symlink(path.join(repo, "packages", "me"), path.join(repo, "packages", "them"));
+      expect(await reason(buildRepoIndex(repo))).toContain(path.join("packages", "them"));
+    } finally {
+      await rm(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it("한 패키지의 판끼리 종류가 다르면 그 폴더를 밝혀 오류", async () => {
+    await put(path.join(repo, "packages", "me", "clock", "2.0.0"), {
+      "keyring-package.json": { ...base, id: "@me/clock", version: "2.0.0", type: "theme", colors: { light: { "--bg": "#fff" } } },
+    });
+    expect(await reason(buildRepoIndex(repo))).toContain(path.join("packages", "me", "clock", "2.0.0"));
+  });
+
+  it("대소문자 프리릴리스 판 폴더는 오류", async () => {
+    await put(path.join(repo, "packages", "me", "clock", "2.0.0-Beta"), {
+      "keyring-package.json": {
+        ...base,
+        id: "@me/clock",
+        version: "2.0.0-Beta",
+        type: "widget",
+        widget: { stateVersion: 1, display: "block", defaultState: {} },
+      },
+      "frame.js": "x",
+    });
+    expect(await reason(buildRepoIndex(repo))).toContain(path.join("packages", "me", "clock", "2.0.0-Beta"));
   });
 });
 

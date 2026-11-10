@@ -42,9 +42,13 @@ export async function checkPackageDir(dir: string): Promise<{ manifest: PackageM
   return checkPackageFiles(await readTree(dir));
 }
 
-async function subdirs(dir: string): Promise<string[]> {
+/** 하위 폴더. 링크된 폴더는 건너뛰지 않고 오류 — 건너뛰면 그 패키지가 목록에서 말없이 빠진다 */
+async function subdirs(dir: string, repoDir: string): Promise<string[]> {
   const out: string[] = [];
-  for (const e of await readdir(dir, { withFileTypes: true })) if (e.isDirectory()) out.push(e.name);
+  for (const e of await readdir(dir, { withFileTypes: true })) {
+    if (e.isSymbolicLink()) throw new Error(serverText("cli.pkg_symlink", { path: path.relative(repoDir, path.join(dir, e.name)) }));
+    if (e.isDirectory()) out.push(e.name);
+  }
   return out.sort();
 }
 
@@ -85,9 +89,9 @@ export async function buildRepoIndex(repoDir: string, opts: { name?: string } = 
   }
   const indexFile = path.join(repoDir, "index.json");
   const index: RepoIndex = { format: 1, name: (await existingName(indexFile)) ?? opts.name ?? path.basename(path.resolve(repoDir)), packages: {} };
-  for (const scope of await subdirs(root)) {
-    for (const name of await subdirs(path.join(root, scope))) {
-      for (const version of await subdirs(path.join(root, scope, name))) {
+  for (const scope of await subdirs(root, repoDir)) {
+    for (const name of await subdirs(path.join(root, scope), repoDir)) {
+      for (const version of await subdirs(path.join(root, scope, name), repoDir)) {
         const dir = path.join(root, scope, name, version);
         const folder = path.relative(repoDir, dir);
         const id = `@${scope}/${name}`;

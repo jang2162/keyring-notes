@@ -31,7 +31,7 @@ Keyring Notes 가 받아 쓸 수 있는 위젯·테마·언어 패키지 저장�
 | `theme` | 없음 | 없음 |
 | `language` | `messages.json` | 없음 |
 
-다른 이름의 파일은 둘 수 없습니다. `.DS_Store` 같은 숨김 파일도 마찬가지입니다. 대소문자만 다른 두 이름(`messages/ko.json` 과 `messages/KO.json`)은 macOS·Windows 에서 같은 파일이 되므로 받지 않습니다. 위젯의 그림·글꼴은 `frame.js` 나 `frame.css` 안에 넣어 옵니다(예: `data:` URL).
+다른 이름의 파일은 둘 수 없습니다. `.DS_Store` 같은 숨김 파일도 마찬가지입니다. 심볼릭 링크도 받지 않습니다. 대소문자만 다른 두 이름(`messages/ko.json` 과 `messages/KO.json`)은 macOS·Windows 에서 같은 파일이 되므로 받지 않습니다. 위젯의 그림·글꼴은 `frame.js` 나 `frame.css` 안에 넣어 옵니다(예: `data:` URL).
 
 ### 매니페스트
 
@@ -170,7 +170,7 @@ self.keyringWidgetRegister((el, ctx, api) => {
 
 ## 판과 범위
 
-판은 `MAJOR.MINOR.PATCH` 이고, 뒤에 `-` 와 프리릴리스(예: `1.2.0-beta.1`)를 붙일 수 있습니다. 수는 0 으로 시작하지 않습니다. 판이 파일 경로에 들어가므로 빌드 메타데이터(`+…`)는 쓸 수 없습니다.
+판은 `MAJOR.MINOR.PATCH` 이고, 뒤에 `-` 와 프리릴리스(예: `1.2.0-beta.1`)를 붙일 수 있습니다. 수는 0 으로 시작하지 않습니다. `1.2.0-Beta` 와 `1.2.0-beta` 가 macOS·Windows 에서 같은 폴더가 되므로 프리릴리스에는 소문자·숫자·`-` 만 씁니다. 판이 파일 경로에 들어가므로 빌드 메타데이터(`+…`)는 쓸 수 없습니다.
 
 `engines.keyring` 은 범위입니다.
 

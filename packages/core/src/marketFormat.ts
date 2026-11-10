@@ -35,8 +35,10 @@ export interface SemVer {
 }
 
 // `+build` 는 받지 않는다 — 판이 캐시·저장소 경로에 그대로 들어간다.
+// 프리릴리스는 소문자만: `1.0.0-Beta` 와 `1.0.0-beta` 는 semver 로는 다른 판이지만 대소문자를 가리지 않는
+// 파일 시스템(macOS·Windows)에서 같은 폴더·캐시 자리가 된다.
 const NUM = "(0|[1-9][0-9]*)";
-const PRE_ID = "(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)";
+const PRE_ID = "(?:0|[1-9][0-9]*|[0-9]*[a-z-][0-9a-z-]*)";
 const SEMVER_RE = new RegExp(`^${NUM}\\.${NUM}\\.${NUM}(?:-(${PRE_ID}(?:\\.${PRE_ID})*))?$`);
 
 export function parseSemver(v: string): SemVer | null {

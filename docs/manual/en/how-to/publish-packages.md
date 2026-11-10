@@ -30,7 +30,7 @@ Every package has a manifest named `keyring-package.json`. The other files depen
 | `theme` | none | none |
 | `language` | `messages.json` | none |
 
-No other file names are allowed, including hidden files such as `.DS_Store`. Two names that differ only in case (`messages/ko.json` and `messages/KO.json`) are refused, because they are the same file on macOS and Windows. Widgets carry images and fonts inside `frame.js` or `frame.css` (for example as `data:` URLs).
+No other file names are allowed, including hidden files such as `.DS_Store`. Symbolic links are refused. Two names that differ only in case (`messages/ko.json` and `messages/KO.json`) are refused, because they are the same file on macOS and Windows. Widgets carry images and fonts inside `frame.js` or `frame.css` (for example as `data:` URLs).
 
 ### The manifest
 
@@ -169,7 +169,7 @@ self.keyringWidgetRegister((el, ctx, api) => {
 
 ## Versions and ranges
 
-Versions are `MAJOR.MINOR.PATCH`, optionally followed by `-` and a pre-release such as `1.2.0-beta.1`. Numbers have no leading zeros. Build metadata (`+…`) is not allowed, because the version is part of the file path.
+Versions are `MAJOR.MINOR.PATCH`, optionally followed by `-` and a pre-release such as `1.2.0-beta.1`. Numbers have no leading zeros. Pre-releases use lowercase letters, digits and `-` only, because `1.2.0-Beta` and `1.2.0-beta` would be the same folder on macOS and Windows. Build metadata (`+…`) is not allowed, because the version is part of the file path.
 
 `engines.keyring` is a range:
 

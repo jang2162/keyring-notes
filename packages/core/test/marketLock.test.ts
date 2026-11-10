@@ -56,6 +56,7 @@ describe("공통 설정의 marketplace", () => {
       "@a/r": { ...ok, repo: "ftp://a/" },
       "@a/m": { ...ok, sha256: { "frame.js": H("a") } },
       "@a/s": "1.0.0",
+      "@a/u": { ...ok, version: "1.0.0-Beta" },
     };
     const m = parseMarketplace({ packages: { "@a/ok": ok, ...bad, "@a/http": { ...ok, repo: "http://home.lan/m" } } });
     expect(Object.keys(m.packages)).toEqual(["@a/ok", "@a/http"]);
@@ -146,6 +147,7 @@ describe("resolveInstall", () => {
     });
     expect(resolveInstall(all, {}, "@me/none", "0.12.0")).toMatchObject({ ok: false, code: "market_not_found", params: { id: "@me/none" } });
     expect(resolveInstall(all, {}, "@me/clock", "0.12.0", { version: "9.9.9" })).toMatchObject({ ok: false, code: "market_not_found" });
+    expect(resolveInstall(all, {}, "@me/clock", "0.12.0", { version: "1.0.0-BETA" })).toMatchObject({ ok: false, code: "market_not_found" });
     expect(resolveInstall([official], {}, "@me/clock", "0.0.1")).toMatchObject({ ok: false, code: "market_engines" });
   });
 });

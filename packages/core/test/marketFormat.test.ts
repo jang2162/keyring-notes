@@ -32,6 +32,18 @@ describe("semver", () => {
     for (const v of ["01.2.0", "1.2", "1.2.0+b", "1.2.0-", "v1.2.0", "../1.0.0", "1.2.0-01", "1.2.0-a..b", ""]) expect(parseSemver(v), v).toBeNull();
   });
 
+  it("프리릴리스는 소문자만 — 대소문자만 다른 두 판은 같은 폴더·캐시 자리가 된다", () => {
+    expect(parseSemver("1.0.0-beta")).not.toBeNull();
+    for (const v of ["1.0.0-Beta", "1.0.0-RC.1", "1.0.0-beta.X"]) expect(parseSemver(v), v).toBeNull();
+    const good = { engines: { keyring: "*" }, files: [{ path: "keyring-package.json", sha256: "a".repeat(64), size: 1 }] };
+    const { index, ignored } = parseRepoIndex(
+      { format: 1, name: "x", packages: { "@a/b": { type: "theme", versions: { "1.0.0-Beta": good, "1.0.0-beta": good } } } },
+      { official: false },
+    );
+    expect(Object.keys(index.packages["@a/b"]!.versions)).toEqual(["1.0.0-beta"]);
+    expect(ignored).toEqual(["@a/b@1.0.0-Beta: version"]);
+  });
+
   it("compareSemver 는 semver 순서", () => {
     expect(compareSemver("1.2.0-alpha", "1.2.0")).toBeLessThan(0);
     expect(compareSemver("1.2.0-alpha.2", "1.2.0-alpha.10")).toBeLessThan(0);

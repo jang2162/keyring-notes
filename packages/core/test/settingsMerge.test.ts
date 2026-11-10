@@ -71,3 +71,14 @@ describe("잠금 항목은 통째로 합친다", () => {
     expect(pkgOf(mergeSettingsObjects(null, withPkg(entry("1.0.0", "c")), withPkg(entry("1.9.0", "b"))).merged)).toEqual(entry("1.9.0", "b"));
   });
 });
+
+describe("빈 묶음은 값이 아니다", () => {
+  it("한 기기가 ui.keys 를 비우고 서버가 새 키를 더했으면 새 키가 남는다", () => {
+    const base = { keyring: "settings", ui: { keys: { a: "Mod+A" } } };
+    const local = { keyring: "settings", ui: { keys: {} } };
+    const server = { keyring: "settings", ui: { keys: { a: "Mod+A", b: "Mod+B" } } };
+    const r = mergeSettingsObjects(base, local, server);
+    expect(r.merged).toEqual({ keyring: "settings", ui: { keys: { b: "Mod+B" } } });
+    expect(r.conflicts).toEqual([]);
+  });
+});
