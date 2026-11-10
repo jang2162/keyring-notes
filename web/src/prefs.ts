@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { onVaultSettings, updateVaultSetting } from "./vaultSettings";
-import { setLanguage, systemLanguage, urlLanguage } from "./i18n";
+import { setLanguagePref } from "./i18n";
 import { PACKAGE_ID_RE } from "@keyring-notes/core";
 import { applyThemeChoice } from "./theme/apply";
 
@@ -205,8 +205,9 @@ function publish() {
 }
 let applied = false;
 
+/** 원값("" = 시스템 언어)을 넘긴다 — 풀이(?lang=…·시스템 언어·마켓 층)는 i18n 이 언어 층이 바뀔 때마다 다시 한다 */
 function applyLanguage(lang: string) {
-  setLanguage(urlLanguage ?? (lang || systemLanguage()));
+  setLanguagePref(lang);
 }
 
 export function getPrefs(): Prefs {

@@ -1088,7 +1088,7 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
           {list.map((l) => (
             <option key={l.id} value={l.id}>
               {l.name}
-              {l.official ? "" : ` (${t("lang.unofficial")})`}
+              {l.source === "official" ? "" : l.source === "market" ? ` (${t("lang.market")})` : ` (${t("lang.unofficial")})`}
             </option>
           ))}
           <option value={PSEUDO}>{nameOf(PSEUDO)}</option>
@@ -1128,7 +1128,7 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
       </Row>
       {report && <PackReportView state={report} onClose={() => setReport(null)} />}
       {list
-        .filter((l) => !l.official)
+        .filter((l) => l.source === "device")
         .map((l) => {
           const pack = getPack(l.id)!;
           const missing = missingKeys(pack);
@@ -1142,6 +1142,7 @@ function LanguageSettings({ query, shared, local }: { query: string; shared: Vau
                 <div className="setting-hint">
                   {t("lang.pack.info", { base: OFFICIAL_NAMES[pack.meta.base], version: pack.meta.appVersion || "?", author: pack.meta.author || "-" })}
                   {missing.length > 0 && <> · {t("lang.pack.missing", { count: missing.length })}</>}
+                  {l.shadows && <> · {t("lang.shadowed", { id: l.shadows })}</>}
                 </div>
               </div>
               <div className="setting-control">
