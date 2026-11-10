@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPdfAnnotation, type PdfAnnotation } from "@keyring-notes/core";
 import tauriConf from "../../app/src-tauri/tauri.conf.json";
-import { removeAnnotation, removeProperty, resetDevice } from "./askFirst";
+import { askUninstallPackage, removeAnnotation, removeProperty, resetDevice } from "./askFirst";
 import type { CompanionTarget } from "./pdfCompanion";
 import pdfViewerSrc from "./PdfViewer.tsx?raw";
 import propertiesSrc from "./Properties.tsx?raw";
@@ -101,6 +101,14 @@ describe("첫 클릭이 바로 닿으므로 한 번에 지우는 단추는 묻�
     expect([path, hash]).toEqual(["papers/a.md", "h1"]);
     expect(content).not.toContain("^pdf-3-abcd");
     expect(yes.onWritten).toHaveBeenCalledWith({ path: "papers/a.md", content, hash: "h2" });
+  });
+
+  it("마켓 패키지 제거 — 확인이면 true, 취소면 false(부르는 쪽은 false 면 아무것도 하지 않는다)", async () => {
+    confirmDialog.mockResolvedValue(false);
+    expect(await askUninstallPackage("Sea")).toBe(false);
+    expect(confirmDialog.mock.calls[0]![0]).toContain("Sea");
+    confirmDialog.mockResolvedValue(true);
+    expect(await askUninstallPackage("Sea")).toBe(true);
   });
 
   it("속성 행 삭제 — 확인했을 때만 프런트매터를 고친다", async () => {

@@ -11,6 +11,7 @@ import {
   PenLine,
   RefreshCw,
   Search,
+  Store,
   SlidersHorizontal,
   Trash2,
   Upload,
@@ -62,12 +63,13 @@ import { confirmDialog, promptDialog } from "./dialog";
 import { tipProps } from "./Tooltip";
 import { admin } from "./api";
 import { market } from "./market/start";
+import { MarketSettings } from "./MarketSettings";
 import type { InstalledPackage } from "./market/state";
 import { useAppliedTheme, useThemePackages } from "./theme/apply";
 import { themeModes } from "./theme/resolve";
 import { available, checkForUpdate, showUpdate, updatesSupported, useAvailableUpdate } from "./update";
 
-export type SettingsSection = "general" | "language" | "editor" | "files" | "workspaces" | "keys" | "device" | "about" | ServerSection;
+export type SettingsSection = "general" | "language" | "marketplace" | "editor" | "files" | "workspaces" | "keys" | "device" | "about" | ServerSection;
 
 /** 모바일(좁은 터치 화면)에서는 단축키 화면을 숨긴다(단축키는 데스크톱·웹만 따라간다) */
 const isMobile = () => typeof window !== "undefined" && (window.matchMedia?.("(pointer: coarse)").matches ?? false) && window.innerWidth < 900;
@@ -85,6 +87,8 @@ const SECTIONS: {
 }[] = [
   { id: "general", label: "settings.general", icon: SlidersHorizontal },
   { id: "language", label: "settings.language", icon: Languages, keywords: "settings.languageKeywords" },
+  // 모든 모드에 보인다 — 받을 수 없는 곳(브라우저 기기 볼트, 동기화 없음)은 화면 안에서 market.unavailable
+  { id: "marketplace", label: "settings.marketplace", icon: Store, keywords: "settings.marketplaceKeywords" },
   { id: "editor", label: "settings.editor", icon: PenLine },
   { id: "files", label: "settings.files", icon: Folder },
   { id: "workspaces", label: "settings.workspaces", icon: LayoutGrid, keywords: "settings.workspacesKeywords" },
@@ -559,6 +563,8 @@ function SectionBody({
       );
     case "language":
       return <LanguageSettings query={query} shared={shared} local={local} />;
+    case "marketplace":
+      return <MarketSettings />;
     case "editor":
       return (
         <>

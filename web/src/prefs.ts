@@ -285,6 +285,28 @@ export function setLocalOverride(k: SyncedKey, on: boolean, value?: unknown) {
   publish();
 }
 
+/**
+ * 마켓 화면에서 지운 테마·언어를 가리키던 고르기 값을 기본으로(다른 기기에 「없음」 안내가 남지 않게).
+ * 동기화로 잠금에서 빠진 것(화면을 거치지 않음)에는 부르지 않는다 — 고르기 값은 그대로 두고 받아지면 돌아온다.
+ */
+export function clearRemovedChoice(k: "theme" | "language", removed: string) {
+  const d = DEFAULT_PREFS[k];
+  let changed = false;
+  if (overrides[k] === removed) {
+    overrides = { ...overrides, [k]: d };
+    write(OVERRIDE_KEY, overrides);
+    changed = true;
+  }
+  if ((pendingShared.has(k) ? pendingShared.get(k) : shared[k]) === removed) {
+    pendingShared.set(k, d);
+    shared = { ...shared, [k]: d };
+    write(CACHE_KEY, shared);
+    scheduleFlush();
+    changed = true;
+  }
+  if (changed) publish();
+}
+
 /** 처음 값으로: 기기마다인 값과 이 기기 덮어쓰기만(keys를 주면 그것만). 공통 값은 그대로 */
 export function resetDevicePrefs() {
   device = {};
