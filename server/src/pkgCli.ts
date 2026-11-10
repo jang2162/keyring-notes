@@ -150,6 +150,20 @@ export async function runPkg(args: string[]): Promise<void> {
     console.log(serverText(written ? "cli.pkg_index_written" : "cli.pkg_index_unchanged", params));
     return;
   }
+  if (sub === "serve" && dir) {
+    const flag = (name: string) => {
+      const i = rest.indexOf(name);
+      return i >= 0 ? rest[i + 1] : undefined;
+    };
+    const { startMarketServer } = await import("./marketServe.js");
+    const port = Number(flag("--port") ?? process.env.MARKET_PORT ?? 8080);
+    const host = flag("--host") ?? process.env.MARKET_HOST ?? "127.0.0.1";
+    const rebuildMs = Number(flag("--rebuild-seconds") ?? process.env.MARKET_REBUILD_SECONDS ?? 60) * 1000;
+    const name = flag("--name") ?? process.env.MARKET_NAME;
+    await startMarketServer({ root: resolveArg(dir), host, port, rebuildMs, name });
+    console.log(serverText("cli.pkg_serving", { url: `http://${host}:${port}/index.json` }));
+    return;
+  }
   console.log(serverText("cli.pkg_usage"));
   process.exitCode = 1;
 }
