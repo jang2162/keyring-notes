@@ -7,6 +7,7 @@ dist/
 /backups/
 .env
 /plugins/
+/market-cache/
 
 # 에이전트 전달 문서와 세션 스크래치
 .superpowers/

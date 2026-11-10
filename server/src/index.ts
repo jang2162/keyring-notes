@@ -8,6 +8,7 @@ import { createApp } from "./app.js";
 import { BackupService } from "./backup.js";
 import { ConfigStore } from "./config.js";
 import { Ingestor } from "./ingest.js";
+import { attachMarketReconcile, MarketCache } from "./marketCache.js";
 import { NoteIndex } from "./noteindex.js";
 import { ReviewQueue } from "./review.js";
 import { Automation } from "./automation.js";
@@ -38,6 +39,8 @@ const allowedHosts = (env("KEYRING_ALLOWED_HOSTS") ?? (publicUrl ? new URL(publi
 // KEYRING_UPDATE_URL="" 이면 업데이트 확인을 끈다(그래서 이것만 빈 값을 그대로 쓴다)
 const updateUrl = process.env.KEYRING_UPDATE_URL ?? "https://api.github.com/repos/jang2162/keyring-notes/releases/latest";
 const pluginsDir = path.resolve(env("KEYRING_PLUGINS_DIR") ?? (dataDir ? path.join(dataDir, "plugins") : path.join(here, "../../plugins")));
+// 마켓 패키지 캐시. 개발 기본값은 저장소 맨 위 market-cache — `../../packages` 는 모노레포의 packages/(core) 폴더다
+const packagesDir = path.resolve(env("KEYRING_PACKAGES_DIR") ?? (dataDir ? path.join(dataDir, "packages") : path.join(here, "../../market-cache")));
 const webDist = path.resolve(env("KEYRING_WEB_DIST") ?? path.join(here, "../../web/dist"));
 const host = env("KEYRING_HOST") ?? "127.0.0.1";
 const port = Number(env("KEYRING_PORT") ?? 8787);
@@ -122,6 +125,13 @@ const automation = new Automation({
 });
 // 인덱스·위키 갱신 뒤에 이벤트를 보낸다
 vault.onChange(() => automation.onCommit());
+// http:·사설 주소는 운영자 환경 변수로만 — 볼트의 공통 설정에 두면 볼트를 고칠 수 있는 기기·사람이 서버를 내부망으로 보낼 수 있다
+const market = new MarketCache({
+  root: packagesDir,
+  allowHttp: process.env.KEYRING_MARKET_ALLOW_HTTP === "1",
+  allowPrivate: process.env.KEYRING_MARKET_ALLOW_PRIVATE === "1",
+});
+void attachMarketReconcile(vault, market);
 review.onCreate((p) =>
   automation.emit("proposal.created", {
     id: p.id,
