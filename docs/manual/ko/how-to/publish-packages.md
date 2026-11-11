@@ -327,7 +327,7 @@ docker compose exec keyring keyring pkg index /data/my-repo
 - 응답을 압축하지 마세요. 앱은 압축하지 않은 파일을 요청하고, 압축된 응답은 받지 않습니다.
 - 파일을 바이트 그대로 내주세요. 바뀐 파일은 체크섬과 맞지 않습니다.
 
-새 판을 올린 뒤에는 `pkg index` 를 다시 실행하고, 새 파일과 함께 `index.json` 도 올리세요. `index.json` 을 스스로 다시 만드는 서버를 띄우려면 [내 마켓플레이스 운영하기](run-a-marketplace.md)를 보세요.
+새 판을 올린 뒤에는 `pkg index` 를 다시 실행하고, 새 파일과 함께 `index.json` 도 올리세요. `index.json` 을 스스로 다시 만드는 서버를 띄우려면 [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)를 보세요.
 
 ## 다음 단계
 

@@ -80,14 +80,16 @@
 
 ## 마켓 서버
 
-마켓 서버(`marketplace/compose.yaml`)는 Keyring Notes 와 따로 뜹니다. `.env` 는 `marketplace/.env` 에 두고, 예시는 `marketplace/.env.example` 에 있습니다. [내 마켓플레이스 운영하기](how-to/run-a-marketplace.md)를 보세요.
+마켓 서버의 Docker 구성과 그 `.env` 키는 별도 저장소 keyring-notes-marketplace 에 있습니다. [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)를 보세요.
+
+서버가 띄우는 `pkg serve` 명령은 같은 뜻의 옵션을 주지 않으면 다음 키를 읽습니다.
 
 | 키 | 기본값 | 설명 |
 | --- | --- | --- |
-| `MARKET_BIND` | `127.0.0.1` | 서버 포트를 열 호스트 주소 |
-| `MARKET_PORT` | `8080` | 호스트 포트 |
-| `MARKET_REBUILD_SECONDS` | `60` | 패키지 폴더에서 `index.json` 을 다시 만드는 주기 |
-| `MARKET_NAME` | `Keyring Notes` | `index.json` 의 저장소 이름. 앱의 저장소 목록에 보입니다 |
+| `MARKET_HOST` | `127.0.0.1` | 들을 주소(`--host`) |
+| `MARKET_PORT` | `8080` | 들을 포트(`--port`) |
+| `MARKET_REBUILD_SECONDS` | `60` | 패키지 폴더에서 `index.json` 을 다시 만드는 주기(`--rebuild-seconds`) |
+| `MARKET_NAME` | 폴더 이름 | 새 `index.json` 의 저장소 이름. 앱의 저장소 목록에 보입니다(`--name`) |
 
 ## 다음 단계
 

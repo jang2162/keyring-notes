@@ -79,14 +79,16 @@ The image fixes `KEYRING_DATA`, `KEYRING_HOST` and `KEYRING_PORT`, and the vault
 
 ## Marketplace server
 
-The marketplace server (`marketplace/compose.yaml`) is separate from Keyring Notes. Its `.env` lives in `marketplace/.env`, with examples in `marketplace/.env.example`. See [Run your own marketplace](how-to/run-a-marketplace.md).
+The marketplace server's Docker setup and its `.env` keys live in a separate repository, keyring-notes-marketplace. See [Run your own marketplace](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/en/how-to/run-a-marketplace.md).
+
+The `pkg serve` command that the server runs reads these keys when the matching option is not given:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `MARKET_BIND` | `127.0.0.1` | Host address the server port is published on |
-| `MARKET_PORT` | `8080` | Host port |
-| `MARKET_REBUILD_SECONDS` | `60` | How often the server rebuilds `index.json` from the packages folder |
-| `MARKET_NAME` | `Keyring Notes` | Repository name in `index.json`, shown in the app's repository list |
+| `MARKET_HOST` | `127.0.0.1` | Address to listen on (`--host`) |
+| `MARKET_PORT` | `8080` | Port to listen on (`--port`) |
+| `MARKET_REBUILD_SECONDS` | `60` | How often the server rebuilds `index.json` from the packages folder (`--rebuild-seconds`) |
+| `MARKET_NAME` | Folder name | Repository name in a new `index.json`, shown in the app's repository list (`--name`) |
 
 ## Next steps
 

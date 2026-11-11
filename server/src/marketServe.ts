@@ -6,7 +6,8 @@ import { buildRepoIndex } from "./pkgCli.js";
 
 /**
  * 마켓 저장소 정적 서버(`pkg serve`): 시작할 때와 주기마다 `pkg index` 로 index.json 을 다시 만들고(멱등 — 바뀔 때만 쓴다),
- * `/index.json` 과 `/packages/<scope>/<name>/<version>/<파일>` 만 내준다. 마켓 서버 이미지(marketplace/Dockerfile)가 이것을 띄운다.
+ * `/index.json` 과 `/packages/<scope>/<name>/<version>/<파일>` 만 내준다. 이것을 띄우는 곳은 별도 저장소
+ * keyring-notes-marketplace 의 마켓 서버 이미지뿐이다 — 옵션·MARKET_* 환경 변수를 바꾸면 그쪽도 맞춘다.
  * 앱 서버와 따로 돈다(볼트·로그인 없음). TLS 는 앞의 리버스 프록시가 붙인다 — 앱은 https 저장소만 받는다.
  *
  * - 압축하지 않는다: 앱·서버 받기는 identity 만 받는다(content-encoding 이 있으면 거부).
