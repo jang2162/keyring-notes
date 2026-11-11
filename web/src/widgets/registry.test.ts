@@ -11,6 +11,13 @@ import {
   widgetInsertText,
   widgetList,
   widgetViewChange,
+  notifyWidgetsChanged,
+  onWidgetsChange,
+  setMarketWidgets,
+  setMissingWidgetResolver,
+  widgetEntryKey,
+  type FrameWidgetEntry,
+  type MissingWidget,
   type WidgetEntry,
 } from "./registry";
 import type { WidgetDefinition } from "./types";
@@ -62,7 +69,7 @@ describe("레지스트리", () => {
   it("iframe 위젯: 코드 원천·제3자 글 자리", () => {
     const frame = async () => ({ kind: "text" as const, js: "" });
     const table = { en: { a: "A" } };
-    const third: WidgetEntry = { def: entry({ id: "t/third" }).def, builtIn: false, messages: table, frame };
+    const third: WidgetEntry = { def: entry({ id: "@t/third" }).def, builtIn: false, messages: table, frame };
     registerWidget(third);
     expect(effectiveIsolation(third)).toBe("frame");
     expect(isFrameEntry(third)).toBe(true);
@@ -181,5 +188,142 @@ describe("widgetPaletteItems", () => {
     expect(items.map((i) => i.detail)).toEqual(["t/a", "t/b"]);
     items[0]!.run();
     expect(got).toEqual([widgetInsertText(A.def)]);
+  });
+});
+
+const frameCode = async () => ({ kind: "text" as const, js: "" });
+function market(id: string, more: Partial<FrameWidgetEntry> & { version?: number } = {}): FrameWidgetEntry {
+  const { version = 1, ...rest } = more;
+  return {
+    def: { id, version, isolation: "frame", display: "block", defaultState: () => ({ d: 1 }), title: { en: id } },
+    builtIn: false,
+    messages: {},
+    frame: frameCode,
+    ...rest,
+  };
+}
+
+describe("받은 위젯 id 와 내장 id 는 겹치지 않는다", () => {
+  it("받은 위젯이 내장 꼴 id 를 쓰거나 내장이 @ 꼴을 쓰면 거부", () => {
+    expect(() => registerWidget(market("keyring/dday"))).toThrow();
+    expect(() => registerWidget({ ...market("@me/x"), builtIn: true, messages: "kw.test" })).toThrow();
+    registerWidget(market("@me/x"));
+    expect(findWidget("@me/x")).not.toBeNull();
+  });
+});
+
+describe("setMarketWidgets·onWidgetsChange", () => {
+  let calls = 0;
+  let off: () => void = () => {};
+  beforeEach(() => {
+    setMissingWidgetResolver(null);
+    calls = 0;
+    off();
+    off = onWidgetsChange(() => calls++);
+  });
+
+  it("바뀐 것이 있을 때만 알리고, 내장은 건드리지 않는다", () => {
+    const a = market("@me/a");
+    const list = [a];
+    setMarketWidgets(list);
+    expect(calls).toBe(1);
+    expect(findWidget("@me/a")).toBe(a);
+    setMarketWidgets(list);
+    setMarketWidgets([a]);
+    expect(calls).toBe(1);
+    const a2 = market("@me/a");
+    setMarketWidgets([a2]);
+    expect(calls).toBe(2);
+    expect(findWidget("@me/a")).toBe(a2);
+    setMarketWidgets([]);
+    expect(calls).toBe(3);
+    expect(findWidget("@me/a")).toBeNull();
+    expect(widgetList()).toEqual([X]);
+  });
+
+  it("내장 → 받은 것 순서, 받은 것은 넘긴 순서", () => {
+    const a = market("@me/a");
+    const b = market("@me/b");
+    setMarketWidgets([b, a]);
+    expect(widgetList()).toEqual([X, b, a]);
+  });
+
+  it("registerWidget 과 같이 거부하고, 하나라도 틀리면 아무것도 바꾸지 않는다", () => {
+    const a = market("@me/a");
+    setMarketWidgets([a]);
+    const bad: FrameWidgetEntry[][] = [
+      [market("@me/b"), market("@me/b")],
+      [market("keyring/dday")],
+      [{ ...market("@me/x"), builtIn: true, messages: "kw.test" }],
+      [{ ...market("@me/x"), messages: "kw.dday" }],
+      [{ ...market("@me/x"), frame: undefined as unknown as FrameWidgetEntry["frame"] }],
+      [market("@me/x", { def: { ...market("@me/x").def, dataFile: { ext: "sketch", initial: () => new Uint8Array([1]) } } })],
+      [market("t/x")],
+    ];
+    for (const list of bad) expect(() => setMarketWidgets(list), list[0]!.def.id).toThrow();
+    expect(findWidget("@me/a")).toBe(a);
+    expect(calls).toBe(1);
+  });
+
+  it("notifyWidgetsChanged 는 알리기만, 끊으면 오지 않는다", () => {
+    notifyWidgetsChanged();
+    expect(calls).toBe(1);
+    off();
+    notifyWidgetsChanged();
+    expect(calls).toBe(1);
+  });
+
+  it("widgetEntryKey: 내장은 id, 받은 위젯은 pkgKey", () => {
+    expect(widgetEntryKey(X)).toBe("t/x");
+    expect(widgetEntryKey(market("@me/a", { pkgKey: "@me/a@1.0.0#k" }))).toBe("@me/a@1.0.0#k");
+  });
+});
+
+describe("없는 위젯의 까닭", () => {
+  beforeEach(() => setMissingWidgetResolver(null));
+  const v = (body: string) => resolveWidgetView(body);
+
+  it("판정기 없음 → kw.notFound, 단추 없음", () => {
+    expect(v('{"widget":"@me/a@1"}')).toEqual({ kind: "error", key: "kw.notFound", vars: { id: "@me/a" } });
+  });
+
+  it("판정기의 답마다 글 키·단추·까닭", () => {
+    const answer: { a: MissingWidget } = { a: { kind: "notFound", install: true } };
+    setMissingWidgetResolver(() => answer.a);
+    expect(v('{"widget":"@me/a@1"}')).toEqual({ kind: "error", key: "kw.notFound", vars: { id: "@me/a" }, action: { kind: "install", id: "@me/a" } });
+    answer.a = { kind: "notFound", install: false };
+    expect(v('{"widget":"@me/a@1"}')).toEqual({ kind: "error", key: "kw.notFound", vars: { id: "@me/a" } });
+    answer.a = { kind: "pending" };
+    expect(v('{"widget":"@me/a@1"}')).toEqual({ kind: "error", key: "kw.pending" });
+    answer.a = { kind: "incompatible" };
+    expect(v('{"widget":"@me/a@1"}')).toEqual({ kind: "error", key: "kw.needsAppUpdate" });
+    answer.a = { kind: "failed", error: { code: "market_scope_reserved", params: { id: "@me/a" } } };
+    expect(v('{"widget":"@me/a@1"}')).toEqual({
+      kind: "error",
+      key: "kw.packageFailed",
+      error: { code: "market_scope_reserved", params: { id: "@me/a" } },
+      action: { kind: "market", id: "@me/a" },
+    });
+  });
+});
+
+describe("받은 위젯의 상태 판", () => {
+  it("부모가 migrate 하지 않고 블록 판을 from 으로, state 가 없으면 기본 상태와 위젯 판", () => {
+    const c = market("@me/c", { version: 2 });
+    setMarketWidgets([c]);
+    expect(resolveWidgetView('{"widget":"@me/c@1","state":{"n":1}}')).toMatchObject({ kind: "widget", entry: c, state: { n: 1 }, from: 1 });
+    expect(resolveWidgetView('{"widget":"@me/c@1"}')).toMatchObject({ kind: "widget", state: { d: 1 }, from: 2 });
+    expect(resolveWidgetView('{"widget":"@me/c@3"}')).toEqual({ kind: "error", key: "kw.tooNew" });
+  });
+
+  it("내장은 부모가 올리므로 from 이 def.version", () => {
+    expect(resolveWidgetView('{"widget":"t/x@1","state":{"n":1}}')).toMatchObject({ kind: "widget", from: 2 });
+  });
+
+  it("항목 객체가 바뀌면 remount(판 교체)", () => {
+    setMarketWidgets([market("@me/c")]);
+    const before = resolveWidgetView('{"widget":"@me/c@1"}');
+    setMarketWidgets([market("@me/c")]);
+    expect(widgetViewChange(before, resolveWidgetView('{"widget":"@me/c@1"}'))).toBe("remount");
   });
 });
