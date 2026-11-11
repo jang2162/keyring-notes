@@ -178,7 +178,7 @@ export type WidgetView =
       vars?: Record<string, string>;
       /** 오류 줄 옆 단추(「설치」·「마켓에서 보기」) */
       action?: { kind: "install" | "market"; id: string };
-      /** kw.packageFailed 의 까닭 — 화면이 t("error." + code, params) 로 {error} 를 채운다 */
+      /** kw.packageFailed 의 까닭 — 화면이 error.<code> 글(params 로 채움)로 {error} 를 채운다 */
       error?: { code: string; params: Record<string, string | number> };
     };
 
