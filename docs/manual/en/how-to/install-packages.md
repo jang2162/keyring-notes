@@ -32,7 +32,7 @@ The list starts with the official repository, `https://keyring-notes-marketplace
 - You can remove the official repository. **Add the official repository again** brings it back.
 - Packages from the `@keyring` scope come only from the official repository.
 
-To build your own repository, see [Run your own marketplace](run-a-marketplace.md).
+To build your own repository, see [Publish marketplace packages](publish-packages.md). To run a server for it, see the [keyring-notes-marketplace](https://github.com/jang2162/keyring-notes-marketplace) README.
 
 ## Browse and install
 
@@ -116,4 +116,4 @@ A device that has not downloaded a theme or language yet, cannot reach the repos
 
 - [Customize settings](customize-settings.md)
 - [Publish marketplace packages](publish-packages.md)
-- [Run your own marketplace](run-a-marketplace.md)
+- [Run your own marketplace](https://github.com/jang2162/keyring-notes-marketplace)

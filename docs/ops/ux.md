@@ -1850,7 +1850,7 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 
 ### 마켓플레이스 1단계 구현
 
-설계 `docs/superpowers/specs/2026-11-10-marketplace-design.md`, 계획 `docs/superpowers/plans/2026-11-10-marketplace-phase1.md`. 마켓 서버 운영은 `docs/guides/deploy-marketplace.md`, 사용자 문서 `run-a-marketplace`·`publish-packages`.
+설계 `docs/superpowers/specs/2026-11-10-marketplace-design.md`, 계획 `docs/superpowers/plans/2026-11-10-marketplace-phase1.md`. 마켓 서버 운영은 별도 저장소 keyring-notes-marketplace(https://github.com/jang2162/keyring-notes-marketplace, 2026-11-11 옮김), 사용자 문서 `publish-packages`.
 
 **사용자 결정**
 - 공식 마켓 하나 + 사용자가 더하는 개인 마켓, 제출 심사·서명은 없다. 테마는 색 토큰만. 서버 모드는 서버가 받아 캐시하고 화면은 같은 출처에서, 서버 없는 데스크톱 앱은 네이티브로 받는다.
@@ -1858,7 +1858,7 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 - 한 기기에서 제거하고 다른 기기에서 업데이트한 것이 겹치면 업데이트가 이긴다.
 
 **정한 것(코디네이터·워커)**
-- 공식 패키지는 이 저장소 `marketplace/packages/`, 마켓 서버 이미지가 싣는다(`pkg serve`). 개인 마켓은 같은 이미지에 자기 폴더를 마운트한다.
+- 공식 패키지와 마켓 서버 이미지(`pkg serve`)는 별도 저장소 keyring-notes-marketplace 가 갖는다(2026-11-11 사용자 결정으로 이 저장소에서 옮김). 개인 마켓은 같은 이미지에 자기 폴더를 마운트한다.
 - 서버·데스크톱의 나가는 요청: `https:` 만, 접속에 쓰는 주소로 사설 IP 판정(DNS 재바인딩·대괄호 IPv6·10/16/8진·짧은 꼴·끝 점·사상·SIIT·NAT64·zone id), 리다이렉트마다 다시, 프록시 환경 변수 무시, 압축 응답 거부, 스트리밍 중 크기 상한(파일 8MiB·패키지 16MiB·index 2MiB), 리다이렉트 포함 요청 하나 30초. `http:`·사설은 운영자 환경 변수(데스크톱은 그 기기 설정)로만.
 - 캐시는 sha256 확인 뒤 원자적으로 놓고, 「있다」 고 판정하는 모든 길이 바이트를 잠금의 sha256 으로 다시 대 상했으면 다시 받는다.
 - 공통 설정 병합에서 빈 묶음을 잎으로 세던 것을 모든 키에 대해 고쳤다 — 한 기기가 `ui.keys` 를 비우면 서버의 새 키까지 지우던 기존 버그도 함께 고쳐졌다.

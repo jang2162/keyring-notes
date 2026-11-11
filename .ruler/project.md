@@ -14,6 +14,7 @@
 | --- | --- |
 | Docker 이미지·compose 파일·배포용 환경 변수를 바꿀 때 | `docs/guides/deploy-docker.md` |
 | Komodo 로 서버에 배포하는 Stack 이나 서버의 override 파일을 만들거나 고칠 때 | `docs/guides/deploy-komodo.md` |
-| 공식 마켓 서버(`marketplace/`)의 이미지·compose·Komodo Stack 을 바꾸거나 배포할 때 | `docs/guides/deploy-marketplace.md` |
 | macOS 앱 릴리스 워크플로·서명·공증·업데이터 설정·제품 버전을 바꾸거나 릴리스할 때 | `docs/guides/release-macos.md` |
 | 서버·앱의 구조를 파악하거나, 개발 서버·시험을 돌리거나, README·사용자 문서를 고칠 때 | `docs/guides/development.md` |
+
+마켓 서버 구성(이미지·compose·Komodo Stack·공식 패키지)은 별도 저장소 keyring-notes-marketplace(https://github.com/jang2162/keyring-notes-marketplace)가 갖는다. 이 저장소에는 패키지 형식과 `pkg check`·`pkg index`·`pkg serve` CLI 만 있다.
