@@ -211,6 +211,21 @@ self.keyringWidgetRegister((el, ctx, api) => {
 - **`frame.js`** is a classic script, not a module. `import` and `export` are not allowed. The limit is 8 MiB, and `pkg check` warns above 1 MiB (`large_frame_js`), because the app sends the code to every frame again.
 - **`frame.css`** applies only inside the widget's frame. It cannot change the app. External addresses (`@import`, `url(https://…)`) are blocked. Put images and fonts in `data:` URLs.
 - **Check before you publish.** Run `pkg check` on every widget version. `pkg index` does not check the syntax of `frame.js`. A widget with a syntax error is still listed, and after 20 seconds the app shows "Couldn't load the widget" in its place.
+- **When users update.** An open widget switches to the new version after the user finishes editing it. If the user was editing, your new version receives the draft and runs `migrate` on it first.
+
+This version 2 of a counter stores `{ count }` instead of version 1's `{ n }`:
+
+```js
+self.keyringWidgetRegister(
+  (el, ctx, api) => {
+    // … draw ctx.state.count …
+    return () => {};
+  },
+  { migrate: (state, from) => (from < 2 ? { count: state.n ?? 0 } : state) },
+);
+```
+
+Set `"stateVersion": 2` in the manifest. A block written by version 1 (`"@me/counter@1"`) keeps its old state until the widget changes it, and is then written as `"@me/counter@2"` with `{ count }`.
 
 ## The index file
 

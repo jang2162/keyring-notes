@@ -109,7 +109,8 @@ keyring-widget 중 앱 코드가 아니거나 인라인 기준을 넘는 위젯(
 
 **메시지 다리와 차단.** 부모는 만들 때 잡아 둔 그 iframe 의 WindowProxy 에서 온 것만, 출처가 `"null"` 인 것만, 인스턴스 id 가 맞고 `parseFrameMsg` 를 지난 것만 받는다(`web/src/widgets/frame/layout.ts` 의 `routeFrameMessage`). 같은 창인데 출처가 `"null"` 이 아니거나, 두 번째 `load`·`ready` 가 오면(`frameGuard` — 위젯이 자기 iframe 을 다른 주소로 옮김) iframe 을 지우고 「위젯이 다른 페이지로 이동하려 해 멈췄습니다」 를 보이며 그 인스턴스에 더 답하지 않는다. iframe 이 부모로 넘기는 키는 `Esc`(위젯이 처리하지 않은 것)와 `Mod+S` 둘뿐이다.
 
-**알려진 한계.** 위젯이 이미 가진 상태·파일 바이트를 자기 iframe 의 탐색 URL(탐색이 시작되는 순간 주소에 실어)이나 WebRTC(`RTCPeerConnection` 의 STUN)로 밖에 내보내는 것은 CSP·sandbox 로 막을 수 없다. 내장 위젯은 앱 코드라 믿고, 제3자 위젯은 마켓플레이스 설계에서 다룬다(검토·서명·권한 표시 등). 데스크톱 앱(WKWebView)에서는 iframe 에도 `webkit.messageHandlers.ipc` 가 보이지만, 호출 키가 없는 요청은 답도 부수 효과도 없었다(Task 8 확인 — 키는 부모 창의 `__TAURI_INTERNALS__` 에만 있다).
+**알려진 한계.** 위젯이 이미 가진 상태·파일 바이트를 자기 iframe 의 탐색 URL(탐색이 시작되는 순간 주소에 실어)이나 WebRTC(`RTCPeerConnection` 의 STUN)로 밖에 내보내는 것은 CSP·sandbox 로 막을 수 없다. 내장 위젯은 앱 코드라 믿는다. 받은 위젯(마켓 3단계, 계획 `docs/superpowers/plans/2026-11-10-marketplace-phase3.md`)은 늘 이 iframe 에서 돌고, 그 위에 이렇게 지킨다:
+설치(업데이트·동기화 아님) 때 WebRTC 알림을 확인받는다(`MARKET_KINDS[type].installNotice`), 등록 시한 20초(`FRAME_REGISTER_TIMEOUT_MS` — 넘으면 「불러오지 못했습니다」), 위젯에서 오는 상태(`setState`·수정 중 초안·`migrated`)의 `file` 은 늘 블록 값으로 고정(`session.ts` `pinFile`), `migrate` 는 iframe 안에서 돌고 호스트는 마지막 보냄의 `seq` 의 답만 받는다, 잠금의 `@keyring/…` 은 공식 저장소일 때만 쓴다(core `parseMarketplace`). 검토·서명·권한 표시는 없다. 데스크톱 앱(WKWebView)에서는 iframe 에도 `webkit.messageHandlers.ipc` 가 보이지만, 호출 키가 없는 요청은 답도 부수 효과도 없었다(Task 8 확인 — 키는 부모 창의 `__TAURI_INTERNALS__` 에만 있다).
 
 ## 마켓 받기와 나가는 요청
 
@@ -152,6 +153,7 @@ keyring-widget 중 앱 코드가 아니거나 인라인 기준을 넘는 위젯(
 - 화면 쪽 캐시는 브라우저 IndexedDB(`keyring-market`) 또는 앱 데이터 폴더(`$APPDATA/packages/`)다.
 - 잠금이 바뀔 때마다 맞추고(`state.ts`), 잠금을 읽은 뒤에만 잠금에 없는 판을 바로 지운다.
 - 2·3단계는 `registerPackageKind(type, { apply })` 로 종류별 적용자를 걸고 `readPackageFile` 로 바이트를 읽는다. 읽을 때마다 잠금 sha 로 다시 잰다.
+- 위젯 적용자(`web/src/widgets/marketWidgets.ts`)는 패키지마다 그 순간의 잠금 항목을 붙잡아 `readPackageFileAt` 으로 읽는다 — 잠금이 바뀌었으면 `market_stale` 로 거절해, 그려진 판의 정의에 다른 판의 코드가 붙지 않는다. 서버 모드의 열린 화면은 다른 기기의 잠금 바뀜을 저장·새로고침 때만 다시 읽는다(실시간 전달이 없다).
 - 개발 빌드(`import.meta.env.DEV`)에서만 `globalThis.keyringMarket` 이 있다.
 
 **알려진 한계.**

@@ -89,6 +89,17 @@ Click **Full screen** above the drawing to make it fill the window. `Esc` first 
 - **History:** History view shows the path instead of the drawing. Open the file's history to see older drawings.
 - **Files:** Moving or renaming the file updates the block. Deleting the block keeps the file; delete it from the note's files. If the file is missing, the widget shows **File not found** and does not create a new one. The broken-link check can miss a missing drawing when another file ends with the same name.
 
+## Use widgets from the marketplace
+
+Widgets from a marketplace repository work like the built-in ones. After you install one (see [Install packages](install-packages.md)), it appears in **Insert widget**.
+
+- **Widget ids:** A block names its widget as `<id>@<state version>`. Built-in widgets have ids like `keyring/dday`. Marketplace widgets have ids like `@me/clock`, for example `{"widget": "@me/clock@1"}`.
+- **Not installed:** The block shows its source and **Widget … not found**. For a marketplace id, **Install** opens the marketplace with only that widget. If no repository in your list has it, the marketplace asks you to add the repository.
+- **Preparing:** Right after the app opens, the block shows **Preparing the widget…** until the installed packages are checked.
+- **Older app:** **Update the app to see this widget** means the widget needs a newer app version on this device.
+- **History:** History view draws the old block with the installed widget, read-only, and shows no **Install** button.
+- **Isolation:** Marketplace widgets always run in an isolated frame. They cannot read the app or your other notes, and they cannot change which data file their block points to.
+
 ## Add your own widget type
 
 A widget plugin is one ES module in the server's plugin folder (`KEYRING_PLUGINS_DIR`). See [examples/plugins](../../../../examples/plugins/README.md) for the format and a kanban example.

@@ -212,6 +212,21 @@ self.keyringWidgetRegister((el, ctx, api) => {
 - **`frame.js`** 는 모듈이 아닌 고전 스크립트입니다. `import`·`export` 는 쓸 수 없습니다. 상한은 8 MiB 이고, 1 MiB 를 넘으면 `pkg check` 가 경고(`large_frame_js`)합니다. 앱이 프레임마다 코드를 다시 건네기 때문입니다.
 - **`frame.css`** 는 위젯 프레임 안에만 적용됩니다. 앱을 바꿀 수 없습니다. 외부 주소(`@import`, `url(https://…)`)는 막힙니다. 그림과 글꼴은 `data:` URL 로 넣으세요.
 - **올리기 전에 검사하세요.** 위젯의 모든 판에 `pkg check` 를 돌리세요. `pkg index` 는 `frame.js` 문법을 보지 않습니다. 문법 오류가 있는 위젯도 목록에 오르고, 앱은 20초 뒤 그 자리에 「위젯을 불러오지 못했습니다」 를 보입니다.
+- **사용자가 업데이트할 때.** 열려 있던 위젯은 사용자가 수정을 마친 뒤 새 판으로 바뀝니다. 수정 중이었으면 새 판이 그 초안을 받아 먼저 `migrate` 로 올립니다.
+
+카운터 2판은 1판의 `{ n }` 대신 `{ count }` 를 저장합니다.
+
+```js
+self.keyringWidgetRegister(
+  (el, ctx, api) => {
+    // … draw ctx.state.count …
+    return () => {};
+  },
+  { migrate: (state, from) => (from < 2 ? { count: state.n ?? 0 } : state) },
+);
+```
+
+매니페스트에 `"stateVersion": 2` 를 적으세요. 1판이 쓴 블록(`"@me/counter@1"`)은 위젯이 상태를 바꿀 때까지 옛 상태 그대로이고, 그때 `{ count }` 와 함께 `"@me/counter@2"` 로 쓰입니다.
 
 ## 목록 파일
 
