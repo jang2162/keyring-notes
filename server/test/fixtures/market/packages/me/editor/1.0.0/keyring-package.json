@@ -1,0 +1,11 @@
+{
+  "id": "@me/editor",
+  "version": "1.0.0",
+  "type": "widget",
+  "name": { "en": "Editor", "ko": "편집기" },
+  "description": { "en": "A test widget with edit mode (state version 1: { n })" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": ">=0.1.0" },
+  "widget": { "stateVersion": 1, "display": "block", "defaultState": { "n": 0 } }
+}

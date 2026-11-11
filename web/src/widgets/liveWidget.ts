@@ -53,12 +53,17 @@ export class KeyringBlockWidget extends WidgetType {
         view.dispatch(spec);
         return true;
       },
+      currentEdit: () => {
+        const b = block();
+        const e = view.state.field(widgetEditField, false);
+        return widgetResume(e, OWNER, !!b && e?.from === b.from);
+      },
       edit: {
-        start: (draft) => {
+        start: (draft, stateFrom, entryKey) => {
           const b = block();
-          if (b) view.dispatch({ effects: startWidgetEdit.of({ from: b.from, draft, owner: OWNER }) });
+          if (b) view.dispatch({ effects: startWidgetEdit.of({ from: b.from, draft, owner: OWNER, stateFrom, entryKey }) });
         },
-        draft: (draft) => view.dispatch({ effects: setWidgetDraft.of(draft) }),
+        draft: (change) => view.dispatch({ effects: setWidgetDraft.of(change) }),
         focus: (i) => view.dispatch({ effects: setWidgetFocus.of(i) }),
         // 끝은 곧바로 — 미루면 적용(쓰기)으로 다시 그려진 미리보기 위젯이 아직 지워지지 않은 수정을 본다.
         // 편집기 업데이트 안(updateDOM 의 다시 그리기)에서 불리면 편집기가 dispatch 를 막으므로 그때만 미룬다

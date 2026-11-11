@@ -516,6 +516,10 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .kw-error-block { margin: var(--sp-1) 0; border: 1px dashed var(--danger); border-radius: var(--radius); background: var(--danger-bg); }
 .kw-error-block.kw-clickable { cursor: text; }
 .kw-error { padding: var(--sp-1) var(--sp-3); font-size: var(--fs-sm); color: var(--danger); }
+/* 오류 줄 옆 「설치」·「마켓에서 보기」(받은 위젯) */
+.kw-error-action { font: inherit; font-size: var(--fs-xs); color: var(--accent); background: var(--bg); border: 1px solid var(--border); padding: 0 var(--sp-2); border-radius: var(--radius-sm); cursor: pointer; }
+.kw-error-action:hover { background: var(--hover); }
+.kw-error-action:focus-visible { outline: none; box-shadow: var(--focus); }
 .kw-raw { margin: 0; padding: var(--sp-2) var(--sp-3); font-family: var(--font-mono); font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-all; color: var(--fg); background: var(--bg-soft); border-radius: 0 0 var(--radius) var(--radius); }
 /* 내장 위젯 D-day(widgets/inline/dday.ts). 색은 테마 토큰만 — 밝은·어두운이 토큰으로 갈린다 */
 .kw-dday [hidden] { display: none !important; }

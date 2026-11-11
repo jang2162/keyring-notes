@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPdfAnnotation, type PdfAnnotation } from "@keyring-notes/core";
 import tauriConf from "../../app/src-tauri/tauri.conf.json";
-import { askUninstallPackage, removeAnnotation, removeProperty, resetDevice } from "./askFirst";
+import { askInstallNotice, askUninstallPackage, removeAnnotation, removeProperty, resetDevice } from "./askFirst";
+import { t } from "./i18n";
 import type { CompanionTarget } from "./pdfCompanion";
 import pdfViewerSrc from "./PdfViewer.tsx?raw";
 import propertiesSrc from "./Properties.tsx?raw";
@@ -109,6 +110,15 @@ describe("첫 클릭이 바로 닿으므로 한 번에 지우는 단추는 묻�
     expect(confirmDialog.mock.calls[0]![0]).toContain("Sea");
     confirmDialog.mockResolvedValue(true);
     expect(await askUninstallPackage("Sea")).toBe(true);
+  });
+
+  it("마켓 설치 알림(위젯 WebRTC) — 확인 단추는 「설치」, 확인이면 true·취소면 false", async () => {
+    confirmDialog.mockReset();
+    confirmDialog.mockResolvedValue(true);
+    expect(await askInstallNotice("market.widgetNotice")).toBe(true);
+    expect(confirmDialog.mock.calls[0]).toEqual([t("market.widgetNotice"), t("market.install")]);
+    confirmDialog.mockResolvedValue(false);
+    expect(await askInstallNotice("market.widgetNotice")).toBe(false);
   });
 
   it("속성 행 삭제 — 확인했을 때만 프런트매터를 고친다", async () => {

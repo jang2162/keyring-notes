@@ -6,7 +6,7 @@ import { focusOutAction, type WidgetSession } from "../session";
 import type { WidgetContext } from "../types";
 import { frameSrcdoc } from "./bootstrap";
 import { FrameHost } from "./host";
-import { frameFocusInside, frameGuard, frameHeight, FRAME_MIN_HEIGHT, routeFrameMessage } from "./layout";
+import { frameFocusInside, frameGuard, frameHeight, frameLoadFailedKey, FRAME_MIN_HEIGHT, routeFrameMessage } from "./layout";
 import { fetchFrameCode, resolveFrameCode } from "./source";
 
 /**
@@ -56,6 +56,8 @@ export function mountFrame(
     failed(key?: string): void;
     /** 포커스가 위젯 밖으로 나감(수정 모드와 상관없이 — 데이터 파일 비우기) */
     focusOut?(): void;
+    /** iframe 이 올린 상태(받은 위젯의 migrate) — session.adoptMigrated */
+    migrated?(state: unknown): void;
   },
 ): { destroy(): void } {
   const id = crypto.randomUUID();
@@ -161,6 +163,17 @@ export function mountFrame(
     if (r.kind === "receive") host?.receive(r.msg);
   }
 
+  /** 그 자리를 오류로(key 가 없으면 kw.loadFailed) — iframe 을 치우고 더 답하지 않는다 */
+  const giveUp = (key?: string) => {
+    if (dead) return;
+    dead = true;
+    host?.kill();
+    stopListening();
+    removeFrame();
+    o.file?.release();
+    o.failed(key);
+  };
+
   o.onUpdate(() => host?.update());
 
   loadCode(o.entry).then(
@@ -180,16 +193,12 @@ export function mountFrame(
         },
         blurred: checkFocusOut,
         save: () => window.dispatchEvent(new Event("keyring:save")),
-        failed: () => {
-          if (dead) return;
-          dead = true;
-          host?.kill();
-          stopListening();
-          removeFrame();
-          o.file?.release();
-          o.failed();
-        },
+        failed: (_message, phase) => giveUp(phase === "migrate" ? "kw.migrateFailed" : undefined),
         navigated: kill,
+        builtIn: o.entry.builtIn,
+        migrated: (s) => o.migrated?.(s),
+        // 등록하지 않는 받은 위젯(문법 오류·예외)이 빈 자리로 남지 않게
+        registerTimeout: () => giveUp(),
         code: { runtime, widget: widget.js, css: widget.css, fonts: widget.fonts },
       });
       const f = document.createElement("iframe");
@@ -208,12 +217,12 @@ export function mountFrame(
       // 붙인 직후 잡아 둔다 — DOM 에서 빠지면 contentWindow 는 null 이 되어 전송 중이던 메시지를 가를 수 없다
       win = f.contentWindow;
     },
-    () => {
+    (e: unknown) => {
       if (dead) return;
       dead = true;
       removeFrame();
       o.file?.release();
-      o.failed();
+      o.failed(frameLoadFailedKey(e));
     },
   );
 

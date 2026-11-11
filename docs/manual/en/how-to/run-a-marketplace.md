@@ -5,7 +5,7 @@ This guide runs a marketplace repository with Docker and adds it to Keyring Note
 It is for people who share their own widgets, themes or languages, publicly or on a home network.
 
 > [!NOTE]
-> The app cannot install or use packages yet. Installing from the app, themes, languages and widgets arrive in later releases.
+> To install packages from your repository in the app, see [Install packages](install-packages.md).
 
 To make the packages themselves, see [Publish marketplace packages](publish-packages.md).
 

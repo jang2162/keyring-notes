@@ -1,0 +1,11 @@
+{
+  "id": "@me/probe",
+  "version": "1.1.0",
+  "type": "widget",
+  "name": { "en": "Probe" },
+  "description": { "en": "Probe 1.0.0 plus a .json data file — a file planted by 1.0.0 must not open another attachment" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": ">=0.1.0" },
+  "widget": { "stateVersion": 2, "display": "block", "dataFile": { "ext": "json", "initial": "{}" }, "defaultState": { "note": "probe" } }
+}

@@ -144,6 +144,84 @@ describe("iframe 런타임", () => {
     expect(x.posted[1]).toEqual({ kw: "kw1", id: ID, type: "height", px: 321 });
   });
 
+  it("migrate: 위젯에 건네기 전에 올리고 같은 seq 로 migrated, 그 뒤 위젯의 setState", () => {
+    const x = env();
+    const seen: unknown[] = [];
+    const calls: [unknown, number][] = [];
+    let api!: WidgetApi;
+    startFrameRuntime(x.e).register(
+      (_e, c, a) => {
+        api = a;
+        seen.push(c.state);
+        a.onUpdate((u) => seen.push(u.state));
+        a.setState({ touched: true });
+        return () => {};
+      },
+      { migrate: (s, from) => (calls.push([s, from]), { count: (s as { n: number }).n }) },
+    );
+    x.send({ ...init(), ctx: { ...ctx, state: { n: 3 } }, from: 1, version: 2, seq: 1 });
+    expect(calls).toEqual([[{ n: 3 }, 1]]);
+    expect(seen).toEqual([{ count: 3 }]);
+    expect(types(x.posted)).toEqual(["registered", "migrated", "setState"]);
+    expect(x.posted[1]).toEqual({ kw: "kw1", id: ID, type: "migrated", state: { count: 3 }, seq: 1 });
+    // update 도 판이 낮으면 다시 올린다
+    x.send({ type: "update", ctx: { ...ctx, state: { n: 5 } }, from: 1, version: 2, seq: 2 });
+    expect(seen.at(-1)).toEqual({ count: 5 });
+    expect(x.posted.at(-1)).toEqual({ kw: "kw1", id: ID, type: "migrated", state: { count: 5 }, seq: 2 });
+    // 같은 판이면 부르지 않는다
+    x.send({ type: "update", ctx: { ...ctx, state: { count: 6 } }, from: 2, version: 2, seq: 3 });
+    expect(calls).toHaveLength(2);
+    expect(seen.at(-1)).toEqual({ count: 6 });
+    expect(types(x.posted).filter((t) => t === "migrated")).toHaveLength(2);
+    expect(api).toBeDefined();
+  });
+
+  it("migrate: 같은 판·migrate 없음·상태 없음이면 부르지 않고 migrated 도 없다", () => {
+    for (const [from, version, state, migrate] of [
+      [2, 2, { n: 1 }, true],
+      [1, 2, { n: 1 }, false],
+      [1, 2, undefined, true],
+    ] as const) {
+      const x = env();
+      const seen: unknown[] = [];
+      let called = 0;
+      startFrameRuntime(x.e).register((_e, c) => (seen.push(c.state), () => {}), migrate ? { migrate: () => (called++, { up: true }) } : undefined);
+      x.send({ ...init(), ctx: { ...ctx, state }, from, version, seq: 1 });
+      expect(called).toBe(0);
+      expect(seen).toEqual([state]);
+      expect(types(x.posted)).toEqual(["registered"]);
+    }
+  });
+
+  it("migrate 가 던지면 error(phase migrate) 이고 render 하지 않는다, update 면 onUpdate 하지 않는다", () => {
+    const x = env();
+    let renders = 0;
+    const seen: unknown[] = [];
+    let fail = true;
+    startFrameRuntime(x.e).register((_e, _c, a) => (renders++, a.onUpdate((u) => seen.push(u.state)), () => {}), {
+      migrate: () => {
+        if (fail) throw new Error("bad");
+        return { ok: 1 };
+      },
+    });
+    x.send({ ...init(), ctx: { ...ctx, state: { n: 1 } }, from: 1, version: 2, seq: 1 });
+    expect(renders).toBe(0);
+    expect(x.posted.at(-1)).toEqual({ kw: "kw1", id: ID, type: "error", message: "bad", phase: "migrate" });
+    const y = env();
+    startFrameRuntime(y.e).register((_e, _c, a) => (a.onUpdate((u) => seen.push(u.state)), () => {}), {
+      migrate: () => {
+        if (fail) throw new Error("bad2");
+        return { ok: 1 };
+      },
+    });
+    fail = false;
+    y.send({ ...init(), ctx: { ...ctx, state: { n: 1 } }, from: 2, version: 2, seq: 1 });
+    fail = true;
+    y.send({ type: "update", ctx: { ...ctx, state: { n: 2 } }, from: 1, version: 2, seq: 2 });
+    expect(seen).toEqual([]);
+    expect(y.posted.at(-1)).toMatchObject({ type: "error", phase: "migrate" });
+  });
+
   it("render 가 던지면 error", () => {
     const x = env();
     startFrameRuntime(x.e).register(() => {

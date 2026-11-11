@@ -298,7 +298,18 @@ describe("index", () => {
     const c = cache({ fetch: f, now: () => now });
     const r = await c.index(REPO);
     expect(r.error).toBeUndefined();
-    expect(Object.keys(r.index!.packages).sort()).toEqual(["@me/clock", "@me/fog", "@me/ja", "@me/paper", "@me/sea"]);
+    expect(Object.keys(r.index!.packages).sort()).toEqual([
+      "@me/clock",
+      "@me/counter",
+      "@me/editor",
+      "@me/fog",
+      "@me/ja",
+      "@me/paper",
+      "@me/probe",
+      "@me/sea",
+      "@me/silent",
+      "@me/sketch",
+    ]);
     expect(r.ignored).toEqual(["@keyring/hello: scope_reserved"]);
     now += 4 * 60 * 1000;
     await c.index("https://repo.test/m");

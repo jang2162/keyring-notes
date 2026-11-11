@@ -1,0 +1,11 @@
+{
+  "id": "@me/silent",
+  "version": "1.0.0",
+  "type": "widget",
+  "name": { "en": "Silent" },
+  "description": { "en": "A test widget that never registers (register timeout)" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": ">=0.1.0" },
+  "widget": { "stateVersion": 1, "display": "block", "defaultState": {} }
+}

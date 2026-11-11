@@ -203,7 +203,7 @@ export class MarketCache {
     // API 로 들어온 항목도 설정 파일에서 읽은 항목과 같은 검사를 지난다(id·판·파일 이름·해시 꼴)
     const parsed = parseMarketplace({ repos: [], packages: { [id]: entry } });
     const clean = parsed.packages[id];
-    if (!clean) throw new PathError("market_lock_invalid", { id: String(id) });
+    if (!clean) throw new PathError(parsed.problems.find((p) => p.id === id)?.code ?? "market_lock_invalid", { id: String(id) });
     const key = `${id}@${clean.version}`;
     for (;;) {
       const running = this.inflight.get(key);

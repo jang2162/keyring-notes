@@ -46,15 +46,15 @@ describe("blockFieldNeedsUpdate", () => {
 
   it("수정 시작·끝 효과만 있어도 다시 계산한다", () => {
     const s = state(DOC);
-    expect(upd(s, { effects: startWidgetEdit.of({ from: FROM, draft: {} }) })).toBe(true);
-    const editing = s.update({ effects: startWidgetEdit.of({ from: FROM, draft: {} }) }).state;
+    expect(upd(s, { effects: startWidgetEdit.of({ from: FROM, draft: {}, stateFrom: 1, entryKey: "k" }) })).toBe(true);
+    const editing = s.update({ effects: startWidgetEdit.of({ from: FROM, draft: {}, stateFrom: 1, entryKey: "k" }) }).state;
     expect(upd(editing, { effects: endWidgetEdit.of(null) })).toBe(true);
   });
 
   it("빈 트랜잭션은 다시 계산하지 않는다(수정 중이어도)", () => {
     const s = state(DOC);
     expect(upd(s, {})).toBe(false);
-    const editing = s.update({ effects: startWidgetEdit.of({ from: FROM, draft: {} }) }).state;
+    const editing = s.update({ effects: startWidgetEdit.of({ from: FROM, draft: {}, stateFrom: 1, entryKey: "k" }) }).state;
     expect(upd(editing, {})).toBe(false);
   });
 

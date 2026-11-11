@@ -10,7 +10,7 @@ declare global {
     keyringWidgetId?: string;
     /** 부모가 건넨 글꼴 바이트(init) — 키는 글꼴 폴더 기준 경로 */
     keyringWidgetFonts?: Record<string, ArrayBuffer>;
-    keyringWidgetRegister?: (render: Parameters<ReturnType<typeof startFrameRuntime>["register"]>[0]) => void;
+    keyringWidgetRegister?: ReturnType<typeof startFrameRuntime>["register"];
   }
 }
 
@@ -71,4 +71,4 @@ function domFrameEnv(w: Window): FrameEnv {
 }
 
 const runtime = startFrameRuntime(domFrameEnv(window));
-window.keyringWidgetRegister = (render) => runtime.register(render);
+window.keyringWidgetRegister = (render, opts) => runtime.register(render, opts);

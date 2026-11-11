@@ -1,0 +1,11 @@
+{
+  "id": "@me/counter",
+  "version": "2.0.0",
+  "type": "widget",
+  "name": { "en": "Counter", "ko": "카운터" },
+  "description": { "en": "A test counter widget (state version 2: { count }, migrates from { n })" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": ">=0.1.0" },
+  "widget": { "stateVersion": 2, "display": "block", "defaultState": { "count": 0 } }
+}

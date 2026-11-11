@@ -7,6 +7,7 @@ import { PathError } from "./errors.js";
 import { fromUtf8 } from "./hash.js";
 import { checkPack } from "./i18n.js";
 import { THEME_TOKENS } from "./themeTokens.js";
+import { checkWidgetMessages } from "./widgetMessages.js";
 
 /** 위젯 ref 의 조각 꼴(`parseWidgetRef`)과 같게 둔다 — 3단계가 `@scope/name@N` 을 받을 때 그대로 쓴다. */
 export const PACKAGE_ID_RE = /^@([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9-]*)$/;
@@ -23,6 +24,9 @@ export const MARKET_LIMITS = {
   indexMs: 15000,
   redirects: 5,
 } as const;
+
+/** `pkg check` 가 경고하는 frame.js 크기(막지는 않는다 — 상한은 MARKET_LIMITS.fileBytes) */
+export const FRAME_JS_WARN_BYTES = 1048576;
 
 export type PackageType = "widget" | "theme" | "language";
 export const PACKAGE_TYPES: readonly PackageType[] = ["widget", "theme", "language"];
@@ -457,7 +461,9 @@ function parseWidget(raw: unknown): NonNullable<PackageManifest["widget"]> {
   const widget: NonNullable<PackageManifest["widget"]> = { stateVersion, display, defaultState };
   if (dataFile !== undefined) {
     // initial 이 비면 안 된다 — 서버가 빈 첨부를 거절한다
-    if (!isRecord(dataFile) || typeof dataFile.ext !== "string" || !/^[a-z0-9]{1,16}$/.test(dataFile.ext)) throw invalid("widget.dataFile.ext");
+    // md 면 데이터 파일이 노트가 된다(트리·검색·동기화가 노트로 다룬다)
+    if (!isRecord(dataFile) || typeof dataFile.ext !== "string" || !/^[a-z0-9]{1,16}$/.test(dataFile.ext) || dataFile.ext === "md")
+      throw invalid("widget.dataFile.ext");
     if (typeof dataFile.initial !== "string" || !dataFile.initial) throw invalid("widget.dataFile.initial");
     widget.dataFile = { ext: dataFile.ext, initial: dataFile.initial };
     if (dataFile.name !== undefined) widget.dataFile.name = langText(dataFile.name, "widget.dataFile.name");
@@ -561,11 +567,16 @@ export function checkPackageFiles(
   if (total > MARKET_LIMITS.packageBytes) throw invalid("too_large");
   const warnings: string[] = [...manifestDisplay(manifest).tooLong];
   if (manifest.type === "widget") {
-    if (!files.has("frame.js")) throw invalid("no_frame_js");
+    const frameJs = files.get("frame.js");
+    if (!frameJs) throw invalid("no_frame_js");
+    // iframe 마다 코드를 postMessage 로 다시 건넨다 — 막지는 않는다
+    if (frameJs.byteLength > FRAME_JS_WARN_BYTES) warnings.push(`large_frame_js: ${Math.ceil(frameJs.byteLength / 1024)}`);
     for (const [p, b] of files) {
       if (!p.startsWith("messages/")) continue;
       const msgs = parseJson(b, p);
       if (!isRecord(msgs) || Object.values(msgs).some((v) => typeof v !== "string")) throw invalid(`messages:${p}`);
+      const { dropped } = checkWidgetMessages(msgs)!;
+      if (dropped.length) warnings.push(`messages_dropped: ${p}: ${dropped.slice(0, 10).join(", ")}${dropped.length > 10 ? ", …" : ""}`);
     }
   }
   if (manifest.type === "language") {

@@ -94,7 +94,18 @@ describe("권한", () => {
     expect(r.headers.get("access-control-allow-origin")).toBe("*");
     const idx = await app.request(`/api/market/index?repo=${encodeURIComponent(REPO)}`, { headers: device });
     expect(idx.status).toBe(200);
-    expect(Object.keys((await idx.json()).index.packages).sort()).toEqual(["@me/clock", "@me/fog", "@me/ja", "@me/paper", "@me/sea"]);
+    expect(Object.keys((await idx.json()).index.packages).sort()).toEqual([
+      "@me/clock",
+      "@me/counter",
+      "@me/editor",
+      "@me/fog",
+      "@me/ja",
+      "@me/paper",
+      "@me/probe",
+      "@me/sea",
+      "@me/silent",
+      "@me/sketch",
+    ]);
     expect((await app.request("/api/market/status", { headers: cookie })).status).toBe(200);
   });
 

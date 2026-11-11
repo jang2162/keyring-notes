@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatWidgetRef,
   parseWidgetBlock,
+  parseWidgetRef,
   resolveWidgetState,
   rewriteWidgetFileRefs,
   serializeWidgetBlock,
@@ -49,6 +51,27 @@ describe("keyring-widget 블록 파싱", () => {
     }
     expect(parseWidgetBlock('{"widget": "a/b@1", "display": "wide"}')).toMatchObject({ ok: false, error: "badDisplay" });
     expect(parseWidgetBlock('{"widget": "a/b@1", "editable": "no"}')).toMatchObject({ ok: false, error: "badEditable" });
+  });
+});
+
+describe("위젯 ref — 내장 scope/name 과 받은 위젯 @scope/name", () => {
+  it("받은 위젯 id 를 읽고 왕복한다, 내장 꼴은 그대로", () => {
+    expect(parseWidgetRef("@me/clock@1")).toEqual({ id: "@me/clock", version: 1 });
+    expect(formatWidgetRef(parseWidgetRef("@me/clock@12")!)).toBe("@me/clock@12");
+    expect(parseWidgetRef("keyring/dday@1")).toEqual({ id: "keyring/dday", version: 1 });
+  });
+  it("@@·대문자·빈 scope·0판·판 없음·이름 앞 @ 는 거부", () => {
+    for (const s of ["@@me/clock@1", "@me/Clock@1", "@/x@1", "@me/clock@0", "@me/clock", "me/@clock@1"]) expect(parseWidgetRef(s)).toBeNull();
+  });
+  it("받은 위젯 블록을 읽고 같은 글로 쓴다", () => {
+    const body = '{"widget": "@me/clock@2", "state": {"count": 1}}';
+    const r = parseWidgetBlock(body);
+    expect(r).toEqual({ ok: true, block: { widget: { id: "@me/clock", version: 2 }, state: { count: 1 }, extra: [] } });
+    expect(serializeWidgetBlock(block(body))).toBe(body);
+  });
+  it("받은 위젯 블록의 state.file 도 첨부 링크", () => {
+    const c = '```keyring-widget\n{"widget": "@me/sketch@1", "state": {"file": "x/a.sketch"}}\n```\n';
+    expect(widgetFileRefs(c)).toEqual(["x/a.sketch"]);
   });
 });
 

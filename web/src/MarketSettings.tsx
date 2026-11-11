@@ -11,13 +11,13 @@ import {
   type RepoIndexResult,
 } from "@keyring-notes/core";
 import { useEffect, useRef, useState } from "react";
-import { askUninstallPackage } from "./askFirst";
+import { askInstallNotice, askUninstallPackage } from "./askFirst";
 import { languages, marketLanguageConflicts, marketPackReport, t, useLang } from "./i18n";
 import { localContext } from "./local/boot";
 import { readDeviceMarketSettings, writeDeviceMarketSettings } from "./market/source";
 import { market } from "./market/start";
 import type { InstalledPackage } from "./market/state";
-import { browseRows, MARKET_KINDS, repoAdd, repoMove, repoRemove, type BrowseRow } from "./market/view";
+import { browseRows, focusMissing, MARKET_KINDS, repoAdd, repoMove, repoRemove, type BrowseRow } from "./market/view";
 import { clearRemovedChoice } from "./prefs";
 import { themePackages, useThemePackages } from "./theme/apply";
 import { themeModes, type ThemePackage } from "./theme/resolve";
@@ -123,14 +123,21 @@ export function MarketSettings() {
     }
   };
 
-  const install = (row: BrowseRow, version?: string) =>
-    run(row.id, t("market.installing"), async () => {
+  const install = async (row: BrowseRow, version?: string) => {
+    // 설치(업데이트가 아님)는 그 종류의 알림을 먼저 — 취소면 아무것도 하지 않고 초점은 그 설치 단추에
+    const notice = MARKET_KINDS[row.type].installNotice;
+    if (!version && notice && !(await askInstallNotice(notice))) {
+      buttons.current.get(`install:${row.id}`)?.focus();
+      return;
+    }
+    await run(row.id, t("market.installing"), async () => {
       const p = await market().installPackage(row.id, version ? { version, repo: row.repo } : { repo: row.repo });
       const name = row.info.name ?? row.id;
       const notes = contrastNotes(p.manifest?.colors).map((text) => ({ text, error: false }));
       note(row.id, [{ text: t("market.done.installed", { name, version: p.version }), error: false }, ...notes]);
       say([t("market.done.installed", { name, version: p.version }), ...notes.map((n) => n.text)].join(" "));
     });
+  };
 
   const uninstall = async (p: InstalledPackage) => {
     const name = nameOf(p);
@@ -180,6 +187,13 @@ export function MarketSettings() {
 
   const errorOfRepo = (url: string) => indexes?.find((r) => r.repo === url)?.error ?? null;
   const shownRows = rows.filter((r) => (kind === "all" || r.type === kind) && (!only || r.id === only));
+  const missing = focusMissing(rows, only, !!indexes);
+  // 걸러 보는 id 가 어느 저장소에도 없으면 저장소 주소 입력으로 — 그 위젯을 내는 저장소를 더하게
+  useEffect(() => {
+    if (missing) buttons.current.get("repo-input")?.focus();
+  }, [missing]);
+  // 깐 것 중 알림이 있는 종류의 짧은 알림(종류마다 한 줄)
+  const shortNotices = [...new Set(installed.flatMap((p) => (p.type && MARKET_KINDS[p.type].installNoticeShort) || []))];
   const kinds: Kind[] = ["all", "theme", "language", "widget"];
   const isApp = localContext?.kind === "app";
 
@@ -197,6 +211,11 @@ export function MarketSettings() {
       <section className="market-section" aria-labelledby="market-installed">
         <h3 id="market-installed">{t("market.installedHeading")}</h3>
         {installed.length === 0 && <p className="setting-hint">{t("market.none")}</p>}
+        {shortNotices.map((k) => (
+          <p key={k} className="market-note">
+            {t(k)}
+          </p>
+        ))}
         {installed.map((p) => {
           const name = nameOf(p);
           const row = rowOf(p.id);
@@ -270,7 +289,13 @@ export function MarketSettings() {
             {loading ? t("market.loading") : t("market.refresh")}
           </button>
         </div>
-        {indexes && shownRows.length === 0 && <p className="setting-hint">{t("market.noneFound")}</p>}
+        {missing ? (
+          <p className="market-note warn" role="status">
+            {t("market.notInRepos", { id: only! })}
+          </p>
+        ) : (
+          indexes && shownRows.length === 0 && <p className="setting-hint">{t("market.noneFound")}</p>
+        )}
         {shownRows.map((r) => {
           const name = r.info.name ?? r.id;
           const kindInfo = MARKET_KINDS[r.type];
@@ -288,7 +313,6 @@ export function MarketSettings() {
                 </div>
                 {r.alsoIn.length > 0 && <div className="market-note">{t("market.alsoIn", { repos: r.alsoIn.join(", ") })}</div>}
                 {r.incompatible && <div className="market-note warn">{t("market.incompatible", { range: r.incompatible.range })}</div>}
-                {!kindInfo.installable && <div className="market-note">{t("market.widgetLater")}</div>}
                 {!r.installed &&
                   (rowNote[r.id] ?? []).map((n) => (
                     <div key={n.text} className={n.error ? "market-note warn" : "market-note"}>
@@ -304,6 +328,7 @@ export function MarketSettings() {
                 ) : (
                   <button
                     type="button"
+                    ref={(el) => void buttons.current.set(`install:${r.id}`, el)}
                     disabled={!available || !kindInfo.installable || !r.version || !!busy[r.id]}
                     aria-label={`${t("market.install")} — ${name} (${r.repoName})`}
                     onClick={() => void install(r)}

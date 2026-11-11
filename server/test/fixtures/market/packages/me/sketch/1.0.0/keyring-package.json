@@ -1,0 +1,16 @@
+{
+  "id": "@me/sketch",
+  "version": "1.0.0",
+  "type": "widget",
+  "name": { "en": "Sketch", "ko": "스케치" },
+  "description": { "en": "A test data-file widget (reads and writes its .sketch attachment)" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": ">=0.1.0" },
+  "widget": {
+    "stateVersion": 1,
+    "display": "block",
+    "dataFile": { "ext": "sketch", "initial": "{\"lines\":[]}", "name": { "en": "sketch", "ko": "스케치" } },
+    "defaultState": {}
+  }
+}

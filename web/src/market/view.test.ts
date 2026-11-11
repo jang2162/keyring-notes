@@ -1,6 +1,6 @@
 import { OFFICIAL_REPO_URL, type IndexVersion, type LockEntry, type PackageType, type RepoIndexResult } from "@keyring-notes/core";
 import { describe, expect, it } from "vitest";
-import { browseRows, MARKET_KINDS, repoAdd, repoMove, repoRemove } from "./view";
+import { browseRows, focusMissing, MARKET_KINDS, repoAdd, repoMove, repoRemove } from "./view";
 
 const A = "https://a.example/";
 const B = "https://b.example/";
@@ -50,14 +50,29 @@ describe("browseRows", () => {
     expect(j).toMatchObject({ version: null, incompatible: { range: ">=99.0.0" } });
   });
 
-  it("오류 난 저장소는 행을 만들지 않고, 위젯 행도 나오며 설치는 꺼진 종류", () => {
+  it("오류 난 저장소는 행을 만들지 않고, 위젯 행도 나오며 위젯은 알림을 거쳐 설치하는 종류", () => {
     const rows = browseRows([{ repo: A, index: null, ignored: [], error: { code: "market_timeout", params: {} } }, indexes[1]!], {}, "0.12.0", "en");
     expect(rows.map((r) => r.repo)).toEqual([B, B]);
     const all = browseRows(indexes, {}, "0.12.0", "en");
     expect(all.find((r) => r.id === "@me/clock")!.type).toBe("widget");
-    expect(MARKET_KINDS.widget.installable).toBe(false);
+    expect(MARKET_KINDS.widget).toEqual({
+      label: "market.kind.widget",
+      installable: true,
+      installNotice: "market.widgetNotice",
+      installNoticeShort: "market.widgetNoticeShort",
+    });
     expect(MARKET_KINDS.theme.installable).toBe(true);
+    expect(MARKET_KINDS.theme.installNotice).toBeUndefined();
     expect(MARKET_KINDS.language.installable).toBe(true);
+  });
+
+  it("focusMissing: 걸러 보는 id 가 있고 목록을 받았는데 그 행이 없을 때만", () => {
+    const rows = browseRows(indexes, {}, "0.12.0", "en");
+    expect(focusMissing([], "@me/x", true)).toBe(true);
+    expect(focusMissing(rows, "@me/x", true)).toBe(true);
+    expect(focusMissing([], "@me/x", false)).toBe(false);
+    expect(focusMissing(rows, "@me/clock", true)).toBe(false);
+    expect(focusMissing(rows, null, true)).toBe(false);
   });
 
   it("정렬: 종류(테마·언어·위젯) → 이름(없으면 id)", () => {

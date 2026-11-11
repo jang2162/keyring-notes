@@ -1,5 +1,6 @@
 import { lstat, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import vm from "node:vm";
 import {
   checkPackageFiles,
   compareSemver,
@@ -39,8 +40,22 @@ async function readTree(dir: string, prefix = "", out = new Map<string, Uint8Arr
   return out;
 }
 
+/**
+ * checkPackageFiles + 위젯이면 frame.js 문법. `vm.Script` 를 만들기만 하고 돌리지 않는다(작성자 코드를 CLI 에서 실행하지 않는다).
+ * 블롭 스크립트는 고전 스크립트라 import·export 가 든 모듈 꼴도 여기서 걸린다. `pkg index` 는 이 검사를 하지 않는다.
+ */
 export async function checkPackageDir(dir: string): Promise<{ manifest: PackageManifest; warnings: string[] }> {
-  return checkPackageFiles(await readTree(dir));
+  const files = await readTree(dir);
+  const r = checkPackageFiles(files);
+  if (r.manifest.type === "widget") {
+    try {
+      new vm.Script(Buffer.from(files.get("frame.js")!).toString("utf8"), { filename: "frame.js" });
+    } catch (e) {
+      const first = (e instanceof Error ? e.message : String(e)).split("\n")[0];
+      throw new PathError("market_manifest_invalid", { reason: `frame_js_syntax: ${first}` });
+    }
+  }
+  return r;
 }
 
 /** 하위 폴더. 링크된 폴더는 건너뛰지 않고 오류 — 건너뛰면 그 패키지가 목록에서 말없이 빠진다 */

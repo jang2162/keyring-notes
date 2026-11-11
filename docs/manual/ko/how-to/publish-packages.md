@@ -6,7 +6,7 @@ Keyring Notes 가 받아 쓸 수 있는 위젯·테마·언어 패키지 저장�
 패키지를 만들거나 자기 저장소를 운영하는 분을 위한 문서입니다.
 
 > [!NOTE]
-> 앱은 테마와 언어를 설치해 씁니다. [패키지 설치하기](install-packages.md)를 보세요. 위젯 설치는 다음 릴리스에 들어옵니다. 위젯 패키지는 지금도 올릴 수 있습니다.
+> 앱에서 패키지를 설치하는 방법은 [패키지 설치하기](install-packages.md)를 보세요.
 
 ## 저장소 구조
 
@@ -69,7 +69,7 @@ Keyring Notes 가 받아 쓸 수 있는 위젯·테마·언어 패키지 저장�
 | `stateVersion` | 1 이상의 정수 | 위젯이 노트에 남기는 상태의 판. 패키지 판과 따로입니다 |
 | `display` | 글자 | `block` 또는 `inline` |
 | `defaultState` | 아무 JSON 값 | 새 위젯의 상태 |
-| `dataFile` | 객체 | 선택. 위젯이 노트 옆에 두는 데이터 파일: `ext`(소문자·숫자), `initial`(비지 않은 글), `name`(선택, 언어 태그 → 이름) |
+| `dataFile` | 객체 | 선택. 위젯이 노트 옆에 두는 데이터 파일: `ext`(소문자·숫자, `md` 는 안 됨), `initial`(비지 않은 글), `name`(선택, 언어 태그 → 이름) |
 | `isolation` | 글자 | 선택. 늘 `frame` 입니다 — 받은 위젯은 늘 격리된 프레임에서 돕니다 |
 
 테마의 `colors` 객체는 `light`, `dark` 중 하나나 둘 다를 가집니다. 각각 색 토큰 → 색 값입니다.
@@ -202,6 +202,32 @@ self.keyringWidgetRegister((el, ctx, api) => {
 | `file.read()`, `file.write(bytes, baseHash)` | 매니페스트에 `dataFile` 이 있을 때 그 데이터 파일 |
 | `toggleFullscreen()` | 블록 위젯만 |
 
+### 위젯 규칙
+
+- **노트 안의 블록.** 위젯 블록은 패키지 id 와 상태 판을 적습니다: `{"widget": "@me/clock@1", "state": {…}}`. 마지막 `@` 뒤의 수는 패키지 판이 아니라 `stateVersion` 입니다.
+- **저장된 상태 올리기.** 상태의 모양을 바꾸면 `stateVersion` 을 올리고 둘째 인자로 `migrate` 를 넘기세요: `keyringWidgetRegister(render, { migrate })`. 블록의 상태 판이 `stateVersion` 보다 낮으면, 앱은 블록 상태를 위젯에 넘기기 전에 프레임 안에서 `migrate(state, from)` 을 부릅니다. 노트는 위젯이 다음에 상태를 바꿀 때 새 판으로 쓰입니다. 노트를 열기만 해서는 바뀌지 않습니다. `migrate` 가 예외를 던지면 앱은 위젯 대신 오류와 블록 원문을 보입니다. `migrate` 가 없으면 옛 상태를 그대로 넘깁니다.
+- **`file` 키는 예약돼 있습니다.** `state.file` 은 앱이 관리하는 데이터 파일 경로입니다. 위젯이 `setState` 에 넘기거나 `migrate` 에서 돌려주는 `file` 키는 블록의 지금 값으로 바뀝니다. `dataFile` 이 없는 위젯에서는 그 키가 빠집니다. 위젯 상태의 이름으로 `file` 을 쓰지 마세요.
+- **데이터 파일.** `dataFile.ext` 는 `md` 일 수 없습니다. 그 파일이 노트가 되기 때문입니다. 새 데이터 파일은 노트 옆에 `<이름>-<무작위>.<ext>` 로 만들어집니다. `<이름>` 은 `dataFile.name`, 없으면 패키지 이름입니다.
+- **메시지.** 키는 글자·숫자·`_`·`.`·`-` 로 쓰고, 글자·숫자·`_` 로 시작하며, 100자 이하입니다. 복수형은 `#zero`, `#one`, `#two`, `#few`, `#many`, `#other` 를 붙입니다(예: `count#one`). 파일마다 키 1000개, 값마다 2000자까지입니다. 앱은 이 규칙을 어긴 키를 버리고, `pkg check` 는 그 키를 경고(`messages_dropped`)로 보여 줍니다. 앱은 위젯 메시지와 매니페스트 이름을 늘 글자로 보이고, HTML 로 해석하지 않습니다.
+- **`frame.js`** 는 모듈이 아닌 고전 스크립트입니다. `import`·`export` 는 쓸 수 없습니다. 상한은 8 MiB 이고, 1 MiB 를 넘으면 `pkg check` 가 경고(`large_frame_js`)합니다. 앱이 프레임마다 코드를 다시 건네기 때문입니다.
+- **`frame.css`** 는 위젯 프레임 안에만 적용됩니다. 앱을 바꿀 수 없습니다. 외부 주소(`@import`, `url(https://…)`)는 막힙니다. 그림과 글꼴은 `data:` URL 로 넣으세요.
+- **올리기 전에 검사하세요.** 위젯의 모든 판에 `pkg check` 를 돌리세요. `pkg index` 는 `frame.js` 문법을 보지 않습니다. 문법 오류가 있는 위젯도 목록에 오르고, 앱은 20초 뒤 그 자리에 「위젯을 불러오지 못했습니다」 를 보입니다.
+- **사용자가 업데이트할 때.** 열려 있던 위젯은 사용자가 수정을 마친 뒤 새 판으로 바뀝니다. 수정 중이었으면 새 판이 그 초안을 받아 먼저 `migrate` 로 올립니다.
+
+카운터 2판은 1판의 `{ n }` 대신 `{ count }` 를 저장합니다.
+
+```js
+self.keyringWidgetRegister(
+  (el, ctx, api) => {
+    // … draw ctx.state.count …
+    return () => {};
+  },
+  { migrate: (state, from) => (from < 2 ? { count: state.n ?? 0 } : state) },
+);
+```
+
+매니페스트에 `"stateVersion": 2` 를 적으세요. 1판이 쓴 블록(`"@me/counter@1"`)은 위젯이 상태를 바꿀 때까지 옛 상태 그대로이고, 그때 `{ count }` 와 함께 `"@me/counter@2"` 로 쓰입니다.
+
 ## 목록 파일
 
 `index.json` 은 저장소의 모든 패키지와 판을 적습니다.
@@ -282,7 +308,7 @@ pnpm keyring pkg check my-repo/packages/me/clock/1.0.0
 pnpm keyring pkg index my-repo --name "My widgets"
 ```
 
-- `pkg check <폴더>` 는 매니페스트, 필수·허용 파일, 테마 색, 언어 키를 검사합니다. 오류가 있으면 종료 코드 `1` 로 끝나고, 빠진 언어 키, 모르는 테마 토큰, 낮은 대비 같은 경고는 실패 없이 보여 줍니다.
+- `pkg check <폴더>` 는 매니페스트, 필수·허용 파일, 테마 색, 언어 키, 위젯 메시지 키, `frame.js` 문법을 검사합니다. `frame.js` 를 실행하지는 않습니다. 오류가 있으면 종료 코드 `1` 로 끝나고, 빠진 언어 키, 모르는 테마 토큰, 낮은 대비, 버려진 위젯 메시지 키, 큰 `frame.js` 같은 경고는 실패 없이 보여 줍니다.
 - `pkg index <폴더>` 는 `packages/` 아래 모든 패키지를 검사하고, 파일마다 크기와 체크섬을 재고, 매니페스트의 표시 필드를 옮겨 `index.json` 을 씁니다. 이름은 기존 `index.json` 의 `name`, 없으면 `--name`, 그것도 없으면 폴더 이름입니다. 파일이 그대로면 다시 실행해도 `index.json` 을 건드리지 않습니다.
 
 Docker 에서는 컨테이너 안에서 같은 명령을 실행합니다. 폴더는 데이터 볼륨(`/data`) 안이나 컨테이너에 마운트한 다른 볼륨에 있어야 합니다.

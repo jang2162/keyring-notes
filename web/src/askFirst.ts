@@ -26,6 +26,11 @@ export function askUninstallPackage(name: string): Promise<boolean> {
   return confirmDialog(t("market.uninstallConfirm", { name }), t("market.uninstall"));
 }
 
+/** 설치 전 알림(MARKET_KINDS[type].installNotice — 위젯의 WebRTC). 취소면 false — 부르는 쪽은 아무것도 하지 않는다 */
+export function askInstallNotice(noticeKey: string): Promise<boolean> {
+  return confirmDialog(t(noticeKey), t("market.install"));
+}
+
 /** 설정의 「이 기기 설정 초기화」: 패널 폭·트리 상태·이 기기만 덮어쓴 값을 지운다(localStorage 라 되살릴 수 없다) */
 export async function resetDevice() {
   if (await confirmDialog(t("settings.resetDeviceAsk"), t("common.reset"))) resetDevicePrefs();

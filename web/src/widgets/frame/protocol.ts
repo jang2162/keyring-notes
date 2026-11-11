@@ -21,8 +21,12 @@ export type HostMsg =
       fonts: Record<string, ArrayBuffer>;
       file: boolean;
       fullscreen: boolean;
+      /** ctx.state 의 판·위젯 판·보냄 번호 — from < version 이면 런타임이 위젯의 migrate 로 올리고 같은 seq 로 migrated 를 돌려준다 */
+      from: number;
+      version: number;
+      seq: number;
     }
-  | { kw: "kw1"; id: string; type: "update"; ctx: WidgetContext; messages?: MessageChain }
+  | { kw: "kw1"; id: string; type: "update"; ctx: WidgetContext; messages?: MessageChain; from: number; version: number; seq: number }
   | { kw: "kw1"; id: string; type: "reply"; req: number; ok: true; value: unknown }
   | { kw: "kw1"; id: string; type: "reply"; req: number; ok: false; error: ReplyError };
 
@@ -38,7 +42,8 @@ export type FrameMsg =
   | { type: "toggleFullscreen" }
   | { type: "key"; key: "escape" | "save" }
   | { type: "blur" }
-  | { type: "error"; message: string };
+  | { type: "migrated"; state: unknown; seq: number }
+  | { type: "error"; message: string; phase?: "migrate" };
 
 const MAX_PX = 100_000;
 const MAX_MESSAGE = 500;
@@ -75,8 +80,14 @@ export function parseFrameMsg(data: unknown, id: string): FrameMsg | null {
         : null;
     case "key":
       return d.key === "escape" || d.key === "save" ? { type: "key", key: d.key } : null;
+    case "migrated":
+      // 모양은 받은 위젯이 정한다(객체가 아니어도 받는다). 믿는 범위(seq)는 호스트가 가른다
+      return d.state !== undefined && isReq(d.seq) ? { type: "migrated", state: d.state, seq: d.seq } : null;
     case "error":
-      return typeof d.message === "string" ? { type: "error", message: d.message.slice(0, MAX_MESSAGE) } : null;
+      if (typeof d.message !== "string") return null;
+      return d.phase === "migrate"
+        ? { type: "error", message: d.message.slice(0, MAX_MESSAGE), phase: "migrate" }
+        : { type: "error", message: d.message.slice(0, MAX_MESSAGE) };
     default:
       return null;
   }

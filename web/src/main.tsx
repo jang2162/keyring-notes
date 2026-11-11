@@ -14,6 +14,7 @@ import { watchTrafficLights } from "./windowChrome";
 import "./styles.css";
 import { t } from "./i18n";
 import { registerBuiltins } from "./widgets/builtins";
+import { registerWidgetKind } from "./widgets/marketWidgets";
 
 registerBuiltins();
 const root = createRoot(document.getElementById("root")!);
@@ -64,6 +65,7 @@ async function boot() {
   const m = startMarket();
   registerThemeKind(m);
   registerLanguageKind(m);
+  registerWidgetKind(m);
   root.render(
     <StrictMode>
       <App />

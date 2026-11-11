@@ -39,6 +39,8 @@ export function startMarket(): MarketState {
     linked = now;
     void current?.reconcile();
   });
+  // 받지 못한 패키지(오프라인에서 다른 기기가 바꾼 판 등)를 연결이 돌아오면 다시 받는다
+  if (typeof window !== "undefined") window.addEventListener("online", () => void current?.reconcile());
   // 1단계에는 화면이 없다 — 개발 빌드에서만 브라우저·데스크톱 확인용으로 내보낸다(배포 빌드에는 없다)
   if (import.meta.env.DEV) (globalThis as { keyringMarket?: MarketState }).keyringMarket = current;
   void current.reconcile();

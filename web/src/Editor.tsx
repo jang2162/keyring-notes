@@ -45,6 +45,7 @@ import {
   widgetBlockAtLine,
   widgetEditField,
   widgetGoneNow,
+  type WidgetDraftChange,
 } from "./widgets/blockEdit";
 import { toast } from "./toast";
 
@@ -95,12 +96,12 @@ export interface EditorHandle {
   writeWidget(line: number, state: unknown, version: number): boolean;
   /** 위젯 넣기: 블록 글(펜스 포함)을 자기 줄로 넣고 커서를 블록 다음 줄에 둔다(Live Preview 가 곧바로 위젯으로 그리게) */
   insertWidget(text: string): void;
-  startWidgetEdit(line: number, draft: unknown): void;
-  setWidgetDraft(draft: unknown): void;
+  startWidgetEdit(line: number, draft: unknown, stateFrom: number, entryKey: string): void;
+  setWidgetDraft(change: WidgetDraftChange): void;
   endWidgetEdit(): void;
   setWidgetFocus(index: number | null): void;
   /** 수정 중인 위젯(사라지지 않은 것). 미리보기를 다시 그린 뒤 초안·포커스를 이어받는다 */
-  widgetEdit(): { line: number; draft: unknown; base: unknown; owner: string; focus: number | null } | null;
+  widgetEdit(): { line: number; draft: unknown; base: unknown; owner: string; focus: number | null; stateFrom: number; entryKey: string } | null;
 }
 
 /** 할 일: 줄이 - [ ]이면 체크를 바꾸고, 목록이면 - [ ]를 붙이고, 아니면 - [ ]로 시작하게 */
@@ -416,12 +417,12 @@ export function Editor({
           view.dispatch(spec);
           return true;
         },
-        startWidgetEdit(lineNo, draft) {
+        startWidgetEdit(lineNo, draft, stateFrom, entryKey) {
           const b = widgetBlockAtLine(view.state, lineNo);
-          if (b) view.dispatch({ effects: startWidgetEditEffect.of({ from: b.from, draft, owner: "preview" }) });
+          if (b) view.dispatch({ effects: startWidgetEditEffect.of({ from: b.from, draft, owner: "preview", stateFrom, entryKey }) });
         },
-        setWidgetDraft(draft) {
-          view.dispatch({ effects: setWidgetDraft.of(draft) });
+        setWidgetDraft(change) {
+          view.dispatch({ effects: setWidgetDraft.of(change) });
         },
         endWidgetEdit() {
           if (view.state.field(widgetEditField, false)) view.dispatch({ effects: endWidgetEdit.of(null) });
@@ -431,7 +432,17 @@ export function Editor({
         },
         widgetEdit() {
           const e = view.state.field(widgetEditField, false);
-          return e && !e.gone ? { line: view.state.doc.lineAt(e.from).number, draft: e.draft, base: e.base, owner: e.owner, focus: e.focus } : null;
+          return e && !e.gone
+            ? {
+                line: view.state.doc.lineAt(e.from).number,
+                draft: e.draft,
+                base: e.base,
+                owner: e.owner,
+                focus: e.focus,
+                stateFrom: e.stateFrom,
+                entryKey: e.entryKey,
+              }
+            : null;
         },
         toggleTask(lineNo, done) {
           if (lineNo < 1 || lineNo > view.state.doc.lines) return;

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DataFileError, type DataFileHandle } from "../dataFile";
+import { FRAME_REGISTER_TIMEOUT_MS } from "./layout";
 import { WidgetSession } from "../session";
 import type { WidgetContext } from "../types";
 import { FrameHost, type FrameHostOptions } from "./host";
@@ -7,7 +8,10 @@ import type { FrameMsg, HostMsg } from "./protocol";
 
 const ID = "w1";
 
-function setup(over: Partial<FrameHostOptions> = {}, sessionInit = { state: { n: 1 }, editable: true, readOnly: false }) {
+function setup(
+  over: Partial<FrameHostOptions> = {},
+  sessionInit: ConstructorParameters<typeof WidgetSession>[0] = { state: { n: 1 }, editable: true, readOnly: false },
+) {
   const posted: HostMsg[] = [];
   const log: string[] = [];
   const session = new WidgetSession(sessionInit, {
@@ -38,8 +42,11 @@ function setup(over: Partial<FrameHostOptions> = {}, sessionInit = { state: { n:
     height: (px) => void log.push(`height ${px}`),
     blurred: () => void log.push("blurred"),
     save: () => void log.push("save"),
-    failed: (m) => void log.push(`failed ${m}`),
+    failed: (m, phase) => void log.push(phase ? `failed ${m} ${phase}` : `failed ${m}`),
     navigated: () => void log.push("navigated"),
+    builtIn: true,
+    migrated: (s) => void log.push(`migrated ${JSON.stringify(s)}`),
+    registerTimeout: () => void log.push("timeout"),
     code: { runtime: "RUNTIME", widget: "WIDGET", css: "C", fonts: { F: new ArrayBuffer(2) } },
     ...over,
   });
@@ -157,11 +164,112 @@ describe("iframe 호스트", () => {
     x.recv({ type: "ready" });
     x.recv({ type: "registered" });
     x.host.update();
-    expect(x.posted.at(-1)).toEqual({ kw: "kw1", id: ID, type: "update", ctx: base });
+    expect(x.posted.at(-1)).toEqual({ kw: "kw1", id: ID, type: "update", ctx: base, from: 1, version: 1, seq: 2 });
     lang = "ko";
     x.host.update();
     expect(x.posted.at(-1)).toMatchObject({ type: "update", ctx: { lang: "ko" }, messages: [{ messages: { a: "A" }, locale: "en" }] });
     x.host.update();
     expect("messages" in x.posted.at(-1)!).toBe(false);
+  });
+});
+
+describe("iframe 호스트 — 상태의 판·seq·등록 시한", () => {
+  const old = { state: { n: 1 }, editable: true, readOnly: false, version: 2, from: 1 };
+  const migratedLog = (log: string[]) => log.filter((l) => l.startsWith("migrated"));
+
+  it("init·update 에 세션의 판·위젯 판·늘어나는 seq", () => {
+    const x = setup({}, old);
+    x.recv({ type: "ready" });
+    x.recv({ type: "registered" });
+    expect(x.posted.at(-1)).toMatchObject({ type: "init", from: 1, version: 2, seq: 1 });
+    x.host.update();
+    expect(x.posted.at(-1)).toMatchObject({ type: "update", from: 1, version: 2, seq: 2 });
+  });
+
+  it("늦게 온 앞 보냄의 migrated 는 버리고, 마지막 seq 에 처음 온 것만 받는다", () => {
+    const x = setup({}, old);
+    x.recv({ type: "ready" });
+    x.recv({ type: "registered" });
+    x.session.external({ n: 4 }, true, 1);
+    x.host.update();
+    x.recv({ type: "migrated", state: { count: 1 }, seq: 1 });
+    expect(migratedLog(x.log)).toEqual([]);
+    x.recv({ type: "migrated", state: { count: 4 }, seq: 2 });
+    expect(migratedLog(x.log)).toEqual(['migrated {"count":4}']);
+    x.recv({ type: "migrated", state: { count: 5 }, seq: 2 });
+    expect(migratedLog(x.log)).toHaveLength(1);
+  });
+
+  it("마지막 보냄의 from 이 위젯 판과 같으면 그 seq 의 migrated 도 버린다", () => {
+    const x = setup({}, { ...old, from: 2 });
+    x.recv({ type: "ready" });
+    x.recv({ type: "registered" });
+    x.recv({ type: "migrated", state: { count: 1 }, seq: 1 });
+    expect(migratedLog(x.log)).toEqual([]);
+  });
+
+  it("error 의 phase migrate 를 넘긴다", () => {
+    const x = setup();
+    x.recv({ type: "ready" });
+    x.recv({ type: "error", message: "bad", phase: "migrate" });
+    expect(x.log).toEqual(["failed bad migrate"]);
+  });
+
+  it("받은 위젯은 ready 뒤 시한 안에 registered 가 없으면 registerTimeout, 내장은 시한이 없다", () => {
+    vi.useFakeTimers();
+    try {
+      const a = setup({ builtIn: false });
+      a.recv({ type: "ready" });
+      vi.advanceTimersByTime(FRAME_REGISTER_TIMEOUT_MS - 1);
+      expect(a.log).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(a.log).toEqual(["timeout"]);
+
+      const b = setup({ builtIn: false });
+      b.recv({ type: "ready" });
+      b.recv({ type: "registered" });
+      vi.advanceTimersByTime(FRAME_REGISTER_TIMEOUT_MS * 2);
+      expect(b.log).toEqual([]);
+
+      const c = setup({ builtIn: true });
+      c.recv({ type: "ready" });
+      vi.advanceTimersByTime(FRAME_REGISTER_TIMEOUT_MS * 2);
+      expect(c.log).toEqual([]);
+
+      const d = setup({ builtIn: false });
+      d.recv({ type: "ready" });
+      d.host.kill();
+      vi.advanceTimersByTime(FRAME_REGISTER_TIMEOUT_MS * 2);
+      expect(d.log).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("CSS 는 init 메시지로만 건넨다 — 호스트 옵션에 DOM 이 없다", () => {
+    const x = setup();
+    x.recv({ type: "ready" });
+    x.recv({ type: "registered" });
+    expect(x.posted.filter((m) => "css" in m).map((m) => m.type)).toEqual(["init"]);
+    // 타입으로 지킨다: FrameHostOptions 의 어떤 키도 Document·Element 가 아니다
+    const keys: (keyof FrameHostOptions)[] = [
+      "id",
+      "post",
+      "session",
+      "ctx",
+      "messages",
+      "file",
+      "fullscreen",
+      "height",
+      "blurred",
+      "save",
+      "failed",
+      "navigated",
+      "code",
+      "builtIn",
+      "migrated",
+      "registerTimeout",
+    ];
+    expect(keys).toHaveLength(16);
   });
 });
