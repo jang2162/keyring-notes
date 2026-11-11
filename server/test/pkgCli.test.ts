@@ -81,7 +81,17 @@ describe("checkPackageDir", () => {
     expect((await checkPackageDir(widgetDir("1.0.0"))).manifest.id).toBe("@me/clock");
   });
   it("커밋된 위젯 픽스처 여섯이 검사를 지나고 경고가 없다", async () => {
-    const dirs = ["counter/1.0.0", "counter/2.0.0", "sketch/1.0.0", "probe/1.0.0", "probe/1.1.0", "silent/1.0.0"];
+    const dirs = [
+      "counter/1.0.0",
+      "counter/2.0.0",
+      "editor/1.0.0",
+      "editor/2.0.0",
+      "sketch/1.0.0",
+      "sketch/1.1.0",
+      "probe/1.0.0",
+      "probe/1.1.0",
+      "silent/1.0.0",
+    ];
     for (const d of dirs) {
       const r = await checkPackageDir(path.join(serverDir, "test", "fixtures", "market", "packages", "me", d));
       expect([r.manifest.type, r.warnings], d).toEqual(["widget", []]);
@@ -215,6 +225,7 @@ describe("buildRepoIndex", () => {
       "@keyring/hello",
       "@me/clock",
       "@me/counter",
+      "@me/editor",
       "@me/fog",
       "@me/ja",
       "@me/paper",
@@ -225,6 +236,8 @@ describe("buildRepoIndex", () => {
     ]);
     expect(Object.keys(r.index.packages["@me/counter"]!.versions)).toEqual(["1.0.0", "2.0.0"]);
     expect(Object.keys(r.index.packages["@me/probe"]!.versions)).toEqual(["1.0.0", "1.1.0"]);
+    expect(Object.keys(r.index.packages["@me/editor"]!.versions)).toEqual(["1.0.0", "2.0.0"]);
+    expect(Object.keys(r.index.packages["@me/sketch"]!.versions)).toEqual(["1.0.0", "1.1.0"]);
     expect(r.index.packages["@me/paper"]!.versions["0.1.0"]!.name).toEqual({ en: "Paper", ko: "종이" });
   });
 

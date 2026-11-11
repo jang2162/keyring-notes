@@ -97,6 +97,7 @@ describe("권한", () => {
     expect(Object.keys((await idx.json()).index.packages).sort()).toEqual([
       "@me/clock",
       "@me/counter",
+      "@me/editor",
       "@me/fog",
       "@me/ja",
       "@me/paper",

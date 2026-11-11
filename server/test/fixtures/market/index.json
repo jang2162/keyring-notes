@@ -166,6 +166,73 @@
         }
       }
     },
+    "@me/editor": {
+      "type": "widget",
+      "versions": {
+        "1.0.0": {
+          "engines": {
+            "keyring": ">=0.1.0"
+          },
+          "name": {
+            "en": "Editor",
+            "ko": "편집기"
+          },
+          "description": {
+            "en": "A test widget with edit mode (state version 1: { n })"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
+          "files": [
+            {
+              "path": "frame.js",
+              "sha256": "0e356fe478d5d2a8f203a95befb4843a9df1da6d1dd53d3fab3e1c62cebbd5bc",
+              "size": 1082
+            },
+            {
+              "path": "keyring-package.json",
+              "sha256": "d155bbfc32192dff4d49f5a42a0157c5da36fa4a7e68e563dc589c0dc6f8da40",
+              "size": 377
+            },
+            {
+              "path": "messages/en.json",
+              "sha256": "3771420bb4806204029b62539bf93b7a39ff707516526cf7ffde63c28fe3e090",
+              "size": 94
+            }
+          ]
+        },
+        "2.0.0": {
+          "engines": {
+            "keyring": ">=0.1.0"
+          },
+          "name": {
+            "en": "Editor",
+            "ko": "편집기"
+          },
+          "description": {
+            "en": "A test widget with edit mode (state version 2: { count }, migrates from { n })"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
+          "files": [
+            {
+              "path": "frame.js",
+              "sha256": "08cabe4a51b806a78062424cac3b8cb001a4d3b563a54d284add896fe269e2d6",
+              "size": 1197
+            },
+            {
+              "path": "keyring-package.json",
+              "sha256": "be3e924745b333a7669572efe60a3bf47d8a2ee2dcf3e61f79dfd48e31e51d3b",
+              "size": 406
+            },
+            {
+              "path": "messages/en.json",
+              "sha256": "3771420bb4806204029b62539bf93b7a39ff707516526cf7ffde63c28fe3e090",
+              "size": 94
+            }
+          ]
+        }
+      }
+    },
     "@me/fog": {
       "type": "theme",
       "versions": {
@@ -417,6 +484,42 @@
               "path": "messages/ko.json",
               "sha256": "8e2a57054af3960601a44285304266c28f6673b0e2e92b205fb8eb8e1ce0ddf7",
               "size": 50
+            }
+          ]
+        },
+        "1.1.0": {
+          "engines": {
+            "keyring": ">=0.1.0"
+          },
+          "name": {
+            "en": "Sketch",
+            "ko": "스케치"
+          },
+          "description": {
+            "en": "A test data-file widget 1.1.0 (same data file, different button label)"
+          },
+          "author": "Keyring Notes tests",
+          "license": "MIT",
+          "files": [
+            {
+              "path": "frame.js",
+              "sha256": "db72e225aec4b2cffa29408ca5bf07757c2317ae0460679d166b6eb4f29941a2",
+              "size": 1209
+            },
+            {
+              "path": "keyring-package.json",
+              "sha256": "017bc315c5d2a2b33b59046a2f96297fc7b9fd40ab4406e88d267bbf9992768b",
+              "size": 513
+            },
+            {
+              "path": "messages/en.json",
+              "sha256": "c695a6174cd99d00255ad5d7736f20d26d4048a96a6e104bad382c6cce0aed85",
+              "size": 52
+            },
+            {
+              "path": "messages/ko.json",
+              "sha256": "ecc561ea9d3be66893cae875b1c3829b727bb97421cae9e44164115df1843f15",
+              "size": 54
             }
           ]
         }

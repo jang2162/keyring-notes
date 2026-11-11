@@ -301,6 +301,7 @@ describe("index", () => {
     expect(Object.keys(r.index!.packages).sort()).toEqual([
       "@me/clock",
       "@me/counter",
+      "@me/editor",
       "@me/fog",
       "@me/ja",
       "@me/paper",
