@@ -19,20 +19,20 @@ const designYaml = `---
 keyring: settings
 marketplace:
   repos:
-    - url: https://market.keyring.example/
+    - url: ${OFFICIAL_REPO_URL}
     - url: https://me.github.io/my-widgets
   packages:
-    "@keyring/pomodoro": { version: 1.2.0, repo: https://market.keyring.example/, sha256: { keyring-package.json: ${H("a")}, frame.js: ${H("b")} } }
+    "@keyring/pomodoro": { version: 1.2.0, repo: ${OFFICIAL_REPO_URL}, sha256: { keyring-package.json: ${H("a")}, frame.js: ${H("b")} } }
 ---
 `;
 
 describe("공통 설정의 marketplace", () => {
   it("설계의 YAML 예", () => {
     const m = parseVaultSettings(designYaml).marketplace;
-    expect(m.repos).toEqual(["https://market.keyring.example/", "https://me.github.io/my-widgets/"]);
+    expect(m.repos).toEqual([OFFICIAL_REPO_URL, "https://me.github.io/my-widgets/"]);
     expect(m.packages["@keyring/pomodoro"]).toEqual({
       version: "1.2.0",
-      repo: "https://market.keyring.example/",
+      repo: OFFICIAL_REPO_URL,
       sha256: { "keyring-package.json": H("a"), "frame.js": H("b") },
     });
     expect(m.problems).toEqual([]);
@@ -62,6 +62,21 @@ describe("공통 설정의 marketplace", () => {
     expect(Object.keys(m.packages)).toEqual(["@a/ok", "@a/http"]);
     expect(m.packages["@a/http"]!.repo).toBe("http://home.lan/m/");
     expect(m.problems).toEqual(Object.keys(bad).map((id) => ({ id, code: "market_lock_invalid" })));
+  });
+
+  it("@keyring/… 항목은 공식 저장소만 — 아니면 packages 에서 빼고 problems 에 market_scope_reserved", () => {
+    const entry = { version: "1.0.0", repo: "https://me.example/", sha256: { "keyring-package.json": H("a") } };
+    const m = parseMarketplace({ packages: { "@keyring/clock": entry, "@me/clock": entry } });
+    expect(Object.keys(m.packages)).toEqual(["@me/clock"]);
+    expect(m.problems).toEqual([{ id: "@keyring/clock", code: "market_scope_reserved" }]);
+    // 주소 꼴이 달라도 정규형이 공식이면 받는다(resolveInstall 과 같은 isOfficialRepo)
+    const official = parseMarketplace({ packages: { "@keyring/clock": { ...entry, repo: OFFICIAL_REPO_URL.replace(/\/$/, "") } } });
+    expect(official.packages["@keyring/clock"]!.repo).toBe(OFFICIAL_REPO_URL);
+    expect(official.problems).toEqual([]);
+    // 꼴이 틀린 @keyring 항목은 여전히 market_lock_invalid
+    expect(parseMarketplace({ packages: { "@keyring/clock": { ...entry, version: "x" } } }).problems).toEqual([
+      { id: "@keyring/clock", code: "market_lock_invalid" },
+    ]);
   });
 
   it("lockEntryValue 로 쓴 글을 다시 읽으면 같은 항목", () => {

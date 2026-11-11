@@ -14,7 +14,8 @@ export interface WidgetRef {
   version: number;
 }
 
-const REF_RE = /^([a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*)@([1-9][0-9]*)$/;
+/** id 는 내장 `scope/name` 또는 받은 패키지 `@scope/name`(marketFormat 의 PACKAGE_ID_RE 와 같은 조각 꼴) */
+const REF_RE = /^(@?[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*)@([1-9][0-9]*)$/;
 
 export function parseWidgetRef(s: string): WidgetRef | null {
   const m = REF_RE.exec(s);

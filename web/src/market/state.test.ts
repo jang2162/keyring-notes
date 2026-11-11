@@ -149,6 +149,21 @@ describe("맞추기", () => {
     ]);
     expect((t.source as ReturnType<typeof fakeSource>).calls).toEqual([]);
   });
+
+  it("개인 저장소의 @keyring/… 잠금 항목은 그 판이 캐시에 있어도 market_scope_reserved, 적용자에 넘기지 않는다", async () => {
+    const t = setup({ packages: { "@keyring/hello": lockOf("@keyring/hello", "1.0.0") } });
+    const entry = lockOf("@keyring/hello", "1.0.0");
+    const files = new Map(Object.keys(entry.sha256).map((p) => [p, enc(raw[`${PREFIX}packages/keyring/hello/1.0.0/${p}`]!)]));
+    await t.cache.put("@keyring/hello", "1.0.0", entry, files);
+    const widgets = vi.fn();
+    t.state.registerPackageKind("widget", { apply: widgets });
+    await t.state.reconcile();
+    expect(t.state.installedPackages()).toEqual([
+      expect.objectContaining({ id: "@keyring/hello", status: "error", error: { code: "market_scope_reserved", params: { id: "@keyring/hello" } } }),
+    ]);
+    expect(widgets).toHaveBeenLastCalledWith([]);
+    expect((t.source as ReturnType<typeof fakeSource>).calls).toEqual([]);
+  });
 });
 
 describe("설치·제거·파일", () => {

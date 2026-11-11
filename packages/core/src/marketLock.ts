@@ -32,7 +32,7 @@ export interface MarketplaceSettings {
   /** 잠금 순서 그대로 */
   packages: Record<string, LockEntry>;
   /** 읽지 못한 항목 — 아무 파일도 받거나 쓰거나 지우지 않는다 */
-  problems: { id: string; code: "market_lock_invalid" }[];
+  problems: { id: string; code: "market_lock_invalid" | "market_scope_reserved" }[];
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -81,8 +81,10 @@ export function parseMarketplace(raw: unknown): MarketplaceSettings {
   const problems: MarketplaceSettings["problems"] = [];
   for (const [id, e] of Object.entries(isRecord(m.packages) ? m.packages : {})) {
     const entry = parseEntry(id, e);
-    if (entry) packages[id] = entry;
-    else problems.push({ id, code: "market_lock_invalid" });
+    if (!entry) problems.push({ id, code: "market_lock_invalid" });
+    // 받기에서도 막히지만, 판정에서 빼야 이미 캐시에 있는 판이 ready 가 되지 않는다(resolveInstall 과 같은 판정)
+    else if (parsePackageId(id)!.scope === "keyring" && !isOfficialRepo(entry.repo)) problems.push({ id, code: "market_scope_reserved" });
+    else packages[id] = entry;
   }
   return { repos, packages, problems };
 }
