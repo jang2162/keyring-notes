@@ -76,9 +76,9 @@ describe("checkPackageDir", () => {
     expect(await reason(checkPackageDir(widgetDir("1.0.0")))).toMatch(/^market_manifest_invalid:frame_js_syntax: /);
   });
   it("frame.js 문법 검사는 코드를 실행하지 않는다", async () => {
-    await writeFile(path.join(widgetDir("1.0.0"), "frame.js"), "globalThis.__pkgCheckRan = 1; keyringWidgetRegister(() => () => {});");
-    await checkPackageDir(widgetDir("1.0.0"));
-    expect((globalThis as Record<string, unknown>).__pkgCheckRan).toBeUndefined();
+    // 어떤 맥락에서든(이 프로세스·새 샌드박스) 돌리면 던진다 — 통과하면 돌리지 않은 것
+    await writeFile(path.join(widgetDir("1.0.0"), "frame.js"), 'keyringWidgetRegister(() => () => {}); throw new Error("executed");');
+    expect((await checkPackageDir(widgetDir("1.0.0"))).manifest.id).toBe("@me/clock");
   });
   it("커밋된 위젯 픽스처 여섯이 검사를 지나고 경고가 없다", async () => {
     const dirs = ["counter/1.0.0", "counter/2.0.0", "sketch/1.0.0", "probe/1.0.0", "probe/1.1.0", "silent/1.0.0"];
