@@ -80,7 +80,7 @@
 
 ## 마켓 서버
 
-마켓 서버와 그 `keyring-market` 명령, `.env` 키(`MARKET_HOST`, `MARKET_PORT`, `MARKET_REBUILD_SECONDS`, `MARKET_NAME`)는 별도 저장소 keyring-notes-marketplace 에 있습니다. 앱은 이 키를 읽지 않습니다. [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)를 보세요.
+마켓 서버와 그 `keyring-market` 명령, 환경 변수(`MARKET_*`)는 별도 저장소 keyring-notes-marketplace 에 있습니다. 앱은 이 변수를 읽지 않습니다. [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)를 보세요.
 
 ## 다음 단계
 

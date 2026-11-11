@@ -79,7 +79,7 @@ The image fixes `KEYRING_DATA`, `KEYRING_HOST` and `KEYRING_PORT`, and the vault
 
 ## Marketplace server
 
-The marketplace server, its `keyring-market` command and its `.env` keys (`MARKET_HOST`, `MARKET_PORT`, `MARKET_REBUILD_SECONDS`, `MARKET_NAME`) live in a separate repository, keyring-notes-marketplace. The app does not read these keys. See [Run your own marketplace](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/en/how-to/run-a-marketplace.md).
+The marketplace server, its `keyring-market` command and its environment variables (`MARKET_*`) live in a separate repository, keyring-notes-marketplace. The app does not read these variables. See [Run your own marketplace](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/en/how-to/run-a-marketplace.md).
 
 ## Next steps
 
