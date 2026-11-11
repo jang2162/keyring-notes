@@ -18,13 +18,10 @@ Keyring Notes 의 명령, API, 파일 형식을 정확히 모았습니다.
 | `agent remove <이름>` | 에이전트를 지웁니다 |
 | `agent grant <이름> <경로> <단계>` | 폴더나 노트의 권한을 정합니다. 경로 `/` 는 볼트 전체입니다 |
 | `agent revoke <이름> <경로>` | 규칙을 지웁니다. 상위 규칙이나 `hidden` 이 다시 적용됩니다 |
-| `pkg check <폴더>` | 마켓 패키지 폴더를 검사합니다. 오류가 있으면 `1` 로 끝나고, 경고를 보여 줍니다 |
-| `pkg serve <폴더> [--host <주소>] [--port <포트>] [--rebuild-seconds <초>] [--name <이름>]` | 마켓 저장소를 내줍니다. 시작할 때와 주기마다 `index.json` 을 다시 만들고 `/index.json` 과 `/packages/…` 만 내줍니다. 마켓 서버 이미지가 씁니다 |
-| `pkg index <폴더> [--name <이름>]` | `<폴더>/packages/` 아래 패키지를 모두 검사하고 `<폴더>/index.json` 을 씁니다. 파일이 그대로면 건드리지 않습니다 |
 
 설정 파일이 바뀌면 서버가 다음 요청부터 다시 읽으므로 재시작할 필요가 없습니다.
 
-`pkg` 명령의 상대 경로는 명령을 실행한 폴더 기준입니다. 패키지와 저장소 형식은 [마켓 패키지 올리기](how-to/publish-packages.md)에 있습니다. 앱에서 패키지를 설치하는 법은 [패키지 설치하기](how-to/install-packages.md)에 있습니다.
+패키지 검사, `index.json` 만들기, 마켓 내주기는 별도 저장소 keyring-notes-marketplace 의 `keyring-market check|index|serve` 명령으로 합니다. [패키지 검사하고 목록 만들기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/check-and-index-packages.md)를 보세요. 패키지와 저장소 형식은 [마켓 패키지 올리기](how-to/publish-packages.md)에 있습니다. 앱에서 패키지를 설치하는 법은 [패키지 설치하기](how-to/install-packages.md)에 있습니다.
 
 ## 권한
 

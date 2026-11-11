@@ -25,7 +25,7 @@ export const MARKET_LIMITS = {
   redirects: 5,
 } as const;
 
-/** `pkg check` 가 경고하는 frame.js 크기(막지는 않는다 — 상한은 MARKET_LIMITS.fileBytes) */
+/** `keyring-market check`(별도 저장소 keyring-notes-marketplace)가 경고하는 frame.js 크기(막지는 않는다 — 상한은 MARKET_LIMITS.fileBytes) */
 export const FRAME_JS_WARN_BYTES = 1048576;
 
 export type PackageType = "widget" | "theme" | "language";
@@ -238,7 +238,7 @@ export interface IndexVersion {
   files: IndexFile[];
 }
 
-/** index 표시 필드의 상한(글자 수는 UTF-16 길이). 읽기(parseRepoIndex)·쓰기(pkg index)·검사(checkPackageFiles 경고)가 같이 본다 */
+/** index 표시 필드의 상한(글자 수는 UTF-16 길이). 읽기(parseRepoIndex)·쓰기(keyring-market index)·검사(checkPackageFiles 경고)가 같이 본다 */
 export const INDEX_TEXT_LIMITS = { tags: 20, name: 100, description: 500, author: 100, license: 100 } as const;
 
 type DisplayFields = Pick<IndexVersion, "name" | "description" | "author" | "license">;
@@ -263,7 +263,7 @@ function readDisplay(raw: Record<string, unknown>): DisplayFields {
     if (raw[f] !== undefined && langTextProblem(raw[f], INDEX_TEXT_LIMITS[f]) === null) out[f] = { ...(raw[f] as Record<string, string>) };
   for (const f of ["author", "license"] as const) {
     const v = raw[f];
-    // 빈 글은 보일 것이 없다 — pkg index 도 쓰지 않는다(manifestDisplay)
+    // 빈 글은 보일 것이 없다 — keyring-market index 도 쓰지 않는다(manifestDisplay)
     if (typeof v === "string" && v.trim() && v.length <= INDEX_TEXT_LIMITS[f]) out[f] = v;
   }
   return out;

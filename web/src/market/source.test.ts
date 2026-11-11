@@ -11,7 +11,7 @@ import {
   type PackageSource,
 } from "./source";
 
-// 서버 시험과 같은 픽스처 저장소(pkg index 로 만든 것). web 은 Node 형식이 없어 Vite 의 ?raw 로 읽는다
+// 서버 시험과 같은 픽스처 저장소(keyring-market index 로 만든 것). web 은 Node 형식이 없어 Vite 의 ?raw 로 읽는다
 const raw = import.meta.glob("../../../server/test/fixtures/market/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const PREFIX = "../../../server/test/fixtures/market/";
 const index = JSON.parse(raw[`${PREFIX}index.json`]!);
