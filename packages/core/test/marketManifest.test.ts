@@ -152,6 +152,33 @@ describe("checkPackageFiles", () => {
       ).not.toMatch(/^other/);
   });
 
+  it("위젯: 데이터 파일 확장자 md 는 거부(데이터 파일이 노트가 된다)", () => {
+    const w = widgetManifest.widget;
+    for (const ext of ["md", "MD"])
+      expect(
+        reason(() => parseManifest({ ...widgetManifest, widget: { ...w, dataFile: { ext, initial: "x" } } })),
+        ext,
+      ).toBe("widget.dataFile.ext");
+    expect(parseManifest({ ...widgetManifest, widget: { ...w, dataFile: { ext: "mdx", initial: "x" } } }).widget?.dataFile?.ext).toBe("mdx");
+  });
+
+  it("위젯: 메시지의 틀린 키는 오류 없이 messages_dropped 경고(처음 10개)", () => {
+    const bad: Record<string, string> = { ok: "x" };
+    for (let i = 0; i < 12; i++) bad[`bad ${i}`] = "x";
+    const r = checkPackageFiles(files({ "keyring-package.json": widgetManifest, "frame.js": frame, "messages/ko.json": bad, "messages/en.json": { ok: "x" } }));
+    expect(r.warnings).toEqual([`messages_dropped: messages/ko.json: ${Array.from({ length: 10 }, (_, i) => `bad ${i}`).join(", ")}, …`]);
+    // 글자가 아닌 값은 지금처럼 오류
+    expect(reason(() => checkPackageFiles(files({ "keyring-package.json": widgetManifest, "frame.js": frame, "messages/ko.json": { a: 1 } })))).toBe(
+      "messages:messages/ko.json",
+    );
+  });
+
+  it("위젯: frame.js 가 1 MiB 를 넘으면 large_frame_js 경고(KiB)", () => {
+    const big = new Uint8Array(1536 * 1024).fill(0x20);
+    expect(checkPackageFiles(files({ "keyring-package.json": widgetManifest, "frame.js": big })).warnings).toEqual(["large_frame_js: 1536"]);
+    expect(checkPackageFiles(files({ "keyring-package.json": widgetManifest, "frame.js": new Uint8Array(1024 * 1024).fill(0x20) })).warnings).toEqual([]);
+  });
+
   it("언어: checkPack 오류는 오류, 빠진 키는 경고", () => {
     const lang = { ...base, id: "@me/ja", type: "language" };
     const ok = checkPackageFiles(files({ "keyring-package.json": lang, "messages.json": { meta: { id: "ja", name: "日本語", base: "en" }, messages: {} } }));

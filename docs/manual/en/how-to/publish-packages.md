@@ -5,7 +5,7 @@ This guide builds a marketplace repository of widgets, themes and languages that
 It is for people who make packages or run their own repository.
 
 > [!NOTE]
-> The app installs and uses themes and languages, see [Install packages](install-packages.md). Widget installation comes in a later release. You can already publish widget packages.
+> To install packages in the app, see [Install packages](install-packages.md).
 
 ## How a repository is laid out
 
@@ -68,7 +68,7 @@ The `widget` object:
 | `stateVersion` | integer ≥ 1 | The version of the state the widget stores in notes. It is separate from the package version |
 | `display` | string | `block` or `inline` |
 | `defaultState` | any JSON value | The state of a new widget |
-| `dataFile` | object | Optional. A data file the widget keeps next to the note: `ext` (lowercase letters and digits), `initial` (non-empty text), `name` (optional, language tag → name) |
+| `dataFile` | object | Optional. A data file the widget keeps next to the note: `ext` (lowercase letters and digits, not `md`), `initial` (non-empty text), `name` (optional, language tag → name) |
 | `isolation` | string | Optional. Always `frame`: downloaded widgets always run in an isolated frame |
 
 The `colors` object of a theme has `light`, `dark` or both. Each maps a color token to a color value.
@@ -201,6 +201,17 @@ self.keyringWidgetRegister((el, ctx, api) => {
 | `file.read()`, `file.write(bytes, baseHash)` | The data file, when the manifest has `dataFile` |
 | `toggleFullscreen()` | Block widgets only |
 
+### Widget rules
+
+- **The block in a note.** A widget block names the package id and the state version: `{"widget": "@me/clock@1", "state": {…}}`. The number after the last `@` is `stateVersion`, not the package version.
+- **Upgrading stored state.** When you change the shape of the state, raise `stateVersion` and pass `migrate` as the second argument: `keyringWidgetRegister(render, { migrate })`. The app calls `migrate(state, from)` inside the frame before it passes a block's state to your widget, when the block's state version is lower than `stateVersion`. The note is written with the new version the next time the widget changes the state. Opening a note alone does not change it. If `migrate` throws, the app shows an error and the block's source text instead of the widget. Without `migrate`, the app passes the old state unchanged.
+- **The `file` key is reserved.** The app owns `state.file`, the path of the data file. A `file` key that your widget passes to `setState` or returns from `migrate` is replaced with the block's current value. A widget without `dataFile` loses the key. Do not use `file` as a name in your own state.
+- **Data files.** `dataFile.ext` cannot be `md`, because the file would become a note. A new data file is named `<name>-<random>.<ext>` next to the note. `<name>` comes from `dataFile.name`, then the package name.
+- **Messages.** Keys use letters, digits, `_`, `.` and `-`, start with a letter, digit or `_`, and are at most 100 characters. A plural form adds `#zero`, `#one`, `#two`, `#few`, `#many` or `#other` (for example `count#one`). Each file can have 1000 keys, and each value 2000 characters. The app drops keys that break these rules, and `pkg check` lists them as warnings (`messages_dropped`). The app always shows widget messages and manifest names as plain text, never as HTML.
+- **`frame.js`** is a classic script, not a module. `import` and `export` are not allowed. The limit is 8 MiB, and `pkg check` warns above 1 MiB (`large_frame_js`), because the app sends the code to every frame again.
+- **`frame.css`** applies only inside the widget's frame. It cannot change the app. External addresses (`@import`, `url(https://…)`) are blocked. Put images and fonts in `data:` URLs.
+- **Check before you publish.** Run `pkg check` on every widget version. `pkg index` does not check the syntax of `frame.js`. A widget with a syntax error is still listed, and after 20 seconds the app shows "Couldn't load the widget" in its place.
+
 ## The index file
 
 `index.json` lists every package and version in the repository.
@@ -281,7 +292,7 @@ pnpm keyring pkg check my-repo/packages/me/clock/1.0.0
 pnpm keyring pkg index my-repo --name "My widgets"
 ```
 
-- `pkg check <folder>` checks the manifest, the required and allowed files, theme colors and language keys. It exits with code `1` on an error and prints warnings, such as missing language keys, unknown theme tokens or low contrast, without failing.
+- `pkg check <folder>` checks the manifest, the required and allowed files, theme colors, language keys, widget message keys and the syntax of `frame.js`. It does not run `frame.js`. It exits with code `1` on an error and prints warnings, such as missing language keys, unknown theme tokens, low contrast, dropped widget message keys or a large `frame.js`, without failing.
 - `pkg index <folder>` checks every package under `packages/`, measures each file, copies the display fields from each manifest and writes `index.json`. It keeps the `name` of an existing `index.json`, then uses `--name`, then the folder name. Running it again on unchanged files leaves `index.json` untouched.
 
 With Docker, run the same commands in the container. The folder must be inside the data volume (`/data`) or another volume mounted into the container.

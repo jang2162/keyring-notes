@@ -66,6 +66,27 @@ describe("checkPackageDir", () => {
     await writeFile(path.join(widgetDir("1.0.0"), ".DS_Store"), "x");
     expect(await reason(checkPackageDir(widgetDir("1.0.0")))).toContain(".DS_Store");
   });
+  it("frame.js 문법: 고전 스크립트만 통과, 문법 오류·모듈 꼴은 frame_js_syntax", async () => {
+    const frame = path.join(widgetDir("1.0.0"), "frame.js");
+    await writeFile(frame, "self.keyringWidgetRegister(() => () => {})");
+    expect((await checkPackageDir(widgetDir("1.0.0"))).manifest.id).toBe("@me/clock");
+    await writeFile(frame, "function (");
+    expect(await reason(checkPackageDir(widgetDir("1.0.0")))).toMatch(/^market_manifest_invalid:frame_js_syntax: \S/);
+    await writeFile(frame, "export default 1");
+    expect(await reason(checkPackageDir(widgetDir("1.0.0")))).toMatch(/^market_manifest_invalid:frame_js_syntax: /);
+  });
+  it("frame.js 문법 검사는 코드를 실행하지 않는다", async () => {
+    await writeFile(path.join(widgetDir("1.0.0"), "frame.js"), "globalThis.__pkgCheckRan = 1; keyringWidgetRegister(() => () => {});");
+    await checkPackageDir(widgetDir("1.0.0"));
+    expect((globalThis as Record<string, unknown>).__pkgCheckRan).toBeUndefined();
+  });
+  it("커밋된 위젯 픽스처 여섯이 검사를 지나고 경고가 없다", async () => {
+    const dirs = ["counter/1.0.0", "counter/2.0.0", "sketch/1.0.0", "probe/1.0.0", "probe/1.1.0", "silent/1.0.0"];
+    for (const d of dirs) {
+      const r = await checkPackageDir(path.join(serverDir, "test", "fixtures", "market", "packages", "me", d));
+      expect([r.manifest.type, r.warnings], d).toEqual(["widget", []]);
+    }
+  });
 });
 
 describe("심볼릭 링크·종류·판 이름", () => {
@@ -190,7 +211,20 @@ describe("buildRepoIndex", () => {
     const r = await buildRepoIndex(copy);
     expect(r.written).toBe(false);
     expect(r.warnings).toEqual([]);
-    expect(Object.keys(r.index.packages)).toEqual(["@keyring/hello", "@me/clock", "@me/fog", "@me/ja", "@me/paper", "@me/sea"]);
+    expect(Object.keys(r.index.packages)).toEqual([
+      "@keyring/hello",
+      "@me/clock",
+      "@me/counter",
+      "@me/fog",
+      "@me/ja",
+      "@me/paper",
+      "@me/probe",
+      "@me/sea",
+      "@me/silent",
+      "@me/sketch",
+    ]);
+    expect(Object.keys(r.index.packages["@me/counter"]!.versions)).toEqual(["1.0.0", "2.0.0"]);
+    expect(Object.keys(r.index.packages["@me/probe"]!.versions)).toEqual(["1.0.0", "1.1.0"]);
     expect(r.index.packages["@me/paper"]!.versions["0.1.0"]!.name).toEqual({ en: "Paper", ko: "종이" });
   });
 

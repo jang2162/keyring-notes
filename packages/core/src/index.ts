@@ -32,4 +32,5 @@ export * from "./vaultText.js";
 export * from "./types.js";
 export * from "./widget.js";
 export * from "./widgetFrame.js";
+export * from "./widgetMessages.js";
 export * from "./wiki.js";

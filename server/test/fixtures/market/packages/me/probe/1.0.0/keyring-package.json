@@ -1,0 +1,11 @@
+{
+  "id": "@me/probe",
+  "version": "1.0.0",
+  "type": "widget",
+  "name": { "en": "Probe" },
+  "description": { "en": "A test widget that tries to escape its iframe (state version 2; migrate injects file)" },
+  "author": "Keyring Notes tests",
+  "license": "MIT",
+  "engines": { "keyring": ">=0.1.0" },
+  "widget": { "stateVersion": 2, "display": "block", "defaultState": { "note": "probe" } }
+}

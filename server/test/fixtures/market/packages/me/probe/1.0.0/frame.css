@@ -1,0 +1,12 @@
+/* iframe 밖(앱 문서)에 닿지 않아야 한다 — 이 위젯 자리만 빨갛게 보이면 정상. 외부 주소는 iframe CSP 가 막는다 */
+@import url("https://example.com/x.css");
+:root,
+body {
+  background: red;
+}
+body > :not(.kw-frame-root) {
+  display: none;
+}
+.kw-frame-root {
+  background-image: url("https://example.com/x.png");
+}
