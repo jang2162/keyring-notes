@@ -33,7 +33,7 @@
 - 공식 저장소도 뺄 수 있습니다. **공식 저장소 다시 더하기** 로 되돌립니다.
 - `@keyring` 범위의 패키지는 공식 저장소에서만 받습니다.
 
-내 저장소를 만들려면 [마켓 패키지 올리기](publish-packages.md)를 보세요. 그 저장소를 내줄 서버를 띄우려면 [keyring-notes-marketplace](https://github.com/jang2162/keyring-notes-marketplace) README 를 보세요.
+내 저장소를 만들려면 [마켓 패키지 올리기](publish-packages.md)를 보세요. 그 저장소를 내줄 서버를 띄우려면 [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)를 보세요.
 
 ## 둘러보고 설치하기
 
@@ -117,4 +117,4 @@
 
 - [설정 바꾸기](customize-settings.md)
 - [마켓 패키지 올리기](publish-packages.md)
-- [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace)
+- [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)

@@ -80,7 +80,7 @@
 
 ## 마켓 서버
 
-마켓 서버의 Docker 구성과 그 `.env` 키는 별도 저장소 [keyring-notes-marketplace](https://github.com/jang2162/keyring-notes-marketplace)에 있습니다. 그 README 를 보세요.
+마켓 서버의 Docker 구성과 그 `.env` 키는 별도 저장소 keyring-notes-marketplace 에 있습니다. [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)를 보세요.
 
 서버가 띄우는 `pkg serve` 명령은 같은 뜻의 옵션을 주지 않으면 다음 키를 읽습니다.
 

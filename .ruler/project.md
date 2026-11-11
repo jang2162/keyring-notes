@@ -17,4 +17,4 @@
 | macOS 앱 릴리스 워크플로·서명·공증·업데이터 설정·제품 버전을 바꾸거나 릴리스할 때 | `docs/guides/release-macos.md` |
 | 서버·앱의 구조를 파악하거나, 개발 서버·시험을 돌리거나, README·사용자 문서를 고칠 때 | `docs/guides/development.md` |
 
-마켓 서버 구성(이미지·compose·Komodo Stack·공식 패키지)은 별도 저장소 keyring-notes-marketplace(https://github.com/jang2162/keyring-notes-marketplace)가 갖는다. 이 저장소에는 패키지 형식과 `pkg check`·`pkg index`·`pkg serve` CLI 만 있다.
+마켓 서버 구성(이미지·compose·Komodo Stack)은 별도 저장소 keyring-notes-marketplace 가 갖는다. 공식 패키지는 어느 저장소에도 두지 않고 마켓 서버의 폴더에서 관리한다.

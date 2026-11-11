@@ -79,7 +79,7 @@ The image fixes `KEYRING_DATA`, `KEYRING_HOST` and `KEYRING_PORT`, and the vault
 
 ## Marketplace server
 
-The marketplace server's Docker setup and its `.env` keys live in a separate repository, [keyring-notes-marketplace](https://github.com/jang2162/keyring-notes-marketplace). See its README.
+The marketplace server's Docker setup and its `.env` keys live in a separate repository, keyring-notes-marketplace. See [Run your own marketplace](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/en/how-to/run-a-marketplace.md).
 
 The `pkg serve` command that the server runs reads these keys when the matching option is not given:
 
