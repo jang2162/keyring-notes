@@ -211,6 +211,26 @@ describe("설치·제거·파일", () => {
     await expect(t.state.readPackageFile("@me/none", "frame.js")).rejects.toBeInstanceOf(KeyedError);
   });
 
+  it("readPackageFileAt: 붙잡은 잠금 항목과 지금 잠금이 판·repo·sha 모두 같을 때만, 아니면 market_stale", async () => {
+    const t = setup({ packages: { "@me/clock": lockOf("@me/clock", "1.0.0") } });
+    await t.state.reconcile();
+    const held = t.state.lockEntry("@me/clock")!;
+    expect(held).toEqual(lockOf("@me/clock", "1.0.0"));
+    expect(await t.state.readPackageTextAt("@me/clock", held, "frame.js")).toContain("keyringWidgetRegister");
+    // 같은 판인데 sha 만 다른 항목(손으로 고침·다른 저장소)
+    const otherSha = { ...held, sha256: { ...held.sha256, "frame.js": "0".repeat(64) } };
+    await expect(t.state.readPackageFileAt("@me/clock", otherSha, "frame.js")).rejects.toMatchObject({ code: "market_stale" });
+    await expect(t.state.readPackageFileAt("@me/clock", { ...held, repo: "https://other.test/" }, "frame.js")).rejects.toMatchObject({
+      code: "market_stale",
+    });
+    // 잠금이 다른 판으로 바뀐 뒤 옛 항목으로
+    t.setSettings(parseMarketplace({ repos: [REPO], packages: { "@me/clock": lockOf("@me/clock", "1.1.0") } }));
+    await t.state.reconcile();
+    await expect(t.state.readPackageFileAt("@me/clock", held, "frame.js")).rejects.toMatchObject({ code: "market_stale", params: { id: "@me/clock" } });
+    expect(t.state.lockEntry("@me/clock")!.version).toBe("1.1.0");
+    expect(t.state.lockEntry("@me/none")).toBeNull();
+  });
+
   it("repoIndexes 는 저장소 순서대로", async () => {
     const t = setup({ repos: [OFFICIAL_REPO_URL, REPO] });
     expect((await t.state.repoIndexes()).map((r) => r.repo)).toEqual([OFFICIAL_REPO_URL, REPO]);

@@ -217,12 +217,13 @@ export function mountFrame(
       // 붙인 직후 잡아 둔다 — DOM 에서 빠지면 contentWindow 는 null 이 되어 전송 중이던 메시지를 가를 수 없다
       win = f.contentWindow;
     },
-    () => {
+    (e: unknown) => {
       if (dead) return;
       dead = true;
       removeFrame();
       o.file?.release();
-      o.failed();
+      // 잠금이 바뀌어 붙잡은 판의 코드를 읽지 않았다 — 적용자가 곧 새 항목으로 알리면 다시 그린다
+      o.failed((e as { code?: unknown } | null)?.code === "market_stale" ? "kw.pending" : undefined);
     },
   );
 

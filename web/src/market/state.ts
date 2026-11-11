@@ -35,6 +35,11 @@ export interface MarketState {
   installedPackages(): InstalledPackage[];
   readPackageFile(id: string, path: string): Promise<Uint8Array>;
   readPackageText(id: string, path: string): Promise<string>;
+  /** 지금 잠금 항목(없으면 null) — 위젯 적용자가 그 순간의 판·sha 를 붙잡는다 */
+  lockEntry(id: string): LockEntry | null;
+  /** 지금 잠금이 entry 와 판·repo·sha256 묶음이 모두 같을 때만 readPackageFile 처럼 읽는다. 다르면 market_stale */
+  readPackageFileAt(id: string, entry: LockEntry, path: string): Promise<Uint8Array>;
+  readPackageTextAt(id: string, entry: LockEntry, path: string): Promise<string>;
   onPackagesChange(fn: () => void): () => void;
   registerPackageKind(type: PackageType, applier: { apply(pkgs: InstalledPackage[]): void | Promise<void> }): () => void;
   /** fresh: 마켓 화면을 열 때·「새로 고침」(서버 캐시를 건너뜀). 그 밖의 길(설치 판정)은 캐시 */
@@ -182,6 +187,22 @@ export function createMarketState(deps: MarketDeps): MarketState {
     },
     async readPackageText(id, path) {
       return new TextDecoder().decode(await state.readPackageFile(id, path));
+    },
+    lockEntry: (id) => deps.settings()?.packages[id] ?? null,
+    readPackageFileAt(id, entry, path) {
+      const now = deps.settings()?.packages[id];
+      const sameEntry =
+        !!now &&
+        now.version === entry.version &&
+        now.repo === entry.repo &&
+        Object.keys(now.sha256).length === Object.keys(entry.sha256).length &&
+        Object.entries(entry.sha256).every(([p, h]) => now.sha256[p] === h);
+      // 잠금이 바뀌었다 — 붙잡은 판의 정의·메시지에 다른 판의 코드를 싣지 않는다
+      if (!sameEntry) return Promise.reject(new KeyedError("market_stale", { id }));
+      return state.readPackageFile(id, path);
+    },
+    async readPackageTextAt(id, entry, path) {
+      return new TextDecoder().decode(await state.readPackageFileAt(id, entry, path));
     },
     onPackagesChange(fn) {
       listeners.add(fn);
