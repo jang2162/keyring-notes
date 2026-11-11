@@ -14,13 +14,18 @@ import {
 
 /**
  * 마켓 화면의 순수 모델(DOM 없음). 화면(MarketSettings.tsx)은 종류를 이 표로만 가른다 —
- * 3단계는 widget 줄을 installable: true 와 WebRTC 알림 키로 바꾸고 적용자를 걸면 위젯 설치가 켜진다.
+ * installNotice 가 있는 종류는 설치(업데이트 아님) 전에 그 글로 묻고, 「설치됨」 묶음 머리에 installNoticeShort 한 줄을 둔다.
  */
-export const MARKET_KINDS: Record<PackageType, { label: string; installable: boolean; installNotice?: string }> = {
+export const MARKET_KINDS: Record<PackageType, { label: string; installable: boolean; installNotice?: string; installNoticeShort?: string }> = {
   theme: { label: "market.kind.theme", installable: true },
   language: { label: "market.kind.language", installable: true },
-  widget: { label: "market.kind.widget", installable: false },
+  widget: { label: "market.kind.widget", installable: true, installNotice: "market.widgetNotice", installNoticeShort: "market.widgetNoticeShort" },
 };
+
+/** 걸러 보는 id 가 있고 목록을 받았는데 그 행이 어느 저장소에도 없음 */
+export function focusMissing(rows: BrowseRow[], only: string | null, loaded: boolean): boolean {
+  return !!only && loaded && !rows.some((r) => r.id === only);
+}
 
 const KIND_ORDER: PackageType[] = ["theme", "language", "widget"];
 
