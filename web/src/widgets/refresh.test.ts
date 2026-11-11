@@ -1,7 +1,54 @@
 import { describe, expect, it } from "vitest";
 import type { Resume } from "./mount";
-import { flushBeforeRefresh, refreshAction, resumePlan } from "./refresh";
+import { flushBeforeRefresh, refreshAction, resumePlan, sessionInitFor } from "./refresh";
 import type { FrameWidgetEntry, WidgetView } from "./registry";
+
+describe("sessionInitFor — mount 가 세션을 만드는 옵션", () => {
+  const view = (builtIn: boolean, file?: string): Extract<WidgetView, { kind: "widget" }> => ({
+    kind: "widget",
+    entry: {
+      def: { id: builtIn ? "keyring/x" : "@me/x", version: 2, isolation: "frame", display: "block", defaultState: () => ({}), title: { en: "X" } },
+      builtIn,
+      messages: builtIn ? "kw.x" : {},
+      frame: async () => ({ kind: "text", js: "" }),
+    },
+    block: { widget: { id: "@me/x", version: 1 }, state: file ? { file } : {}, extra: [] },
+    state: file ? { file } : {},
+    from: 1,
+    editable: true,
+    display: "block",
+  });
+
+  it("판·이어받기를 싣는다", () => {
+    const resume: Resume = { draft: { n: 2 }, base: { n: 1 }, focus: null, stateFrom: 1, entryKey: "k" };
+    const v = view(false);
+    expect(sessionInitFor(v, resume, { readOnly: true, blockState: () => v.block.state })).toMatchObject({
+      state: {},
+      editable: true,
+      readOnly: true,
+      resumeDraft: { n: 2 },
+      resumeBase: { n: 1 },
+      version: 2,
+      from: 1,
+      resumeFrom: 1,
+    });
+  });
+
+  it("받은 위젯은 pinFile 로 그 순간의 블록 file 에 고정한다(없으면 키를 뺀다)", () => {
+    let block: unknown = { file: "a/s-1.sketch" };
+    const init = sessionInitFor(view(false, "a/s-1.sketch"), null, { readOnly: false, blockState: () => block });
+    expect(init.pinFile!({ file: "b/x.sketch", k: 1 })).toEqual({ file: "a/s-1.sketch", k: 1 });
+    // 바깥 변경으로 블록이 바뀌면 그 값으로
+    block = { file: "a/s-2.sketch" };
+    expect(init.pinFile!({ file: "b/x.sketch" })).toEqual({ file: "a/s-2.sketch" });
+    block = {};
+    expect(init.pinFile!({ file: "b/x.json", k: 1 })).toEqual({ k: 1 });
+  });
+
+  it("내장 위젯은 고정하지 않는다", () => {
+    expect(sessionInitFor(view(true, "a/x.json"), null, { readOnly: false, blockState: () => ({ file: "a/x.json" }) }).pinFile).toBeUndefined();
+  });
+});
 
 const entry = (): FrameWidgetEntry => ({
   def: { id: "@me/c", version: 1, isolation: "frame", display: "block", defaultState: () => ({}), title: { en: "C" } },

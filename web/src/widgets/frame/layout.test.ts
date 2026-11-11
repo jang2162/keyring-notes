@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { frameEventAction, frameFocusInside, frameGuard, frameHeight, FRAME_MIN_HEIGHT } from "./layout";
+import { frameEventAction, frameFocusInside, frameGuard, frameHeight, frameLoadFailedKey, FRAME_MIN_HEIGHT } from "./layout";
+
+describe("frameLoadFailedKey — 코드를 읽지 못한 자리", () => {
+  it("잠금이 바뀌어 market_stale 이면 kw.pending(곧 새 항목으로 다시 그린다), 그 밖은 기본(kw.loadFailed)", () => {
+    expect(frameLoadFailedKey({ code: "market_stale", params: { id: "@me/c" } })).toBe("kw.pending");
+    expect(frameLoadFailedKey({ code: "market_hash_mismatch" })).toBeUndefined();
+    expect(frameLoadFailedKey(new Error("x"))).toBeUndefined();
+    expect(frameLoadFailedKey(null)).toBeUndefined();
+  });
+});
 
 describe("iframe 호스트 판정", () => {
   it("frameEventAction: 잡아 둔 창이 아니면 ignore, 출처가 null 이 아니면 kill", () => {

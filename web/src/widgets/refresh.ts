@@ -1,5 +1,32 @@
 import type { Resume } from "./mount";
 import type { WidgetView } from "./registry";
+import { pinFile, type WidgetSession } from "./session";
+
+/** 블록에 적힌 state.file(글자일 때만) */
+const blockFile = (state: unknown): string | undefined =>
+  state !== null && typeof state === "object" && typeof (state as { file?: unknown }).file === "string" ? (state as { file: string }).file : undefined;
+
+/**
+ * mount 가 세션을 만드는 옵션(순수). 받은 위젯은 state.file 을 바꾸지 못한다 — 위젯에서 오는 상태의 file 을 그 순간의 블록 값
+ * (blockState: 바깥 변경이 오면 바뀐 블록)으로 고정한다. 내장 위젯은 앱 코드라 고정하지 않는다
+ */
+export function sessionInitFor(
+  v: Extract<WidgetView, { kind: "widget" }>,
+  resume: Resume | null,
+  o: { readOnly: boolean; blockState(): unknown },
+): ConstructorParameters<typeof WidgetSession>[0] {
+  return {
+    state: v.state,
+    editable: v.editable,
+    readOnly: o.readOnly,
+    resumeDraft: resume?.draft,
+    resumeBase: resume?.base,
+    version: v.entry.def.version,
+    from: v.from,
+    resumeFrom: resume?.stateFrom,
+    pinFile: v.entry.builtIn ? undefined : (s) => pinFile(s, blockFile(o.blockState())),
+  };
+}
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 

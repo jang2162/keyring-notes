@@ -9,9 +9,9 @@ import { THEME_TOKEN_NAMES } from "./frame/themeTokens";
 import { widgetThemeValue } from "./themeValue";
 import { widgetMessages } from "./messages";
 import type { WidgetDraftChange } from "./blockEdit";
-import { flushBeforeRefresh, refreshAction, resumePlan } from "./refresh";
+import { flushBeforeRefresh, refreshAction, resumePlan, sessionInitFor } from "./refresh";
 import { isFrameEntry, onWidgetsChange, resolveWidgetView, widgetEntryKey, widgetViewChange, type WidgetView } from "./registry";
-import { focusOutAction, pinFile, widgetKeyAction, WidgetSession } from "./session";
+import { focusOutAction, widgetKeyAction, WidgetSession } from "./session";
 import type { WidgetContext } from "./types";
 import { bindWidgetApi } from "./widgetApi";
 
@@ -83,10 +83,6 @@ function noticeBlock(el: HTMLElement, message: string) {
 /** state.file 의 원래 글(오류·안내에 보일 것) */
 const rawFile = (state: unknown): string =>
   state !== null && typeof state === "object" && typeof (state as { file?: unknown }).file === "string" ? (state as { file: string }).file : "";
-
-/** 블록에 적힌 state.file(글자일 때만) — 받은 위젯에서 오는 상태의 file 을 이것으로 고정한다 */
-const blockFile = (state: unknown): string | undefined =>
-  state !== null && typeof state === "object" && typeof (state as { file?: unknown }).file === "string" ? (state as { file: string }).file : undefined;
 
 /** 오류 줄 옆 「설치」·「마켓에서 보기」 — 마켓 화면을 그 id 로 연다(Workspace 가 듣는다) */
 export const OPEN_MARKET_EVENT = "keyring:open-market";
@@ -217,18 +213,7 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
     let constructing = true;
     const entryKey = widgetEntryKey(v.entry);
     const session = new WidgetSession(
-      {
-        state: v.state,
-        editable: v.editable,
-        readOnly: opts.readOnly,
-        resumeDraft: resume?.draft,
-        resumeBase: resume?.base,
-        version: v.entry.def.version,
-        from: v.from,
-        resumeFrom: resume?.stateFrom,
-        // 받은 위젯은 state.file 을 바꾸지 못한다 — 그 순간의 블록 값(바깥 변경이 오면 바뀐 블록)으로 고정
-        pinFile: v.entry.builtIn ? undefined : (s) => pinFile(s, view.kind === "widget" ? blockFile(view.block.state) : undefined),
-      },
+      sessionInitFor(v, resume, { readOnly: opts.readOnly, blockState: () => (view.kind === "widget" ? view.block.state : undefined) }),
       {
         write: (s) => opts.write(s, v.entry.def.version),
         startEdit: (d, from) => opts.edit.start(d, from, entryKey),

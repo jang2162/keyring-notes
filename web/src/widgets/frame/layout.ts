@@ -8,6 +8,14 @@ export const FRAME_MIN_HEIGHT = 48;
 /** 받은 위젯이 ready 뒤 이 안에 registered 를 보내지 않으면(문법 오류·예외) 그 자리를 kw.loadFailed 로. 내장은 시한이 없다(느린 기기의 큰 묶음) */
 export const FRAME_REGISTER_TIMEOUT_MS = 20_000;
 
+/**
+ * 위젯 코드를 읽지 못한 자리의 글 키(undefined = kw.loadFailed). market_stale 은 잠금이 바뀌어 붙잡은 판의 코드를 읽지 않은 것 —
+ * 적용자가 곧 새 항목으로 알리면 다시 그리므로 「준비하는 중」
+ */
+export function frameLoadFailedKey(e: unknown): string | undefined {
+  return (e as { code?: unknown } | null)?.code === "market_stale" ? "kw.pending" : undefined;
+}
+
 /** 전체 화면 = viewport, 아니면 clamp(ceil(px), 48, floor(viewport*0.8)) — 위젯 하나가 화면을 다 덮어 노트 스크롤을 막지 않게 */
 export function frameHeight(px: number, viewport: number, fullscreen: boolean): number {
   if (fullscreen) return viewport;

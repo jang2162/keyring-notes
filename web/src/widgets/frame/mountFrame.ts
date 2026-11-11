@@ -6,7 +6,7 @@ import { focusOutAction, type WidgetSession } from "../session";
 import type { WidgetContext } from "../types";
 import { frameSrcdoc } from "./bootstrap";
 import { FrameHost } from "./host";
-import { frameFocusInside, frameGuard, frameHeight, FRAME_MIN_HEIGHT, routeFrameMessage } from "./layout";
+import { frameFocusInside, frameGuard, frameHeight, frameLoadFailedKey, FRAME_MIN_HEIGHT, routeFrameMessage } from "./layout";
 import { fetchFrameCode, resolveFrameCode } from "./source";
 
 /**
@@ -222,8 +222,7 @@ export function mountFrame(
       dead = true;
       removeFrame();
       o.file?.release();
-      // 잠금이 바뀌어 붙잡은 판의 코드를 읽지 않았다 — 적용자가 곧 새 항목으로 알리면 다시 그린다
-      o.failed((e as { code?: unknown } | null)?.code === "market_stale" ? "kw.pending" : undefined);
+      o.failed(frameLoadFailedKey(e));
     },
   );
 
