@@ -92,6 +92,7 @@ import {
   orderWorkspaces,
   parentNode,
   planDailyMigration,
+  PACKAGE_ID_RE,
   setFrontmatterField,
   sha256Hex,
   shiftDays,
@@ -149,7 +150,7 @@ import {
   unsavedDataFiles,
 } from "./widgets/dataFile";
 import { apiDataFileIO } from "./widgets/dataFileIo";
-import { OPEN_PATH_EVENT } from "./widgets/mount";
+import { OPEN_MARKET_EVENT, OPEN_PATH_EVENT } from "./widgets/mount";
 import { widgetInsertText, widgetPaletteItems } from "./widgets/registry";
 import type { WidgetDefinition } from "./widgets/types";
 import { tipProps } from "./Tooltip";
@@ -1058,17 +1059,26 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   };
   const saveWithDrawingsRef = useRef(saveWithDrawings);
   saveWithDrawingsRef.current = saveWithDrawings;
+  /** 아래 openMarket 이 정의된 뒤 채운다 — 위젯 블록의 「설치」·「마켓에서 보기」 가 부른다 */
+  const openMarketRef = useRef<(id?: string) => void>(() => {});
   useEffect(() => {
     const onSave = () => void saveWithDrawingsRef.current();
     const onOpenPath = (e: Event) => {
       const p = (e as CustomEvent<unknown>).detail;
       if (typeof p === "string") void openRef.current(p);
     };
+    // 위젯(iframe 밖의 앱 코드)이 보내지만 detail 은 블록 글에서 온다 — 패키지 id 꼴일 때만
+    const onOpenMarket = (e: Event) => {
+      const id = (e as CustomEvent<unknown>).detail;
+      if (typeof id === "string" && PACKAGE_ID_RE.test(id)) openMarketRef.current(id);
+    };
     window.addEventListener("keyring:save", onSave);
     window.addEventListener(OPEN_PATH_EVENT, onOpenPath);
+    window.addEventListener(OPEN_MARKET_EVENT, onOpenMarket);
     return () => {
       window.removeEventListener("keyring:save", onSave);
       window.removeEventListener(OPEN_PATH_EVENT, onOpenPath);
+      window.removeEventListener(OPEN_MARKET_EVENT, onOpenMarket);
     };
   }, []);
 
@@ -2636,6 +2646,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     setMarketFocus(id ?? null);
     openSettings("marketplace");
   };
+  openMarketRef.current = openMarket;
   /** restore: 지금 문서 주소로 되돌린다(아니면 곧 다른 문서를 여는 중이라 비워 둔다) */
   const closeSettings = (restore = true) => {
     setSettings(null);

@@ -9,8 +9,8 @@ import { THEME_TOKEN_NAMES } from "./frame/themeTokens";
 import { widgetThemeValue } from "./themeValue";
 import { widgetMessages } from "./messages";
 import type { WidgetDraftChange } from "./blockEdit";
-import { resumePlan } from "./refresh";
-import { isFrameEntry, resolveWidgetView, widgetEntryKey, widgetViewChange, type WidgetView } from "./registry";
+import { flushBeforeRefresh, refreshAction, resumePlan } from "./refresh";
+import { isFrameEntry, onWidgetsChange, resolveWidgetView, widgetEntryKey, widgetViewChange, type WidgetView } from "./registry";
 import { focusOutAction, pinFile, widgetKeyAction, WidgetSession } from "./session";
 import type { WidgetContext } from "./types";
 import { bindWidgetApi } from "./widgetApi";
@@ -88,12 +88,36 @@ const rawFile = (state: unknown): string =>
 const blockFile = (state: unknown): string | undefined =>
   state !== null && typeof state === "object" && typeof (state as { file?: unknown }).file === "string" ? (state as { file: string }).file : undefined;
 
-function errorBlock(el: HTMLElement, body: string, message: string, onRaw?: () => void) {
+/** 오류 줄 옆 「설치」·「마켓에서 보기」 — 마켓 화면을 그 id 로 연다(Workspace 가 듣는다) */
+export const OPEN_MARKET_EVENT = "keyring:open-market";
+
+type ErrorView = Extract<WidgetView, { kind: "error" }>;
+
+/** 오류 보기의 글 — kw.packageFailed 의 {error} 는 error.<code> 글로 채운다 */
+function errorText(v: ErrorView): string {
+  if (v.error) return t(v.key, { ...v.vars, error: t(`error.${v.error.code}`, v.error.params) });
+  return t(v.key, v.vars);
+}
+
+function errorBlock(el: HTMLElement, body: string, message: string, onRaw?: () => void, action?: ErrorView["action"]) {
   const box = document.createElement("div");
   box.className = "kw-error-block";
   const line = document.createElement("div");
   line.className = "kw-error";
   line.textContent = message;
+  if (action) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "kw-error-action";
+    b.textContent = t(action.kind === "install" ? "kw.install" : "kw.openMarket");
+    // 블록 전체의 「원문으로」 mousedown 과 갈린다
+    b.addEventListener("mousedown", (e) => e.stopPropagation());
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      window.dispatchEvent(new CustomEvent(OPEN_MARKET_EVENT, { detail: action.id }));
+    });
+    line.append(" ", b);
+  }
   const pre = document.createElement("pre");
   pre.className = "kw-raw";
   pre.textContent = body;
@@ -112,6 +136,7 @@ function errorBlock(el: HTMLElement, body: string, message: string, onRaw?: () =
 interface Live {
   session: WidgetSession;
   root: HTMLElement;
+  file: DataFileHandle | null;
   stop(): void;
 }
 
@@ -120,12 +145,16 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
   let view: WidgetView = resolveWidgetView(body);
   let live: Live | null = null;
   let dead = false;
+  /** 수정 중이라 미룬 다시 그리기가 있다 — 수정이 끝나면 다시 판정한다 */
+  let deferred = false;
 
   const start = (resumeIn: Resume | null) => {
+    deferred = false;
     const plan = resumePlan(resumeIn, view.kind === "widget" ? { kind: "widget", version: view.entry.def.version } : { kind: "error" });
     if (view.kind === "error") {
-      // 이어받지 못하는 수정("hold")은 필드에 그대로 둔다 — 쓰지도 끝내지도 않는다(사용자 결정 2026-11-11)
-      errorBlock(el, body, t(view.key, view.vars), opts.onRaw);
+      // 이어받지 못하는 수정("hold")은 필드에 그대로 둔다 — 쓰지도 끝내지도 않는다(사용자 결정 2026-11-11).
+      // 이력 보기에서는 단추를 두지 않는다(읽기 화면에서 볼트 설정을 바꾸는 길을 열지 않는다)
+      errorBlock(el, body, errorText(view), opts.onRaw, opts.history ? undefined : view.action);
       return;
     }
     // 위젯 판이 초안의 판보다 낮다 — 그 초안을 이 판에 건네지 않는다(「hold」, 위와 같다)
@@ -205,7 +234,11 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
         startEdit: (d, from) => opts.edit.start(d, from, entryKey),
         setDraft: (d, from, base) => opts.edit.draft(base === undefined ? { draft: d, stateFrom: from } : { draft: d, stateFrom: from, base }),
         endEdit: () => (constructing ? queueMicrotask(() => opts.edit.end()) : opts.edit.end()),
-        changed: () => fire(),
+        changed: () => {
+          fire();
+          // 수정 중이라 미룬 다시 그리기 — 수정이 끝났으면 다시 판정한다(적용한 상태가 쓰인 뒤)
+          if (deferred && !session.editing) queueMicrotask(() => void refresh());
+        },
       },
     );
     constructing = false;
@@ -325,6 +358,7 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
     live = {
       session,
       root,
+      file,
       stop: () => {
         root.removeEventListener("focusout", onFocusOut);
         root.removeEventListener("focusin", onFocusIn);
@@ -390,6 +424,45 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
     live = null;
   };
 
+  /**
+   * 레지스트리 바뀜(받은 위젯이 들어옴·판 교체·빠짐·판정기 답 바뀜)에 다시 판정한다. 한 번에 하나, 기다리는 중에 또 오면 하나로 합친다.
+   * 수정 중이면 끝날 때까지 미룬다. 데이터 파일은 자동 저장 켬이면 비운 뒤, 끔이면 쓰지 않고(release 가 남긴 바이트를 새 위젯이 읽는다) 다시 그린다.
+   * 필드에 남은 수정(「hold」 로 붙잡아 둔 것 포함)은 currentEdit → resumePlan 으로 이어받는다
+   */
+  let refreshing = false;
+  let refreshAgain = false;
+  const refresh = async (): Promise<void> => {
+    if (dead) return;
+    if (refreshing) {
+      refreshAgain = true;
+      return;
+    }
+    refreshing = true;
+    try {
+      do {
+        refreshAgain = false;
+        const editing = () => live?.session.editing ?? false;
+        const action = refreshAction(view, resolveWidgetView(body), { editing: editing() });
+        deferred = action === "defer";
+        if (action !== "now") continue;
+        const before = live;
+        if (before?.file && flushBeforeRefresh({ hasFile: true, autosave: dataFileOptions().autosave() })) await before.file.flush().catch(() => {});
+        // 기다린 뒤 다시 본다: 치워졌거나 그사이 다른 것으로 다시 그려졌으면 그만, 레지스트리가 또 바뀌었을 수 있어 다시 판정한다
+        if (dead || live !== before) continue;
+        const next = resolveWidgetView(body);
+        const again = refreshAction(view, next, { editing: editing() });
+        deferred = again === "defer";
+        if (again !== "now") continue;
+        stopLive();
+        view = next;
+        start(opts.currentEdit?.() ?? null);
+      } while (refreshAgain && !dead);
+    } finally {
+      refreshing = false;
+    }
+  };
+  const offWidgets = onWidgetsChange(() => void refresh());
+
   start(opts.resume ?? null);
 
   return {
@@ -410,7 +483,8 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
         live?.session.editing && view.kind === "widget"
           ? { draft: live.session.state, base: live.session.editBase, focus: null, stateFrom: live.session.stateFrom, entryKey: widgetEntryKey(view.entry) }
           : null;
-      const sameWidget = view.kind === "widget" && nextView.kind === "widget" && view.entry === nextView.entry;
+      // 같은 위젯 id 면(판 교체 포함) 이어받기를 resumePlan 에 맡긴다 — 판이 맞으면 이어받고 아니면 필드에 붙잡아 둔다
+      const sameWidget = view.kind === "widget" && nextView.kind === "widget" && view.entry.def.id === nextView.entry.def.id;
       stopLive();
       view = nextView;
       if (was && !sameWidget) opts.edit.end();
@@ -421,6 +495,7 @@ export function mountKeyringWidget(el: HTMLElement, opts: MountOptions): Mounted
     },
     destroy() {
       dead = true;
+      offWidgets();
       // 세션 끝(endEdit)은 부르지 않는다 — 다시 그리기로 치워진 것이면 새 위젯이 필드의 초안을 이어받는다
       stopLive();
     },
