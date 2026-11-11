@@ -161,7 +161,8 @@ keyring-widget 중 앱 코드가 아니거나 인라인 기준을 넘는 위젯(
 - identity 요청을 따르지 않고 압축해 보내는 호스팅은 쓸 수 없다(서버·앱 둘 다 거부).
 - HTTP 프록시 뒤에서만 바깥에 나갈 수 있는 서버는 받지 못한다(`agent: false`). URL 수집도 같다.
 - 공식 저장소 주소는 `https://keyring-notes-marketplace.develma.com/`(core `OFFICIAL_REPO_URL`)다. 마켓 서버를 배포하기 전까지는 이 주소가 저장소를 내주지 않는다.
-- 마켓 서버 구성(이미지·compose·Komodo Stack)은 별도 저장소 [keyring-notes-marketplace](https://github.com/jang2162/keyring-notes-marketplace)가 갖는다. 공식 패키지는 저장소에 두지 않고 마켓 서버 폴더에서 관리한다. 이 저장소는 패키지 형식과 `pkg check`·`pkg index`·`pkg serve` CLI 를 갖는다. `pkg serve` 를 띄우는 곳은 그 저장소의 이미지뿐이다 — 옵션·환경 변수(`MARKET_*`)를 바꾸면 그쪽도 맞춘다.
+- 마켓 서버 구성(이미지·compose·Komodo Stack)은 별도 저장소 [keyring-notes-marketplace](https://github.com/jang2162/keyring-notes-marketplace)가 갖는다. 공식 패키지는 저장소에 두지 않고 마켓 서버 폴더에서 관리한다. 패키지 검사·`index.json` 만들기·마켓 내주기 CLI(`keyring-market check|index|serve`, 환경 변수 `MARKET_*`)도 그 저장소가 갖는다 — 쓰는 법은 [Check and index packages](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/en/how-to/check-and-index-packages.md). 패키지 형식·검사 코드(core `marketFormat.ts` 등)는 이 저장소에 남고, 그 저장소가 커밋 해시로 받는다 — core 의 형식을 바꾸면 그 저장소의 고정 해시를 올린다.
+- 시험 픽스처 저장소 `server/test/fixtures/market` 은 server·web 시험이 함께 읽는다. 패키지를 고친 뒤 그 `index.json` 은 새 저장소 클론에서 `pnpm --silent keyring-market index <앱 클론>/server/test/fixtures/market` 으로 다시 만든다. 어긋나면 `server/test/marketFixture.test.ts` 가 실패한다.
 
 ## 의존성과 라이선스 고지
 

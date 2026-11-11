@@ -80,7 +80,7 @@ The `colors` object of a theme has `light`, `dark` or both. Each maps a color to
 }
 ```
 
-- Token names look like `--bg`: two dashes, then lowercase letters, digits and `-`. Size, font and spacing tokens (`--fs-*`, `--font-*`, `--radius-*`, `--*-h`, `--*-w`) are refused. Themes change colors only. The app reads only the tokens in the table below. Other tokens are ignored, and `pkg check` warns about them (`unknown_tokens`).
+- Token names look like `--bg`: two dashes, then lowercase letters, digits and `-`. Size, font and spacing tokens (`--fs-*`, `--font-*`, `--radius-*`, `--*-h`, `--*-w`) are refused. Themes change colors only. The app reads only the tokens in the table below. Other tokens are ignored, and `keyring-market check` warns about them (`unknown_tokens`).
 - Values are `#rgb`, `#rrggbb`, `#rrggbbaa`, or `rgb()`, `rgba()`, `hsl()`, `hsla()`, `oklch()`, `oklab()` with numbers, `%`, `deg`, spaces, `,` and `/` inside. Anything else is refused, including names such as `red`, `var(…)`, `url(…)` and values with `;`, `{`, `}` or `!`.
 - A token the theme leaves out keeps the default value of that mode.
 - If a theme has only `light` or only `dark`, the app always draws it in that mode, whatever the system setting is.
@@ -149,12 +149,12 @@ The editor's selection and current-line colors, shadows and the dark-mode tints 
 
 #### Contrast
 
-The app measures the contrast of body text (`--fg`) on the background (`--bg`) in each mode the theme draws, with the WCAG 2 formula. A missing token counts as the default value of that mode, and a see-through `--bg` is laid over the default background. Below 4.5:1, `pkg check` warns (`contrast: light 3.2`), and the app shows a warning when the theme is installed or chosen. The theme still installs. The ratio is rounded down, so a warning never shows 4.5. If a value passes the format check but the app cannot read it as a color, the warning shows `?` instead of a ratio.
+The app measures the contrast of body text (`--fg`) on the background (`--bg`) in each mode the theme draws, with the WCAG 2 formula. A missing token counts as the default value of that mode, and a see-through `--bg` is laid over the default background. Below 4.5:1, `keyring-market check` warns (`contrast: light 3.2`), and the app shows a warning when the theme is installed or chosen. The theme still installs. The ratio is rounded down, so a warning never shows 4.5. If a value passes the format check but the app cannot read it as a color, the warning shows `?` instead of a ratio.
 
 A `language` package's `messages.json` uses the same format as a language pack file (`meta` and `messages`). Missing keys are allowed and fall back to the base language.
 
 - `meta.id` is the language tag that users pick, such as `ja` or `pt-BR`. It cannot be an official language (`en`, `ko`).
-- The app uses only keys that exist in the base language, with string values and the same `{name}` placeholders as the base language. Other keys are dropped, and those messages are shown in the base language. `pkg check` lists them as warnings.
+- The app uses only keys that exist in the base language, with string values and the same `{name}` placeholders as the base language. Other keys are dropped, and those messages are shown in the base language. `keyring-market check` lists them as warnings.
 - Values are always shown as plain text, even when they look like HTML.
 - If a device has an unofficial language pack with the same `meta.id`, that device uses its own pack. If two installed packages have the same `meta.id`, the one installed first is used.
 
@@ -207,10 +207,10 @@ self.keyringWidgetRegister((el, ctx, api) => {
 - **Upgrading stored state.** When you change the shape of the state, raise `stateVersion` and pass `migrate` as the second argument: `keyringWidgetRegister(render, { migrate })`. The app calls `migrate(state, from)` inside the frame before it passes a block's state to your widget, when the block's state version is lower than `stateVersion`. The note is written with the new version the next time the widget changes the state. Opening a note alone does not change it. If `migrate` throws, the app shows an error and the block's source text instead of the widget. Without `migrate`, the app passes the old state unchanged.
 - **The `file` key is reserved.** The app owns `state.file`, the path of the data file. A `file` key that your widget passes to `setState` or returns from `migrate` is replaced with the block's current value. A widget without `dataFile` loses the key. Do not use `file` as a name in your own state.
 - **Data files.** `dataFile.ext` cannot be `md`, because the file would become a note. A new data file is named `<name>-<random>.<ext>` next to the note. `<name>` comes from `dataFile.name`, then the package name.
-- **Messages.** Keys use letters, digits, `_`, `.` and `-`, start with a letter, digit or `_`, and are at most 100 characters. A plural form adds `#zero`, `#one`, `#two`, `#few`, `#many` or `#other` (for example `count#one`). Each file can have 1000 keys, and each value 2000 characters. The app drops keys that break these rules, and `pkg check` lists them as warnings (`messages_dropped`). The app always shows widget messages and manifest names as plain text, never as HTML.
-- **`frame.js`** is a classic script, not a module. `import` and `export` are not allowed. The limit is 8 MiB, and `pkg check` warns above 1 MiB (`large_frame_js`), because the app sends the code to every frame again.
+- **Messages.** Keys use letters, digits, `_`, `.` and `-`, start with a letter, digit or `_`, and are at most 100 characters. A plural form adds `#zero`, `#one`, `#two`, `#few`, `#many` or `#other` (for example `count#one`). Each file can have 1000 keys, and each value 2000 characters. The app drops keys that break these rules, and `keyring-market check` lists them as warnings (`messages_dropped`). The app always shows widget messages and manifest names as plain text, never as HTML.
+- **`frame.js`** is a classic script, not a module. `import` and `export` are not allowed. The limit is 8 MiB, and `keyring-market check` warns above 1 MiB (`large_frame_js`), because the app sends the code to every frame again.
 - **`frame.css`** applies only inside the widget's frame. It cannot change the app. External addresses (`@import`, `url(https://…)`) are blocked. Put images and fonts in `data:` URLs.
-- **Check before you publish.** Run `pkg check` on every widget version. `pkg index` does not check the syntax of `frame.js`. A widget with a syntax error is still listed, and after 20 seconds the app shows "Couldn't load the widget" in its place.
+- **Check before you publish.** Run `keyring-market check` on every widget version. `keyring-market index` does not check the syntax of `frame.js`. A widget with a syntax error is still listed, and after 20 seconds the app shows "Couldn't load the widget" in its place.
 - **When users update.** An open widget switches to the new version after the user finishes editing it. If the user was editing, your new version receives the draft and runs `migrate` on it first.
 
 This version 2 of a counter stores `{ count }` instead of version 1's `{ n }`:
@@ -259,7 +259,7 @@ Set `"stateVersion": 2` in the manifest. A block written by version 1 (`"@me/cou
 - `format` is `1`.
 - `files` lists every file of the version, including `keyring-package.json`. `sha256` is 64 lowercase hexadecimal digits. `size` is in bytes.
 - The app skips a version that breaks these rules and keeps the rest of the repository.
-- `name`, `description`, `author` and `license` are optional copies of the manifest fields. They are for browsing only, so the marketplace can show a whole repository from one download. Once a package is installed, the app shows the manifest (checked against its checksum) instead. `pkg index` copies them for you.
+- `name`, `description`, `author` and `license` are optional copies of the manifest fields. They are for browsing only, so the marketplace can show a whole repository from one download. Once a package is installed, the app shows the manifest (checked against its checksum) instead. `keyring-market index` copies them for you.
 
 | Display field | Type | Limit |
 | --- | --- | --- |
@@ -268,7 +268,7 @@ Set `"stateVersion": 2` in the manifest. A block written by version 1 (`"@me/cou
 | `author` | string | 100 characters |
 | `license` | string | 100 characters |
 
-The app drops a display field that breaks these rules and keeps the version; the package is then shown by its id. `pkg index` does not shorten a field that is too long: it leaves the field out of `index.json` and prints a warning (`display_too_long: description.en`). `pkg check` prints the same warning.
+The app drops a display field that breaks these rules and keeps the version; the package is then shown by its id. `keyring-market index` does not shorten a field that is too long: it leaves the field out of `index.json` and prints a warning (`display_too_long: description.en`). `keyring-market check` prints the same warning.
 
 ### Limits
 
@@ -300,21 +300,15 @@ Pre-releases are compared in semver order with every range. Unlike npm, `>=1.0.0
 
 ## Check a package and build the index
 
-From a source checkout, run the commands with `pnpm keyring`. Relative paths are read from the folder you run the command in.
+The `keyring-market` command from the separate repository keyring-notes-marketplace checks packages and builds `index.json`. How to install and run it is in [Check and index packages](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/en/how-to/check-and-index-packages.md).
 
 ```bash
-pnpm keyring pkg check my-repo/packages/me/clock/1.0.0
-pnpm keyring pkg index my-repo --name "My widgets"
+keyring-market check my-repo/packages/me/clock/1.0.0
+keyring-market index my-repo --name "My widgets"
 ```
 
-- `pkg check <folder>` checks the manifest, the required and allowed files, theme colors, language keys, widget message keys and the syntax of `frame.js`. It does not run `frame.js`. It exits with code `1` on an error and prints warnings, such as missing language keys, unknown theme tokens, low contrast, dropped widget message keys or a large `frame.js`, without failing.
-- `pkg index <folder>` checks every package under `packages/`, measures each file, copies the display fields from each manifest and writes `index.json`. It keeps the `name` of an existing `index.json`, then uses `--name`, then the folder name. Running it again on unchanged files leaves `index.json` untouched.
-
-With Docker, run the same commands in the container. The folder must be inside the data volume (`/data`) or another volume mounted into the container.
-
-```bash
-docker compose exec keyring keyring pkg index /data/my-repo
-```
+- `keyring-market check <folder>` checks the manifest, the required and allowed files, theme colors, language keys, widget message keys and the syntax of `frame.js`. It does not run `frame.js`. It exits with code `1` on an error and prints warnings, such as missing language keys, unknown theme tokens, low contrast, dropped widget message keys or a large `frame.js`, without failing.
+- `keyring-market index <folder>` checks every package under `packages/`, measures each file, copies the display fields from each manifest and writes `index.json`. It keeps the `name` of an existing `index.json`, then uses `--name`, then the folder name. Running it again on unchanged files leaves `index.json` untouched.
 
 You can also write `index.json` yourself or with another tool. Follow the format above exactly.
 
@@ -326,7 +320,7 @@ Upload the whole folder to any host that serves static files as they are:
 - Do not compress responses. The app asks for uncompressed files and refuses compressed ones.
 - Serve the files byte for byte. A changed file no longer matches its checksum.
 
-After you publish a new version, run `pkg index` again and upload `index.json` with the new files. To run a server that rebuilds `index.json` by itself, see [Run your own marketplace](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/en/how-to/run-a-marketplace.md).
+After you publish a new version, run `keyring-market index` again and upload `index.json` with the new files. To run a server that rebuilds `index.json` by itself, see [Run your own marketplace](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/en/how-to/run-a-marketplace.md).
 
 ## Next steps
 

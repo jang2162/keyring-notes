@@ -81,7 +81,7 @@ Keyring Notes 가 받아 쓸 수 있는 위젯·테마·언어 패키지 저장�
 }
 ```
 
-- 토큰 이름은 `--bg` 꼴입니다. 대시 둘 다음에 소문자·숫자·`-` 를 씁니다. 크기·글꼴·간격 토큰(`--fs-*`, `--font-*`, `--radius-*`, `--*-h`, `--*-w`)은 받지 않습니다. 테마는 색만 바꿉니다. 앱은 아래 표의 토큰만 읽습니다. 그 밖의 토큰은 무시하고, `pkg check` 가 경고합니다(`unknown_tokens`).
+- 토큰 이름은 `--bg` 꼴입니다. 대시 둘 다음에 소문자·숫자·`-` 를 씁니다. 크기·글꼴·간격 토큰(`--fs-*`, `--font-*`, `--radius-*`, `--*-h`, `--*-w`)은 받지 않습니다. 테마는 색만 바꿉니다. 앱은 아래 표의 토큰만 읽습니다. 그 밖의 토큰은 무시하고, `keyring-market check` 가 경고합니다(`unknown_tokens`).
 - 값은 `#rgb`, `#rrggbb`, `#rrggbbaa` 이거나, 괄호 안에 숫자·`%`·`deg`·빈칸·`,`·`/` 만 쓴 `rgb()`, `rgba()`, `hsl()`, `hsla()`, `oklch()`, `oklab()` 입니다. 그 밖의 값은 받지 않습니다. `red` 같은 이름, `var(…)`, `url(…)`, `;`·`{`·`}`·`!` 가 든 값도 받지 않습니다.
 - 테마에 없는 토큰은 그 모드의 기본값을 씁니다.
 - `light` 나 `dark` 한쪽만 가진 테마는 시스템 설정과 상관없이 늘 그 모드로 그립니다.
@@ -150,12 +150,12 @@ Keyring Notes 가 받아 쓸 수 있는 위젯·테마·언어 패키지 저장�
 
 #### 대비
 
-앱은 테마가 그리는 모드마다 본문 글(`--fg`)과 바탕(`--bg`)의 대비를 WCAG 2 식으로 잽니다. 테마에 없는 토큰은 그 모드의 기본값으로 보고, 비치는 `--bg` 는 기본 바탕 위에 겹쳐 잽니다. 4.5:1 보다 낮으면 `pkg check` 가 경고하고(`contrast: light 3.2`), 앱은 테마를 설치하거나 고를 때 경고를 보입니다. 설치는 막지 않습니다. 비는 소수 첫째 자리에서 내리므로 경고에 4.5 가 보이는 일은 없습니다. 꼴 검사는 지났지만 앱이 색으로 읽지 못하는 값이면 비 대신 `?` 를 보입니다.
+앱은 테마가 그리는 모드마다 본문 글(`--fg`)과 바탕(`--bg`)의 대비를 WCAG 2 식으로 잽니다. 테마에 없는 토큰은 그 모드의 기본값으로 보고, 비치는 `--bg` 는 기본 바탕 위에 겹쳐 잽니다. 4.5:1 보다 낮으면 `keyring-market check` 가 경고하고(`contrast: light 3.2`), 앱은 테마를 설치하거나 고를 때 경고를 보입니다. 설치는 막지 않습니다. 비는 소수 첫째 자리에서 내리므로 경고에 4.5 가 보이는 일은 없습니다. 꼴 검사는 지났지만 앱이 색으로 읽지 못하는 값이면 비 대신 `?` 를 보입니다.
 
 `language` 패키지의 `messages.json` 은 언어팩 파일과 같은 형식(`meta` 와 `messages`)입니다. 빠진 키가 있어도 되고, 그 자리는 기준 언어로 보입니다.
 
 - `meta.id` 는 사용자가 고르는 언어 태그입니다(`ja`·`pt-BR` 등). 공식 언어(`en`·`ko`)는 쓸 수 없습니다.
-- 앱은 기준 언어에 있는 키 중 값이 글자이고 `{name}` 같은 자리가 기준 언어와 같은 키만 씁니다. 나머지 키는 버리고 그 메시지는 기준 언어로 보입니다. `pkg check` 가 경고로 보입니다.
+- 앱은 기준 언어에 있는 키 중 값이 글자이고 `{name}` 같은 자리가 기준 언어와 같은 키만 씁니다. 나머지 키는 버리고 그 메시지는 기준 언어로 보입니다. `keyring-market check` 가 경고로 보입니다.
 - 값은 HTML 처럼 보여도 늘 글자로 보입니다.
 - 기기에 같은 `meta.id` 의 비공식 언어팩이 있으면 그 기기는 자기 언어팩을 씁니다. 설치한 패키지 둘이 같은 `meta.id` 면 먼저 설치한 것을 씁니다.
 
@@ -208,10 +208,10 @@ self.keyringWidgetRegister((el, ctx, api) => {
 - **저장된 상태 올리기.** 상태의 모양을 바꾸면 `stateVersion` 을 올리고 둘째 인자로 `migrate` 를 넘기세요: `keyringWidgetRegister(render, { migrate })`. 블록의 상태 판이 `stateVersion` 보다 낮으면, 앱은 블록 상태를 위젯에 넘기기 전에 프레임 안에서 `migrate(state, from)` 을 부릅니다. 노트는 위젯이 다음에 상태를 바꿀 때 새 판으로 쓰입니다. 노트를 열기만 해서는 바뀌지 않습니다. `migrate` 가 예외를 던지면 앱은 위젯 대신 오류와 블록 원문을 보입니다. `migrate` 가 없으면 옛 상태를 그대로 넘깁니다.
 - **`file` 키는 예약돼 있습니다.** `state.file` 은 앱이 관리하는 데이터 파일 경로입니다. 위젯이 `setState` 에 넘기거나 `migrate` 에서 돌려주는 `file` 키는 블록의 지금 값으로 바뀝니다. `dataFile` 이 없는 위젯에서는 그 키가 빠집니다. 위젯 상태의 이름으로 `file` 을 쓰지 마세요.
 - **데이터 파일.** `dataFile.ext` 는 `md` 일 수 없습니다. 그 파일이 노트가 되기 때문입니다. 새 데이터 파일은 노트 옆에 `<이름>-<무작위>.<ext>` 로 만들어집니다. `<이름>` 은 `dataFile.name`, 없으면 패키지 이름입니다.
-- **메시지.** 키는 글자·숫자·`_`·`.`·`-` 로 쓰고, 글자·숫자·`_` 로 시작하며, 100자 이하입니다. 복수형은 `#zero`, `#one`, `#two`, `#few`, `#many`, `#other` 를 붙입니다(예: `count#one`). 파일마다 키 1000개, 값마다 2000자까지입니다. 앱은 이 규칙을 어긴 키를 버리고, `pkg check` 는 그 키를 경고(`messages_dropped`)로 보여 줍니다. 앱은 위젯 메시지와 매니페스트 이름을 늘 글자로 보이고, HTML 로 해석하지 않습니다.
-- **`frame.js`** 는 모듈이 아닌 고전 스크립트입니다. `import`·`export` 는 쓸 수 없습니다. 상한은 8 MiB 이고, 1 MiB 를 넘으면 `pkg check` 가 경고(`large_frame_js`)합니다. 앱이 프레임마다 코드를 다시 건네기 때문입니다.
+- **메시지.** 키는 글자·숫자·`_`·`.`·`-` 로 쓰고, 글자·숫자·`_` 로 시작하며, 100자 이하입니다. 복수형은 `#zero`, `#one`, `#two`, `#few`, `#many`, `#other` 를 붙입니다(예: `count#one`). 파일마다 키 1000개, 값마다 2000자까지입니다. 앱은 이 규칙을 어긴 키를 버리고, `keyring-market check` 는 그 키를 경고(`messages_dropped`)로 보여 줍니다. 앱은 위젯 메시지와 매니페스트 이름을 늘 글자로 보이고, HTML 로 해석하지 않습니다.
+- **`frame.js`** 는 모듈이 아닌 고전 스크립트입니다. `import`·`export` 는 쓸 수 없습니다. 상한은 8 MiB 이고, 1 MiB 를 넘으면 `keyring-market check` 가 경고(`large_frame_js`)합니다. 앱이 프레임마다 코드를 다시 건네기 때문입니다.
 - **`frame.css`** 는 위젯 프레임 안에만 적용됩니다. 앱을 바꿀 수 없습니다. 외부 주소(`@import`, `url(https://…)`)는 막힙니다. 그림과 글꼴은 `data:` URL 로 넣으세요.
-- **올리기 전에 검사하세요.** 위젯의 모든 판에 `pkg check` 를 돌리세요. `pkg index` 는 `frame.js` 문법을 보지 않습니다. 문법 오류가 있는 위젯도 목록에 오르고, 앱은 20초 뒤 그 자리에 「위젯을 불러오지 못했습니다」 를 보입니다.
+- **올리기 전에 검사하세요.** 위젯의 모든 판에 `keyring-market check` 를 돌리세요. `keyring-market index` 는 `frame.js` 문법을 보지 않습니다. 문법 오류가 있는 위젯도 목록에 오르고, 앱은 20초 뒤 그 자리에 「위젯을 불러오지 못했습니다」 를 보입니다.
 - **사용자가 업데이트할 때.** 열려 있던 위젯은 사용자가 수정을 마친 뒤 새 판으로 바뀝니다. 수정 중이었으면 새 판이 그 초안을 받아 먼저 `migrate` 로 올립니다.
 
 카운터 2판은 1판의 `{ n }` 대신 `{ count }` 를 저장합니다.
@@ -260,7 +260,7 @@ self.keyringWidgetRegister(
 - `format` 은 `1` 입니다.
 - `files` 에는 `keyring-package.json` 을 포함해 그 판의 파일을 모두 적습니다. `sha256` 은 소문자 16진수 64자리, `size` 는 바이트 수입니다.
 - 이 규칙을 어긴 판은 앱이 건너뛰고, 저장소의 나머지는 그대로 씁니다.
-- `name`, `description`, `author`, `license` 는 매니페스트 필드를 옮겨 둔 선택 필드입니다. 둘러보기 표시용이라, 마켓플레이스가 저장소 하나를 받기 한 번으로 그릴 수 있습니다. 패키지를 설치한 뒤에는 앱이 (체크섬을 확인한) 매니페스트를 보입니다. `pkg index` 가 옮겨 씁니다.
+- `name`, `description`, `author`, `license` 는 매니페스트 필드를 옮겨 둔 선택 필드입니다. 둘러보기 표시용이라, 마켓플레이스가 저장소 하나를 받기 한 번으로 그릴 수 있습니다. 패키지를 설치한 뒤에는 앱이 (체크섬을 확인한) 매니페스트를 보입니다. `keyring-market index` 가 옮겨 씁니다.
 
 | 표시 필드 | 형식 | 상한 |
 | --- | --- | --- |
@@ -269,7 +269,7 @@ self.keyringWidgetRegister(
 | `author` | 문자열 | 100자 |
 | `license` | 문자열 | 100자 |
 
-이 규칙을 어긴 표시 필드는 앱이 그 필드만 버리고 판은 그대로 씁니다. 그러면 패키지는 id 로 보입니다. `pkg index` 는 너무 긴 필드를 자르지 않습니다. 그 필드를 `index.json` 에 쓰지 않고 경고(`display_too_long: description.en`)를 보입니다. `pkg check` 도 같은 경고를 보입니다.
+이 규칙을 어긴 표시 필드는 앱이 그 필드만 버리고 판은 그대로 씁니다. 그러면 패키지는 id 로 보입니다. `keyring-market index` 는 너무 긴 필드를 자르지 않습니다. 그 필드를 `index.json` 에 쓰지 않고 경고(`display_too_long: description.en`)를 보입니다. `keyring-market check` 도 같은 경고를 보입니다.
 
 ### 상한
 
@@ -301,21 +301,15 @@ self.keyringWidgetRegister(
 
 ## 패키지를 검사하고 목록 만들기
 
-소스 체크아웃에서는 `pnpm keyring` 으로 실행합니다. 상대 경로는 명령을 실행한 폴더 기준입니다.
+패키지 검사와 `index.json` 만들기는 별도 저장소 keyring-notes-marketplace 의 `keyring-market` 명령으로 합니다. 설치하고 실행하는 법은 [패키지 검사하고 목록 만들기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/check-and-index-packages.md)에 있습니다.
 
 ```bash
-pnpm keyring pkg check my-repo/packages/me/clock/1.0.0
-pnpm keyring pkg index my-repo --name "My widgets"
+keyring-market check my-repo/packages/me/clock/1.0.0
+keyring-market index my-repo --name "My widgets"
 ```
 
-- `pkg check <폴더>` 는 매니페스트, 필수·허용 파일, 테마 색, 언어 키, 위젯 메시지 키, `frame.js` 문법을 검사합니다. `frame.js` 를 실행하지는 않습니다. 오류가 있으면 종료 코드 `1` 로 끝나고, 빠진 언어 키, 모르는 테마 토큰, 낮은 대비, 버려진 위젯 메시지 키, 큰 `frame.js` 같은 경고는 실패 없이 보여 줍니다.
-- `pkg index <폴더>` 는 `packages/` 아래 모든 패키지를 검사하고, 파일마다 크기와 체크섬을 재고, 매니페스트의 표시 필드를 옮겨 `index.json` 을 씁니다. 이름은 기존 `index.json` 의 `name`, 없으면 `--name`, 그것도 없으면 폴더 이름입니다. 파일이 그대로면 다시 실행해도 `index.json` 을 건드리지 않습니다.
-
-Docker 에서는 컨테이너 안에서 같은 명령을 실행합니다. 폴더는 데이터 볼륨(`/data`) 안이나 컨테이너에 마운트한 다른 볼륨에 있어야 합니다.
-
-```bash
-docker compose exec keyring keyring pkg index /data/my-repo
-```
+- `keyring-market check <폴더>` 는 매니페스트, 필수·허용 파일, 테마 색, 언어 키, 위젯 메시지 키, `frame.js` 문법을 검사합니다. `frame.js` 를 실행하지는 않습니다. 오류가 있으면 종료 코드 `1` 로 끝나고, 빠진 언어 키, 모르는 테마 토큰, 낮은 대비, 버려진 위젯 메시지 키, 큰 `frame.js` 같은 경고는 실패 없이 보여 줍니다.
+- `keyring-market index <폴더>` 는 `packages/` 아래 모든 패키지를 검사하고, 파일마다 크기와 체크섬을 재고, 매니페스트의 표시 필드를 옮겨 `index.json` 을 씁니다. 이름은 기존 `index.json` 의 `name`, 없으면 `--name`, 그것도 없으면 폴더 이름입니다. 파일이 그대로면 다시 실행해도 `index.json` 을 건드리지 않습니다.
 
 `index.json` 을 손이나 다른 도구로 만들어도 됩니다. 위 형식을 그대로 따르세요.
 
@@ -327,7 +321,7 @@ docker compose exec keyring keyring pkg index /data/my-repo
 - 응답을 압축하지 마세요. 앱은 압축하지 않은 파일을 요청하고, 압축된 응답은 받지 않습니다.
 - 파일을 바이트 그대로 내주세요. 바뀐 파일은 체크섬과 맞지 않습니다.
 
-새 판을 올린 뒤에는 `pkg index` 를 다시 실행하고, 새 파일과 함께 `index.json` 도 올리세요. `index.json` 을 스스로 다시 만드는 서버를 띄우려면 [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)를 보세요.
+새 판을 올린 뒤에는 `keyring-market index` 를 다시 실행하고, 새 파일과 함께 `index.json` 도 올리세요. `index.json` 을 스스로 다시 만드는 서버를 띄우려면 [내 마켓플레이스 운영하기](https://github.com/jang2162/keyring-notes-marketplace/blob/main/docs/manual/ko/how-to/run-a-marketplace.md)를 보세요.
 
 ## 다음 단계
 
