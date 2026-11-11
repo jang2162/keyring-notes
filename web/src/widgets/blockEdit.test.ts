@@ -116,7 +116,7 @@ describe("위젯 블록 찾기", () => {
       expect(bs, JSON.stringify(pad)).toHaveLength(1);
       expect(bs[0]!.from).toBe(3);
       expect(widgetBlockAt(s, bs[0]!.from)).toEqual(bs[0]);
-      s = apply(s, { effects: startWidgetEdit.of({ from: bs[0]!.from, draft: {} }) }).state;
+      s = apply(s, { effects: startWidgetEdit.of({ from: bs[0]!.from, draft: {}, stateFrom: 1, entryKey: "k" }) }).state;
       const specs = [
         () => ({ changes: { from: 0, insert: "x" } }),
         (c: EditorState) => ({ changes: { from: c.doc.length, insert: "끝" } }),
@@ -214,28 +214,37 @@ describe("다시 쓰기", () => {
 
 describe("수정 중 위치 따라가기", () => {
   function editing(doc = DOC, from = doc.indexOf("```keyring")) {
-    const tr = apply(state(doc), { effects: startWidgetEdit.of({ from, draft: { n: 9 }, owner: "live" }) });
+    const tr = apply(state(doc), { effects: startWidgetEdit.of({ from, draft: { n: 9 }, owner: "live", stateFrom: 1, entryKey: "k1" }) });
     return { tr, s: tr.state, from };
   }
+  const rest = { stateFrom: 1, entryKey: "k1" };
 
   it("수정 시작은 문서를 바꾸지 않는다", () => {
     const { tr, s } = editing();
     expect(tr.docChanged).toBe(false);
     expect(outgoingChanges([tr], "k", "k")).toEqual([]);
-    expect(s.field(widgetEditField)).toEqual({ from: FROM, draft: { n: 9 }, base: { n: 9 }, owner: "live", gone: false, focus: null });
+    expect(s.field(widgetEditField)).toEqual({ from: FROM, draft: { n: 9 }, base: { n: 9 }, owner: "live", gone: false, focus: null, ...rest });
   });
 
   it("초안·포커스·끝", () => {
     let { s } = editing();
     s = apply(s, { effects: setWidgetFocus.of(1) }).state;
     expect(s.field(widgetEditField)!.focus).toBe(1);
-    s = apply(s, { effects: setWidgetDraft.of({ n: 10 }) }).state;
+    s = apply(s, { effects: setWidgetDraft.of({ draft: { n: 10 }, stateFrom: 1 }) }).state;
     // 시작 상태(base)·주인(owner)은 수정이 이어지는 동안 바뀌지 않는다 — 이어받는 위젯이 같은 기준으로 「바뀌었는가」를 본다
-    expect(s.field(widgetEditField)).toEqual({ from: FROM, draft: { n: 10 }, base: { n: 9 }, owner: "live", gone: false, focus: 1 });
+    expect(s.field(widgetEditField)).toEqual({ from: FROM, draft: { n: 10 }, base: { n: 9 }, owner: "live", gone: false, focus: 1, ...rest });
     s = apply(s, external({ changes: { from: 0, insert: "x" } })).state;
     expect(s.field(widgetEditField)).toMatchObject({ base: { n: 9 }, owner: "live" });
     s = apply(s, { effects: endWidgetEdit.of(null) }).state;
     expect(s.field(widgetEditField)).toBeNull();
+  });
+
+  it("초안 효과가 판·(올림이면) base·(이어받아 항목이 바뀌면) entryKey 를 바꾼다", () => {
+    let { s } = editing();
+    s = apply(s, { effects: setWidgetDraft.of({ draft: { count: 9 }, stateFrom: 2 }) }).state;
+    expect(s.field(widgetEditField)).toMatchObject({ draft: { count: 9 }, base: { n: 9 }, stateFrom: 2, entryKey: "k1" });
+    s = apply(s, { effects: setWidgetDraft.of({ draft: { count: 9 }, stateFrom: 2, base: { count: 9 }, entryKey: "k2" }) }).state;
+    expect(s.field(widgetEditField)).toMatchObject({ draft: { count: 9 }, base: { count: 9 }, stateFrom: 2, entryKey: "k2" });
   });
 
   it("앞에 넣은 글만큼 밀린다(그 자리 바로 앞 포함)", () => {
@@ -283,7 +292,10 @@ describe("수정 중 위치 따라가기", () => {
 
   it("수정 시작 효과는 뒤 spec 의 변경을 따라 옮겨진다(그 자리 바로 앞에 넣은 글 뒤로)", () => {
     const s = state(DOC);
-    const tr = s.update({ effects: startWidgetEdit.of({ from: FROM, draft: {} }) }, { changes: { from: FROM, insert: "새 줄\n" } });
+    const tr = s.update(
+      { effects: startWidgetEdit.of({ from: FROM, draft: {}, stateFrom: 1, entryKey: "k" }) },
+      { changes: { from: FROM, insert: "새 줄\n" } },
+    );
     expect(tr.state.field(widgetEditField)).toMatchObject({ from: FROM + 4, gone: false });
   });
 
@@ -294,7 +306,7 @@ describe("수정 중 위치 따라가기", () => {
     const BFROM = PAD.length;
     function partial() {
       const s = EditorState.create({ doc: BIG, extensions: [markdown({ base: markdownLanguage }), widgetEditField] });
-      return s.update({ effects: startWidgetEdit.of({ from: BFROM, draft: {} }) }).state;
+      return s.update({ effects: startWidgetEdit.of({ from: BFROM, draft: {}, stateFrom: 1, entryKey: "k" }) }).state;
     }
 
     it("트리가 그 자리까지 오지 않았으면 gone 으로 치지 않는다", () => {
@@ -336,9 +348,9 @@ describe("수정 중 위치 따라가기", () => {
 });
 
 describe("widgetResume — 다시 붙는 위젯이 이어받을 것", () => {
-  const edit = { from: 3, draft: { n: 2 }, base: { n: 1 }, owner: "live", gone: false, focus: 1 };
-  it("같은 호스트·같은 자리면 초안·시작 상태·포커스", () => {
-    expect(widgetResume(edit, "live", true)).toEqual({ draft: { n: 2 }, base: { n: 1 }, focus: 1 });
+  const edit = { from: 3, draft: { n: 2 }, base: { n: 1 }, owner: "live", gone: false, focus: 1, stateFrom: 1, entryKey: "@me/c@1.0.0#x" };
+  it("같은 호스트·같은 자리면 초안·시작 상태·포커스·초안의 판·항목 키", () => {
+    expect(widgetResume(edit, "live", true)).toEqual({ draft: { n: 2 }, base: { n: 1 }, focus: 1, stateFrom: 1, entryKey: "@me/c@1.0.0#x" });
   });
   it("다른 호스트가 시작한 수정·다른 자리·사라진 블록·수정 없음은 이어받지 않는다", () => {
     expect(widgetResume(edit, "preview", true)).toBeNull();

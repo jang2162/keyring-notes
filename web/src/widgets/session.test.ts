@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusOutAction, widgetKeyAction, WidgetSession, type SessionHost } from "./session";
+import { focusOutAction, pinFile, widgetKeyAction, WidgetSession, type SessionHost } from "./session";
 
 function host(writeOk = true) {
   const calls: [string, unknown?][] = [];
@@ -225,6 +225,152 @@ describe("수정 모드", () => {
     expect(of("startEdit")).toEqual([]);
     s.focusOut();
     expect(of("write")).toEqual([["write", { n: 4 }]]);
+  });
+});
+
+/** 판까지 적는 호스트 — 편집기 필드(draft·base·stateFrom)도 흉내 낸다 */
+function fieldHost() {
+  const writes: unknown[] = [];
+  const drafts: unknown[][] = [];
+  const field: { draft?: unknown; base?: unknown; stateFrom?: number } = {};
+  const h: SessionHost = {
+    write: (s) => (writes.push(s), true),
+    startEdit: (d, from) => Object.assign(field, { draft: d, base: d, stateFrom: from }),
+    setDraft: (d, from, base) => {
+      drafts.push(base === undefined ? [d, from] : [d, from, base]);
+      Object.assign(field, { draft: d, stateFrom: from }, base === undefined ? {} : { base });
+    },
+    endEdit: () => {
+      for (const k of Object.keys(field)) delete (field as Record<string, unknown>)[k];
+    },
+    changed: () => {},
+  };
+  return { h, writes, drafts, field };
+}
+
+describe("상태의 판(받은 위젯의 migrate)", () => {
+  it("올린 상태를 받아도 쓰지 않고, 다음 setState 에 위젯 판으로 쓴다", () => {
+    const x = fieldHost();
+    const s = new WidgetSession({ state: { n: 1 }, editable: true, readOnly: false, version: 2, from: 1 }, x.h);
+    expect(s.stateFrom).toBe(1);
+    s.adoptMigrated({ count: 1 });
+    expect(s.state).toEqual({ count: 1 });
+    expect(s.stateFrom).toBe(2);
+    expect(x.writes).toEqual([]);
+    s.setState({ count: 4 });
+    expect(x.writes).toEqual([{ count: 4 }]);
+  });
+
+  it("수정 중 바깥에서 옛 판 상태가 와도 초안을 다시 올리지 않고, 바꾸지 않고 끝내면 쓰지 않는다", () => {
+    const x = fieldHost();
+    const s = new WidgetSession({ state: { n: 1 }, editable: true, readOnly: false, version: 2, from: 1 }, x.h);
+    s.adoptMigrated({ count: 1 });
+    s.requestEdit();
+    expect(s.stateFrom).toBe(2);
+    expect(x.field.stateFrom).toBe(2);
+    s.external({ n: 5 }, true, 1);
+    expect(s.stateFrom).toBe(2);
+    expect(s.state).toEqual({ count: 1 });
+    s.focusOut();
+    expect(x.writes).toEqual([]);
+    // 끝난 뒤는 기준의 판 — 호스트가 이것으로 다시 보내 올린다
+    expect(s.stateFrom).toBe(1);
+    expect(s.state).toEqual({ n: 5 });
+  });
+
+  it("바꾼 초안은 바깥 변경이 와도 지키고 끝낼 때 쓴다", () => {
+    const x = fieldHost();
+    const s = new WidgetSession({ state: { count: 1 }, editable: true, readOnly: false, version: 2, from: 2 }, x.h);
+    s.requestEdit();
+    s.setState({ count: 9 });
+    s.external({ n: 5 }, true, 1);
+    s.focusOut();
+    expect(x.writes).toEqual([{ count: 9 }]);
+  });
+
+  it("옛 판 초안을 이어받아 올림: 시작 때와 같았으면 필드 base 도 바꾸고 쓰지 않음, 달랐으면 올린 초안을 씀", () => {
+    const same = fieldHost();
+    const a = new WidgetSession(
+      { state: { n: 1 }, editable: true, readOnly: false, version: 2, from: 1, resumeDraft: { n: 1 }, resumeBase: { n: 1 }, resumeFrom: 1 },
+      same.h,
+    );
+    expect(a.stateFrom).toBe(1);
+    a.adoptMigrated({ count: 1 });
+    expect(a.stateFrom).toBe(2);
+    expect(same.drafts).toEqual([[{ count: 1 }, 2, { count: 1 }]]);
+    a.focusOut();
+    expect(same.writes).toEqual([]);
+
+    const diff = fieldHost();
+    const b = new WidgetSession(
+      { state: { n: 1 }, editable: true, readOnly: false, version: 2, from: 1, resumeDraft: { n: 7 }, resumeBase: { n: 1 }, resumeFrom: 1 },
+      diff.h,
+    );
+    b.adoptMigrated({ count: 7 });
+    expect(diff.drafts).toEqual([[{ count: 7 }, 2]]);
+    b.focusOut();
+    expect(diff.writes).toEqual([{ count: 7 }]);
+  });
+
+  it("이어받아 올린 뒤 한 번 더 다시 그려지고 바꾸지 않고 끝내면 쓰지 않는다", () => {
+    const x = fieldHost();
+    Object.assign(x.field, { draft: { n: 1 }, base: { n: 1 }, stateFrom: 1 });
+    const first = new WidgetSession(
+      {
+        state: { n: 1 },
+        editable: true,
+        readOnly: false,
+        version: 2,
+        from: 1,
+        resumeDraft: x.field.draft,
+        resumeBase: x.field.base,
+        resumeFrom: x.field.stateFrom,
+      },
+      x.h,
+    );
+    first.adoptMigrated({ count: 1 });
+    expect(x.field).toEqual({ draft: { count: 1 }, base: { count: 1 }, stateFrom: 2 });
+    const second = new WidgetSession(
+      {
+        state: { n: 1 },
+        editable: true,
+        readOnly: false,
+        version: 2,
+        from: 1,
+        resumeDraft: x.field.draft,
+        resumeBase: x.field.base,
+        resumeFrom: x.field.stateFrom,
+      },
+      x.h,
+    );
+    expect(second.stateFrom).toBe(2);
+    second.focusOut();
+    expect(x.writes).toEqual([]);
+  });
+
+  it("pinFile: setState·adoptMigrated·수정 중 초안의 file 은 블록 값, 블록에 없으면 키를 뺀다", () => {
+    const x = fieldHost();
+    const pin = (st: unknown) => pinFile(st, "a/s-1.sketch");
+    const s = new WidgetSession({ state: { file: "a/s-1.sketch" }, editable: true, readOnly: false, version: 1, from: 1, pinFile: pin }, x.h);
+    s.setState({ file: "b/x.sketch", k: 1 });
+    expect(x.writes).toEqual([{ file: "a/s-1.sketch", k: 1 }]);
+    s.adoptMigrated({ count: 1, file: "b/x.sketch" });
+    expect(s.state).toEqual({ count: 1, file: "a/s-1.sketch" });
+    s.requestEdit();
+    s.setState({ file: "c/y.sketch" });
+    expect((s.state as { file: string }).file).toBe("a/s-1.sketch");
+
+    const y = fieldHost();
+    const t = new WidgetSession({ state: {}, editable: true, readOnly: false, pinFile: (st) => pinFile(st, undefined) }, y.h);
+    t.setState({ file: "b/x.json" });
+    expect(y.writes).toEqual([{}]);
+  });
+
+  it("pinFile 은 객체가 아니면 그대로", () => {
+    expect(pinFile(3, "a")).toBe(3);
+    expect(pinFile(null, "a")).toBeNull();
+    expect(pinFile([1], "a")).toEqual([1]);
+    expect(pinFile({ a: 1 }, "f")).toEqual({ a: 1, file: "f" });
   });
 });
 

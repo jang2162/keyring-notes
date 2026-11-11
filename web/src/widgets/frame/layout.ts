@@ -5,6 +5,9 @@ import { parseFrameMsg, type FrameMsg } from "./protocol";
 /** 불러오는 동안의 아래 한도 */
 export const FRAME_MIN_HEIGHT = 48;
 
+/** 받은 위젯이 ready 뒤 이 안에 registered 를 보내지 않으면(문법 오류·예외) 그 자리를 kw.loadFailed 로. 내장은 시한이 없다(느린 기기의 큰 묶음) */
+export const FRAME_REGISTER_TIMEOUT_MS = 20_000;
+
 /** 전체 화면 = viewport, 아니면 clamp(ceil(px), 48, floor(viewport*0.8)) — 위젯 하나가 화면을 다 덮어 노트 스크롤을 막지 않게 */
 export function frameHeight(px: number, viewport: number, fullscreen: boolean): number {
   if (fullscreen) return viewport;

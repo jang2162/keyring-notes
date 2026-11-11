@@ -112,7 +112,8 @@ export function onWidgetsChange(fn: () => void): () => void {
 
 /** 판정기의 답이 바뀌었을 수 있을 때(마켓 상태 바뀜) — 알림만 */
 export function notifyWidgetsChanged(): void {
-  for (const fn of [...listeners]) fn();
+  // 사본으로 돈다 — 알림 안에서 다시 그린 위젯이 새로 구독해도 이번 알림을 두 번 받지 않게
+  for (const fn of Array.from(listeners)) fn();
 }
 
 export function setMissingWidgetResolver(fn: ((id: string) => MissingWidget) | null): void {

@@ -73,6 +73,9 @@ async function frameRig(init: { state: unknown; editable: boolean }): Promise<Ri
     failed: () => {},
     navigated: () => {},
     code: { runtime: "", widget: "", css: "", fonts: {} },
+    builtIn: true,
+    migrated: () => {},
+    registerTimeout: () => {},
   });
   const rt = startFrameRuntime({
     id: ID,

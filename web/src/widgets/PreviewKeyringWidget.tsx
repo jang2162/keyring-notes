@@ -35,9 +35,13 @@ export function PreviewKeyringWidget(p: {
       owner,
       resume,
       write: (state, version) => h()?.writeWidget(line, state, version) ?? false,
+      currentEdit: () => {
+        const e = readOnly ? null : h()?.widgetEdit();
+        return widgetResume(e ? { ...e, gone: false } : null, "preview", e?.line === line);
+      },
       edit: {
-        start: (draft) => h()?.startWidgetEdit(line, draft),
-        draft: (draft) => h()?.setWidgetDraft(draft),
+        start: (draft, stateFrom, entryKey) => h()?.startWidgetEdit(line, draft, stateFrom, entryKey),
+        draft: (change) => h()?.setWidgetDraft(change),
         focus: (i) => h()?.setWidgetFocus(i),
         end: () => h()?.endWidgetEdit(),
       },

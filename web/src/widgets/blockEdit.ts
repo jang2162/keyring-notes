@@ -110,6 +110,10 @@ export interface WidgetEdit {
   owner: string;
   gone: boolean;
   focus: number | null;
+  /** 초안의 판 — 다시 붙는 위젯이 이보다 낮은 판이면 이어받지 못한다(refresh.ts resumePlan) */
+  stateFrom: number;
+  /** 그 수정을 시작한 레지스트리 항목(widgetEntryKey) */
+  entryKey: string;
 }
 
 /** draft 는 시작 때 상태와 같으므로 base 가 된다 */
@@ -117,12 +121,22 @@ export interface WidgetEditStart {
   from: number;
   draft: unknown;
   owner?: string;
+  stateFrom: number;
+  entryKey: string;
+}
+
+/** base 는 수정 중 올림이 시작 상태를 같이 올릴 때만, entryKey 는 이어받아 항목이 바뀌었을 때만 */
+export interface WidgetDraftChange {
+  draft: unknown;
+  stateFrom: number;
+  base?: unknown;
+  entryKey?: string;
 }
 
 export const startWidgetEdit: StateEffectType<WidgetEditStart> = StateEffect.define<WidgetEditStart>({
   map: (v, m) => ({ ...v, from: m.mapPos(v.from, 1) }),
 });
-export const setWidgetDraft: StateEffectType<unknown> = StateEffect.define<unknown>();
+export const setWidgetDraft: StateEffectType<WidgetDraftChange> = StateEffect.define<WidgetDraftChange>();
 export const setWidgetFocus: StateEffectType<number | null> = StateEffect.define<number | null>();
 export const endWidgetEdit: StateEffectType<null> = StateEffect.define<null>();
 
@@ -144,10 +158,24 @@ export const widgetEditField: StateField<WidgetEdit | null> = StateField.define<
       if (from !== v.from || gone !== v.gone) v = { ...v, from, gone };
     }
     for (const e of tr.effects) {
-      if (e.is(startWidgetEdit)) v = { from: e.value.from, draft: e.value.draft, base: e.value.draft, owner: e.value.owner ?? "", gone: false, focus: null };
+      if (e.is(startWidgetEdit))
+        v = {
+          from: e.value.from,
+          draft: e.value.draft,
+          base: e.value.draft,
+          owner: e.value.owner ?? "",
+          gone: false,
+          focus: null,
+          stateFrom: e.value.stateFrom,
+          entryKey: e.value.entryKey,
+        };
       else if (e.is(endWidgetEdit)) v = null;
-      else if (v && e.is(setWidgetDraft)) v = { ...v, draft: e.value };
-      else if (v && e.is(setWidgetFocus) && v.focus !== e.value) v = { ...v, focus: e.value };
+      else if (v && e.is(setWidgetDraft)) {
+        const d = e.value;
+        v = { ...v, draft: d.draft, stateFrom: d.stateFrom };
+        if (d.base !== undefined) v.base = d.base;
+        if (d.entryKey !== undefined) v.entryKey = d.entryKey;
+      } else if (v && e.is(setWidgetFocus) && v.focus !== e.value) v = { ...v, focus: e.value };
     }
     return v;
   },
@@ -158,11 +186,13 @@ export const widgetEditField: StateField<WidgetEdit | null> = StateField.define<
  * 그 호스트가 시작한 수정이고(owner) 이 블록이며(here) 블록이 남아 있을 때만 — 나란히 보기에서 다른 호스트가 남의 수정을 열지 않게
  */
 export function widgetResume(
-  edit: Pick<WidgetEdit, "draft" | "base" | "owner" | "gone" | "focus"> | null | undefined,
+  edit: Pick<WidgetEdit, "draft" | "base" | "owner" | "gone" | "focus" | "stateFrom" | "entryKey"> | null | undefined,
   owner: string,
   here: boolean,
-): { draft: unknown; base: unknown; focus: number | null } | null {
-  return edit && !edit.gone && edit.owner === owner && here ? { draft: edit.draft, base: edit.base, focus: edit.focus } : null;
+): { draft: unknown; base: unknown; focus: number | null; stateFrom: number; entryKey: string } | null {
+  return edit && !edit.gone && edit.owner === owner && here
+    ? { draft: edit.draft, base: edit.base, focus: edit.focus, stateFrom: edit.stateFrom, entryKey: edit.entryKey }
+    : null;
 }
 
 /** 이 트랜잭션에서 gone 이 false → true 로 바뀌었는가 */

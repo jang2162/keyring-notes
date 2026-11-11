@@ -54,6 +54,18 @@ describe("parseFrameMsg", () => {
     for (const b of bad) expect(parseFrameMsg(b, ID)).toBeNull();
   });
 
+  it("migrated: state 와 0 이상 정수 seq 만", () => {
+    expect(parseFrameMsg(m({ type: "migrated", state: { count: 1 }, seq: 3 }), ID)).toEqual({ type: "migrated", state: { count: 1 }, seq: 3 });
+    expect(parseFrameMsg(m({ type: "migrated", state: 0, seq: 0 }), ID)).toEqual({ type: "migrated", state: 0, seq: 0 });
+    for (const bad of [{ seq: 1 }, { state: {} }, { state: {}, seq: -1 }, { state: {}, seq: 1.5 }, { state: {}, seq: "1" }])
+      expect(parseFrameMsg(m({ type: "migrated", ...bad }), ID), JSON.stringify(bad)).toBeNull();
+  });
+
+  it("error 의 phase 는 migrate 만 남긴다", () => {
+    expect(parseFrameMsg(m({ type: "error", message: "x", phase: "migrate" }), ID)).toEqual({ type: "error", message: "x", phase: "migrate" });
+    expect(parseFrameMsg(m({ type: "error", message: "x", phase: "other" }), ID)).toEqual({ type: "error", message: "x" });
+  });
+
   it("오류 글은 500자로 자른다", () => {
     expect(parseFrameMsg(m({ type: "error", message: "x".repeat(600) }), ID)).toEqual({ type: "error", message: "x".repeat(500) });
   });

@@ -41,9 +41,15 @@ export class FrameFileError extends Error {
   }
 }
 
-export function startFrameRuntime(env: FrameEnv): { register(render: WidgetRender): void } {
+export interface WidgetRegisterOptions {
+  /** 받은 위젯의 상태 올리기 — 블록 판(from)이 위젯 판보다 낮으면 위젯에 건네기 전에 여기서 부른다 */
+  migrate?(state: unknown, from: number): unknown;
+}
+
+export function startFrameRuntime(env: FrameEnv): { register(render: WidgetRender, opts?: WidgetRegisterOptions): void } {
   const send = (m: FrameMsg, transfer?: Transferable[]) => env.post({ ...m, kw: "kw1", id: env.id }, transfer);
   let render: WidgetRender | null = null;
+  let migrate: WidgetRegisterOptions["migrate"];
   let started = false;
   let chain: MessageChain = [];
   let ctx: WidgetContext | null = null;
@@ -57,10 +63,26 @@ export function startFrameRuntime(env: FrameEnv): { register(render: WidgetRende
       send(m, transfer);
     });
 
+  /** 판이 낮으면 올린 ctx(같은 seq 로 migrated 를 보낸 뒤), 던지면 null(error 를 보냈다) */
+  const lift = (d: Record<string, unknown>): WidgetContext | null => {
+    const c = d.ctx as WidgetContext;
+    if (!migrate || c.state === undefined || !((d.from as number) < (d.version as number))) return c;
+    try {
+      const state = migrate(c.state, d.from as number);
+      send({ type: "migrated", state, seq: d.seq as number });
+      return { ...c, state };
+    } catch (e) {
+      send({ type: "error", message: e instanceof Error ? e.message : String(e), phase: "migrate" });
+      return null;
+    }
+  };
+
   const start = (d: Record<string, unknown>) => {
     if (started || !render) return;
     started = true;
-    ctx = d.ctx as WidgetContext;
+    const lifted = lift(d);
+    if (!lifted) return;
+    ctx = lifted;
     chain = d.messages as MessageChain;
     env.setTheme(ctx.theme);
     if (typeof d.css === "string" && d.css) env.addCss(d.css);
@@ -94,8 +116,10 @@ export function startFrameRuntime(env: FrameEnv): { register(render: WidgetRende
     const d = data as Record<string, unknown>;
     if (d.kw !== "kw1" || d.id !== env.id) return;
     if (d.type === "init") start(d);
-    else if (d.type === "update" && started && d.ctx && typeof d.ctx === "object") {
-      ctx = d.ctx as WidgetContext;
+    else if (d.type === "update" && started && ctx && d.ctx && typeof d.ctx === "object") {
+      const lifted = lift(d);
+      if (!lifted) return;
+      ctx = lifted;
       if (Array.isArray(d.messages)) chain = d.messages as MessageChain;
       env.setTheme(ctx.theme);
       for (const cb of listeners) cb(ctx);
@@ -120,9 +144,10 @@ export function startFrameRuntime(env: FrameEnv): { register(render: WidgetRende
   env.onBlur(() => send({ type: "blur" }));
 
   return {
-    register(r) {
+    register(r, opts) {
       if (render) return;
       render = r;
+      migrate = typeof opts?.migrate === "function" ? opts.migrate : undefined;
       send({ type: "registered" });
     },
   };
