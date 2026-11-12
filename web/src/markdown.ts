@@ -6,7 +6,7 @@ import mark from "markdown-it-mark";
 import { LinkIndex, stripComments, type DailyLookup } from "@keyring-notes/core";
 import { api, type TreeNode } from "./api";
 import { t } from "./i18n";
-import { fenceClosed, isKeyringFence, keyringSlotHtml } from "./widgets/slot";
+import { isKeyringFence, keyringSlotHtml, markClosedFences } from "./widgets/slot";
 
 /**
  * DOMPurify 기본 허용 URI에 앱의 첨부 URL을 더한다: 데스크톱·모바일 앱의 파일(asset:), 브라우저 로컬 볼트의 blob:.
@@ -281,11 +281,7 @@ md.renderer.rules.image = (tokens, idx, opts, env, self) => {
 };
 
 // ```keyring-widget 의 닫힘은 렌더러가 볼 수 없는 원문 줄로 정한다(닫히지 않은 펜스는 위젯이 아니라 코드 블록)
-md.core.ruler.push("kw_fence", (state: StateCore) => {
-  for (const t of state.tokens) {
-    if (t.type === "fence" && t.map && fenceClosed(state.src, t.map as [number, number], t.markup)) t.meta = { ...t.meta, kwClosed: true };
-  }
-});
+md.core.ruler.push("kw_fence", (state: StateCore) => markClosedFences(state.src, state.tokens as Parameters<typeof markClosedFences>[1]));
 
 // ```widget 블록은 자리만 만들고, 실제 위젯은 React가 그 자리에 그린다. ```keyring-widget 도 같은 방식, 다른 클래스(DocPane.tsx)
 const defaultFence = md.renderer.rules.fence!;

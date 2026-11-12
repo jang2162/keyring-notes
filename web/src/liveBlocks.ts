@@ -114,6 +114,15 @@ interface Block {
   kind: string;
 }
 
+/** 문서 순서·비중첩 범위들에 대해, 늘기만 하는 위치가 어느 범위 안(양 끝 포함)인가 */
+function sweep(ranges: readonly { from: number; to: number }[]): (pos: number) => boolean {
+  let i = 0;
+  return (pos) => {
+    while (i < ranges.length && ranges[i]!.to < pos) i++;
+    return i < ranges.length && pos >= ranges[i]!.from;
+  };
+}
+
 /** 블록으로 그릴 범위를 찾는다(코드 블록 안은 보지 않는다) */
 function findBlocks(state: EditorState): Block[] {
   const out: Block[] = [];
@@ -147,8 +156,11 @@ function findBlocks(state: EditorState): Block[] {
       return undefined;
     },
   });
-  const inCode = (pos: number) => code.some(([a, b]) => pos >= a && pos <= b);
-  const taken = (pos: number) => out.some((b) => pos >= b.from && pos <= b.to);
+  // 아래 줄 루프는 위치가 늘기만 하므로 포인터로 훑는다. 줄마다 목록 전체를 보면 줄 × 블록이라 펜스가 많은 큰 문서에서 키마다 수십 ms 다.
+  // 둘 다 문서 순서이고 겹치지 않는다(트리 순회가 위 블록에서 return false 로 안을 보지 않는다). 루프가 out 에 더하는 블록은
+  // 그 줄 뒤로 i 를 넘기므로 taken 이 볼 필요가 없다 — 그래서 트리에서 찾은 것만 본다
+  const inCode = sweep(code.map(([from, to]) => ({ from, to })));
+  const taken = sweep(out.slice());
   // 줄 단위로: $$ 수식 블록, 여러 줄 주석, 임베드만 있는 줄
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);

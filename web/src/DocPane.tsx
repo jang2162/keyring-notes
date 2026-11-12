@@ -16,12 +16,13 @@ import { onFoldsChange } from "./folds";
 import { fmtDateTime, t } from "./i18n";
 import { DocIcon } from "./IconPicker";
 import { References } from "./Links";
-import { LinkResolver, renderMarkdown } from "./markdown";
+import { LinkResolver, renderMarkdown, type Rendered } from "./markdown";
 import { docKeyOf, type DocEntry } from "./openDocs";
 import { shownModeOf, type ViewMode } from "./panes";
 import type { Prefs } from "./prefs";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
 import { selectPreviewBody, takesPreviewSelectAll } from "./previewSelect";
+import { previewPlan, usePreviewSource } from "./previewSource";
 import { formatCombo } from "./shortcuts";
 import { tipProps } from "./Tooltip";
 import { crumbNodes } from "./topbar";
@@ -52,6 +53,9 @@ export interface PendingAnchor {
   line?: number;
   text?: string;
 }
+
+/** 미리보기가 안 보이는 칸의 렌더 결과(위젯 자리도 없다) */
+const NO_PREVIEW: Rendered = { html: "", widgets: [], keyringWidgets: [] };
 
 /** 칸이 밖(링크 따라가기·개요, 탭 닫기 전 제목 확정)에 내주는 동작 */
 export interface PaneHandle extends TitleHandle {
@@ -372,10 +376,15 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     };
   }, [prefs.backlinksInDoc, doc.path, doc.virtual, ctx.vaultVersion]);
 
-  const previewSource = revision ? (revision.content ?? "") : doc.draft;
+  // 편집만 보이는 칸은 그리지 않고, 나란히 보기는 입력이 멈춘 뒤 그린다(previewSource.ts)
+  const { text: previewSource, settleNow: settlePreview } = usePreviewSource(
+    previewPlan(shownMode, !!revision),
+    revision ? `${docKeyOf(doc)}@${revision.commit.rev}` : docKeyOf(doc),
+    revision ? (revision.content ?? "") : doc.draft,
+  );
   const rendered = useMemo(
     // 속성 화면이 열려 있으면 미리보기에서는 프런트매터 상자를 빼고 본다(같은 내용을 두 번 보이지 않게)
-    () => renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc }),
+    () => (previewSource === null ? NO_PREVIEW : renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [previewSource, resolver, doc.path, ctx.assetVersion, prefs.propsInDoc],
   );
@@ -668,7 +677,14 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
               />
             </div>
           </div>
-          <div className="pane preview-pane" ref={previewPaneRef} onClick={onPreviewClick}>
+          <div
+            className="pane preview-pane"
+            ref={previewPaneRef}
+            onClick={onPreviewClick}
+            // 낡은 미리보기의 줄 번호로 편집기를 고치지 않게(previewSource.ts usePreviewSource)
+            onPointerDownCapture={settlePreview}
+            onFocusCapture={settlePreview}
+          >
             <div className="page">
               {(mode === "preview" || revision) && (
                 <h1 className="inline-title static">
