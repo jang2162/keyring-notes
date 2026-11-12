@@ -1,5 +1,69 @@
 import { describe, expect, it } from "vitest";
-import { previewPlan, previewStep, type PreviewPlan, type PreviewState } from "./previewSource";
+import { EditorState } from "@codemirror/state";
+import { ensureSyntaxTree } from "@codemirror/language";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import {
+  previewFoldSource,
+  previewPlan,
+  previewStep,
+  previewTaskToggle,
+  previewWidgetWrite,
+  sameLineLayout,
+  type PreviewPlan,
+  type PreviewState,
+} from "./previewSource";
+
+function edState(doc: string) {
+  const s = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage })] });
+  ensureSyntaxTree(s, doc.length, 5000);
+  return s;
+}
+const apply = (s: EditorState, spec: ReturnType<typeof previewTaskToggle>) => (spec ? s.update(spec).state.doc.toString() : null);
+
+describe("낡은 미리보기의 줄 대응", () => {
+  const drawn = "# 할 일\n\n- [ ] one\n- [ ] two\n- [ ] three\n";
+  it("체크 토글·한 줄 안 입력은 줄 대응이 같다 — 누름을 살린다", () => {
+    expect(sameLineLayout(drawn, drawn.replace("[ ] one", "[x] one"))).toBe(true);
+    expect(sameLineLayout(drawn, drawn.replace("[ ] one", "[x] one").replace("[ ] two", "[x] two"))).toBe(true);
+    expect(sameLineLayout(drawn, drawn.replace("# 할 일", "# 오늘 할 일"))).toBe(true);
+  });
+
+  it("줄을 더하거나 지우면 줄 대응이 다르다 — 맞춘다", () => {
+    expect(sameLineLayout(drawn, drawn.replace("# 할 일\n", "# 할 일\n\n새 줄\n"))).toBe(false);
+    expect(sameLineLayout(drawn, drawn.replace("- [ ] two\n", ""))).toBe(false);
+  });
+});
+
+describe("미리보기에서 쓰는 쪽의 검증", () => {
+  it("체크박스: 그린 때의 줄과 같으면(체크 상태만 달라도) 바꾼다", () => {
+    const s = edState("- [x] one\n- [ ] two");
+    expect(apply(s, previewTaskToggle(s, 2, true, "- [ ] two"))).toBe("- [x] one\n- [x] two");
+    expect(apply(s, previewTaskToggle(s, 1, false, "- [ ] one"))).toBe("- [ ] one\n- [ ] two");
+  });
+
+  it("체크박스: 그 줄이 그린 때와 다르면 쓰지 않는다(줄이 밀린 낡은 미리보기)", () => {
+    const s = edState("- [ ] inserted\n- [ ] one\n- [ ] two");
+    expect(previewTaskToggle(s, 1, true, "- [ ] one")).toBeNull();
+    expect(previewTaskToggle(s, 9, true, "- [ ] one")).toBeNull();
+  });
+
+  it("위젯: 같은 위젯(id·데이터 파일)이면 상태를 쓰고, 다른 위젯 블록이면 쓰지 않는다", () => {
+    const dday = '{"widget": "keyring/dday@1", "state": {"label": "A"}}';
+    const other = '{"widget": "keyring/excalidraw@1", "state": {"file": "a.excalidraw.json"}}';
+    const s = edState("```keyring-widget\n" + dday + "\n```\n\n```keyring-widget\n" + other + "\n```\n");
+    const ok = previewWidgetWrite(s, 1, { label: "B" }, 1, '{"widget": "keyring/dday@1", "state": {"label": "옛"}}');
+    expect(ok && s.update(ok).state.doc.toString()).toContain('"label": "B"');
+    expect(previewWidgetWrite(s, 5, { label: "B" }, 1, dday)).toBeNull();
+    expect(previewWidgetWrite(s, 5, {}, 1, '{"widget": "keyring/excalidraw@1", "state": {"file": "b.excalidraw.json"}}')).toBeNull();
+  });
+});
+
+describe("미리보기 접기의 줄 번호", () => {
+  it("나란히 보기에서 낡은 동안은 그린 본문으로 푼다, 그리지 않는 칸은 초안", () => {
+    expect(previewFoldSource("# 옛\n\n## A", "# 옛\n\n새 줄\n\n## A")).toBe("# 옛\n\n## A");
+    expect(previewFoldSource(null, "초안")).toBe("초안");
+  });
+});
 
 /** 렌더를 차례로 돌린다: [계획, 문서, 본문] 마다 그린 본문(null = 안 그림)과 나중에 다시 그려야 하는가 */
 function run(steps: [PreviewPlan, string, string][], start: PreviewState = { plan: "skip", key: "a", text: "" }) {

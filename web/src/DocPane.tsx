@@ -22,7 +22,7 @@ import { shownModeOf, type ViewMode } from "./panes";
 import type { Prefs } from "./prefs";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
 import { selectPreviewBody, takesPreviewSelectAll } from "./previewSelect";
-import { previewPlan, usePreviewSource } from "./previewSource";
+import { previewFoldSource, previewPlan, usePreviewSource } from "./previewSource";
 import { formatCombo } from "./shortcuts";
 import { tipProps } from "./Tooltip";
 import { crumbNodes } from "./topbar";
@@ -388,6 +388,9 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [previewSource, resolver, doc.path, ctx.assetVersion, prefs.propsInDoc],
   );
+  /** 미리보기 DOM 의 줄 번호(data-line·data-task-line)가 가리키는 본문 — 나란히 보기에서 낡은 동안은 지금 초안이 아니다 */
+  const drawnRef = useRef("");
+  drawnRef.current = previewFoldSource(previewSource, doc.draft);
 
   /**
    * [[문서#제목]]·[[문서#^블록]]: 그 위치로 가서 잠깐 표시한다. 접혀 있으면 편다.
@@ -411,8 +414,8 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     let el = find();
     if (!el) return;
     // 접힌 곳 안이면 편다(겹쳐 접힌 것까지)
-    for (let i = 0; i < 6 && !stateRef.current.revision && revealInPreview(el, cur.path, cur.draft); i++) {
-      applyPreviewFolds(root, cur.path, cur.draft);
+    for (let i = 0; i < 6 && !stateRef.current.revision && revealInPreview(el, cur.path, drawnRef.current); i++) {
+      applyPreviewFolds(root, cur.path, drawnRef.current);
       el = find() ?? el;
     }
     el.scrollIntoView({ block: "start" });
@@ -429,7 +432,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     const fold = (e.target as HTMLElement).closest<HTMLElement>(".pv-fold");
     if (fold && !revision) {
       e.preventDefault();
-      togglePreviewFold(doc.path, doc.draft, Number(fold.dataset.foldLine));
+      togglePreviewFold(doc.path, drawnRef.current, Number(fold.dataset.foldLine));
       return;
     }
     const box = (e.target as HTMLElement).closest<HTMLInputElement>("input.task[data-task-line]");
@@ -439,7 +442,9 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
         e.preventDefault();
         return;
       }
-      handle.current.toggleTask(Number(box.dataset.taskLine), box.checked);
+      // 그린 때의 줄 글과 지금 줄이 다르면 편집기가 쓰지 않는다 — 체크 표시도 되돌린다
+      const line = Number(box.dataset.taskLine);
+      if (!handle.current.toggleTask(line, box.checked, drawnRef.current.split("\n")[line - 1])) e.preventDefault();
       return;
     }
     // 각주 등 문서 안 앵커(#fn1): 주소의 #/문서 경로를 건드리지 않고 그 위치로 스크롤
@@ -470,7 +475,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   useEffect(() => onFoldsChange((path) => path === docRef.current.path && setFoldVersion((v) => v + 1)), []);
   useLayoutEffect(() => {
     if (!previewRef.current || revision) return;
-    applyPreviewFolds(previewRef.current, doc.path, doc.draft);
+    applyPreviewFolds(previewRef.current, doc.path, drawnRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rendered.html, mode, foldVersion, revision]);
 

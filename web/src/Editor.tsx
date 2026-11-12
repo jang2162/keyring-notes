@@ -37,8 +37,6 @@ import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
 import {
   endWidgetEdit,
   insertWidgetBlock,
-  nextWidgetBody,
-  rewriteWidgetBlock,
   setWidgetDraft,
   setWidgetFocus,
   startWidgetEdit as startWidgetEditEffect,
@@ -47,6 +45,7 @@ import {
   widgetGoneNow,
   type WidgetDraftChange,
 } from "./widgets/blockEdit";
+import { previewTaskToggle, previewWidgetWrite } from "./previewSource";
 import { toast } from "./toast";
 
 /** 수정 중이던 위젯 블록이 바깥 변경(다른 칸·동기화)으로 사라지면 한 번 알리고 수정 상태를 걷는다 */
@@ -73,8 +72,8 @@ export interface LinkCandidate {
 export interface EditorHandle {
   /** 이 에디터를 만든 문서(docKey). 칸의 배치가 바뀌어도 다시 만들기 전까지는 옛 문서의 것이다 */
   readonly docKey: string;
-  /** 줄(1부터)의 할 일 체크 상태를 바꾼다. 에디터 실행 취소 기록에 남는다. */
-  toggleTask(line: number, done: boolean): void;
+  /** 줄(1부터)의 할 일 체크 상태를 바꾼다. 에디터 실행 취소 기록에 남는다. drawn(미리보기가 그린 때의 줄 글)과 지금 줄이 다르면 쓰지 않고 false */
+  toggleTask(line: number, done: boolean, drawn?: string): boolean;
   /** 그 줄(1부터)로 커서를 옮기고 보이게 한다. text가 그 줄(또는 가까운 줄)에 있으면 그 글을 고른다 */
   gotoLine(line: number, text?: string): void;
   /** 커서 자리에 글을 넣는다(템플릿 넣기). keepSelection이면 고른 글을 지우지 않고 그 뒤에 넣는다(첨부 넣기) */
@@ -92,8 +91,11 @@ export interface EditorHandle {
   toggleFoldLine(line: number): void;
   /** 접힌 블록의 첫 줄 번호들 */
   foldedLines(): number[];
-  /** 미리보기 위젯(PreviewKeyringWidget): 그 줄(1부터, 여는 펜스)의 위젯 블록을 트랜잭션 하나로 다시 쓴다. 블록이 없으면 false */
-  writeWidget(line: number, state: unknown, version: number): boolean;
+  /**
+   * 미리보기 위젯(PreviewKeyringWidget): 그 줄(1부터, 여는 펜스)의 위젯 블록을 트랜잭션 하나로 다시 쓴다.
+   * 블록이 없거나 drawn(그린 때의 본문)과 다른 위젯(id·데이터 파일)이면 false
+   */
+  writeWidget(line: number, state: unknown, version: number, drawn?: string): boolean;
   /** 위젯 넣기: 블록 글(펜스 포함)을 자기 줄로 넣고 커서를 블록 다음 줄에 둔다(Live Preview 가 곧바로 위젯으로 그리게) */
   insertWidget(text: string): void;
   startWidgetEdit(line: number, draft: unknown, stateFrom: number, entryKey: string): void;
@@ -409,10 +411,8 @@ export function Editor({
           if (spec) view.dispatch(spec);
           view.focus();
         },
-        writeWidget(lineNo, state, version) {
-          const b = widgetBlockAtLine(view.state, lineNo);
-          const next = b && nextWidgetBody(b.body, state, version);
-          const spec = b && next !== null ? rewriteWidgetBlock(view.state, b, next) : null;
+        writeWidget(lineNo, state, version, drawn) {
+          const spec = previewWidgetWrite(view.state, lineNo, state, version, drawn);
           if (!spec) return false;
           view.dispatch(spec);
           return true;
@@ -444,13 +444,11 @@ export function Editor({
               }
             : null;
         },
-        toggleTask(lineNo, done) {
-          if (lineNo < 1 || lineNo > view.state.doc.lines) return;
-          const line = view.state.doc.line(lineNo);
-          const m = /\[([ xX])\]/.exec(line.text);
-          if (!m) return;
-          const at = line.from + m.index + 1;
-          view.dispatch({ changes: { from: at, to: at + 1, insert: done ? "x" : " " } });
+        toggleTask(lineNo, done, drawn) {
+          const spec = previewTaskToggle(view.state, lineNo, done, drawn);
+          if (!spec) return false;
+          view.dispatch(spec);
+          return true;
         },
         insertText(text, opts) {
           // 표 칸을 고치는 중이면(설계 6.3.2): 한 줄 글은 그 칸의 커서 자리에(ownLine 없이 — 표 칸 안 ![[이미지]] 도 GFM 에서 성립한다),

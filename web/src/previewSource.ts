@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { EditorState, TransactionSpec } from "@codemirror/state";
+import { parseWidgetBlock } from "@keyring-notes/core";
+import { nextWidgetBody, rewriteWidgetBlock, widgetBlockAtLine } from "./widgets/blockEdit";
 import type { ViewMode } from "./panes";
 
 /**
@@ -45,19 +48,83 @@ export function previewStep(
 }
 
 /**
+ * 낡은 미리보기의 줄 번호가 지금 본문에서도 그 줄을 가리킨다고 볼까 — 줄 수가 같으면 그렇다고 본다.
+ * 체크 토글·한 줄 안 입력은 줄 수를 바꾸지 않으므로 맞추지 않고 누름을 살린다(맞추면 innerHTML 을 갈아 그 누름이 사라진다).
+ * 위젯 상태 쓰기는 블록 JSON 을 여러 줄로 펴서 줄 수가 바뀔 수 있다 — 그 직후의 누름은 맞추느라 무시된다.
+ * 「첫 다른 줄 뒤의 줄 수」까지 보지 않는 이유: 줄 수가 같은 채 줄이 밀리려면 250ms 안에 줄을 지우고 다른 곳에 더해야 하는데,
+ * 그 드문 경우는 쓰는 쪽(sameTaskLine·sameWidgetBlock)이 그린 때의 글과 대조해 막는다.
+ */
+export function sameLineLayout(drawn: string, current: string): boolean {
+  return lineCount(drawn) === lineCount(current);
+}
+
+function lineCount(s: string): number {
+  let n = 1;
+  for (let i = s.indexOf("\n"); i >= 0; i = s.indexOf("\n", i + 1)) n++;
+  return n;
+}
+
+/** 그린 때의 할 일 줄과 지금 줄이 체크 상태만 빼고 같은가(낡은 미리보기의 체크박스가 엉뚱한 줄을 고치지 않게) */
+export function sameTaskLine(drawn: string, current: string): boolean {
+  const norm = (s: string) => s.replace(/\[[ xX]\]/, "[ ]");
+  return norm(drawn) === norm(current);
+}
+
+/**
+ * 그린 때의 위젯 블록과 지금 블록이 같은 위젯인가 — 위젯 id 와 데이터 파일(state.file)이 같은가.
+ * 본문 전체는 견주지 않는다: 위젯이 자기 상태를 쓰면 본문이 바뀌고, 미리보기가 다시 그려질 때까지 그린 본문은 낡은 채다.
+ */
+export function sameWidgetBlock(drawn: string, current: string): boolean {
+  const a = parseWidgetBlock(drawn);
+  const b = parseWidgetBlock(current);
+  return a.ok && b.ok && a.block.widget.id === b.block.widget.id && fileOf(a.block.state) === fileOf(b.block.state);
+}
+
+function fileOf(state: unknown): unknown {
+  return state && typeof state === "object" ? (state as { file?: unknown }).file : undefined;
+}
+
+/**
+ * 미리보기 접기·체크박스가 줄 번호를 풀 본문: 그린 본문(낡았을 수 있다). 미리보기를 안 그리는 칸이면 초안.
+ * 낡은 DOM 에 지금 초안의 줄 번호로 접기를 적용하면 엉뚱한 블록이 접힌다.
+ */
+export function previewFoldSource(drawn: string | null, draft: string): string {
+  return drawn ?? draft;
+}
+
+/** 미리보기 체크박스: 그 줄(1부터)의 체크를 바꾸는 변경. drawn(그린 때의 줄 글)과 지금 줄이 다르면 null — 쓰지 않는다 */
+export function previewTaskToggle(state: EditorState, lineNo: number, done: boolean, drawn?: string): TransactionSpec | null {
+  if (lineNo < 1 || lineNo > state.doc.lines) return null;
+  const line = state.doc.line(lineNo);
+  if (drawn !== undefined && !sameTaskLine(drawn, line.text)) return null;
+  const m = /\[([ xX])\]/.exec(line.text);
+  if (!m) return null;
+  const at = line.from + m.index + 1;
+  return { changes: { from: at, to: at + 1, insert: done ? "x" : " " } };
+}
+
+/** 미리보기 위젯: 그 줄(여는 펜스)의 위젯 블록을 다시 쓰는 변경. 블록이 없거나 drawn(그린 때의 본문)과 다른 위젯이면 null */
+export function previewWidgetWrite(state: EditorState, lineNo: number, widgetState: unknown, version: number, drawn?: string): TransactionSpec | null {
+  const b = widgetBlockAtLine(state, lineNo);
+  if (!b || (drawn !== undefined && !sameWidgetBlock(drawn, b.body))) return null;
+  const next = nextWidgetBody(b.body, widgetState, version);
+  return next === null ? null : rewriteWidgetBlock(state, b, next);
+}
+
+/**
  * previewStep 을 React 상태로 돌린다. 계획이 바뀐 렌더에서 상태를 바로 맞춘다(렌더 중 setState — 이전 값과 다를 때만).
  *
  * ⚠ settle 의 미리보기는 잠깐 낡는다. 미리보기의 할 일 체크박스·위젯은 그린 때의 줄 번호로 편집기를 고치므로(toggleTask·writeWidget),
- * 그 사이 위에서 줄이 늘거나 줄면 다른 줄을 고친다. 그래서 미리보기를 누르거나 포커스가 들어가면 그 자리에서 settleNow 로 맞춘다 —
- * 그 누름은 바뀐 DOM 에 떨어져 무시되고(다시 누르면 된다) 엉뚱한 줄은 고치지 않는다.
+ * 그 사이 위에서 줄이 늘거나 줄면 다른 줄을 고친다. 그래서 미리보기를 누르거나 포커스가 들어갈 때 줄 수가 달라졌으면(sameLineLayout)
+ * 그 자리에서 settleNow 로 맞춘다 — 그 누름은 바뀐 DOM 에 떨어져 무시되고(다시 누르면 된다) 엉뚱한 줄은 고치지 않는다.
  */
 export function usePreviewSource(plan: PreviewPlan, key: string, source: string): { text: string | null; settleNow: () => void } {
   const [state, setState] = useState<PreviewState>(() => ({ plan, key, text: plan === "settle" ? source : "" }));
   const step = previewStep(state, plan, key, source);
   if (step.state !== state) setState(step.state);
   const { settleLater } = step;
-  const latest = useRef({ settleLater, key, source });
-  latest.current = { settleLater, key, source };
+  const latest = useRef({ settleLater, key, source, drawn: state.text });
+  latest.current = { settleLater, key, source, drawn: step.state.text };
   useEffect(() => {
     if (!settleLater) return;
     const id = setTimeout(() => setState({ plan: "settle", key, text: source }), PREVIEW_SETTLE_MS);
@@ -65,7 +132,7 @@ export function usePreviewSource(plan: PreviewPlan, key: string, source: string)
   }, [settleLater, key, source]);
   const settleNow = useCallback(() => {
     const l = latest.current;
-    if (l.settleLater) setState({ plan: "settle", key: l.key, text: l.source });
+    if (l.settleLater && !sameLineLayout(l.drawn, l.source)) setState({ plan: "settle", key: l.key, text: l.source });
   }, []);
   return { text: step.text, settleNow };
 }
