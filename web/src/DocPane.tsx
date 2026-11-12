@@ -16,12 +16,13 @@ import { onFoldsChange } from "./folds";
 import { fmtDateTime, t } from "./i18n";
 import { DocIcon } from "./IconPicker";
 import { References } from "./Links";
-import { LinkResolver, renderMarkdown } from "./markdown";
+import { LinkResolver, renderMarkdown, type Rendered } from "./markdown";
 import { docKeyOf, type DocEntry } from "./openDocs";
 import { shownModeOf, type ViewMode } from "./panes";
 import type { Prefs } from "./prefs";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
 import { selectPreviewBody, takesPreviewSelectAll } from "./previewSelect";
+import { previewFoldSource, previewPlan, usePreviewSource } from "./previewSource";
 import { formatCombo } from "./shortcuts";
 import { tipProps } from "./Tooltip";
 import { crumbNodes } from "./topbar";
@@ -52,6 +53,9 @@ export interface PendingAnchor {
   line?: number;
   text?: string;
 }
+
+/** 미리보기가 안 보이는 칸의 렌더 결과(위젯 자리도 없다) */
+const NO_PREVIEW: Rendered = { html: "", widgets: [], keyringWidgets: [] };
 
 /** 칸이 밖(링크 따라가기·개요, 탭 닫기 전 제목 확정)에 내주는 동작 */
 export interface PaneHandle extends TitleHandle {
@@ -372,13 +376,21 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     };
   }, [prefs.backlinksInDoc, doc.path, doc.virtual, ctx.vaultVersion]);
 
-  const previewSource = revision ? (revision.content ?? "") : doc.draft;
+  // 편집만 보이는 칸은 그리지 않고, 나란히 보기는 입력이 멈춘 뒤 그린다(previewSource.ts)
+  const { text: previewSource, settleNow: settlePreview } = usePreviewSource(
+    previewPlan(shownMode, !!revision),
+    revision ? `${docKeyOf(doc)}@${revision.commit.rev}` : docKeyOf(doc),
+    revision ? (revision.content ?? "") : doc.draft,
+  );
   const rendered = useMemo(
     // 속성 화면이 열려 있으면 미리보기에서는 프런트매터 상자를 빼고 본다(같은 내용을 두 번 보이지 않게)
-    () => renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc }),
+    () => (previewSource === null ? NO_PREVIEW : renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [previewSource, resolver, doc.path, ctx.assetVersion, prefs.propsInDoc],
   );
+  /** 미리보기 DOM 의 줄 번호(data-line·data-task-line)가 가리키는 본문 — 나란히 보기에서 낡은 동안은 지금 초안이 아니다 */
+  const drawnRef = useRef("");
+  drawnRef.current = previewFoldSource(previewSource, doc.draft);
 
   /**
    * [[문서#제목]]·[[문서#^블록]]: 그 위치로 가서 잠깐 표시한다. 접혀 있으면 편다.
@@ -402,8 +414,8 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     let el = find();
     if (!el) return;
     // 접힌 곳 안이면 편다(겹쳐 접힌 것까지)
-    for (let i = 0; i < 6 && !stateRef.current.revision && revealInPreview(el, cur.path, cur.draft); i++) {
-      applyPreviewFolds(root, cur.path, cur.draft);
+    for (let i = 0; i < 6 && !stateRef.current.revision && revealInPreview(el, cur.path, drawnRef.current); i++) {
+      applyPreviewFolds(root, cur.path, drawnRef.current);
       el = find() ?? el;
     }
     el.scrollIntoView({ block: "start" });
@@ -420,7 +432,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     const fold = (e.target as HTMLElement).closest<HTMLElement>(".pv-fold");
     if (fold && !revision) {
       e.preventDefault();
-      togglePreviewFold(doc.path, doc.draft, Number(fold.dataset.foldLine));
+      togglePreviewFold(doc.path, drawnRef.current, Number(fold.dataset.foldLine));
       return;
     }
     const box = (e.target as HTMLElement).closest<HTMLInputElement>("input.task[data-task-line]");
@@ -430,7 +442,9 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
         e.preventDefault();
         return;
       }
-      handle.current.toggleTask(Number(box.dataset.taskLine), box.checked);
+      // 그린 때의 줄 글과 지금 줄이 다르면 편집기가 쓰지 않는다 — 체크 표시도 되돌린다
+      const line = Number(box.dataset.taskLine);
+      if (!handle.current.toggleTask(line, box.checked, drawnRef.current.split("\n")[line - 1])) e.preventDefault();
       return;
     }
     // 각주 등 문서 안 앵커(#fn1): 주소의 #/문서 경로를 건드리지 않고 그 위치로 스크롤
@@ -461,7 +475,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   useEffect(() => onFoldsChange((path) => path === docRef.current.path && setFoldVersion((v) => v + 1)), []);
   useLayoutEffect(() => {
     if (!previewRef.current || revision) return;
-    applyPreviewFolds(previewRef.current, doc.path, doc.draft);
+    applyPreviewFolds(previewRef.current, doc.path, drawnRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rendered.html, mode, foldVersion, revision]);
 
@@ -668,7 +682,14 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
               />
             </div>
           </div>
-          <div className="pane preview-pane" ref={previewPaneRef} onClick={onPreviewClick}>
+          <div
+            className="pane preview-pane"
+            ref={previewPaneRef}
+            onClick={onPreviewClick}
+            // 낡은 미리보기의 줄 번호로 편집기를 고치지 않게(previewSource.ts usePreviewSource)
+            onPointerDownCapture={settlePreview}
+            onFocusCapture={settlePreview}
+          >
             <div className="page">
               {(mode === "preview" || revision) && (
                 <h1 className="inline-title static">

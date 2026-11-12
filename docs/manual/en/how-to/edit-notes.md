@@ -32,6 +32,8 @@ Live Preview is on by default. Turn it off from the status bar or in Settings â†
 
 `Ctrl/Cmd+E` switches between editing and preview. The supported syntax is listed in [Reference](../reference.md#markdown-syntax).
 
+In **Side by side**, the preview updates when you pause typing. If you add or remove lines, or a widget has just saved its content, and you click the preview right away, that click is ignored while the preview catches up. Click again.
+
 ## Edit tables
 
 In Live Preview, tables are drawn even when the cursor is in them, and you edit them in place. Tables inside quotes, lists and callouts stay as source.

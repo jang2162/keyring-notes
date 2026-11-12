@@ -8,13 +8,29 @@ export function isKeyringFence(info: string, level: number, closed: boolean): bo
   return level === 0 && closed && info.trim().split(/\s+/)[0] === KEYRING_WIDGET_LANG;
 }
 
-/** markdown-it 의 fence 토큰이 닫혔는가: map 의 마지막 줄이 여는 펜스와 같은 글자이고 그만큼 이상 긴 펜스만 있는 줄인가 */
-export function fenceClosed(src: string, map: [number, number], markup: string): boolean {
+/**
+ * markdown-it 의 fence 토큰이 닫혔는가: map 의 마지막 줄이 여는 펜스와 같은 글자이고 그만큼 이상 긴 펜스만 있는 줄인가.
+ * lines 는 src.split("\n") — 줄 끝의 \r 은 정규식의 \s* 가 먹는다
+ */
+export function fenceClosedIn(lines: readonly string[], map: [number, number], markup: string): boolean {
   const last = map[1] - 1;
   if (last <= map[0]) return false;
-  const line = src.split("\n", last + 1)[last];
+  const line = lines[last];
   const m = line === undefined ? null : /^\s*(`{3,}|~{3,})\s*$/.exec(line);
   return !!m && m[1]![0] === markup[0] && m[1]!.length >= markup.length;
+}
+
+/**
+ * 닫힌 fence 토큰에 meta.kwClosed 를 단다(markdown.ts 의 kw_fence 규칙). 문서는 한 번만 줄로 나눈다 —
+ * 펜스마다 나누면 펜스 수 × 문서 크기라 펜스가 많은 큰 문서에서 렌더 한 번에 수백 ms 가 든다.
+ */
+export function markClosedFences(src: string, tokens: readonly { type: string; map: [number, number] | null; markup: string; meta: unknown }[]): void {
+  let lines: string[] | null = null;
+  for (const t of tokens) {
+    if (t.type !== "fence" || !t.map) continue;
+    lines ??= src.split("\n");
+    if (fenceClosedIn(lines, t.map, t.markup)) t.meta = { ...(t.meta as object | null), kwClosed: true };
+  }
 }
 
 export function keyringSlotHtml(index: number, line: number): string {

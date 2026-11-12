@@ -34,7 +34,8 @@ export function PreviewKeyringWidget(p: {
       history,
       owner,
       resume,
-      write: (state, version) => h()?.writeWidget(line, state, version) ?? false,
+      // body 는 그린 때의 본문 — 낡은 미리보기의 줄 번호가 다른 위젯 블록을 가리키면 쓰지 않는다(previewSource.ts sameWidgetBlock)
+      write: (state, version) => h()?.writeWidget(line, state, version, body) ?? false,
       currentEdit: () => {
         const e = readOnly ? null : h()?.widgetEdit();
         return widgetResume(e ? { ...e, gone: false } : null, "preview", e?.line === line);
