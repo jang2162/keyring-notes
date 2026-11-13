@@ -1844,7 +1844,7 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 
 **확인하지 못한 것·알려진 한계**
 - WebKit 의 iframe 안 한글 조합, 창 포커스가 바뀔 때(RF5), WebKit 에서 서비스 워커가 캐시하기 전 첫 오프라인 열기.
-- 데스크톱 앱 안 `Esc` 순서는 「데스크톱 앱 실기기 확인」 절(합성 키). 「전체 화면」 단추를 누른 직후의 `Esc` 가 닫지 못하는 것이 남았다.
+- 데스크톱 앱 안 `Esc` 순서는 「데스크톱 앱 실기기 확인」 절(합성 키). 「전체 화면」 단추를 누른 직후의 `Esc` 가 닫지 못하던 것은 고쳤다(그 절 「전체 화면 단추 직후 Esc 수정」).
 - iframe 안 WebRTC 는 CSP 로 막지 못한다 — 제3자 위젯을 받기 전에 마켓플레이스 설계에서 다룬다(`docs/guides/development.md`).
 - 서버 볼트를 오프라인으로 열면 그림은 저장되지 않고 기다린다(노트는 기기에서 편집된다).
 
@@ -2110,7 +2110,7 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 - D-day 수정 중 `Esc` 는 수정 취소다 — 라벨에 「88」 을 친 뒤 `Esc`: 파일의 라벨은 그대로, 위젯은 수정에서 빠진다.
 - 그림 위젯(Excalidraw) 전체 화면이 창 전체를 덮는다 — 나란히 보기의 미리보기 칸과 편집 전용 Live 칸 둘 다, 사이드바·탭·상태 막대·창 제목줄까지(스크린숏). 「전체 화면 닫기」 로 제자리에 돌아온다.
 - 그림 위젯 전체 화면의 `Esc`(합성 키): 캔버스 안을 누른 뒤에는 고른 것이 없으면 첫 `Esc` 가 닫고, 도형을 고른 상태면 첫 `Esc` 는 선택만 풀고 둘째 `Esc` 가 닫는다.
-  - **「전체 화면」 단추를 누른 직후(캔버스를 누르기 전)에는 `Esc` 를 두 번 눌러도 닫히지 않는다.** 진단(고치지 않음): 부모 쪽 `Esc` 는 `web/src/widgets/frame/mountFrame.ts` 의 `onWrapKey` 가 위젯 틀의 keydown 으로만 받는데, macOS WebKit 은 마우스로 누른 `<button>` 에 포커스를 주지 않아 포커스가 틀 밖에 남는다. Chromium 으로 대조하지는 않았다.
+  - **「전체 화면」 단추를 누른 직후(캔버스를 누르기 전)에는 `Esc` 를 두 번 눌러도 닫히지 않았다 — 고쳤다(아래 「전체 화면 단추 직후 Esc 수정」).** 진단: 부모 쪽 `Esc` 는 `web/src/widgets/frame/mountFrame.ts` 의 `onWrapKey` 가 위젯 틀의 keydown 으로만 받는데, macOS WebKit 은 마우스로 누른 `<button>` 에 포커스를 주지 않아 포커스가 틀 밖(위젯 뿌리 `.kw-root`)에 남는다.
 
 **확인하지 못한 것**
 - 그림 위젯(WebKit iframe) 안 한글 조합 — 합성 클릭으로 글 상자를 만들지 못했다(글 도구, 도형을 고르고 Enter, 네 번). `orca computer type-text` 는 쓰지 않았다(아래).
@@ -2118,6 +2118,25 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 - 두 체크박스 확인에서 누름이 250ms 창 안에 떨어졌는지 — 키·누름은 각각 다른 orca 프로세스라 전달 시각을 재지 못했다(「낡은 체크박스」 는 결과로 창 안이었음을 추론했다).
 - 실제 사람 키보드와 IME 조합 입력. 위 값은 macOS 합성 키 이벤트다.
 - `orca computer` 로 이 앱을 조작할 때: `type-text` 는 합성 키와 함께 접근성 값 쓰기도 해서 CodeMirror 문서 앞에 화면 글을 통째로 넣고 글을 두 번 넣는다 — 편집기에는 `press-key` 만 쓴다. 한글 입력기가 켜져 있으면 `press-key` 의 영문 글자는 한글 자모가 된다. 접근성 트리는 1,200 노드에서 잘려 나란히 보기에서는 상태 막대(Live 단추)가 안 읽힌다.
+
+#### 전체 화면 단추 직후 Esc 수정 (2026-11-14)
+
+사용자 결정(2026-11-14 「고쳐줘」)으로 고쳤다. 코드는 `web/src/widgets/frame/mountFrame.ts`, 판정은 `web/src/widgets/frame/layout.ts` 의 `fullscreenFocusButton`·`fullscreenDocEscape`(단위 시험 `layout.test.ts`).
+
+**고친 방법** — 둘을 함께 한다.
+- 전체 화면에 들어갈 때 포커스가 감싸개 밖이면 「전체 화면」 단추로 옮긴다(iframe 안이면 그대로). Chromium 이 마우스 누름에서 하는 것과 같아진다. popover 에 들어가기 **전에** 옮긴다 — `hidePopover` 는 닫을 때 들어가기 전의 포커스로 돌려보내므로, 들어간 뒤에 옮기면 닫은 뒤 포커스가 body·위젯 뿌리로 간다.
+- 전체 화면인 동안만 document 에 keydown 을 달아, 포커스가 감싸개를 품은 곳(body·위젯 뿌리·편집기)에 떨어졌을 때의 `Esc` 도 닫기로 받는다. 이미 처리된 `Esc`(`defaultPrevented`), 한글 조합 중, 모달이 열려 있을 때(모달은 window 에서 받아 document 보다 늦다), 감싸개와 무관한 요소(팔레트 입력칸·메뉴)의 `Esc` 는 건드리지 않는다. 포커스 이동만으로는 못 잡는 경우가 있어서다: 전체 화면에서 팔레트를 열고 닫으면 포커스가 body 로 떨어져 다음 `Esc` 가 닫지 못했다 — Chromium 에서도 그랬다.
+
+**확인한 것**
+- 헤드리스 Playwright(Chromium·WebKit) × 두 경로(popover, Popover API 를 지운 `.kw-fixed`) — 넷 다 12/12: 마우스 누름 직후 첫 `Esc` 닫힘, 키보드 Enter·Space 누름 뒤 첫 `Esc` 닫힘(닫은 뒤 포커스는 단추), 캔버스 빈 곳을 누른 뒤 첫 `Esc` 닫힘(포커스는 iframe), 도형을 고르면 첫 `Esc` 는 선택 해제·둘째가 닫기, D-day 수정 중 `Esc` = 수정 취소, 열린 전체 화면은 하나, 팔레트 `Esc`, 전체 화면 위 팔레트는 첫 `Esc` 가 팔레트만 닫고 다음 `Esc` 가 전체 화면을 닫음.
+- **수정 전 빌드에서 Playwright WebKit 이 재현한다** — 두 경로 다 마우스 누름 뒤 포커스가 `div.kw-root` 에 남아 `Esc` 두 번에도 열려 있었다. 수정 전 Chromium 은 마우스 누름이 통과했고, 둘 다 팔레트를 닫은 뒤의 `Esc` 가 실패했다.
+- 데스크톱 앱(시험용 번들 `com.develma.keyringnotes.agenttest`, 수정 후 웹만): 마우스 누름(합성 클릭) 직후 포커스가 단추로 가고 첫 `Esc` 로 닫힘, 닫은 뒤 포커스는 단추. 그 단추에서 `Space` 로 열고 첫 `Esc` 로 닫힘. 캔버스 빈 곳을 누른 뒤 첫 `Esc` 로 닫힘. 수정 전 대조는 위 확인으로 갈음했다.
+
+**확인하지 못한 것**
+- 데스크톱 앱에서 도형을 고른 상태의 `Esc` 순서 — 백그라운드 합성 클릭으로는 캔버스에서 도형이 골라지지 않았다(도형 테두리 누름, `Cmd+A`). 화면을 앞으로 가져오는 조작은 하지 않았다. iframe 쪽 `Esc` 경로는 바뀌지 않았고 위 Playwright 두 엔진과 앞 확인에서 맞았다.
+
+**화면 점유** — 창을 한 번 띄워(`--restore-window` 한 번, 시험 앱 창이 다른 Space 에 떠서) 약 95초, 확인 뒤 PID 로 껐다. 사람의 Orca 는 전체 화면 Space 가 아니었다. 사람의 Keyring Notes(PID 79405)와 그 데이터(`~/Library/WebKit`·`Caches`·`Preferences` 의 배포 identifier 항목, `~/Documents/Keyring Notes`)는 시작 전·끝의 mtime·크기·파일 목록 해시가 같았다. 시험 identifier 의 `WebKit`·`Caches` 항목과 임시 볼트를 지우고 번들 등록을 풀었다.
+- 겪은 것: 덮어쓰기 JSON 의 `plugins.updater.endpoints` 가 `http://` 면 앱이 시작하며 패닉한다(「The configured updater endpoint must use a secure protocol」) — 닿지 않는 `https://` 주소를 쓴다. 직접 띄운 실행 파일의 창은 사람이 보던 Space 가 아닌 곳에 떠 `orca computer` 가 「no on-screen window」 로 답했고, `--restore-window` 로만 잡혔다.
 
 ## 그리지 못하는 노트가 앱 전체를 내리던 것
 

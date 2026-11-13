@@ -32,6 +32,31 @@ export function frameFocusInside(o: { activeInRoot: boolean; relatedInRoot: bool
 }
 
 /**
+ * 전체 화면에 들어갈 때 포커스를 「전체 화면」 단추로 옮길까: 포커스가 감싸개 밖이면 옮긴다(iframe 안이면 그대로).
+ * 부모 쪽 Esc 는 감싸개의 keydown 으로 받는데, macOS WebKit 은 마우스로 누른 <button> 에 포커스를 주지 않아 포커스가 밖(body·위젯 뿌리)에
+ * 남고 Esc 가 감싸개에 오지 않는다. popover 에 들어가기 전에 옮겨야 닫을 때(hidePopover) 포커스가 그 단추로 돌아온다 — 들어간 뒤에
+ * 옮기면 들어가기 전의 포커스(body 등)로 돌아간다.
+ */
+export function fullscreenFocusButton(activeInWrap: boolean): boolean {
+  return !activeInWrap;
+}
+
+/**
+ * 전체 화면인 동안 document 에 올라온 Esc 를 닫기로 받을까 — 감싸개 안의 Esc 는 감싸개가 받으니, 여기는 포커스가 감싸개를 품은 곳
+ * (body·위젯 뿌리·편집기)에 떨어졌을 때다(팔레트를 닫은 뒤 등). 다른 요소의 Esc(입력칸·메뉴)와 이미 처리된 Esc 는 건드리지 않고,
+ * 모달이 열려 있으면 그 모달 차례다 — 모달은 window 에서 받아 document 보다 늦다.
+ */
+export function fullscreenDocEscape(e: {
+  key: string;
+  isComposing: boolean;
+  defaultPrevented: boolean;
+  targetHoldsFrame: boolean;
+  modalOpen: boolean;
+}): boolean {
+  return e.key === "Escape" && !e.isComposing && !e.defaultPrevented && e.targetHoldsFrame && !e.modalOpen;
+}
+
+/**
  * iframe 문서는 srcdoc 하나뿐이어야 한다: 첫 load·첫 ready 는 ok, 두 번째부터 kill(위젯이 자기 iframe 을 다른 주소로 옮김).
  * kill 뒤에는 무엇이든 kill.
  */

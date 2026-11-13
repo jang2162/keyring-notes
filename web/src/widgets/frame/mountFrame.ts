@@ -1,4 +1,5 @@
 import { language, t } from "../../i18n";
+import { modalOpen } from "../../Modal";
 import { FRAME_DRAIN_MS, type DataFileHandle } from "../dataFile";
 import { widgetMessages } from "../messages";
 import type { FrameWidgetEntry } from "../registry";
@@ -6,7 +7,16 @@ import { focusOutAction, type WidgetSession } from "../session";
 import type { WidgetContext } from "../types";
 import { frameSrcdoc } from "./bootstrap";
 import { FrameHost } from "./host";
-import { frameFocusInside, frameGuard, frameHeight, frameLoadFailedKey, FRAME_MIN_HEIGHT, routeFrameMessage } from "./layout";
+import {
+  frameFocusInside,
+  frameGuard,
+  frameHeight,
+  frameLoadFailedKey,
+  FRAME_MIN_HEIGHT,
+  fullscreenDocEscape,
+  fullscreenFocusButton,
+  routeFrameMessage,
+} from "./layout";
 import { fetchFrameCode, resolveFrameCode } from "./source";
 
 /**
@@ -83,6 +93,9 @@ export function mountFrame(
   const setFullscreen = (on: boolean) => {
     if (on === fullscreen || o.display !== "block") return;
     fullscreen = on;
+    if (on && button && fullscreenFocusButton(wrap.contains(document.activeElement))) button.focus({ preventScroll: true });
+    if (on) document.addEventListener("keydown", onDocKey);
+    else document.removeEventListener("keydown", onDocKey);
     if (hasPopover) {
       // popover 속성은 들어갈 때만 단다 — 달려 있으면 닫힌 동안 UA 스타일이 display: none 을 건다
       if (on) {
@@ -121,6 +134,15 @@ export function mountFrame(
     }
   };
   wrap.addEventListener("keydown", onWrapKey);
+  // 전체 화면인 동안만 단다(setFullscreen) — 판정은 fullscreenDocEscape
+  function onDocKey(e: KeyboardEvent) {
+    const target = e.target instanceof Node ? e.target : null;
+    const targetHoldsFrame = !!target && target !== wrap && target.contains(wrap);
+    if (!fullscreenDocEscape({ key: e.key, isComposing: e.isComposing, defaultPrevented: e.defaultPrevented, targetHoldsFrame, modalOpen: modalOpen() }))
+      return;
+    e.preventDefault();
+    setFullscreen(false);
+  }
 
   const onResize = () => applyHeight();
   window.addEventListener("resize", onResize);
