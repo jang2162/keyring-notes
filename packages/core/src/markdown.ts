@@ -19,15 +19,43 @@ export interface Frontmatter {
   error?: string;
 }
 
-const FM_RE = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
+export interface FrontmatterBlock {
+  /** 여는 줄과 닫는 줄 사이의 YAML(닫는 줄 바로 앞 줄바꿈은 뺀다) */
+  yaml: string;
+  /** 닫는 줄의 번호(0부터, 여는 줄이 0) */
+  closeLine: number;
+  /** 닫는 줄 바로 뒤, 본문이 시작하는 자리 */
+  end: number;
+}
+
+const FM_CLOSE_LINE = /^(?:---|\.\.\.)[ \t]*(?:\r?\n)?$/;
+
+/**
+ * 맨 앞 프런트매터 블록의 자리(BOM 을 뗀 글을 받는다). 없으면 null.
+ * 닫는 구분선은 줄 전체가 `---` 나 `...`(뒤 공백 허용)일 때만 인정한다. 줄 안의 것까지 닫는 줄로 보면 값이
+ * `...`·`---` 로 끝나는 문서를 고칠 때 그 뒤 속성이 본문으로 밀려난다.
+ * 읽기와 고치기(속성·공통 설정·수정 시각)가 전부 이 판정을 쓴다 — 판정이 갈리면 읽을 때는 멀쩡한 문서가 고칠 때 깨진다.
+ */
+export function frontmatterBlock(text: string): FrontmatterBlock | null {
+  const open = /^---\r?\n/.exec(text);
+  if (!open) return null;
+  let start = open[0].length;
+  for (let closeLine = 1; start < text.length; closeLine++) {
+    const nl = text.indexOf("\n", start);
+    const end = nl < 0 ? text.length : nl + 1;
+    if (FM_CLOSE_LINE.test(text.slice(start, end))) return { yaml: text.slice(open[0].length, start).replace(/\r?\n$/, ""), closeLine, end };
+    start = end;
+  }
+  return null;
+}
 
 export function parseFrontmatter(content: string): Frontmatter {
   // 맨 앞 BOM(Windows 편집기에서 온 파일)은 건너뛴다 — 줄 수는 그대로다
-  const m = FM_RE.exec(content.startsWith("\uFEFF") ? content.slice(1) : content);
-  if (!m) return { data: null, lines: 0 };
-  const lines = m[0].replace(/\r?\n$/, "").split("\n").length;
+  const block = frontmatterBlock(content.startsWith("\uFEFF") ? content.slice(1) : content);
+  if (!block) return { data: null, lines: 0 };
+  const lines = block.closeLine + 1;
   try {
-    const data = parseYaml(m[1]);
+    const data = parseYaml(block.yaml);
     if (data === null || data === undefined) return { data: {}, lines };
     if (typeof data !== "object" || Array.isArray(data)) return { data: null, lines, error: "프런트매터가 객체가 아닙니다" };
     return { data: JSON.parse(JSON.stringify(data)) as Record<string, unknown>, lines };
