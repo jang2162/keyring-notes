@@ -9,10 +9,11 @@ on:
     branches: [main]
   pull_request:
 
-# 같은 ref 에 새 커밋이 오면 앞선 실행은 취소한다
+# pull request 는 새 커밋이 오면 앞선 실행을 취소한다. main 은 취소하지 않는다 — 커밋마다 결과가 남아야 한다.
+# main 의 그룹을 커밋별로 가르는 이유: 같은 그룹이면 취소를 꺼도 대기 중인 실행은 최신 하나만 남고 나머지가 취소된다
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
