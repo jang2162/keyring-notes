@@ -63,7 +63,7 @@ import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
 import { invalidateWidgets } from "./Widget";
 import { notePathOfHash, replaceSettingsSection, settingsBack, settingsCloseTarget, SETTINGS_HASH } from "./settingsNav";
-import { isNetworkError, offline, outboxFailure, saveFailedOffline, searchFailedOffline, type OutboxItem } from "./offline";
+import { isNetworkError, offline, outboxFailure, rejectionsToClear, saveFailedOffline, searchFailedOffline, type OutboxItem } from "./offline";
 import { CreatedNotes, dropFromNav, hasNodeChildren, isBlankNote, openAnywhere } from "./emptyNote";
 import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
@@ -119,8 +119,8 @@ import { attachmentDeleteText, extOf, sameKind } from "./attachmentManage";
 import { chooseDialog, confirmDialog, promptDialog } from "./dialog";
 import { mentionTarget, References, UnlinkedMentions } from "./Links";
 import { DEFAULT_PREFS, setPrefs, usePrefs, type Prefs } from "./prefs";
-import { errorText, toast, toastError, Toasts } from "./toast";
-import { flushDocs, logoutLoss } from "./saveFlow";
+import { dismissToast, errorText, toast, toastError, Toasts } from "./toast";
+import { flushDocs, logoutLoss, unsavedInNode } from "./saveFlow";
 import { commandKey, formatCombo, keyCapture, matchCommand, type Command } from "./shortcuts";
 import { IconButton, Menu, Resizer, Segmented, type MenuEntry } from "./ui";
 import { childSortItems, folderMenuItem, invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
@@ -1101,6 +1101,16 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
     });
   const flushRef = useRef(flush);
   flushRef.current = flush;
+  /**
+   * 노드를 지우기 전: 저장해 보고, 그 안에 저장 안 한 초안이 남았으면(자동 저장 끔·충돌·저장 실패) 먼저 저장하라고 알리고 true.
+   * 지우면 초안도 사라지고 「되돌리기」 는 저장된 내용만 되살린다. 삭제 확인을 묻기 전에 부른다 — 확인한 뒤에 거절하지 않게
+   */
+  const unsavedBlocksDelete = async (node: string): Promise<boolean> => {
+    await flush();
+    const left = unsavedInNode(dirtyPaths(docsRef.current), node);
+    if (left) toast(t("doc.saveFirst", { name: stemOf(left) }), { kind: "error" });
+    return !!left;
+  };
 
   /** 창 닫기 물음이 떠 있거나 닫기로 정해 창이 사라지는 중이다(그동안 자동 저장을 멈춘다. 아래 「창 닫기」) */
   const closeHold = useRef<SaveHold>({ asking: false, closing: false });
@@ -1599,11 +1609,12 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
   /**
    * 오프라인 저장분을 서버로 보낸다. 그 사이 서버에서 바뀐 문서는 덮어쓰지 않고 충돌 사본으로 남긴다.
    * 서버가 거절한 항목(400·403·413 등)은 대기열에 남기고 뒤 항목을 계속 보낸다 — 그 노트를 열면 대기 중인 내용이 보인다(api.read).
-   * 같은 항목이 같은 이유로 다시 거절되면 되풀이해 알리지 않는다(30초마다 다시 보낸다). manual: 「지금 보내기」를 눌렀으면 다시 알린다
+   * 같은 항목이 같은 이유로 다시 거절되면 되풀이해 알리지 않는다(30초마다 다시 보낸다). manual: 「지금 보내기」를 눌렀으면 다시 알린다.
+   * 거절됐던 항목이 나중에 보내지면 그 알림을 닫는다
    */
   const flushing = useRef(false);
-  /** 거절을 이미 알린 항목: 경로 → 알린 때의 대기 시각과 이유 */
-  const rejectedTold = useRef(new Map<string, string>());
+  /** 거절을 이미 알린 항목: 경로 → 알린 때의 대기 시각과 이유(told), 띄운 알림(toast) */
+  const rejectedTold = useRef(new Map<string, { told: string; toast: number }>());
   const flushOutbox = useCallback(
     async (opts: { manual?: boolean } = {}) => {
       if (flushing.current) return;
@@ -1612,6 +1623,8 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
       const conflicts: string[] = [];
       const merged: string[] = [];
       const rejected: { path: string; message: string; told: string }[] = [];
+      /** 이번에 대기열에서 빠진 경로(보냄·합침·사본으로 남김) */
+      const done: string[] = [];
       /** 항목 하나를 보낸다. 409 면 합치거나 사본으로. 그 밖의 실패는 던진다 */
       const send = async (item: OutboxItem) => {
         try {
@@ -1643,17 +1656,24 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
         for (const item of pending) {
           try {
             await send(item);
+            done.push(item.path);
           } catch (e) {
-            // 연결이 없거나 로그인이 필요하다: 뒤 항목도 못 간다
+            // 연결이 없거나 로그인이 필요하거나 서버가 내려가 있다: 뒤 항목도 못 간다
             if (outboxFailure(e) === "stop") break;
             // 서버가 이 항목을 거절했다(사본 쓰기가 거절된 것도 여기로): 대기열에 남기고 뒤 항목을 계속 보낸다
             const message = errorText(e);
             rejected.push({ path: item.path, message, told: `${item.queuedAt}\u0000${message}` });
           }
         }
-        // 대기열에서 빠진 항목의 「알렸음」 기록은 지운다
-        const still = new Set(pending.map((i) => i.path));
-        for (const p of rejectedTold.current.keys()) if (!still.has(p) || synced.includes(p) || merged.includes(p)) rejectedTold.current.delete(p);
+        // 대기열에서 빠진 항목의 「알렸음」 기록을 지우고 그 알림을 닫는다
+        for (const p of rejectionsToClear(
+          [...rejectedTold.current.keys()],
+          pending.map((i) => i.path),
+          done,
+        )) {
+          dismissToast(rejectedTold.current.get(p)!.toast);
+          rejectedTold.current.delete(p);
+        }
       } finally {
         flushing.current = false;
         setOutboxCount((await offline.pending().catch(() => [])).length);
@@ -1676,13 +1696,13 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
         );
       }
       for (const r of rejected) {
-        if (!opts.manual && rejectedTold.current.get(r.path) === r.told) continue;
-        rejectedTold.current.set(r.path, r.told);
-        toast(t("offline.rejected", { name: stemOf(r.path), message: r.message }), {
+        if (!opts.manual && rejectedTold.current.get(r.path)?.told === r.told) continue;
+        const id = toast(t("offline.rejected", { name: stemOf(r.path), message: r.message }), {
           kind: "error",
           duration: 0,
           action: { label: t("common.open"), run: () => void openRef.current(r.path, { newTab: true }) },
         });
+        rejectedTold.current.set(r.path, { told: r.told, toast: id });
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2268,6 +2288,7 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
       counts.nodes || counts.attachments
         ? t("node.deleteAskChildren", { name, nodes: counts.nodes, attachments: counts.attachments })
         : t("node.deleteAsk", { name });
+    if (await unsavedBlocksDelete(node)) return;
     if (!(await confirmDialog(`${message}\n${node}`, t("common.delete")))) return;
     await removeNode(node);
   };
@@ -2278,10 +2299,8 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
    */
   const removeNode = async (node: string, hooks: { after?: () => Promise<void>; undone?: () => Promise<void>; reopen?: boolean } = {}) => {
     const name = stemOf(node);
-    await flush();
-    // 지우면 그 안의 저장 안 한 초안도 사라지고 「되돌리기」 는 저장된 내용만 되살린다 — 남았으면(자동 저장 끔·충돌·저장 실패) 지우지 않는다
-    const unsavedInside = dirtyPaths(docsRef.current).find((p) => p === `${node}.md` || p.startsWith(node + "/"));
-    if (unsavedInside) return void toast(t("doc.saveFirst", { name: stemOf(unsavedInside) }), { kind: "error" });
+    // 부르는 쪽(deleteNode·removeWorkspace)이 확인을 묻기 전에 이미 봤다. 묻는 동안 친 글을 위한 마지막 방어선이다
+    if (await unsavedBlocksDelete(node)) return;
     const files = nodeFiles(node, resolver.paths).filter((p) => !isVaultSettingsPath(p));
     try {
       const saved: { path: string; content?: string; data?: Uint8Array; hash: string }[] = [];
@@ -2332,6 +2351,7 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
     const n = wsNode(name);
     const attachments = nodeFiles(name, resolver.paths).filter((p) => !/\.md$/i.test(p) && !isVaultSettingsPath(p)).length;
     const ask = t("ws.deleteAsk", { name, nodes: n ? countNode(n).nodes : 0, attachments });
+    if (await unsavedBlocksDelete(name)) return;
     if (!(await confirmDialog(ask, t("common.delete")))) return;
     const wasCurrent = name === ws;
     const next = workspaceAfterDelete(wsNames, ws, name);
@@ -2732,7 +2752,7 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
         throw new Error(t("ws.exists", { name: n }));
       await flush();
       // 옮긴 뒤 그 안의 열린 노트를 다시 읽는다 — 저장 안 한 초안이 남았으면(자동 저장 끔·충돌·저장 실패) 바꾸지 않는다
-      const unsavedInside = dirtyPaths(docsRef.current).find((p) => p === `${from}.md` || p.startsWith(from + "/"));
+      const unsavedInside = unsavedInNode(dirtyPaths(docsRef.current), from);
       if (unsavedInside) throw new Error(t("doc.saveFirst", { name: stemOf(unsavedInside) }));
       const r = await api.moveNode(from, n);
       for (const [a, b] of r.moved) if (/\.md$/i.test(a)) await afterMove(a, b, null, null);

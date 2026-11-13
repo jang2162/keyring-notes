@@ -75,13 +75,22 @@ export function saveFailedOffline(local: boolean, e: unknown): boolean {
 /**
  * 대기열 항목을 서버로 보내다 실패했을 때 할 일.
  *   conflict  그사이 서버에서 바뀌었다(409): 합치거나 사본으로 남긴다
- *   stop      연결이 없거나 로그인이 필요하다(401): 뒤 항목도 같은 이유로 못 가니 멈추고 다음에 다시 보낸다
- *   skip      그 밖의 서버 거절(400·403·413…, 5xx): 그 항목만 대기열에 남기고 뒤 항목을 계속 보낸다 — 하나가 뒤를 영영 막지 않게
+ *   stop      연결이 없거나 로그인이 필요하다(401), 서버·프록시가 통째로 내려가 있다(502·503·504 — 배포·재시작 중):
+ *             뒤 항목도 같은 이유로 못 가니 멈추고 다음에 다시 보낸다. 그 항목이 거절된 것이 아니므로 알리지 않는다
+ *   skip      그 밖의 서버 거절(400·403·413…, 그 내용 때문에 나는 500): 그 항목만 대기열에 남기고 뒤 항목을 계속 보낸다 — 하나가 뒤를 영영 막지 않게
  */
 export function outboxFailure(e: unknown): "conflict" | "stop" | "skip" {
   const status = e && typeof e === "object" && "status" in e ? (e as { status: unknown }).status : undefined;
   if (status === 409) return "conflict";
-  return status === 401 || isNetworkError(e) ? "stop" : "skip";
+  return status === 401 || status === 502 || status === 503 || status === 504 || isNetworkError(e) ? "stop" : "skip";
+}
+
+/**
+ * 거절을 알린 기록(경로) 가운데 걷을 것: 이번에 보낸(done) 경로와 대기열(pending — 보내기 전에 읽은 목록)에서 이미 빠진 경로.
+ * 걷으면서 그 알림도 닫는다 — 보낸 뒤에도 남으면 「서버가 받지 않았습니다」가 보낸 노트를 두고 계속 말한다
+ */
+export function rejectionsToClear(told: string[], pending: string[], done: string[]): string[] {
+  return told.filter((p) => !pending.includes(p) || done.includes(p));
 }
 
 export const offline = {

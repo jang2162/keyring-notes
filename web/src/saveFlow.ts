@@ -22,6 +22,11 @@ export async function flushDocs(paths: string[], s: FlushSteps): Promise<boolean
   return !list.some(s.dirty);
 }
 
+/** 그 노드(노드 노트와 하위) 안의 저장 안 한 문서 하나. dirty: 저장 안 한 문서 경로. 없으면 undefined */
+export function unsavedInNode(dirty: string[], node: string): string | undefined {
+  return dirty.find((p) => p === `${node}.md` || p.startsWith(node + "/"));
+}
+
 /**
  * 로그아웃하면 이 기기에서 사라질 것: 저장 안 한 노트(뒤 탭 포함)·그림과, 오프라인에서 저장해 아직 서버로 못 보낸 것(queued).
  * 없으면 null — 묻지 않고 로그아웃한다

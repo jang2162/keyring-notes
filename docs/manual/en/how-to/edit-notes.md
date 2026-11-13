@@ -8,7 +8,7 @@ It is for everyone who writes in Keyring Notes.
 
 - Notes save 1.5 seconds after you stop typing, and when you switch tabs or the window loses focus. Turn autosave off or change the delay in Settings → **Editor**.
 - `Ctrl/Cmd+S` saves right away, as a separate commit.
-- With autosave off, an action that would replace or remove a note's unsaved text does not run. A notice asks you to save that note first. This applies to moving a note up or down, **Sort sub-notes**, **Use as folder**, renaming a workspace, and deleting a note. The same applies while a save has failed or is in conflict.
+- With autosave off, an action that would replace or remove a note's unsaved text does not run. A notice asks you to save that note first. This applies to moving a note up or down, **Sort sub-notes**, **Use as folder**, renaming or deleting a workspace, and deleting a note. The same applies while a save has failed or is in conflict.
 - On the server, consecutive autosaves of the same note by the same person are grouped into one commit for 10 minutes. Another commit or a backup in between starts a new commit. Agent writes are never grouped.
 
 ## When someone else changed the note

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./persist", () => ({ requestPersist: vi.fn(async () => null) }));
 
 const { ApiError } = await import("./api");
-const { offline, outboxFailure, saveFailedOffline, searchFailedOffline } = await import("./offline");
+const { offline, outboxFailure, rejectionsToClear, saveFailedOffline, searchFailedOffline } = await import("./offline");
 const { requestPersist } = await import("./persist");
 
 describe("검색이 연결이 없어 실패했는지", () => {
@@ -50,8 +50,22 @@ describe("대기열 항목을 보내다 실패했을 때", () => {
     expect(outboxFailure(new Error("aborted"))).toBe("stop");
   });
 
+  it("서버·프록시가 통째로 내려가 있으면(502·503·504) 멈춘다 — 그 항목이 거절된 것이 아니다", () => {
+    for (const status of [502, 503, 504]) expect(outboxFailure(new ApiError(status, "error", "x"))).toBe("stop");
+  });
+
   it("그 밖의 서버 거절은 그 항목만 건너뛴다 — 뒤 항목을 막지 않는다", () => {
-    for (const status of [400, 403, 404, 413, 422, 500, 503]) expect(outboxFailure(new ApiError(status, "error", "x"))).toBe("skip");
+    for (const status of [400, 403, 404, 413, 422, 500, 501]) expect(outboxFailure(new ApiError(status, "error", "x"))).toBe("skip");
+  });
+});
+
+describe("거절을 알린 기록 가운데 걷을 것", () => {
+  it("이번에 보낸 경로와 대기열에서 이미 빠진 경로", () => {
+    expect(rejectionsToClear(["a.md", "b.md", "c.md"], ["a.md", "b.md"], ["a.md"])).toEqual(["a.md", "c.md"]);
+  });
+
+  it("아직 대기 중이고 이번에 못 보낸 경로는 남긴다(멈춰서 손대지 않은 항목 포함)", () => {
+    expect(rejectionsToClear(["a.md", "b.md"], ["a.md", "b.md"], [])).toEqual([]);
   });
 });
 

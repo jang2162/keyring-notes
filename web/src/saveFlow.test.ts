@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { flushDocs, logoutLoss } from "./saveFlow";
+import { flushDocs, logoutLoss, unsavedInNode } from "./saveFlow";
 
 /** 저장하면 깨끗해지는 가짜 저장소. stuck 에 든 문서는 저장해도 그대로 남는다(충돌·저장 실패) */
 const store = (dirty: string[], stuck: string[] = []) => {
@@ -39,6 +39,28 @@ describe("다른 일 전에 저장하기(flushDocs)", () => {
     const s = store(["a.md", "b.md"], ["b.md"]);
     expect(await flushDocs(["a.md", "b.md"], { ...s, autosave: true })).toBe(false);
     expect(s.left.has("a.md")).toBe(false);
+  });
+});
+
+describe("노드 안의 저장 안 한 문서(unsavedInNode)", () => {
+  it("노드 노트 자신", () => {
+    expect(unsavedInNode(["Work/a.md"], "Work/a")).toBe("Work/a.md");
+  });
+
+  it("하위 노트", () => {
+    expect(unsavedInNode(["Other/x.md", "Work/a/b/c.md"], "Work/a")).toBe("Work/a/b/c.md");
+  });
+
+  it("워크스페이스(맨 위 노드)도 같다", () => {
+    expect(unsavedInNode(["Work/a.md"], "Work")).toBe("Work/a.md");
+  });
+
+  it("이름이 앞부분만 같은 형제나 다른 노드의 문서는 아니다", () => {
+    expect(unsavedInNode(["Work/ab.md", "Work/ab/c.md", "Other/a.md"], "Work/a")).toBeUndefined();
+  });
+
+  it("저장 안 한 문서가 없으면 undefined", () => {
+    expect(unsavedInNode([], "Work/a")).toBeUndefined();
   });
 });
 
