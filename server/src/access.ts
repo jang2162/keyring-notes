@@ -27,6 +27,38 @@ export function normalizeRulePath(p: string): string {
 }
 
 /**
+ * 대소문자·정규화를 접은 꼴. 대문자로 올렸다 내린다 — ſ(U+017F)·K(U+212A)는 소문자로만 내려서는 s·k 가 되지 않는데 APFS 에서는
+ * 같은 이름이다
+ */
+export const foldPath = (rel: string) => rel.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
+
+/**
+ * 경로가 접두(규칙 키·검토 대상)나 그 조상 폴더를 대소문자만 다르게 적었는지. 앞에서부터 접은 꼴이 같은 세그먼트만 보고, 그중
+ * 하나라도 글자가 다르면 참이다: 접두 `Work/Secret` 에 `Work/secret/x.md`·`work/x.md` 는 참, `Work/x.md`·`Secretary/x.md` 는 거짓.
+ * 노드 노트(`secret.md`)도 노드 이름으로 견준다.
+ *
+ * 대소문자를 가리지 않는 볼륨에는 두 철자가 함께 있을 수 없어, 먼저 생긴 철자가 그 이름을 차지한다. 규칙의 폴더가 아직 없을 때
+ * 다른 철자로 먼저 만들면 규칙의 철자로는 영영 만들 수 없고(Vault.spelledAsOnDisk), 그 뒤 그 폴더에 들어가는 것은 규칙에 걸리지
+ * 않는다. 조상도 같다 — `work/` 가 먼저 생기면 `Work/Secret/` 은 만들 수 없다
+ */
+export function respells(relPath: string, prefix: string): boolean {
+  if (prefix === "") return false;
+  const want = prefix.normalize("NFC").split("/");
+  const differs = (segs: string[]) => {
+    let found = false;
+    for (let i = 0; i < Math.min(segs.length, want.length); i++) {
+      if (segs[i] === want[i]) continue;
+      if (foldPath(segs[i]) !== foldPath(want[i])) break;
+      found = true;
+    }
+    return found;
+  };
+  const segs = relPath.normalize("NFC").split("/");
+  const last = segs[segs.length - 1];
+  return differs(segs) || (/\.md$/i.test(last) && differs([...segs.slice(0, -1), last.replace(/\.md$/i, "")]));
+}
+
+/**
  * 토큰 하나의 "노드 → 권한" 표. 가장 구체적인(가장 긴) 경로 규칙이 이긴다. 규칙이 없으면 숨김.
  * 노드 모델(형제 방식 `X.md` + `X/`)이라 규칙 `X`는 하위 `X/…`와 함께 노드 노트 `X.md`도 덮는다
  * (숨김 노드의 노트가 상위 규칙으로 보이지 않게).
@@ -50,6 +82,26 @@ export class AccessPolicy {
       if (prefix === "" || p === prefix || p.startsWith(prefix + "/") || p === prefix + ".md") return level;
     }
     return "hidden";
+  }
+
+  /** 이 경로가 대소문자만 다르게 적은(respells) 규칙들 가운데 가장 엄한 단계. 그런 규칙이 없으면 null */
+  respelledLevel(relPath: string): Level | null {
+    let strictest: Level | null = null;
+    for (const [prefix, level] of this.rules) {
+      if ((strictest === null || !atLeast(level, strictest)) && respells(relPath, prefix)) strictest = level;
+    }
+    return strictest;
+  }
+
+  /**
+   * 아직 없는 경로를 만들 때의 단계: 글자로 맞는 규칙(level)과, 대소문자만 다르게 적은 규칙들 가운데 가장 엄한 쪽.
+   * 숨김 규칙 `Secret` 이 있으면 `secret/a.md` 를 만드는 것은 숨김으로 판정한다(이름 선점 — respells). 볼륨이 대소문자를 가리는지는
+   * 재지 않는다: 가리는 볼륨에서는 다른 폴더인데도 함께 막힌다. 읽기와 이미 있는 문서의 수정은 level 그대로다
+   */
+  createLevel(relPath: string): Level {
+    const level = this.level(relPath);
+    const respelled = this.respelledLevel(relPath);
+    return respelled !== null && !atLeast(respelled, level) ? respelled : level;
   }
 
   /** 이 폴더 아래 어딘가에 보이는 경로가 있을 수 있는지(폴더 자체는 숨김이어도 하위 규칙이 열어 줄 때). */

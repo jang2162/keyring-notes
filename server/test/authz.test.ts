@@ -8,7 +8,7 @@ import { ConfigStore } from "../src/config.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { ReviewQueue, underReview } from "../src/review.js";
 import { ScopedVault } from "../src/scoped.js";
-import { ForbiddenError, NotFoundError, type Vault } from "../src/vault.js";
+import { ConflictError, ForbiddenError, NotFoundError, type Vault } from "../src/vault.js";
 import type { Wiki } from "../src/wiki.js";
 import { agentPrincipal, openVault, ownerPrincipal, tempDir } from "./helpers.js";
 
@@ -356,5 +356,169 @@ describe("검토 대상 경로는 노드 노트와 정규화가 다른 철자를
     const other = await agent.write("Work/Wikipedia.md", "이웃\n", null);
     expect(other.pending).toBeUndefined();
     expect(other.rev).toMatch(/^[0-9a-f]{40}$/);
+  });
+});
+
+describe("에이전트는 규칙·검토 대상과 대소문자만 다른 이름을 만들지 못한다", () => {
+  const tracked = () => git("ls-files").split("\n").filter(Boolean);
+  const top = async () => (await readdir(vault.root)).filter((n) => !n.startsWith("."));
+
+  it("숨김 규칙의 폴더가 아직 없을 때 다른 대소문자로 먼저 만들지 못한다(이름 선점)", async () => {
+    // 1. 볼트에 Secret/ 이 아직 없다
+    const agent = agentOf({ "/": "write", Secret: "hidden" });
+    // 2. 에이전트가 다른 대소문자로 먼저 만든다
+    await expect(agent.write("secret/a.md", "선점\n", null)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await top()).toEqual([]);
+    // 3. 소유자는 자기 숨김 폴더를 만들 수 있다
+    await owner.write("Secret/비밀.md", "OWNER-SECRET\n", null);
+    // 4. 소유자의 트리에는 규칙과 같은 철자의 폴더만 있다
+    expect((await owner.tree()).map((n) => n.name)).toEqual(["Secret"]);
+    // 5. 에이전트는 어느 철자로도 읽지 못한다
+    await expect(agent.read("Secret/비밀.md")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(agent.read("secret/비밀.md")).rejects.toBeInstanceOf(NotFoundError);
+    expect(JSON.stringify(await agent.tree())).not.toContain("비밀");
+  });
+
+  it("만드는 길마다 막힌다: 덧붙이기·첨부·이동·노드 이동·노드 노트·조상 폴더", async () => {
+    await owner.write("Open/a.md", "열린 본문\n", null);
+    await owner.write("Open/n.md", "노드 노트\n", null);
+    await owner.write("Open/n/child.md", "자식\n", null);
+    const agent = agentOf({ "/": "delete", Secret: "hidden", "Work/Private": "hidden" });
+    const a = await agent.read("Open/a.md");
+    await expect(agent.append("secret/a.md", "x\n")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(agent.putAttachment("SECRET/p.bin", new Uint8Array([1]))).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(agent.move("Open/a.md", "secret/a.md", a.hash)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(agent.moveNode("Open/n", "secret/n")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(agent.write("SECRET.md", "노드 노트\n", null)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(agent.batch([{ op: "write", path: "sEcReT/deep/x.md", content: "x\n", baseHash: null }])).rejects.toBeInstanceOf(ForbiddenError);
+    // 규칙 Work/Private 의 조상 Work 를 다른 대소문자로 만드는 것도 선점이다
+    await expect(agent.write("work/x.md", "x\n", null)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(agent.write("work.md", "x\n", null)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(agent.write("Work/private/x.md", "x\n", null)).rejects.toBeInstanceOf(ForbiddenError);
+    expect((await top()).sort()).toEqual(["Open"]);
+    expect((await owner.read("Open/a.md")).hash).toBe(a.hash);
+  });
+
+  it("규칙과 글자까지 같은 철자, 규칙과 무관한 이름, 접두가 겹치기만 하는 이름은 그대로 만든다", async () => {
+    const agent = agentOf({ "/": "write", Secret: "hidden", "Work/Private": "hidden", Open: "write" });
+    for (const p of ["Open/b.md", "Other/x.md", "Secretary/x.md", "Secretary.md", "Work/x.md", "Work/Privateer/x.md", "Work/Privateer.md", "Work.md"]) {
+      const r = await agent.write(p, "본문\n", null);
+      expect(r.rev, p).toMatch(/^[0-9a-f]{40}$/);
+    }
+    expect(tracked()).toContain("Secretary/x.md");
+    // 규칙 하나뿐인 에이전트도 그 철자 그대로는 만든다
+    const team = agentOf({ Team: "write" });
+    expect((await team.write("Team/a.md", "본문\n", null)).rev).toMatch(/^[0-9a-f]{40}$/);
+    await expect(team.write("team/a.md", "본문\n", null)).rejects.toBeInstanceOf(ForbiddenError);
+    // 소유자는 막지 않는다(규칙이 없다)
+    expect((await owner.write("Fresh/y.md", "본문\n", null)).rev).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("이미 다른 철자의 폴더가 있으면: 그 안에 새로 만들지는 못하고, 읽기 판정은 그대로다", async () => {
+    await owner.write("secret/old.md", "옛 본문\n", null);
+    const agent = agentOf({ "/": "write", Secret: "hidden" });
+    await expect(agent.write("secret/new.md", "x\n", null)).rejects.toBeInstanceOf(ForbiddenError);
+    // 규칙의 철자(Secret)가 디스크의 이름(secret)과 달라 읽기·고치기에는 걸리지 않는다 — 규칙을 디스크의 철자로 적어야 한다
+    const old = await agent.read("secret/old.md");
+    expect(old.content).toContain("옛 본문");
+    expect((await agent.write("secret/old.md", "고친 본문\n", old.hash)).rev).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("검토 대상 폴더가 아직 없을 때 다른 대소문자로 쓰면 제안으로 쌓인다", async () => {
+    const config = new ConfigStore(path.join(root, "config.json"));
+    config.update((c) => {
+      c.reviewPaths = ["Work/Wiki"];
+    });
+    const review = new ReviewQueue(vault, config);
+    await owner.write("Else/seed.md", "씨앗\n", null);
+    const before = git("rev-parse", "HEAD");
+    const agent = agentOf({ "/": "write" }, review);
+    for (const p of ["Work/wiki/p.md", "Work/WIKI.md", "work/Wiki/p.md", "work/other.md"]) {
+      const r = await agent.write(p, "검토 없이?\n", null);
+      expect(r.pending?.proposal, p).toMatch(/^[0-9a-f]{16}$/);
+      expect(r.rev, p).toBeNull();
+    }
+    expect(git("rev-parse", "HEAD")).toBe(before);
+    expect(await top()).toEqual(["Else"]);
+    // 소유자는 검토 대상 폴더를 그 철자로 만들 수 있다
+    await owner.write("Work/Wiki/q.md", "소유자\n", null);
+    // 검토 대상과 무관한 이름은 바로 커밋된다
+    for (const p of ["Work/Wikipedia.md", "Work/Other/x.md", "Else/x.md"]) expect((await agent.write(p, "바로\n", null)).rev, p).toMatch(/^[0-9a-f]{40}$/);
+    expect(underReview("Work/wiki/p.md", ["Work/Wiki"])).toBe(true);
+    expect(underReview("work/other.md", ["Work/Wiki"])).toBe(true);
+    expect(underReview("Work/other.md", ["Work/Wiki"])).toBe(false);
+  });
+
+  it("제안 뒤에 생긴 규칙과 대소문자만 다른 이름은 승인으로도 만들어지지 않는다", async () => {
+    const config = new ConfigStore(path.join(root, "config.json"));
+    config.issueToken("probe");
+    config.setRules("probe", { "/": "write" });
+    config.update((c) => {
+      c.reviewPaths = ["/"];
+    });
+    const review = new ReviewQueue(vault, config);
+    const agent = agentOf({ "/": "write" }, review);
+    const alias = await agent.write("secret/a.md", "제안\n", null);
+    const plain = await agent.write("Open/a.md", "제안\n", null);
+    expect(alias.pending?.proposal).toBeTruthy();
+    config.setRules("probe", { "/": "write", Secret: "hidden" });
+    await expect(review.approve(alias.pending!.proposal, "me")).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await top()).toEqual([]);
+    // 규칙과 무관한 제안은 그대로 승인된다
+    expect((await review.approve(plain.pending!.proposal, "me")).rev).toMatch(/^[0-9a-f]{40}$/);
+  });
+});
+
+describe("한 번의 일괄 쓰기는 대소문자만 다른 두 철자를 함께 남기지 않는다", () => {
+  const tracked = () => git("ls-files").split("\n").filter(Boolean);
+
+  it("새 폴더와 그 다른 대소문자 철자를 함께 쓰면 거부하고 아무것도 남기지 않는다", async () => {
+    const write = (p: string) => ({ op: "write" as const, path: p, content: "본문\n", baseHash: null });
+    for (const pair of [
+      ["New/x.md", "new/y.md"],
+      ["A/Note.md", "A/note.md"],
+      ["Deep/One/x.md", "Deep/one/y.md"],
+    ]) {
+      await expect(owner.batch(pair.map(write)), pair.join(" + ")).rejects.toBeInstanceOf(ConflictError);
+    }
+    expect((await readdir(vault.root)).filter((n) => !n.startsWith("."))).toEqual([]);
+    expect(tracked()).toEqual([]);
+    // 같은 철자끼리는 그대로 된다
+    await owner.batch([write("New/x.md"), write("New/y.md"), write("New/Sub/z.md")]);
+    expect(tracked().sort()).toEqual(["New/Sub/z.md", "New/x.md", "New/y.md"]);
+  });
+
+  it("동시에 다른 철자로 만들어도, 성공한 쓰기는 그 경로로 읽히고 이력에 남는다", async () => {
+    const agent = agentOf({ "/": "write" });
+    const writes: [ScopedVault, string][] = [
+      [owner, "Race/s.md"],
+      [agent, "race/new.md"],
+    ];
+    const settled = await Promise.allSettled(writes.map(([who, p]) => who.write(p, "본문\n", null)));
+    const done = writes.filter((_, i) => settled[i].status === "fulfilled").map(([, p]) => p);
+    expect(done.length).toBeGreaterThan(0);
+    for (const p of done) {
+      expect((await owner.read(p)).content, p).toContain("본문");
+      expect(tracked(), p).toContain(p);
+    }
+    // 실패한 쓰기는 디스크에 아무것도 남기지 않는다(다른 철자의 폴더 안에 써지지 않는다)
+    expect((await vault.markdownPaths()).sort()).toEqual([...done].sort());
+  });
+});
+
+describe("위키 생성 문서 판정은 정규화를 맞춘다", () => {
+  it("정규화가 다른 철자로 생성 문서를 쓰면 생성 문서 오류로 거부한다", async () => {
+    await owner.createTopic(nfc("업무/경제"));
+    const agent = agentOf({ "/": "delete" });
+    const index = await owner.read(nfc("업무/경제/wiki/index.md"));
+    for (const who of [owner, agent]) {
+      for (const p of [nfc("업무/경제/wiki/index.md"), nfd("업무/경제/wiki/index.md"), nfd("업무/경제/wiki/log.md")]) {
+        await expect(who.write(p, "거짓 목차\n", index.hash), p).rejects.toMatchObject({ code: "generated_readonly" });
+      }
+    }
+    expect((await owner.read(nfc("업무/경제/wiki/index.md"))).content).toBe(index.content);
+    expect(wiki.isGenerated(nfd("업무/경제/wiki/index.md"))).toBe(true);
+    expect(wiki.isGenerated(nfd("업무/경제/wiki/page.md"))).toBe(false);
+    expect(wiki.isGenerated(nfd("업무/다른/wiki/index.md"))).toBe(false);
   });
 });

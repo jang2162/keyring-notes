@@ -1,4 +1,4 @@
-import { atLeast, levelOf, type Level, type Principal } from "./access.js";
+import { atLeast, foldPath, levelOf, type Level, type Principal } from "./access.js";
 import { agentText, type AgentLang } from "./agentText.js";
 import type { Author, CommitInfo } from "./git.js";
 import {
@@ -88,8 +88,6 @@ const ACTION_LEVEL: Record<Action, Level> = {
 
 export type { SearchHit };
 
-/** 대소문자·정규화를 접은 경로. 대문자로 올렸다 내린다 — ſ(U+017F)·K(U+212A)는 소문자로만 내려서는 s·k 가 되지 않는데 APFS 에서는 같은 이름이다 */
-const foldPath = (rel: string) => rel.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
 const SETTINGS_FOLDED = foldPath(VAULT_SETTINGS_PATH);
 
 /**
@@ -143,6 +141,14 @@ export class ScopedVault {
     if (this.principal.kind !== "agent" || !atLeast(level, "append")) return level;
     if (isSchemaPath(relPath) || isVaultSettingsPath(relPath) || isHumanOnlyAlias(relPath)) return "read";
     return level;
+  }
+
+  /** 아직 없는 경로를 만들 때의 단계. 에이전트는 규칙과 대소문자만 다른 이름을 가장 엄한 쪽으로 판정한다(AccessPolicy.createLevel) */
+  private createLevel(relPath: string): Level {
+    const level = this.level(relPath);
+    if (this.principal.kind !== "agent") return level;
+    const strict = this.principal.policy.createLevel(relPath);
+    return atLeast(strict, level) ? level : strict;
   }
 
   /**
@@ -232,16 +238,7 @@ export class ScopedVault {
    * 그 파일이 그대로 나간다(Vault 의 철자 대조는 정규화만 다른 철자를 같은 파일로 연다)
    */
   private generatedDoc(rel: string): string | null {
-    if (!this.wiki) return null;
-    if (this.wiki.isGenerated(rel)) return rel;
-    const composed = rel.normalize("NFC");
-    for (const topic of this.wiki.topics) {
-      for (const name of ["index.md", "log.md"]) {
-        const known = `${topic}/wiki/${name}`;
-        if (known.normalize("NFC") === composed) return known;
-      }
-    }
-    return null;
+    return this.wiki?.generatedPath(rel) ?? null;
   }
 
   async read(input: string): Promise<Doc & { generated?: true }> {
@@ -641,6 +638,9 @@ export class ScopedVault {
     }
     const guard = (action: Action, rel: string) => {
       const need = ACTION_LEVEL[action];
+      // 만들기(쓰기·덧붙이기·첨부·이동의 목적지가 아직 없는 경로일 때)는 규칙과 대소문자만 다른 이름까지 본다
+      const created = action === "create" ? this.createLevel(rel) : null;
+      if (created !== null && !atLeast(created, need)) throw new ForbiddenError("forbidden_level", { level: created, path: rel });
       if (!atLeast(this.level(rel), need)) {
         const appendOnly = action === "modify" && this.level(rel) === "append";
         throw new ForbiddenError(appendOnly ? "forbidden_append_only" : "forbidden_need", { level: need, path: rel });

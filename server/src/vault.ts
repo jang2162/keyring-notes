@@ -19,6 +19,7 @@ import {
   type VaultSettings,
   type VaultText,
 } from "@keyring-notes/core";
+import { foldPath } from "./access.js";
 import { GitHistory, moveTrailer, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
 import { isHiddenSegment, isMarkdown, normalizeVaultPath, PathError, resolveInVault } from "./paths.js";
 
@@ -451,7 +452,6 @@ export class Vault {
     if (ops.length > 500) throw new PathError("ops_too_many", { max: 500 });
     const guard = opts.guard ?? (() => undefined);
 
-    // 경로 검증은 잠금 밖에서 먼저 한다.
     const resolved = new Map<string, string>();
     const resolvedAbs = new Map<string, string>();
     const listings: Listings = new Map();
@@ -464,23 +464,25 @@ export class Vault {
       resolved.set(p, rel);
       resolvedAbs.set(rel, abs);
     };
-    for (const op of ops) {
-      if (op.op === "move") {
-        await want(op.from, "any");
-        await want(op.to, "any");
-        if (isMarkdown(op.from) !== isMarkdown(op.to)) throw new PathError("move_kind_path", { from: op.from, to: op.to });
-      } else if (op.op === "put") {
-        if (!(op.data instanceof Uint8Array)) throw new PathError("field_required", { field: "data" });
-        await want(op.path, "bin");
-      } else if (op.op === "delete") {
-        await want(op.path, "any");
-      } else {
-        if (typeof op.content !== "string") throw new PathError("field_required", { field: "content" });
-        await want(op.path);
-      }
-    }
-
     return this.exclusive(async () => {
+      // 경로 검증도 잠금 안에서 한다. 철자 대조(spelledAsOnDisk)는 디스크의 지금 이름을 보므로, 잠금 밖에서 하면 검증과 적용
+      // 사이에 앞선 쓰기가 다른 철자의 폴더를 만들 수 있다 — `Secret/` 이 막 생겼는데 `secret/new.md` 가 그 안에 써진다
+      for (const op of ops) {
+        if (op.op === "move") {
+          await want(op.from, "any");
+          await want(op.to, "any");
+          if (isMarkdown(op.from) !== isMarkdown(op.to)) throw new PathError("move_kind_path", { from: op.from, to: op.to });
+        } else if (op.op === "put") {
+          if (!(op.data instanceof Uint8Array)) throw new PathError("field_required", { field: "data" });
+          await want(op.path, "bin");
+        } else if (op.op === "delete") {
+          await want(op.path, "any");
+        } else {
+          if (typeof op.content !== "string") throw new PathError("field_required", { field: "content" });
+          await want(op.path);
+        }
+      }
+
       const slots = new Map<string, Slot>();
       const slot = async (rel: string): Promise<Slot> => {
         let s = slots.get(rel);
@@ -566,6 +568,22 @@ export class Vault {
           if (s.hash !== op.baseHash) throw new ConflictError(s.hash, "conflict_path", { path: rel });
           verbs.push({ kind: "delete", text: T.delete(rel) });
           set(s, null);
+        }
+      }
+
+      // 1-1) 이 일괄 쓰기가 남길 파일들 사이에 대소문자만 다른 철자(폴더 포함)가 함께 있으면 거부한다. 철자 대조는 디스크에 이미
+      // 있는 이름만 보므로 한 batch 가 `New/x.md` 와 `new/y.md` 를 함께 만드는 것은 지나간다 — 대소문자를 가리지 않는 볼륨에서는
+      // 둘이 한 폴더에 써지고 `new/y.md` 는 그 철자로 이력에 들어가지 못한다. 지워지는 쪽은 보지 않는다(대소문자만 바꾸는 이동)
+      const spellings = new Map<string, string>();
+      for (const [rel, s] of slots) {
+        if (s.hash === null) continue;
+        const segs = rel.normalize("NFC").split("/");
+        for (let depth = 1; depth <= segs.length; depth++) {
+          const spelling = segs.slice(0, depth).join("/");
+          const folded = foldPath(spelling);
+          const seen = spellings.get(folded);
+          if (seen === undefined) spellings.set(folded, spelling);
+          else if (seen !== spelling) throw new ConflictError(null, "file_exists", { path: rel });
         }
       }
 
