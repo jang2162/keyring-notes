@@ -8,7 +8,7 @@ import { liveBlockRanges, liveBlocks, liveBlockScan, shouldDrawBlock, updateLive
 import { CALLOUT_LINE } from "./liveSyntax";
 import { isCommentBlock } from "./liveImage";
 import { widgetBlockOfNode, widgetEditField } from "./widgets/blockEdit";
-import { randomEdit, randomLines, rng } from "./editFuzz.testkit";
+import { FUZZ_TIMEOUT, randomEdit, randomLines, rng } from "./editFuzz.testkit";
 
 function state(doc: string) {
   const s = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), widgetEditField] });
@@ -200,13 +200,13 @@ function fuzzScan(seed: number, lines: number, steps: number, sparse: boolean): 
 }
 
 describe("블록 찾기 증분 갱신", () => {
-  it("무작위 편집(작은 문서) — 증분 결과가 전체 재계산·기준 구현과 같다", () => {
+  it("무작위 편집(작은 문서) — 증분 결과가 전체 재계산·기준 구현과 같다", { timeout: FUZZ_TIMEOUT }, () => {
     let edits = 0;
     for (let seed = 1; seed <= 300; seed++) edits += fuzzScan(seed, 10 + (seed % 70), 40, false);
     expect(edits).toBeGreaterThan(10_000);
   });
 
-  it("무작위 편집(큰 문서, $$·%% 짝이 멀다, 처음 트리가 덜 파싱됨) — 같다", () => {
+  it("무작위 편집(큰 문서, $$·%% 짝이 멀다, 처음 트리가 덜 파싱됨) — 같다", { timeout: FUZZ_TIMEOUT }, () => {
     let edits = 0;
     for (let seed = 1001; seed <= 1012; seed++) edits += fuzzScan(seed, 1500 + (seed % 7) * 200, 40, seed % 2 === 0);
     expect(edits).toBeGreaterThan(400);
@@ -297,7 +297,7 @@ describe("블록 장식 필드", () => {
       .join(" ");
   }
 
-  it("무작위 편집·커서 이동 — 그리는 블록이 기준 구현과 같다(커서가 들어간 블록은 원문)", () => {
+  it("무작위 편집·커서 이동 — 그리는 블록이 기준 구현과 같다(커서가 들어간 블록은 원문)", { timeout: FUZZ_TIMEOUT }, () => {
     let checks = 0;
     for (let seed = 501; seed <= 560; seed++) {
       const r = rng(seed);

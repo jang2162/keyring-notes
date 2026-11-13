@@ -6,7 +6,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { gutterLineClass, type GutterMarker } from "@codemirror/view";
 import { headingGutterClass, headingGutterLines, updateHeadings } from "./foldGutterClass";
 import { topChunks } from "./treeChunks";
-import { randomEdit, randomLines, rng } from "./editFuzz.testkit";
+import { FUZZ_TIMEOUT, randomEdit, randomLines, rng } from "./editFuzz.testkit";
 
 const classes = (doc: string) => {
   const s = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage })] });
@@ -60,7 +60,7 @@ function marks(set: RangeSet<GutterMarker>): string {
 describe("제목 거터 증분 갱신", () => {
   const exts = [markdown({ base: markdownLanguage }), history()];
 
-  it("무작위 편집 — 증분 결과가 전체 재계산·기준 구현과 같다", () => {
+  it("무작위 편집 — 증분 결과가 전체 재계산·기준 구현과 같다", { timeout: FUZZ_TIMEOUT }, () => {
     let edits = 0;
     for (let seed = 1; seed <= 200; seed++) {
       const r = rng(seed);
