@@ -161,7 +161,7 @@ describe("previewStep", () => {
     ]);
   });
 
-  it("나란히 보기: 미리보기에서 시작한 쓰기가 성공하면 그 쓰기가 낸 본문을 기다리지 않고 그린다, 그 뒤 치는 글은 다시 기다린다", () => {
+  it("나란히 보기: 미리보기에서 시작한 쓰기가 줄 수를 바꾸면 그 쓰기가 낸 본문을 기다리지 않고 그린다, 그 뒤 치는 글은 다시 기다린다", () => {
     // 위젯이 한 줄 JSON 을 여러 줄로 펴면 줄 수가 바뀐다 — 기다리면 그사이 미리보기 누름이 맞추느라 무시된다
     const drawn = '```keyring-widget\n{"label": "A"}\n```\n- [ ] one';
     const written = '```keyring-widget\n{\n  "label": "B"\n}\n```\n- [ ] one';
@@ -179,6 +179,24 @@ describe("previewStep", () => {
     ).toEqual([
       [written, false],
       [written, true],
+    ]);
+  });
+
+  it("나란히 보기: 줄 수가 같은 쓰기(체크 토글)는 기다린다 — 표시는 내리고, 그 뒤 줄이 바뀌어도 바로 그리지 않는다", () => {
+    // 줄 수가 같으면 다음 누름이 그대로 산다. 바로 그리면 큰 문서에서 전체 렌더가 누름에 붙어 체크 표시가 늦다
+    const drawn = "# T\n- [ ] one\n- [ ] two";
+    const toggled = "# T\n- [x] one\n- [ ] two";
+    expect(
+      run(
+        [
+          ["settle", "a", toggled],
+          ["settle", "a", toggled + "\nnew line"],
+        ],
+        previewWrote({ plan: "settle", key: "a", text: drawn }),
+      ),
+    ).toEqual([
+      [drawn, true],
+      [drawn, true],
     ]);
   });
 
