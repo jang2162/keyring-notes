@@ -43,6 +43,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - Typing in a large note no longer lags, especially in notes with many code blocks or widgets. With only the editor shown, the hidden preview is no longer redrawn on every key, and Live Preview does less work per key.
 - In **Side by side**, typing in a large note no longer lags in the macOS desktop app and in Safari.
 - In browsers without popover support, a widget in full screen, such as an Excalidraw sketch, is no longer covered by the preview, the bottom bar or status bar items.
+- In the macOS desktop app and in Safari, `Esc` right after clicking **Full screen** above a widget, such as an Excalidraw sketch, now closes full screen. Before, it did nothing until you clicked inside the drawing. `Esc` also closes full screen after you close the command palette on top of it.
 
 ### Security
 

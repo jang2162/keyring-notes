@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { frameEventAction, frameFocusInside, frameGuard, frameHeight, frameLoadFailedKey, FRAME_MIN_HEIGHT } from "./layout";
+import {
+  frameEventAction,
+  frameFocusInside,
+  frameGuard,
+  frameHeight,
+  frameLoadFailedKey,
+  FRAME_MIN_HEIGHT,
+  fullscreenDocEscape,
+  fullscreenFocusButton,
+} from "./layout";
 
 describe("frameLoadFailedKey — 코드를 읽지 못한 자리", () => {
   it("잠금이 바뀌어 market_stale 이면 kw.pending(곧 새 항목으로 다시 그린다), 그 밖은 기본(kw.loadFailed)", () => {
@@ -48,6 +57,24 @@ describe("iframe 호스트 판정", () => {
     expect(frameFocusInside({ activeInRoot: true, relatedInRoot: false })).toBe(true);
     expect(frameFocusInside({ activeInRoot: false, relatedInRoot: true })).toBe(true);
     expect(frameFocusInside({ activeInRoot: true, relatedInRoot: true })).toBe(true);
+  });
+
+  it("fullscreenFocusButton: 포커스가 감싸개 밖(WebKit 의 마우스 누름 — body·위젯 뿌리)이면 단추로 옮기고, 안(단추·iframe)이면 그대로", () => {
+    expect(fullscreenFocusButton(false)).toBe(true);
+    expect(fullscreenFocusButton(true)).toBe(false);
+  });
+
+  it("fullscreenDocEscape: 감싸개를 품은 곳에 떨어진 Esc 만 닫기로 받는다", () => {
+    const esc = { key: "Escape", isComposing: false, defaultPrevented: false, targetHoldsFrame: true, modalOpen: false };
+    expect(fullscreenDocEscape(esc)).toBe(true);
+    // 팔레트 입력칸·메뉴 등 감싸개와 무관한 요소의 Esc
+    expect(fullscreenDocEscape({ ...esc, targetHoldsFrame: false })).toBe(false);
+    // 모달이 열려 있으면 모달 차례(모달은 window 에서 받아 document 보다 늦다)
+    expect(fullscreenDocEscape({ ...esc, modalOpen: true })).toBe(false);
+    // 편집기 등이 이미 처리한 Esc, 한글 조합 중, 다른 키
+    expect(fullscreenDocEscape({ ...esc, defaultPrevented: true })).toBe(false);
+    expect(fullscreenDocEscape({ ...esc, isComposing: true })).toBe(false);
+    expect(fullscreenDocEscape({ ...esc, key: "Enter" })).toBe(false);
   });
 });
 
