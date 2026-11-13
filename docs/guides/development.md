@@ -39,6 +39,14 @@ pnpm dev:web         # 웹: http://localhost:5173 (API 는 프록시)
 
 `pnpm app:dev` 는 배포 앱과 같은 identifier 를 쓴다. 개발 실행(번들이 아닌 것)의 웹뷰 저장소(localStorage·IndexedDB — 동기화 서버 주소와 기기 토큰 `keyring:sync` 포함)는 `HOME` 을 바꿔도 실제 `~/Library/WebKit/keyring-notes` 에 간다 — macOS Foundation 은 `HOME` 을 따르지 않고, identifier 를 바꿔도 번들이 아니면 프로세스 이름으로 정해진다. 그 저장소에 동기화가 설정돼 있으면 시험으로 띄운 앱이 사람의 서버에 동기화하고 잠금 쓰기(마켓 설치)를 퍼뜨린다. 시험으로 띄우려면 identifier·`HOME`·devUrl 포트를 바꾸는 것에 더해 웹뷰 저장소를 따로 두어야 한다(Tauri `data_store_identifier`, macOS 14 이상). 그 장치가 없으면 띄우지 않는다. 배포 앱은 `~/Library/WebKit/com.develma.keyringnotes` 를 따로 쓴다.
 
+데스크톱 앱(WKWebView)을 실기기로 확인할 때는 identifier 를 바꾼 시험용 번들을 쓴다. 번들은 웹뷰 저장소가 identifier 로 갈린다(`~/Library/WebKit/<identifier>`, `~/Library/Caches/<identifier>`).
+
+- 저장소의 `tauri.conf.json` 은 고치지 않고 덮어쓰기 JSON 을 준다: `app` 에서 `CI=true pnpm exec tauri build --config <덮어쓰기.json> --bundles app`. 덮어쓰기에는 `identifier`(예 `com.develma.keyringnotes.agenttest`)·`productName`·`build.frontendDist`(절대 경로)·`build.beforeBuildCommand: ""`·`bundle.targets: ["app"]`·`bundle.createUpdaterArtifacts: false`·`plugins.updater.endpoints`(닿지 않는 주소)를 넣는다. `app.windows` 는 배열이라 통째로 바뀌므로 창 설정 전체를 다시 적고 `title` 만 바꾼다. 산출물은 `app/src-tauri/target/release/bundle/macos/` 에 서명·공증 없이 나온다.
+- ⚠ **identifier 를 바꿔도 볼트 폴더 기본값은 `~/Documents/Keyring Notes`(사람의 볼트)다.** 처음 띄우면 거기를 연다. 시험용 웹 빌드에 `localStorage` 의 `keyring:vaultDir`(`web/src/local/boot.ts` 의 `DIR_KEY`)를 임시 폴더로 정하는 줄을 앱 시작 전에 도는 자리에 임시로 넣는다.
+- 번들 안 실행 파일(`<번들>/Contents/MacOS/keyring-notes`)을 직접 띄워 PID 를 얻는다 — `open` 은 PID 를 주지 않는다. 띄우면 창이 앞으로 나온다.
+- 끝나면 PID 로 끄고, 시험 identifier 의 `~/Library/WebKit`·`~/Library/Caches` 항목을 지우고, 번들 등록을 푼다(`lsregister -u <번들>` — `lsregister` 는 `/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/` 에 있다). 같은 identifier 의 번들이 둘 등록돼 있으면 앱을 앞으로 가져오는 조작(`orca computer … --restore-window` 등)이 먼저 등록된 다른 번들을 launchd 로 띄운다.
+- `orca computer` 로 조작할 때 편집기에는 `type-text` 를 쓰지 않는다 — 합성 키와 함께 접근성 값 쓰기도 해서 CodeMirror 문서를 깨뜨린다. `press-key` 를 쓰되, 한글 입력기가 켜져 있으면 영문 글자는 한글 자모가 된다. 사람이 다른 앱을 전체 화면 Space 에서 쓰고 있으면 시험 앱 창은 다른 Space 라 `--restore-window` 로만 조작되고 그때마다 사람의 화면이 넘어간다.
+
 화면을 확인할 때는 사람의 데이터와 서버를 건드리지 않게 임시 `KEYRING_DATA` 와 다른 포트로 띄운다. 로그인 비밀번호는 띄우기 전에 `KEYRING_DATA=<임시 폴더> KEYRING_PASSWORD=<비밀번호> pnpm --filter @keyring-notes/server keyring passwd` 로 넣는다.
 
 ```bash
