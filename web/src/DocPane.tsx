@@ -3,7 +3,7 @@
  * 칸마다 하나씩 그린다. 문서의 원본(초안·저장 상태·충돌)은 Workspace 의 저장소에 있고, 여기는 그 문서를 보는 자리의 것
  * (보기 모드·과거 판·커서·미리보기·위젯·접힘 표시)만 갖는다.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type MutableRefObject, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Columns2, Ellipsis, Eye, ListTree, Pencil, SlidersHorizontal, SmilePlus } from "lucide-react";
 import type { ChangeSet } from "@codemirror/state";
@@ -23,6 +23,8 @@ import type { Prefs } from "./prefs";
 import { applyPreviewFolds, revealInPreview, togglePreviewFold } from "./previewFolds";
 import { selectPreviewBody, takesPreviewSelectAll } from "./previewSelect";
 import { previewFoldSource, previewPlan, usePreviewSource } from "./previewSource";
+import { RenderBoundary } from "./RenderBoundary";
+import { safeDecode } from "./safeDecode";
 import { formatCombo } from "./shortcuts";
 import { tipProps } from "./Tooltip";
 import { crumbNodes } from "./topbar";
@@ -327,16 +329,101 @@ function InlineTitle({
   );
 }
 
+/**
+ * 미리보기 본문: 노트를 HTML 로 그리고 그 안의 자리(수식·다이어그램·문서 임베드·위젯·접기)를 채운다.
+ * 그리기와 채우기를 DocPane 이 아니라 여기에 둔다 — 여기서 던진 예외는 이 컴포넌트를 감싼 RenderBoundary 에서 멈춰
+ * 편집기·제목·다른 칸이 남는다. DocPane 이 직접 그리면 DocPane 이 통째로 내려간다(경계는 자식이 던진 것만 받는다).
+ */
+function PreviewBody({
+  source,
+  doc,
+  mode,
+  revision,
+  handle,
+  ctx,
+  bodyRef,
+  drawnRef,
+  foldVersion,
+}: {
+  /** 그릴 본문. 미리보기가 안 보이는 칸은 null(previewSource.ts) */
+  source: string | null;
+  doc: DocEntry["doc"];
+  mode: ViewMode;
+  revision: RevisionView | null;
+  handle: MutableRefObject<EditorHandle | null>;
+  ctx: PaneContext;
+  /** 그린 본문의 DOM(DocPane 이 스크롤·누름 처리에 쓴다). 대체 화면이 떠 있는 동안은 null 이다 */
+  bodyRef: RefObject<HTMLDivElement | null>;
+  /** 미리보기 DOM 의 줄 번호가 가리키는 본문(DocPane 의 drawnRef) */
+  drawnRef: { readonly current: string };
+  foldVersion: number;
+}) {
+  const { prefs, resolver } = ctx;
+  const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
+  const [kwSlots, setKwSlots] = useState<HTMLElement[]>([]);
+  const rendered = useMemo(
+    // 속성 화면이 열려 있으면 미리보기에서는 프런트매터 상자를 빼고 본다(같은 내용을 두 번 보이지 않게)
+    () => (source === null ? NO_PREVIEW : renderMarkdown(source, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [source, resolver, doc.path, ctx.assetVersion, prefs.propsInDoc],
+  );
+
+  // 수식·다이어그램·문서 임베드는 그린 뒤에 채운다(enhance.ts)
+  useEffect(() => {
+    if (!bodyRef.current) return;
+    return enhance(bodyRef.current, { resolver, docPath: doc.path });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rendered.html, mode]);
+
+  // 접기: 미리보기에 단추를 달고 기억한 대로 접는다
+  useLayoutEffect(() => {
+    if (!bodyRef.current || revision) return;
+    applyPreviewFolds(bodyRef.current, doc.path, drawnRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rendered.html, mode, foldVersion, revision]);
+
+  // innerHTML이 바뀐 뒤 위젯 자리를 찾아 React 포털로 위젯을 그린다.
+  useLayoutEffect(() => {
+    setWidgetSlots(Array.from(bodyRef.current?.querySelectorAll<HTMLElement>(".widget-slot") ?? []));
+    setKwSlots(Array.from(bodyRef.current?.querySelectorAll<HTMLElement>(".kw-slot") ?? []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rendered.html, mode]);
+
+  return (
+    <>
+      <div className="markdown-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: rendered.html }} />
+      {widgetSlots.map((el, i) =>
+        rendered.widgets[i] === undefined
+          ? null
+          : createPortal(
+              <Widget source={rendered.widgets[i]} onOpen={(p) => void ctx.open(p)} onChanged={ctx.onWidgetChanged} />,
+              el,
+              `${i}:${rendered.widgets[i]}`,
+            ),
+      )}
+      {kwSlots.map((el, i) => {
+        const w = rendered.keyringWidgets[i];
+        if (!w) return null;
+        // 이력 보기·생성 문서·편집기가 없는 칸에서는 쓰지 않는다(설계 「상태가 바뀌는 길」)
+        const ro = !!revision || !!doc.generated || !handle.current;
+        return createPortal(
+          <PreviewKeyringWidget el={el} body={w.body} line={w.line} readOnly={ro} history={!!revision} owner={doc.path} handle={handle} />,
+          el,
+          `${i}:${w.line}:${w.body}`,
+        );
+      })}
+    </>
+  );
+}
+
 export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi, titleFocus, pendingAnchor, ctx, extra }: DocPaneProps) {
-  const { prefs, resolver, lang, local } = ctx;
+  const { prefs, lang, local } = ctx;
   const { doc, conflict } = entry;
   const live = prefs.live;
   const previewRef = useRef<HTMLDivElement>(null);
   const previewPaneRef = useRef<HTMLDivElement>(null);
   /** 제목 칸의 확정(InlineTitle 이 채운다) */
   const titleHandle = useRef<TitleHandle | null>(null);
-  const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
-  const [kwSlots, setKwSlots] = useState<HTMLElement[]>([]);
   /** 접힌 상태가 바뀔 때 올린다(미리보기를 다시 맞춘다) */
   const [foldVersion, setFoldVersion] = useState(0);
   const [refs, setRefs] = useState<SourcesInfo | null>(null);
@@ -381,12 +468,6 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     previewPlan(shownMode, !!revision),
     revision ? `${docKeyOf(doc)}@${revision.commit.rev}` : docKeyOf(doc),
     revision ? (revision.content ?? "") : doc.draft,
-  );
-  const rendered = useMemo(
-    // 속성 화면이 열려 있으면 미리보기에서는 프런트매터 상자를 빼고 본다(같은 내용을 두 번 보이지 않게)
-    () => (previewSource === null ? NO_PREVIEW : renderMarkdown(previewSource, { resolver, docPath: doc.path, hideFrontmatter: !prefs.propsInDoc })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [previewSource, resolver, doc.path, ctx.assetVersion, prefs.propsInDoc],
   );
   /** 미리보기 DOM 의 줄 번호(data-line·data-task-line)가 가리키는 본문 — 나란히 보기에서 낡은 동안은 지금 초안이 아니다 */
   const drawnRef = useRef("");
@@ -450,7 +531,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     // 각주 등 문서 안 앵커(#fn1): 주소의 #/문서 경로를 건드리지 않고 그 위치로 스크롤
     const localA = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]:not([data-wikilink])');
     if (localA) {
-      const id = decodeURIComponent(localA.getAttribute("href")!.slice(1));
+      const id = safeDecode(localA.getAttribute("href")!.slice(1));
       if (!id.startsWith("/")) {
         e.preventDefault();
         const el = id ? previewRef.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`) : null;
@@ -464,20 +545,8 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     ctx.followLinkEl(a, e.ctrlKey || e.metaKey);
   };
 
-  // 수식·다이어그램·문서 임베드는 그린 뒤에 채운다(enhance.ts)
-  useEffect(() => {
-    if (!previewRef.current) return;
-    return enhance(previewRef.current, { resolver, docPath: doc.path });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, mode]);
-
-  // 접기: 미리보기에 단추를 달고 기억한 대로 접는다. 에디터·개요·다른 칸에서 바꾸면 따라간다
+  // 접기: 에디터·개요·다른 칸에서 바꾸면 미리보기가 따라간다(맞추는 것은 PreviewBody)
   useEffect(() => onFoldsChange((path) => path === docRef.current.path && setFoldVersion((v) => v + 1)), []);
-  useLayoutEffect(() => {
-    if (!previewRef.current || revision) return;
-    applyPreviewFolds(previewRef.current, doc.path, drawnRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, mode, foldVersion, revision]);
 
   // 다른 문서의 제목·블록 링크나 검색 결과로 왔으면 그 위치로
   useEffect(() => {
@@ -490,13 +559,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
       else scrollToAnchor(anchor);
     }, 80);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendered.html, doc.path, pendingAnchor]);
-
-  // innerHTML이 바뀐 뒤 위젯 자리를 찾아 React 포털로 위젯을 그린다.
-  useLayoutEffect(() => {
-    setWidgetSlots(Array.from(previewRef.current?.querySelectorAll<HTMLElement>(".widget-slot") ?? []));
-    setKwSlots(Array.from(previewRef.current?.querySelectorAll<HTMLElement>(".kw-slot") ?? []));
-  }, [rendered.html, mode]);
+  }, [doc.path, pendingAnchor]);
 
   /** 빵부스러기: 상위 노드들(누르면 그 노드를 연다) */
   const crumbs = crumbNodes(docNode, ctx.allWorkspaces);
@@ -697,27 +760,19 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                   {ctx.docLabel(doc.path, { plain: true })}
                 </h1>
               )}
-              <div className="markdown-body" ref={previewRef} dangerouslySetInnerHTML={{ __html: rendered.html }} />
-              {widgetSlots.map((el, i) =>
-                rendered.widgets[i] === undefined
-                  ? null
-                  : createPortal(
-                      <Widget source={rendered.widgets[i]} onOpen={(p) => void ctx.open(p)} onChanged={ctx.onWidgetChanged} />,
-                      el,
-                      `${i}:${rendered.widgets[i]}`,
-                    ),
-              )}
-              {kwSlots.map((el, i) => {
-                const w = rendered.keyringWidgets[i];
-                if (!w) return null;
-                // 이력 보기·생성 문서·편집기가 없는 칸에서는 쓰지 않는다(설계 「상태가 바뀌는 길」)
-                const ro = !!revision || !!doc.generated || !handle.current;
-                return createPortal(
-                  <PreviewKeyringWidget el={el} body={w.body} line={w.line} readOnly={ro} history={!!revision} owner={doc.path} handle={handle} />,
-                  el,
-                  `${i}:${w.line}:${w.body}`,
-                );
-              })}
+              <RenderBoundary resetKey={doc.path} source={previewSource ?? ""}>
+                <PreviewBody
+                  source={previewSource}
+                  doc={doc}
+                  mode={mode}
+                  revision={revision}
+                  handle={handle}
+                  ctx={ctx}
+                  bodyRef={previewRef}
+                  drawnRef={drawnRef}
+                  foldVersion={foldVersion}
+                />
+              </RenderBoundary>
               {prefs.backlinksInDoc && !revision && refs && (
                 <References
                   refs={refs}
