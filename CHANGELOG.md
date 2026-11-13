@@ -18,6 +18,12 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - The button at the top right of the right panel now collapses the panel, with a panel icon instead of ✕.
 - In the editor, `**bold**`, `*italic*` and `~~strikethrough~~` text now look bold, italic and struck through, and `[ ]` markers, code fence language names and HTML tags are colored.
 
+### Fixed
+
+- A note whose text made the preview fail no longer blanks the whole app. A relative link with a malformed percent-encoded anchor, such as `[x](page.md#caf%E9)`, was enough. It also happened in **Edit** with Live Preview when the link was inside a callout or a table cell, and the app stayed blank after a reload.
+- When a note cannot be drawn, the preview shows a notice, the text of the note and a **Try again** button. The editor, the other tabs and the sidebar keep working. The Trash preview does the same, and in Live Preview a callout, table cell or formula that cannot be drawn stays as plain text.
+- An address whose hash is not valid percent-encoding, such as `#%E9`, no longer leaves the app blank on load.
+
 ## [0.12.0] - 2026-11-02
 
 ### Added
