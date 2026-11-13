@@ -17,12 +17,12 @@ const SHAPES: { name: string; doc: string }[] = [
   { name: "빈 프런트매터", doc: "---\n---\n# 제목\n\n- [ ] 할 일\n" },
   { name: "빈 프런트매터 뒤 수평선", doc: "---\n---\n# 제목\n\n본문\n\n---\n\n- [ ] 할 일\n" },
   { name: "CRLF", doc: "---\r\ntitle: 생각 중...\r\nrank: m\r\n---\r\n# 제목\r\n\r\n- [ ] 할 일\r\n" },
-  { name: "BOM", doc: "﻿---\ntitle: x\nicon: 🍎\n---\n# 제목\n\n- [ ] 할 일\n" },
+  { name: "BOM", doc: "\uFEFF---\ntitle: x\nicon: 🍎\n---\n# 제목\n\n- [ ] 할 일\n" },
   { name: "닫는 줄 없음", doc: "---\ntitle: 생각 중...\n# 제목\n\n- [ ] 할 일\n" },
   { name: "닫는 줄이 ...", doc: "---\ntitle: x\n...\n# 제목\n\n- [ ] 할 일\n" },
   { name: "닫는 줄 뒤 공백", doc: "---\ntitle: x\n--- \t\n# 제목\n\n- [ ] 할 일\n" },
   { name: "닫는 줄 뒤 빈 줄 여럿", doc: "---\ntitle: x\n---\n\n  \n\n# 제목\n\n- [ ] 할 일\n" },
-  { name: "닫는 줄 뒤가 줄바꿈 없는 공백(그 줄은 닫는 줄이 아니다)", doc: "---\ntitle: x\n--- \n# 제목\n\n- [ ] 할 일\n" },
+  { name: "닫는 줄 뒤가 줄바꿈 없는 공백(그 줄은 닫는 줄이 아니다)", doc: "---\ntitle: x\n---\u00A0\n# 제목\n\n- [ ] 할 일\n" },
   { name: "여는 줄 뒤 공백(프런트매터가 아니다)", doc: "--- \ntitle: x\n---\n# 제목\n\n- [ ] 할 일\n" },
   { name: "들여쓴 --- 줄", doc: "---\nnote: |\n  위\n  ---\n  아래\n---\n# 제목\n\n- [ ] 할 일\n" },
   { name: "프런트매터 없음", doc: "# 제목\n\n본문 ---\n\n- [ ] 할 일\n" },
@@ -90,7 +90,7 @@ describe("화면의 프런트매터 판정은 core 와 같다", () => {
   });
 
   it("예: BOM 이 붙은 문서의 프런트매터도 뗀다", () => {
-    const doc = "﻿---\ntitle: x\nicon: 🍎\n---\n본문\n";
+    const doc = "\uFEFF---\ntitle: x\nicon: 🍎\n---\n본문\n";
     expect(splitFrontmatter(doc)).toEqual({ frontmatter: "title: x\nicon: 🍎", body: "본문\n" });
     expect(docMeta(doc)).toEqual({ fm: { title: "x", icon: "🍎" }, propCount: 2, icon: "🍎" });
   });
