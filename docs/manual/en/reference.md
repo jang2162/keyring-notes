@@ -39,8 +39,9 @@ Rules:
 - A rule on a node covers both its folder and its note. `Work/Project` covers `Work/Project/…` and `Work/Project.md`, unless a more specific `Work/Project.md` rule exists. With `Work/Secret: hidden`, the note `Work/Secret.md` never shows up in lists, search, backlinks, link resolution, tags, graph, widgets, wiki index and log, or history.
 - Rules and paths are compared after Unicode normalization. A rule matches a name whether it is stored in composed (NFC) or decomposed (NFD) form.
 - Letter case must match the name on disk. A path that differs only in letter case is a missing path, even on a volume that ignores case, such as the macOS default.
-- Write a rule's path with the same letter case as the name on disk. A rule does not cover an existing folder whose name differs in letter case.
-- An agent cannot use a different letter case to create a path that one of its rules names. Such a new path gets the strictest of the rules it resembles, so a `hidden` rule on `Work/Secret` blocks creating `work/…` and `Work/secret/…`.
+- A rule that restricts applies whatever the letter case. With `Secret: hidden`, the folders `secret/` and `SECRET/` are hidden too, for reading, listing and writing.
+- A different letter case never widens access. A rule that grants more, such as `Work: write`, applies only to the name spelled as in the rule. Write such a rule with the letter case of the name on disk.
+- On a volume that keeps `secret/` and `Secret/` as separate folders, a `hidden` rule on either one hides both.
 - A commit that touches even one path the agent cannot see has its message replaced with "(change involving hidden paths)". This is decided by the commit's actual list of changed paths, including the old and new paths of moved nodes.
 - A wiki topic's `SCHEMA.md` and the vault's `keyring-settings.md` are read-only for agents, whatever the rules. The same holds for names that differ from these only in letter case.
 - Commits made by an agent are recorded with the agent's name as author.
