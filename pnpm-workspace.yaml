@@ -7,3 +7,11 @@ packages:
 # 설치 스크립트를 돌려도 되는 의존성(pnpm 10 은 기본으로 막는다)
 onlyBuiltDependencies:
   - esbuild
+
+# 부모 패키지가 판을 고정해 둔 전이 의존성 가운데 취약점이 고쳐진 판으로 올리는 것. 같은 메이저 안에서만 건다.
+# 부모가 고쳐진 판을 받게 되면 지운다(pnpm why <패키지> 로 본다).
+overrides:
+  # @excalidraw/excalidraw 0.18.1 이 3.3.3 으로 고정
+  "nanoid@3.3.3": ^3.3.18
+  # chevrotain 11.0.3 계열(@excalidraw/mermaid-to-excalidraw > @mermaid-js/parser 0.6 > langium)이 4.17.21 로 고정
+  "lodash-es@4.17.21": ^4.18.0

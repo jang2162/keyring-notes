@@ -38,3 +38,8 @@ export async function pageSize(pdf: PDFDocumentProxy, pageNo: number, scale: num
   const vp = (await pdf.getPage(pageNo)).getViewport({ scale });
   return { width: Math.floor(vp.width), height: Math.floor(vp.height) };
 }
+
+/** 문서를 닫는다: 워커와 읽던 작업이 함께 끝난다. pdf.js 6 의 문서 객체에는 destroy 가 없어 읽기 작업(loadingTask)으로 닫는다 */
+export function closePdf(pdf: PDFDocumentProxy): Promise<void> {
+  return pdf.loadingTask.destroy();
+}
