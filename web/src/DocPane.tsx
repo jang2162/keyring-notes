@@ -343,6 +343,7 @@ function PreviewBody({
   bodyRef,
   drawnRef,
   foldVersion,
+  onWrote,
 }: {
   /** 그릴 본문. 미리보기가 안 보이는 칸은 null(previewSource.ts) */
   source: string | null;
@@ -356,6 +357,8 @@ function PreviewBody({
   /** 미리보기 DOM 의 줄 번호가 가리키는 본문(DocPane 의 drawnRef) */
   drawnRef: { readonly current: string };
   foldVersion: number;
+  /** 미리보기 위젯의 쓰기가 성공했다(previewSource.ts usePreviewSource 의 wrote) */
+  onWrote: () => void;
 }) {
   const { prefs, resolver } = ctx;
   const [widgetSlots, setWidgetSlots] = useState<HTMLElement[]>([]);
@@ -406,7 +409,7 @@ function PreviewBody({
         // 이력 보기·생성 문서·편집기가 없는 칸에서는 쓰지 않는다(설계 「상태가 바뀌는 길」)
         const ro = !!revision || !!doc.generated || !handle.current;
         return createPortal(
-          <PreviewKeyringWidget el={el} body={w.body} line={w.line} readOnly={ro} history={!!revision} owner={doc.path} handle={handle} />,
+          <PreviewKeyringWidget el={el} body={w.body} line={w.line} readOnly={ro} history={!!revision} owner={doc.path} handle={handle} onWrote={onWrote} />,
           el,
           `${i}:${w.line}:${w.body}`,
         );
@@ -463,7 +466,11 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
   }, [prefs.backlinksInDoc, doc.path, doc.virtual, ctx.vaultVersion]);
 
   // 편집만 보이는 칸은 그리지 않고, 나란히 보기는 입력이 멈춘 뒤 그린다(previewSource.ts)
-  const { text: previewSource, settleNow: settlePreview } = usePreviewSource(
+  const {
+    text: previewSource,
+    settleNow: settlePreview,
+    wrote: previewWrote,
+  } = usePreviewSource(
     previewPlan(shownMode, !!revision),
     revision ? `${docKeyOf(doc)}@${revision.commit.rev}` : docKeyOf(doc),
     revision ? (revision.content ?? "") : doc.draft,
@@ -525,6 +532,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
       // 그린 때의 줄 글과 지금 줄이 다르면 편집기가 쓰지 않는다 — 체크 표시도 되돌린다
       const line = Number(box.dataset.taskLine);
       if (!handle.current.toggleTask(line, box.checked, drawnRef.current.split("\n")[line - 1])) e.preventDefault();
+      else previewWrote();
       return;
     }
     // 각주 등 문서 안 앵커(#fn1): 주소의 #/문서 경로를 건드리지 않고 그 위치로 스크롤
@@ -770,6 +778,7 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
                   bodyRef={previewRef}
                   drawnRef={drawnRef}
                   foldVersion={foldVersion}
+                  onWrote={previewWrote}
                 />
               </RenderBoundary>
               {prefs.backlinksInDoc && !revision && refs && (
