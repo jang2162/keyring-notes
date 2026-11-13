@@ -19,6 +19,7 @@ import {
   type VaultSettings,
   type VaultText,
 } from "@keyring-notes/core";
+import { foldPath } from "./access.js";
 import { GitHistory, moveTrailer, SYSTEM_AUTHOR, type Author, type CommitInfo } from "./git.js";
 import { isHiddenSegment, isMarkdown, normalizeVaultPath, PathError, resolveInVault } from "./paths.js";
 
@@ -124,6 +125,13 @@ interface Slot {
   /** 새로 쓸 바이트(첨부: put·이동해 온 것). */
   bytes?: Uint8Array;
 }
+
+/**
+ * 폴더 경로 → 그 안의 이름(폴더가 없으면 null). 경로마다 철자를 대조하느라(Vault.spelledAsOnDisk) 같은 폴더 목록을 되풀이해 읽지 않게,
+ * 한 번의 작업(일괄 쓰기 하나, 문서 여럿을 훑는 조회 하나) 안에서만 돌려 쓴다. 작업을 넘겨 들고 있지 않는다 — 그 사이 이름이
+ * 바뀌면 낡은 목록으로 철자를 판정하게 된다
+ */
+export type Listings = Map<string, string[] | null>;
 
 /** 자동 저장을 한 커밋으로 묶는 최대 시간(묶음의 첫 저장부터) */
 export const COALESCE_WINDOW_MS = 10 * 60 * 1000;
@@ -277,8 +285,12 @@ export class Vault {
     return next;
   }
 
-  /** 경로 검증 + 심볼릭 링크로 볼트 밖을 가리키는 경우 차단. */
-  async resolve(input: string): Promise<{ rel: string; abs: string }> {
+  /**
+   * 경로 검증 + 심볼릭 링크로 볼트 밖을 가리키는 경우 차단 + 디스크의 철자 대조(spelledAsOnDisk).
+   * spelled 가 false 면 디스크의 이름과 철자가 다른 경로다. 부르는 쪽은 그 경로를 「없는 경로」와 똑같이 답해야 한다(읽기는 그
+   * 읽기의 없는 문서 오류, 이력은 빈 목록, 리비전은 내용 없음) — 답이 갈리면 숨김 폴더가 다른 철자로 있는지를 캐낼 수 있다
+   */
+  private async locate(input: string, listings?: Listings): Promise<{ rel: string; abs: string; spelled: boolean }> {
     const rel = normalizeVaultPath(input);
     const abs = resolveInVault(this.root, rel);
     // 존재하는 가장 가까운 상위까지 실제 경로를 따라가 볼트 안인지 확인한다.
@@ -296,7 +308,59 @@ export class Vault {
         probe = parent;
       }
     }
+    return { rel, abs, spelled: await this.spelledAsOnDisk(rel, listings) };
+  }
+
+  /**
+   * locate 에 더해, 디스크의 철자와 다른 경로를 없는 경로 오류로 거부한다(쓰기와, 디스크에서 얻은 경로용).
+   * 대소문자를 가리지 않는 볼륨에서 다른 철자로 새 파일을 만드는 것도 여기서 막힌다 — 대소문자를 가리는 볼륨이라면 따로 생겼을
+   * 파일이지만 이 볼륨에는 둘을 함께 둘 수 없다
+   */
+  async resolve(input: string, listings?: Listings): Promise<{ rel: string; abs: string }> {
+    const { rel, abs, spelled } = await this.locate(input, listings);
+    if (!spelled) throw new NotFoundError(isMarkdown(rel) ? "doc_missing" : "file_missing", { path: rel });
     return { rel, abs };
+  }
+
+  /**
+   * 요청 경로가 디스크의 이름과 같은 철자인지를 존재하는 가장 깊은 조상까지 본다(아직 없는 파일을 만들 때도 조상 폴더를 본다).
+   * 유니코드 정규화만 다른 이름은 같은 철자로 본다 — macOS 에서 만든 볼트는 이름이 NFD 일 수 있고 요청은 대개 NFC 로 온다.
+   *
+   * 대소문자를 가리지 않는 볼륨(macOS APFS, Docker Desktop 이 건넨 호스트 폴더)은 `secret/x.md` 로 `Secret/x.md` 를 열어 준다.
+   * 권한 규칙은 글자로 견주므로(AccessPolicy.level) 그대로 두면 다른 철자가 숨김 규칙을 비켜 가고, 쓰기는 숨김 폴더 안에
+   * 파일을 만든다. 철자가 다른 경로를 없는 경로로 다루면 대소문자를 가리는 볼륨과 같은 답이 된다.
+   * realpath 로 견주지 않는다: libc·볼륨에 따라 디스크의 철자가 아니라 요청한 철자를 그대로 돌려준다(Linux 의 glibc).
+   * 폴더 목록의 이름과 직접 견주고, 목록에 없는 이름이 열리면 볼륨이 다른 철자의 항목으로 이어 준 것으로 본다
+   */
+  private async spelledAsOnDisk(rel: string, listings?: Listings): Promise<boolean> {
+    let dir = this.root;
+    for (const seg of rel.split("/")) {
+      let names = listings?.get(dir);
+      if (names === undefined) {
+        try {
+          names = await readdir(dir);
+        } catch (e) {
+          const code = (e as NodeJS.ErrnoException).code;
+          if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
+          names = null;
+        }
+        listings?.set(dir, names);
+      }
+      // 폴더가 없다(또는 파일이다): 여기부터는 아직 없는 경로라 견줄 이름이 없다
+      if (names === null) return true;
+      const next = path.join(dir, seg);
+      if (!names.includes(seg)) {
+        const composed = seg.normalize("NFC");
+        if (!names.some((n) => n.normalize("NFC") === composed)) {
+          return lstat(next).then(
+            () => false,
+            () => true,
+          );
+        }
+      }
+      dir = next;
+    }
+    return true;
   }
 
   async tree(): Promise<TreeNode[]> {
@@ -353,17 +417,18 @@ export class Vault {
     }
   }
 
-  async read(input: string): Promise<Doc> {
-    const { rel, abs } = await this.resolve(input);
+  async read(input: string, listings?: Listings): Promise<Doc> {
+    const { rel, abs, spelled } = await this.locate(input, listings);
     if (!isMarkdown(rel)) throw new PathError("markdown_only");
-    const buf = await this.readBuffer(abs);
+    const buf = spelled ? await this.readBuffer(abs) : null;
     if (buf === null) throw new NotFoundError("doc_missing", { path: rel });
     return { path: rel, content: buf.toString("utf8"), hash: hashContent(buf) };
   }
 
   /** 첨부 파일(이미지 등) 원본 바이트. */
-  async readRaw(input: string): Promise<{ path: string; data: Buffer }> {
-    const { rel, abs } = await this.resolve(input);
+  async readRaw(input: string, listings?: Listings): Promise<{ path: string; data: Buffer }> {
+    const { rel, abs, spelled } = await this.locate(input, listings);
+    if (!spelled) throw new NotFoundError("file_missing", { path: rel });
     try {
       const st = await lstat(abs);
       if (!st.isFile()) throw new NotFoundError("file_missing", { path: rel });
@@ -387,35 +452,37 @@ export class Vault {
     if (ops.length > 500) throw new PathError("ops_too_many", { max: 500 });
     const guard = opts.guard ?? (() => undefined);
 
-    // 경로 검증은 잠금 밖에서 먼저 한다.
     const resolved = new Map<string, string>();
     const resolvedAbs = new Map<string, string>();
+    const listings: Listings = new Map();
     /** kind: md(문서만), bin(첨부만), any(이동·삭제: 둘 다) */
     const want = async (p: string, kind: "md" | "bin" | "any" = "md") => {
-      const { rel, abs } = await this.resolve(p);
+      const { rel, abs } = await this.resolve(p, listings);
       if (kind === "md" && !isMarkdown(rel)) throw new PathError("markdown_only_change", { path: rel });
       if (kind === "bin" && isMarkdown(rel)) throw new PathError("markdown_no_put", { path: rel });
       if (this.readOnly(rel)) throw new PathError("generated_readonly", { path: rel });
       resolved.set(p, rel);
       resolvedAbs.set(rel, abs);
     };
-    for (const op of ops) {
-      if (op.op === "move") {
-        await want(op.from, "any");
-        await want(op.to, "any");
-        if (isMarkdown(op.from) !== isMarkdown(op.to)) throw new PathError("move_kind_path", { from: op.from, to: op.to });
-      } else if (op.op === "put") {
-        if (!(op.data instanceof Uint8Array)) throw new PathError("field_required", { field: "data" });
-        await want(op.path, "bin");
-      } else if (op.op === "delete") {
-        await want(op.path, "any");
-      } else {
-        if (typeof op.content !== "string") throw new PathError("field_required", { field: "content" });
-        await want(op.path);
-      }
-    }
-
     return this.exclusive(async () => {
+      // 경로 검증도 잠금 안에서 한다. 철자 대조(spelledAsOnDisk)는 디스크의 지금 이름을 보므로, 잠금 밖에서 하면 검증과 적용
+      // 사이에 앞선 쓰기가 다른 철자의 폴더를 만들 수 있다 — `Secret/` 이 막 생겼는데 `secret/new.md` 가 그 안에 써진다
+      for (const op of ops) {
+        if (op.op === "move") {
+          await want(op.from, "any");
+          await want(op.to, "any");
+          if (isMarkdown(op.from) !== isMarkdown(op.to)) throw new PathError("move_kind_path", { from: op.from, to: op.to });
+        } else if (op.op === "put") {
+          if (!(op.data instanceof Uint8Array)) throw new PathError("field_required", { field: "data" });
+          await want(op.path, "bin");
+        } else if (op.op === "delete") {
+          await want(op.path, "any");
+        } else {
+          if (typeof op.content !== "string") throw new PathError("field_required", { field: "content" });
+          await want(op.path);
+        }
+      }
+
       const slots = new Map<string, Slot>();
       const slot = async (rel: string): Promise<Slot> => {
         let s = slots.get(rel);
@@ -504,9 +571,26 @@ export class Vault {
         }
       }
 
+      // 1-1) 이 일괄 쓰기가 남길 파일들 사이에 대소문자만 다른 철자(폴더 포함)가 함께 있으면 거부한다. 철자 대조는 디스크에 이미
+      // 있는 이름만 보므로 한 batch 가 `New/x.md` 와 `new/y.md` 를 함께 만드는 것은 지나간다 — 대소문자를 가리지 않는 볼륨에서는
+      // 둘이 한 폴더에 써지고 `new/y.md` 는 그 철자로 이력에 들어가지 못한다. 지워지는 쪽은 보지 않는다(대소문자만 바꾸는 이동)
+      const spellings = new Map<string, string>();
+      for (const [rel, s] of slots) {
+        if (s.hash === null) continue;
+        const segs = rel.normalize("NFC").split("/");
+        for (let depth = 1; depth <= segs.length; depth++) {
+          const spelling = segs.slice(0, depth).join("/");
+          const folded = foldPath(spelling);
+          const seen = spellings.get(folded);
+          if (seen === undefined) spellings.set(folded, spelling);
+          else if (seen !== spelling) throw new ConflictError(null, "file_exists", { path: rel });
+        }
+      }
+
       // 1-2) 이동한 문서를 가리키던 링크를 고친다(모든 연산을 적용한 가상 상태 위에서)
       const linksUpdated: string[] = [];
       let linkCount = 0;
+      const relinkListings: Listings = new Map();
       const moves = chainMoves(moveList);
       if (moves.size > 0 && opts.links?.enabled !== false) {
         const canSee = opts.links?.canSee ?? (() => true);
@@ -534,7 +618,7 @@ export class Vault {
               continue;
             }
           }
-          if (!existing) resolvedAbs.set(rel, (await this.resolve(rel)).abs);
+          if (!existing) resolvedAbs.set(rel, (await this.resolve(rel, relinkListings)).abs);
           set(await slot(rel), r.content);
           linksUpdated.push(rel);
           linkCount += r.count;
@@ -667,12 +751,20 @@ export class Vault {
   }
 
   async history(input: string): Promise<CommitInfo[]> {
-    const { rel } = await this.resolve(input);
-    return this.git.log(rel);
+    const { rel, spelled } = await this.locate(input);
+    return spelled ? this.git.log(rel) : [];
+  }
+
+  /** 이력과 커밋마다 바뀐 경로(GitHistory.logWithChanges). history 와 같은 경로 검사를 거친다 */
+  async historyWithChanges(input: string): Promise<(CommitInfo & { files: string[] })[]> {
+    const { rel, spelled } = await this.locate(input);
+    return spelled ? this.git.logWithChanges(rel) : [];
   }
 
   async revision(input: string, rev: string): Promise<{ path: string; rev: string; content: string | null }> {
-    const { rel } = await this.resolve(input);
-    return { path: rel, rev, content: await this.git.show(rev, rel) };
+    const { rel, spelled } = await this.locate(input);
+    // 철자가 다른 경로도 리비전 검사(rev_invalid)는 없는 경로와 똑같이 받는다
+    const content = await this.git.show(rev, rel);
+    return { path: rel, rev, content: spelled ? content : null };
   }
 }

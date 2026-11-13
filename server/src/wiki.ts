@@ -77,9 +77,21 @@ export class Wiki {
     return [...this.topics].flatMap((t) => [`${t}/wiki/index.md`, `${t}/wiki/log.md`]);
   }
 
-  isGenerated(rel: string): boolean {
+  /**
+   * 경로가 가리키는 생성 문서(index·log)의 경로(토픽을 디스크의 철자로 적은 것), 아니면 null. 유니코드 정규화만 다른 철자도 같은
+   * 문서다 — 볼트는 그 철자를 같은 파일로 열어 주므로(Vault.spelledAsOnDisk), 글자로만 견주면 생성 문서 보호를 비켜 간다
+   */
+  generatedPath(rel: string): string | null {
     const g = generatedKind(rel);
-    return g !== null && this.topics.has(g.topic);
+    if (g === null) return null;
+    if (this.topics.has(g.topic)) return rel;
+    const composed = g.topic.normalize("NFC");
+    for (const topic of this.topics) if (topic.normalize("NFC") === composed) return `${topic}/wiki/${g.kind}.md`;
+    return null;
+  }
+
+  isGenerated(rel: string): boolean {
+    return this.generatedPath(rel) !== null;
   }
 
   topicOf(rel: string): string | null {

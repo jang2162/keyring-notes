@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { editedStamp } from "@keyring-notes/core";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AccessPolicy, atLeast } from "./access.js";
+import { AccessPolicy, atLeast, covers, foldPath } from "./access.js";
 import type { ConfigStore } from "./config.js";
 import { serverText } from "./lang.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
@@ -46,12 +46,16 @@ export interface ProposalSummary extends Omit<Proposal, "ops" | "preview"> {
 const ID_RE = /^[0-9a-f]{16}$/;
 const KEEP_DECIDED_DAYS = 30;
 
-/** 검토 대상 경로 판정: 설정의 reviewPaths(접두 경로, "/"는 전체) 중 하나 아래면 검토 대상. */
+/**
+ * 검토 대상 경로 판정: 설정의 reviewPaths(접두 경로, "/"는 전체) 중 하나 아래면 검토 대상.
+ * 권한 규칙과 같은 함수로 견준다(access.ts covers — 경로 `X` 는 하위 `X/…` 와 노드 노트 `X.md` 를 덮는다). 어긋나면 권한으로는
+ * 쓸 수 있는 경로가 검토 없이 커밋된다.
+ * 대소문자·정규화는 접어서 견준다. 검토는 제한이므로 철자가 달라도 적용된다(AccessPolicy 의 「제한하는 규칙」과 같은 이유) —
+ * 검토 대상 폴더가 다른 철자로 먼저 생겨도 그 안의 쓰기가 검토를 비켜 가지 않는다
+ */
 export function underReview(rel: string, reviewPaths: string[]): boolean {
-  return reviewPaths.some((p) => {
-    const prefix = p.replace(/^\/+|\/+$/g, "");
-    return prefix === "" || rel === prefix || rel.startsWith(prefix + "/");
-  });
+  const target = foldPath(rel);
+  return reviewPaths.some((p) => covers(foldPath(p.replace(/^\/+|\/+$/g, "")), target));
 }
 
 export class ReviewQueue {

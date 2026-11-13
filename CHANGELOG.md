@@ -17,6 +17,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - The rail button for the attachments panel is now **Files**, and the button for the note tree is now **Notes**, on the rail and the bottom bar. The panel title, its filter, the **Files in the tree** setting and the "N files" row under each note in the tree use the new name too.
 - The button at the top right of the right panel now collapses the panel, with a panel icon instead of ✕.
 - In the editor, `**bold**`, `*italic*` and `~~strikethrough~~` text now look bold, italic and struck through, and `[ ]` markers, code fence language names and HTML tags are colored.
+- On a volume that keeps `secret/` and `Secret/` as separate folders, a `hidden` rule on either one now hides both from that agent. A rule that grants access still applies only to the name spelled as in the rule.
 
 ### Fixed
 
@@ -26,6 +27,28 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - Editing a note's properties no longer pushes the properties below out of the front matter when a value ends with `...` or `---`, such as `title: Thinking...`. Setting an icon, reordering notes and changing vault settings were affected in the same way.
 - A heading line with a very long run of spaces no longer freezes the server while it indexes the note.
 - A note that starts with empty front matter (`---` directly followed by `---`) is read as having no properties, instead of treating everything up to the next horizontal rule as front matter. Its title, summary and outline now come from the text below. A new note whose only content is those two lines counts as empty and is removed when you close it.
+- With autosave off, moving a note up or down, **Sort sub-notes**, **Use as folder**, renaming or deleting a workspace and deleting a note no longer discard unsaved text. A notice asks you to save the note first.
+- Logging out now asks first when any note or drawing has unsaved changes (not only the note in view) or when saves made offline are still waiting, and says how many. Logging out without a connection no longer deletes them.
+- A save the server refuses no longer blocks later offline saves from being sent. The refused save stays on the device and a notice names the note and the reason.
+- Desktop and mobile app: a failed write to the device vault while the network is down is now reported as a failed save instead of showing as saved.
+- Text typed while a note was being reloaded, renamed or reordered is no longer replaced by the server's version.
+- Writing a note whose name contains glob characters (`*.md`, `:(exclude)x.md`) no longer pulls other pending changes into the same commit.
+- A batch that creates two paths differing only in letter case (`New/x.md` and `new/y.md`) is now rejected. On volumes that ignore case, the second file was written but left out of history.
+- Two writes that arrive together under different letter cases of the same new folder no longer end up in one folder.
+- Writing a wiki topic's generated index or log through a differently normalized path now answers `generated_readonly` instead of a server error.
+
+### Security
+
+- Updated PDF.js to 6.5 in the app, and to 6.4 in the server's PDF text extraction. Both fix a flaw that let a malicious PDF run its own script when opened.
+- Updated DOMPurify, markdown-it, Hono, Zod and other dependencies to versions that fix known vulnerabilities.
+- A rule that restricts an agent now applies whatever the letter case or Unicode normalization of the name. A `hidden` rule on `Secret` could be bypassed by reading `secret/x.md` on volumes that ignore case, by a folder that was created as `secret/` first, or by a name stored in decomposed (NFD) form. Such folders also showed up in the agent's lists and search. A different letter case never widens access.
+- A path that differs from the name on disk only in letter case is now a missing path, even on volumes that ignore case (the macOS default). An agent could create files inside a folder through a different spelling.
+- Writing to a hidden path answers the same whether or not the folder exists, under any letter case.
+- Agents can no longer create `keyring-settings.md` or a topic's `SCHEMA.md` under a name that differs only in letter case.
+- `/api/history` takes the path literally. Glob and magic pathspecs (`Privat[e]/a*`, `:(exclude)…`) exposed commits of hidden notes.
+- `/api/revision` returns only files from commits in the current history. A folder path returned the names of hidden children.
+- A review target now covers the node's own note (`Work/Wiki` covers `Work/Wiki.md`) and applies whatever the letter case. Agent writes to that note, or to `Work/wiki/…`, skipped review.
+- A wiki topic's generated index and log no longer list hidden pages when requested with a differently normalized path.
 
 ## [0.12.0] - 2026-11-02
 

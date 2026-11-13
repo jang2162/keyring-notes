@@ -71,11 +71,20 @@ export class GitHistory {
     this.gitDir = path.join(workTree, ".history");
   }
 
+  /**
+   * 모든 git 호출의 앞머리. 경로 인자는 글자 그대로 받는다(--literal-pathspecs) — 볼트 경로에는 `*`·`[`·`:(…)` 가 들 수 있고,
+   * git 이 그것을 글롭·매직 pathspec 으로 풀면 권한 검사를 지난 글자열이 다른 파일을 가리킨다(숨김 경로의 이력이 나오고,
+   * 남의 변경이 커밋에 섞인다). 글롭에 기대는 호출은 두지 않는다
+   */
+  private get base(): string[] {
+    return ["--git-dir", this.gitDir, "--work-tree", this.workTree, "--literal-pathspecs"];
+  }
+
   private run(args: string[], opts: { env?: NodeJS.ProcessEnv; allowFail?: boolean } = {}) {
     return new Promise<{ stdout: string; code: number }>((resolve, reject) => {
       execFile(
         "git",
-        ["--git-dir", this.gitDir, "--work-tree", this.workTree, "-c", "core.quotePath=false", ...args],
+        [...this.base, "-c", "core.quotePath=false", ...args],
         {
           cwd: this.workTree,
           env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...opts.env },
@@ -391,7 +400,7 @@ export class GitHistory {
   /** git 명령에 stdin 을 넣고 stdout 바이트를 받는다 */
   private pipe(args: string[], input: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      const child = spawn("git", ["--git-dir", this.gitDir, "--work-tree", this.workTree, ...args], {
+      const child = spawn("git", [...this.base, ...args], {
         cwd: this.workTree,
         env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
       });
@@ -435,11 +444,17 @@ export class GitHistory {
     return (await this.catBatch(specs.map((s) => `${s.rev}:${s.path}`))).map((o) => (o?.type === "blob" ? o.data : null));
   }
 
-  /** 특정 리비전의 파일 내용. 그 리비전에 파일이 없으면 null. */
+  /**
+   * 특정 리비전의 파일 내용. 그 리비전에 파일이 없으면 null.
+   * 리비전은 지금 이력(HEAD 와 그 조상)의 커밋만, 경로는 파일(blob)만 받는다. `git show <rev>:<폴더>` 는 폴더의 자식 이름을
+   * 내주므로(읽을 수 있는 폴더 아래 숨김 자식의 이름까지) 쓰지 않는다. 이력 밖 커밋(백업 복원으로 버려진 것)과 커밋이 아닌 객체도
+   * 없는 것으로 답한다
+   */
   async show(rev: string, relPath: string): Promise<string | null> {
     // 끝의 ^ 는 그 커밋의 부모(휴지통: 지우기 직전 내용)
     if (!/^[0-9a-f]{7,64}\^?$/i.test(rev)) throw new PathError("rev_invalid");
-    const res = await this.run(["show", `${rev}:${relPath}`], { allowFail: true });
-    return res.code === 0 ? res.stdout : null;
+    if (!(await this.isAncestor(rev))) return null;
+    const [object] = await this.catBatch([`${rev}:${relPath}`]);
+    return object?.type === "blob" ? object.data.toString("utf8") : null;
   }
 }

@@ -5,7 +5,9 @@ import {
   dropUnused,
   isDirty,
   patchDoc,
+  reloadDoc,
   renameDoc,
+  serverWrote,
   setConflict,
   setDraft,
   setSave,
@@ -105,5 +107,63 @@ describe("열린 문서 저장소", () => {
     expect(dirtyPaths(s)).toEqual(["a.md", "c.md"]);
     expect(isDirty(s["g.md"])).toBe(false);
     expect(isDirty(s["a.md"])).toBe(true);
+  });
+});
+
+describe("응답이 돌아왔을 때 그사이 친 글", () => {
+  /** 저장소에 깨끗한 a.md 를 넣고, 요청이 떠 있는 동안 친 것처럼 초안을 바꾼다 */
+  const typedDuring = (saved: string, draft: string): DocStore => {
+    const s = upsertDoc({}, doc("a.md", saved));
+    return setDraft(s, "a.md", draft, docKeyOf(s["a.md"].doc));
+  };
+
+  it("reloadDoc: 처음 읽는 문서는 그대로 넣는다", () => {
+    expect(reloadDoc({}, doc("a.md", "x"))["a.md"].doc).toEqual({ ...doc("a.md", "x"), seq: 1 });
+  });
+
+  it("reloadDoc: 저장 안 한 변경이 없으면 서버 본문으로 바꾸고 에디터를 다시 만든다", () => {
+    const s = reloadDoc(upsertDoc({}, doc("a.md", "x")), doc("a.md", "y"));
+    expect(s["a.md"].doc).toEqual({ ...doc("a.md", "y"), seq: 2 });
+  });
+
+  it("reloadDoc: 읽는 사이 친 글이 있으면 초안을 남긴다 — 서버 본문이 그대로면 해시만 맞춘다", () => {
+    const before = typedDuring("x", "x + typed");
+    const s = reloadDoc(before, { ...doc("a.md", "x"), hash: "h-new" });
+    expect(s["a.md"].doc).toEqual({ ...before["a.md"].doc, hash: "h-new" });
+    expect(s["a.md"].doc.draft).toBe("x + typed");
+  });
+
+  it("reloadDoc: 읽는 사이 쳤고 서버 본문도 달라졌으면 손대지 않는다(다음 저장이 옛 해시로 충돌 → 병합)", () => {
+    const before = typedDuring("x", "x + typed");
+    expect(reloadDoc(before, doc("a.md", "server"))).toBe(before);
+  });
+
+  it("reloadDoc: force 면 저장 안 한 초안도 버리고 바꾼다(되돌리기·사본으로 저장한 뒤)", () => {
+    const s = reloadDoc(typedDuring("x", "x + typed"), doc("a.md", "server"), true);
+    expect(s["a.md"].doc).toEqual({ ...doc("a.md", "server"), seq: 2 });
+  });
+
+  it("reloadDoc: 서버가 만드는 문서는 늘 바꾼다", () => {
+    const gen = upsertDoc({}, doc("index.md", "x", "x", { generated: true }));
+    expect(reloadDoc(gen, doc("index.md", "y", "y", { generated: true }))["index.md"].doc.draft).toBe("y");
+  });
+
+  const open = (saved: string, draft = saved): OpenDoc => ({ ...doc("a.md", saved, draft), seq: 3 });
+
+  it("serverWrote: 초안이 쓴 내용과 같으면 저장본·해시만 맞추고 에디터를 다시 만들지 않는다", () => {
+    expect(serverWrote(open("x"), "x", "h2")).toEqual({ ...open("x"), hash: "h2" });
+  });
+
+  it("serverWrote: 서버가 내용을 고쳐 썼고 그사이 친 글이 없으면 그 내용으로 바꾼다", () => {
+    expect(serverWrote(open("x"), "x fixed", "h2")).toEqual({ ...open("x fixed"), hash: "h2", seq: 4 });
+  });
+
+  it("serverWrote: 응답을 기다리는 동안 친 글은 남긴다 — 쓴 내용이 저장본 그대로면 해시만 맞춘다", () => {
+    expect(serverWrote(open("x", "x + typed"), "x", "h2")).toEqual({ ...open("x", "x + typed"), hash: "h2" });
+  });
+
+  it("serverWrote: 그사이 쳤고 서버도 내용을 고쳐 썼으면 손대지 않는다(다음 저장이 옛 해시로 충돌 → 병합)", () => {
+    const d = open("x", "x + typed");
+    expect(serverWrote(d, "x fixed", "h2")).toBe(d);
   });
 });
