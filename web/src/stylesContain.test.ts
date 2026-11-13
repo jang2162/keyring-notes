@@ -64,3 +64,12 @@ describe("styles.css 의 contain", () => {
     expect(unguarded(".a { overscroll-behavior: contain; object-fit: contain; contain: none; }")).toEqual([]);
   });
 });
+
+describe("styles.css 의 편집기 안 .kw-fixed", () => {
+  it(".kw-fixed 가 켜진 동안 .cm-scroller 의 쌓임 맥락을 없앤다", () => {
+    // 선택자를 통째로 맞춘다: .editor 가 빠지면 CodeMirror 기본 테마(z-index: 0)를 못 이기고,
+    // 다른 선택자와 쉼표로 묶이면 :has() 를 모르는 엔진이 묶음째 버린다
+    const lift = rules(stylesCss).filter((r) => r.selector.includes(".cm-scroller:has(.kw-fixed)"));
+    expect(lift.map((r) => [r.selector, r.decls["z-index"], r.at])).toEqual([[".editor .cm-scroller:has(.kw-fixed)", "auto", []]]);
+  });
+});
