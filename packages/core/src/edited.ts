@@ -1,6 +1,6 @@
 import { isMap, parseDocument } from "yaml";
 import { setFrontmatterField } from "./frontmatter.js";
-import { parseFrontmatter } from "./markdown.js";
+import { frontmatterBlock, parseFrontmatter } from "./markdown.js";
 import { isMarkdown } from "./paths.js";
 import { isVaultSettingsPath } from "./settings.js";
 
@@ -36,15 +36,7 @@ function frontmatterLines(content: string): { bom: string; eol: string; lines: s
   const text = content.slice(bom.length);
   const eol = /^[^\n]*\r\n/.test(text) ? "\r\n" : "\n";
   const lines = text.split(/(?<=\n)/);
-  let close = -1;
-  if (/^---\r?\n$/.test(lines[0] ?? "")) {
-    for (let i = 1; i < lines.length; i++) {
-      if (/^(?:---|\.\.\.)[ \t]*(?:\r?\n)?$/.test(lines[i])) {
-        close = i;
-        break;
-      }
-    }
-  }
+  const close = frontmatterBlock(text)?.closeLine ?? -1;
   if (close < 0) return { bom, eol, lines, close, edited: -1 };
   const doc = parseDocument(lines.slice(1, close).join(""));
   if (doc.errors.length || (doc.contents !== null && !isMap(doc.contents))) return null;

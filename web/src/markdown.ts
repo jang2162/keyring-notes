@@ -6,6 +6,7 @@ import mark from "markdown-it-mark";
 import { LinkIndex, stripComments, type DailyLookup } from "@keyring-notes/core";
 import { api, type TreeNode } from "./api";
 import { t } from "./i18n";
+import { safeDecode } from "./safeDecode";
 import { isKeyringFence, keyringSlotHtml, markClosedFences } from "./widgets/slot";
 
 /**
@@ -76,6 +77,14 @@ function wikilinkRule(state: StateInline, silent: boolean): boolean {
   }
   state.pos = end + 2;
   return true;
+}
+
+/**
+ * 수식·다이어그램 원문을 속성(data-tex·data-src)에 넣을 글로. 꺼낼 때는 safeDecode.
+ * 짝 없는 서로게이트는 U+FFFD 로 바꾼다 — encodeURIComponent 가 거기서 던진다
+ */
+export function encodeSource(s: string): string {
+  return encodeURIComponent(s.replace(/\p{Surrogate}/gu, "\uFFFD"));
 }
 
 function dirname(p: string) {
@@ -194,7 +203,7 @@ function mathBlock(state: StateBlock, startLine: number, endLine: number, silent
 md.inline.ruler.after("escape", "math_inline", mathInline);
 md.block.ruler.before("fence", "math_block", mathBlock, { alt: ["paragraph", "reference", "blockquote", "list"] });
 // 원문은 속성에 퍼센트 인코딩해 넣는다: DOMPurify가 "-->" 같은 값이 든 속성을 지우기 때문(SAFE_FOR_XML)
-const srcAttr = (s: string) => escapeHtml(encodeURIComponent(s));
+const srcAttr = (s: string) => escapeHtml(encodeSource(s));
 md.renderer.rules.math_inline = (tokens, idx) => `<span class="math" data-tex="${srcAttr(tokens[idx].content)}">${escapeHtml(tokens[idx].content)}</span>`;
 md.renderer.rules.math_display = (tokens, idx) =>
   `<span class="math math-display" data-tex="${srcAttr(tokens[idx].content)}">${escapeHtml(tokens[idx].content)}</span>`;
@@ -243,15 +252,10 @@ md.renderer.rules.link_open = (tokens, idx, opts, env, self) => {
   if (href && !/^[a-z][a-z0-9+.-]*:|^\/\/|^#|^\//i.test(href)) {
     const hashAt = href.indexOf("#");
     const pathPart = hashAt < 0 ? href : href.slice(0, hashAt);
-    let decoded = pathPart;
-    try {
-      decoded = decodeURIComponent(pathPart);
-    } catch {
-      /* 잘못된 퍼센트 인코딩은 그대로 둔다 */
-    }
-    const rel = joinRelative(dirname(docPath), decoded);
+    // 잘못된 퍼센트 인코딩은 경로도 앵커도 원문 그대로 쓴다
+    const rel = joinRelative(dirname(docPath), safeDecode(pathPart));
     const resolved = resolver.exact(rel);
-    const anchor = hashAt < 0 ? undefined : decodeURIComponent(href.slice(hashAt + 1));
+    const anchor = hashAt < 0 ? undefined : safeDecode(href.slice(hashAt + 1));
     token.attrSet("href", "#");
     token.attrSet("data-wikilink", resolved ?? rel);
     token.attrSet("data-resolved", resolved ? "1" : "0");

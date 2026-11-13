@@ -1,8 +1,6 @@
 import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 import { PathError } from "./errors.js";
-
-const FM_RE = /^---\r?\n([\s\S]*?)\r?\n?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
-const EMPTY_FM_RE = /^---\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
+import { frontmatterBlock } from "./markdown.js";
 
 /** 내장 필드(위젯이 계산하는 값)는 프런트매터로 고치지 않는다 */
 export const BUILTIN_FIELDS = new Set(["path", "title", "folder", "name", "tags", "modified"]);
@@ -66,10 +64,9 @@ function checkKey(key: string) {
 function editFrontmatter(withBom: string, edit: (doc: ReturnType<typeof parseDocument>) => void, emptyKey: string | null): string {
   const bom = withBom.startsWith("\uFEFF") ? "\uFEFF" : "";
   const content = withBom.slice(bom.length);
-  const m = FM_RE.exec(content) ?? EMPTY_FM_RE.exec(content);
-  const yamlText = m && m[1] !== undefined ? m[1] : "";
-  const body = m ? content.slice(m[0].length) : content;
-  const doc = parseDocument(yamlText);
+  const block = frontmatterBlock(content);
+  const body = block ? content.slice(block.end) : content;
+  const doc = parseDocument(block ? block.yaml : "");
   if (doc.errors.length) throw new PathError("frontmatter_yaml", { message: doc.errors[0].message.split("\n")[0] });
   if (doc.contents === null || doc.contents === undefined) doc.contents = doc.createNode({}) as unknown as typeof doc.contents;
   if (!isMap(doc.contents)) throw new PathError("frontmatter_not_object");

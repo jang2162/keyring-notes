@@ -5,6 +5,7 @@ import { api, ApiError, appMode } from "./api";
 import { fmtDateTime, t } from "./i18n";
 import { renderMarkdown, type LinkResolver } from "./markdown";
 import { Modal } from "./Modal";
+import { RenderBoundary } from "./RenderBoundary";
 import { errorText, toast, toastError } from "./toast";
 import { parentOf, stemOf } from "./Tree";
 import { trashHeadName, trashOthers } from "./trashView";
@@ -16,6 +17,19 @@ const isNote = (p: string) => /\.md$/i.test(p);
 function headTarget(item: TrashItem, restored: [string, string][]): [string, string] | null {
   const md = restored.filter(([from]) => /\.md$/i.test(from));
   return (item.node && md.find(([from]) => from === `${item.node}.md`)) || md[0] || null;
+}
+
+/** 지운 노트의 읽기 전용 미리보기. 그리다 던지면 감싼 RenderBoundary 가 받는다 — TrashPanel 이 직접 그리면 창이 통째로 내려간다 */
+function TrashPreview({ content, path, resolver }: { content: string; path: string; resolver: LinkResolver }) {
+  return (
+    <div
+      className="markdown-body trash-preview"
+      aria-label={t("trash.preview")}
+      // 읽기 전용: 미리보기 안의 링크로 다른 곳으로 가지 않는다
+      onClickCapture={(e) => (e.target as HTMLElement).closest("a") && e.preventDefault()}
+      dangerouslySetInnerHTML={{ __html: renderMarkdown(content, { resolver, docPath: path, docId: "trash" }).html }}
+    />
+  );
 }
 
 /**
@@ -179,13 +193,9 @@ export function TrashPanel({
                     ) : typeof preview === "object" ? (
                       <p className="form-error">{preview.error}</p>
                     ) : (
-                      <div
-                        className="markdown-body trash-preview"
-                        aria-label={t("trash.preview")}
-                        // 읽기 전용: 미리보기 안의 링크로 다른 곳으로 가지 않는다
-                        onClickCapture={(e) => (e.target as HTMLElement).closest("a") && e.preventDefault()}
-                        dangerouslySetInnerHTML={{ __html: renderMarkdown(preview, { resolver, docPath: open!.path, docId: "trash" }).html }}
-                      />
+                      <RenderBoundary resetKey={key(open!.id, open!.path)} source={preview}>
+                        <TrashPreview content={preview} path={open!.path} resolver={resolver} />
+                      </RenderBoundary>
                     )}
                   </div>
                 )}

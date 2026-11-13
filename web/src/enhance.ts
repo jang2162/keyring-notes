@@ -2,6 +2,7 @@ import DOMPurify from "dompurify";
 import { blockText, section } from "@keyring-notes/core";
 import { api } from "./api";
 import { renderMarkdown, SAFE_URI, splitFrontmatter, type LinkResolver } from "./markdown";
+import { safeDecode } from "./safeDecode";
 import { t } from "./i18n";
 import { paintCode, pieceCache } from "./codeHighlight";
 
@@ -74,7 +75,7 @@ function cleanSvg(svg: string) {
 
 function fillMath(el: HTMLElement) {
   if (!katexMod) return false;
-  el.innerHTML = cleanMath(katexMod.renderTex(decodeURIComponent(el.dataset.tex ?? ""), el.classList.contains("math-display")));
+  el.innerHTML = cleanMath(katexMod.renderTex(safeDecode(el.dataset.tex ?? ""), el.classList.contains("math-display")));
   el.dataset.done = "1";
   return true;
 }
@@ -159,7 +160,7 @@ export function enhance(root: HTMLElement, ctx: EnhanceContext, parentAlive?: ()
 
   const dark = isDark();
   for (const el of root.querySelectorAll<HTMLElement>(".mermaid-slot[data-src]:not([data-done])")) {
-    const src = decodeURIComponent(el.dataset.src ?? "");
+    const src = safeDecode(el.dataset.src ?? "");
     const key = `${dark ? "d" : "l"}:${src}`;
     el.dataset.done = "1";
     const cached = mermaidCache.get(key);

@@ -23,7 +23,7 @@
 ```
 
 - REST 와 MCP 는 모두 `server/src/scoped.ts` 의 `ScopedVault` 를 거쳐서만 볼트와 인덱스에 닿는다. 인덱스는 권한을 모르고, 검색·백링크·태그·위젯 결과는 모두 `ScopedVault` 에서 권한으로 거른다. 권한 검사를 이 층 밖에 두면 한 경로만 빠져도 숨김 경로가 새어 나간다.
-- 모든 변경은 `Vault.batch()` 하나를 지난다. 가상의 상태에서 권한·충돌을 먼저 모두 검사한 뒤 디스크에 적용하고 한 커밋으로 남긴다. 적용이나 커밋 중에 실패하면 원래 내용으로 되돌린다.
+- 모든 변경은 `Vault.batch()` 하나를 지난다. 가상의 상태에서 권한·충돌을 먼저 모두 검사한 뒤 디스크에 적용하고 한 커밋으로 남긴다. 적용이나 커밋 중에 예외가 나면 원래 내용으로 되돌린다. 되돌리기는 예외가 났을 때만이다 — 적용 도중 프로세스가 죽으면 반쯤 적용된 상태가 디스크에 남고, 다음 시작 때 서버 밖 변경으로 커밋된다.
 
 ## 개발 모드
 
@@ -83,7 +83,14 @@ pnpm build
 
 각 패키지의 시험은 `packages/core/test`, `server/test`, `web/src/**/*.test.{ts,tsx}` 에 있다. 출력에서 실행된 시험 수가 0 이 아닌지 본다. server·web 시험은 core 를 `dist` 가 아니라 원본(`keyring-source` 조건)으로 읽으므로, core 를 고친 뒤 core 를 먼저 빌드하지 않아도 새 코드로 돈다.
 
-루트 `pnpm test` 는 첫 실패 패키지에서 멈춘다. 떨어진 패키지 뒤의 패키지는 실행되지 않은 것이니 `pnpm --filter <패키지> test` 로 따로 돌려 개수를 확인한다. 머신 부하가 높으면 server 시험이 5초 timeout 으로 떨어질 수 있다.
+루트 `pnpm test` 는 첫 실패 패키지에서 멈춘다. 떨어진 패키지 뒤의 패키지는 실행되지 않은 것이니 `pnpm --filter <패키지> test` 로 따로 돌려 개수를 확인한다. 머신 부하가 높으면(여러 워크트리가 함께 시험을 돌릴 때) server·web 시험이 5초 timeout 이나 짧은 대기 단언에서 떨어지고, 떨어지는 시험이 실행마다 다르다. 떨어진 파일을 단독으로 다시 돌려 통과하는지 보고, 전체는 워커 수를 줄여 다시 돌린다 — 실행 개수가 같아야 통과다.
+
+```bash
+pnpm --filter @keyring-notes/web exec vitest run --maxWorkers=3
+pnpm --filter @keyring-notes/server exec vitest run --no-file-parallelism --testTimeout 60000
+```
+
+web 시험은 Node 환경이 기본이다. DOM 이 필요한 시험(`renderMarkdown`, React 클라이언트 렌더)은 그 파일 첫 줄에 `// @vitest-environment jsdom` 을 둔다. Node 환경에서는 `dompurify` 에 `sanitize` 가 없어 `renderMarkdown` 을 부를 수 없다. 전역 설정으로 환경을 바꾸지 않는다 — 나머지 시험이 느려진다.
 
 포맷과 린트는 `pnpm fmt`, `pnpm lint`. lefthook 이 커밋 전에는 stage 된 파일을, push 전에는 저장소 전체를 검사한다(`lefthook.yml`).
 

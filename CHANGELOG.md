@@ -18,6 +18,41 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - The button at the top right of the right panel now collapses the panel, with a panel icon instead of ✕.
 - In the editor, `**bold**`, `*italic*` and `~~strikethrough~~` text now look bold, italic and struck through, and `[ ]` markers, code fence language names and HTML tags are colored.
 
+### Fixed
+
+- A note whose text made the preview fail no longer blanks the whole app. A relative link with a malformed percent-encoded anchor, such as `[x](page.md#caf%E9)`, was enough. It also happened in **Edit** with Live Preview when the link was inside a callout or a table cell, and the app stayed blank after a reload.
+- When a note cannot be drawn, the preview shows a notice, the text of the note and a **Try again** button. The editor, the other tabs and the sidebar keep working. The Trash preview does the same, and in Live Preview a callout, table cell or formula that cannot be drawn stays as plain text.
+- An address whose hash is not valid percent-encoding, such as `#%E9`, no longer leaves the app blank on load.
+- Editing a note's properties no longer pushes the properties below out of the front matter when a value ends with `...` or `---`, such as `title: Thinking...`. Setting an icon, reordering notes and changing vault settings were affected in the same way.
+- A heading line with a very long run of spaces no longer freezes the server while it indexes the note.
+- A note that starts with empty front matter (`---` directly followed by `---`) is read as having no properties, instead of treating everything up to the next horizontal rule as front matter. Its title, summary and outline now come from the text below. A new note whose only content is those two lines counts as empty and is removed when you close it.
+- With autosave off, moving a note up or down, **Sort sub-notes**, **Use as folder**, renaming or deleting a workspace and deleting a note no longer discard unsaved text. A notice asks you to save the note first.
+- Logging out now asks first when any note or drawing has unsaved changes (not only the note in view) or when saves made offline are still waiting, and says how many. Logging out without a connection no longer deletes them.
+- A save the server refuses no longer blocks later offline saves from being sent. The refused save stays on the device and a notice names the note and the reason.
+- Desktop and mobile app: a failed write to the device vault while the network is down is now reported as a failed save instead of showing as saved.
+- Text typed while a note was being reloaded, renamed or reordered is no longer replaced by the server's version.
+
+## [0.12.0] - 2026-11-02
+
+### Added
+
+- A new note you close without giving it a title, text or properties is deleted. Notes that have sub-notes or files, or that you pinned, are kept. Daily notes and notes made from a template are not affected.
+- Choose **Ascending** or **Descending** to reverse a note's sub-note order by **Name**, **Last modified** or **Last opened**.
+- On narrow screens the path above the note stays on one line. Swipe it sideways to see the parent notes.
+
+### Changed
+
+- On touch screens, tapping a note that has sub-notes in the tree expands or collapses it. The arrow button at the right end of its row opens it.
+- On touch screens, opening a note no longer brings up the on-screen keyboard. A note you create with **New note** still puts the cursor in its title.
+- On touch screens, the back button closes what is open on top, one thing at a time: dialogs, menus, sheets and drawers.
+- The property count badge at the top of a note is gone.
+
+### Fixed
+
+- Deleting a wiki topic from the tree no longer fails. Its generated index and log go away with it, and undoing the delete rebuilds them.
+- A title you typed into a new note is kept when you close the tab before confirming it.
+- Emoji icons in the tree, the tabs and the pinned list line up with the other icons.
+
 ## [0.11.0] - 2026-11-01
 
 ### Added
@@ -171,6 +206,11 @@ First tagged release.
 - Notes and folders form one tree of nodes, grouped into workspaces.
 - English and Korean interface.
 
+[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/jang2162/keyring-notes/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/jang2162/keyring-notes/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/jang2162/keyring-notes/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/jang2162/keyring-notes/compare/v0.8.6...v0.9.0
 [0.8.6]: https://github.com/jang2162/keyring-notes/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/jang2162/keyring-notes/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/jang2162/keyring-notes/compare/v0.8.3...v0.8.4

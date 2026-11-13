@@ -2,7 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState, type Extension, type Range, type Transaction } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { enhance } from "./enhance";
-import { renderMarkdown, vaultRelative, type LinkResolver } from "./markdown";
+import { encodeSource, renderMarkdown, vaultRelative, type LinkResolver } from "./markdown";
 import { api } from "./api";
 import { t } from "./i18n";
 import { CALLOUT_LINE } from "./liveSyntax";
@@ -40,6 +40,24 @@ function activeLines(state: EditorState): Set<number> {
   return out;
 }
 
+/**
+ * 블록 위젯의 DOM 을 미리보기 렌더러로 채운다. 렌더러가 던지면 원문 글자로 떨어지고 예외는 콘솔에 남긴다.
+ * 위젯의 toDOM 이 던지면 편집기가 그리다 멈추고, 예외가 편집기를 만든 React effect 를 타고 루트까지 올라가 화면이 통째로 내려간다.
+ * 그 노트의 탭이 배치에 남아 새로 고쳐도 다시 죽는다 — 표 칸(tableWidget.ts 의 paintCell)과 줄 안 수식도 같은 이유로 막는다
+ */
+export function paintBlock(el: HTMLElement, src: string, ctx: LiveRenderContext, alive: () => boolean) {
+  try {
+    el.innerHTML = renderMarkdown(src, { resolver: ctx.resolver, docPath: ctx.docPath, hideFrontmatter: true, docId: "lp" }).html;
+    // 위젯·할 일 체크는 원문을 고치는 것이라 여기서는 하지 않는다
+    for (const box of el.querySelectorAll<HTMLInputElement>("input.task")) box.disabled = true;
+    enhance(el, { resolver: ctx.resolver, docPath: ctx.docPath }, alive);
+  } catch (e) {
+    console.error("keyring: live preview block failed", e);
+    el.textContent = src;
+    el.classList.add("cm-lp-failed");
+  }
+}
+
 /** 미리보기 렌더러로 그린 블록. 같은 원문이면 다시 그리지 않는다 */
 class BlockWidget extends WidgetType {
   constructor(
@@ -61,10 +79,7 @@ class BlockWidget extends WidgetType {
       el.textContent = this.src;
       return el;
     }
-    el.innerHTML = renderMarkdown(this.src, { resolver: ctx.resolver, docPath: ctx.docPath, hideFrontmatter: true, docId: "lp" }).html;
-    // 위젯·할 일 체크는 원문을 고치는 것이라 여기서는 하지 않는다
-    for (const box of el.querySelectorAll<HTMLInputElement>("input.task")) box.disabled = true;
-    enhance(el, { resolver: ctx.resolver, docPath: ctx.docPath }, () => el.isConnected || !view.dom.isConnected);
+    paintBlock(el, this.src, ctx, () => el.isConnected || !view.dom.isConnected);
     el.addEventListener("mousedown", (e) => {
       const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-wikilink], a[href]");
       if (a && ctx.onLink && a.dataset.wikilink) {
@@ -291,11 +306,16 @@ class InlineMath extends WidgetType {
     wrap.className = "cm-lp-math";
     const el = document.createElement("span");
     el.className = "math";
-    el.dataset.tex = encodeURIComponent(this.tex);
+    el.dataset.tex = encodeSource(this.tex);
     el.textContent = this.tex;
     wrap.append(el);
     const ctx = this.getCtx();
-    if (ctx) enhance(wrap, { resolver: ctx.resolver, docPath: ctx.docPath });
+    try {
+      if (ctx) enhance(wrap, { resolver: ctx.resolver, docPath: ctx.docPath });
+    } catch (e) {
+      // 원문은 이미 글자로 들어 있다(paintBlock 의 이유)
+      console.error("keyring: live preview math failed", e);
+    }
     return wrap;
   }
 }
@@ -435,6 +455,8 @@ function inlinePlugin(getCtx: GetCtx) {
 
 const theme = EditorView.baseTheme({
   ".cm-lp-block": { padding: "4px 0", cursor: "pointer", fontFamily: "var(--font-sans)", whiteSpace: "normal" },
+  // 그리지 못해 원문 글자로 떨어진 블록(paintBlock): 줄바꿈을 지킨다
+  ".cm-lp-block.cm-lp-failed": { whiteSpace: "pre-wrap" },
   ".cm-lp-block > :first-child": { marginTop: "0" },
   ".cm-lp-block > :last-child": { marginBottom: "0" },
   ".cm-lp-block img": { maxWidth: "100%" },
