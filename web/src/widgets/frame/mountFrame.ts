@@ -15,6 +15,7 @@ import {
   FRAME_MIN_HEIGHT,
   fullscreenDocEscape,
   fullscreenFocusButton,
+  fullscreenWrapEscape,
   routeFrameMessage,
 } from "./layout";
 import { fetchFrameCode, resolveFrameCode } from "./source";
@@ -125,20 +126,28 @@ export function mountFrame(
     bar.append(button);
     wrap.append(bar);
   }
-  // 전체 화면에서 부모 쪽(단추 등)에 포커스가 있을 때의 Esc. iframe 안 Esc 는 런타임 → 호스트로 온다
+  // 전체 화면에서 부모 쪽(단추 등)에 포커스가 있을 때의 Esc — 판정은 fullscreenWrapEscape
   const onWrapKey = (e: KeyboardEvent) => {
-    if (fullscreen && e.key === "Escape" && !e.isComposing) {
-      e.preventDefault();
-      e.stopPropagation();
-      setFullscreen(false);
-    }
+    if (!fullscreenWrapEscape(e, fullscreen)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFullscreen(false);
   };
   wrap.addEventListener("keydown", onWrapKey);
   // 전체 화면인 동안만 단다(setFullscreen) — 판정은 fullscreenDocEscape
   function onDocKey(e: KeyboardEvent) {
     const target = e.target instanceof Node ? e.target : null;
     const targetHoldsFrame = !!target && target !== wrap && target.contains(wrap);
-    if (!fullscreenDocEscape({ key: e.key, isComposing: e.isComposing, defaultPrevented: e.defaultPrevented, targetHoldsFrame, modalOpen: modalOpen() }))
+    if (
+      !fullscreenDocEscape({
+        key: e.key,
+        isComposing: e.isComposing,
+        keyCode: e.keyCode,
+        defaultPrevented: e.defaultPrevented,
+        targetHoldsFrame,
+        modalOpen: modalOpen(),
+      })
+    )
       return;
     e.preventDefault();
     setFullscreen(false);

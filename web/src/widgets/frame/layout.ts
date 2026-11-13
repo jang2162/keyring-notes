@@ -1,3 +1,4 @@
+import { widgetKeyAction } from "../session";
 import { parseFrameMsg, type FrameMsg } from "./protocol";
 
 /** keyring-widget iframe 호스트의 순수 판정(DOM 접착은 mountFrame.ts) */
@@ -42,18 +43,27 @@ export function fullscreenFocusButton(activeInWrap: boolean): boolean {
 }
 
 /**
+ * 전체 화면인 동안 감싸개(단추 등 부모 쪽)에 떨어진 Esc 를 닫기로 받을까. iframe 안 Esc 는 런타임 → 호스트로 온다.
+ * 조합 판정은 widgetKeyAction 과 같다 — Safari 는 조합을 끝내는 키를 isComposing false·keyCode 229 로 보낸다.
+ */
+export function fullscreenWrapEscape(e: { key: string; isComposing: boolean; keyCode: number }, fullscreen: boolean): boolean {
+  return fullscreen && widgetKeyAction(e) === "escape";
+}
+
+/**
  * 전체 화면인 동안 document 에 올라온 Esc 를 닫기로 받을까 — 감싸개 안의 Esc 는 감싸개가 받으니, 여기는 포커스가 감싸개를 품은 곳
  * (body·위젯 뿌리·편집기)에 떨어졌을 때다(팔레트를 닫은 뒤 등). 다른 요소의 Esc(입력칸·메뉴)와 이미 처리된 Esc 는 건드리지 않고,
- * 모달이 열려 있으면 그 모달 차례다 — 모달은 window 에서 받아 document 보다 늦다.
+ * 모달이 열려 있으면 그 모달 차례다 — 모달은 window 에서 받아 document 보다 늦다. 조합 판정은 fullscreenWrapEscape 와 같다.
  */
 export function fullscreenDocEscape(e: {
   key: string;
   isComposing: boolean;
+  keyCode: number;
   defaultPrevented: boolean;
   targetHoldsFrame: boolean;
   modalOpen: boolean;
 }): boolean {
-  return e.key === "Escape" && !e.isComposing && !e.defaultPrevented && e.targetHoldsFrame && !e.modalOpen;
+  return widgetKeyAction(e) === "escape" && !e.defaultPrevented && e.targetHoldsFrame && !e.modalOpen;
 }
 
 /**
