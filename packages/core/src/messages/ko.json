@@ -424,6 +424,7 @@
   "doc.reloadAskServer": "내 변경을 버리고 서버 버전을 불러올까요?",
   "doc.reloadLocal": "저장된 버전 불러오기",
   "doc.reloadServer": "서버 버전 불러오기",
+  "doc.renderFailed": "이 노트를 그리지 못했습니다. 아래에 원문을 그대로 보여 줍니다.",
   "doc.rightPanel": "개요·백링크·이력",
   "doc.saveCopy": "내 변경을 사본으로 저장",
   "doc.saveFirst": "\"{name}\"에 저장하지 않은 변경이 있습니다. 먼저 저장하세요.",

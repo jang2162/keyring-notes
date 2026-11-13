@@ -8,6 +8,11 @@ describe("주소의 노트 경로", () => {
     expect(notePathOfHash("#/:settings")).toBeNull();
     expect(notePathOfHash("")).toBeNull();
   });
+
+  it("퍼센트 인코딩이 깨진 주소에서도 던지지 않는다 — 부팅 때 읽는 값이라 던지면 화면이 뜨지 않는다", () => {
+    expect(notePathOfHash("#%E9")).toBe("%E9");
+    expect(notePathOfHash("#/a%.md")).toBe("a%.md");
+  });
 });
 
 describe("닫으면 돌아갈 노트", () => {

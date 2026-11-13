@@ -3,12 +3,14 @@
  * 부팅이 동기화 화면으로 주소를 바꿔 치운 노트는 그 기록 항목의 history.state(`{ back }`)에 남는다.
  */
 
+import { safeDecode } from "./safeDecode";
+
 /** 설정 화면 주소: 파일 이름에 못 쓰는 ":"로 시작해 문서 경로와 겹치지 않는다 */
 export const SETTINGS_HASH = "#/:settings";
 
 /** 주소(location.hash)가 가리키는 노트 경로. 비었거나 설정 등 ":" 로 시작하는 화면이면 null */
 export function notePathOfHash(hash: string): string | null {
-  const h = decodeURIComponent(hash.replace(/^#\/?/, ""));
+  const h = safeDecode(hash.replace(/^#\/?/, ""));
   if (h.startsWith(":")) return null;
   return h || null;
 }
