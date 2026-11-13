@@ -273,11 +273,15 @@ function updateTreeScan(prev: BlockScan, state: EditorState, changes: ChangeDesc
   return out;
 }
 
+/** 여는 줄을 포함해 닫는 줄을 찾는 줄 수: $$ 수식은 199줄 뒤까지, %% 주석은 499줄 뒤까지 */
+const MATH_LOOKAHEAD = 200;
+const COMMENT_LOOKAHEAD = 500;
+
 /**
- * 줄 루프가 한 줄을 정할 때 그 줄과 그 뒤로 보는 줄 수(그 줄 포함). 수식은 닫는 줄을 199줄 뒤까지, 주석은 499줄 뒤까지 찾는다.
- * 증분 갱신이 바뀐 줄보다 이만큼 앞에서 다시 훑기 시작하는 근거다 — 찾는 거리를 늘리면 여기도 늘린다
+ * 줄 루프가 한 줄을 정할 때 그 줄과 그 뒤로 보는 줄 수(그 줄 포함). 증분 갱신이 바뀐 줄보다 이만큼 앞에서 다시 훑기 시작하는 근거라
+ * 찾는 거리 둘에서 정한다 — 거리를 늘리면 다시 훑는 창도 따라 는다
  */
-const LOOKAHEAD = 500;
+const LOOKAHEAD = Math.max(MATH_LOOKAHEAD, COMMENT_LOOKAHEAD);
 
 /**
  * 줄 단위로: $$ 수식 블록, 여러 줄 주석, 임베드만 있는 줄. first 줄을 앞 블록에 걸치지 않은 줄로 보고 훑어 out 에 더한다.
@@ -299,7 +303,7 @@ function scanLines(doc: Text, tree: TreeScan, first: number, out: Block[], stop?
         out.push({ from: line.from, to: line.to, kind: "math" });
         continue;
       }
-      for (let j = i + 1; j <= doc.lines && j < i + 200; j++) {
+      for (let j = i + 1; j <= doc.lines && j < i + MATH_LOOKAHEAD; j++) {
         if (doc.line(j).text.includes("$$")) {
           out.push({ from: line.from, to: doc.line(j).to, kind: "math" });
           i = j;
@@ -309,7 +313,7 @@ function scanLines(doc: Text, tree: TreeScan, first: number, out: Block[], stop?
       continue;
     }
     if (t.startsWith("%%") && !(t.length > 2 && t.slice(2).includes("%%"))) {
-      for (let j = i + 1; j <= doc.lines && j < i + LOOKAHEAD; j++) {
+      for (let j = i + 1; j <= doc.lines && j < i + COMMENT_LOOKAHEAD; j++) {
         if (doc.line(j).text.trimEnd().endsWith("%%")) {
           out.push({ from: line.from, to: doc.line(j).to, kind: "comment" });
           i = j;
