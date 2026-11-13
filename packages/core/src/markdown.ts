@@ -2,6 +2,7 @@ import { parse as parseYaml } from "yaml";
 import { PathError } from "./errors.js";
 import { dailyLinkDate, dailyNotesOn, type DailyLookup } from "./daily.js";
 import { widgetFileRefs } from "./keyringWidget.js";
+import { wikilinkLabels, wikilinkMatches } from "./linkScan.js";
 
 export interface Heading {
   level: number;
@@ -106,9 +107,12 @@ export function headings(content: string): Heading[] {
     const h = atxHeading(line);
     if (h) out.push({ level: h.level, text: h.text, line: i + 1, endLine: lines.length });
   }
-  for (let i = 0; i < out.length; i++) {
-    const next = out.slice(i + 1).find((h) => h.level <= out[i].level);
-    if (next) out[i].endLine = next.line - 1;
+  // 섹션은 같거나 높은 수준의 다음 제목 앞에서 끝난다. 아직 안 끝난 제목만 쌓아 두고 한 번 훑는다 —
+  // 제목마다 뒤쪽을 다시 찾으면 제목 수의 제곱이 된다(제목만 수만 줄인 문서에서 색인이 수십 초 멈춘다)
+  const open: Heading[] = [];
+  for (const h of out) {
+    while (open.length && open[open.length - 1].level >= h.level) open.pop()!.endLine = h.line - 1;
+    open.push(h);
   }
   return out;
 }
@@ -292,8 +296,8 @@ export function wikilinkTargets(content: string): string[] {
       continue;
     }
     if (fence) continue;
-    for (const m of line.replace(/`[^`]*`/g, "").matchAll(/!?\[\[([^\]\n|#]*)(?:#[^\]\n|]*)?(?:\|[^\]\n]*)?\]\]/g)) {
-      const t = m[1].trim();
+    for (const m of wikilinkMatches(line.replace(/`[^`]*`/g, ""))) {
+      const t = m.target.trim();
       if (t) out.add(t);
     }
   }
@@ -505,7 +509,7 @@ export function analyze(relPath: string, content: string): Analysis {
       break;
     }
   }
-  summary = summary.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[*_`]/g, "");
+  summary = wikilinkLabels(summary).replace(/[*_`]/g, "");
   if ([...summary].length > 120) summary = [...summary].slice(0, 119).join("") + "…";
   return {
     title: fmTitle || h1 || fileName,

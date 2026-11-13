@@ -92,3 +92,50 @@ describe("ATX 제목 줄", () => {
     expect(elapsed(20000, (s) => analyze("a.md", s))).toBeLessThan(500);
   });
 });
+
+describe("제목의 섹션 끝 줄", () => {
+  /** 규칙: 섹션은 같거나 높은 수준의 다음 제목 앞 줄에서 끝나고, 그런 제목이 없으면 문서 끝까지다 */
+  const byRule = (hs: { level: number; line: number }[], total: number) =>
+    hs.map((h, i) => (hs.slice(i + 1).find((x) => x.level <= h.level)?.line ?? total + 1) - 1);
+
+  it("무작위 문서 2천 건에서 규칙과 같다", () => {
+    let seed = 99;
+    const next = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x80000000;
+    };
+    for (let k = 0; k < 2000; k++) {
+      const lines: string[] = [];
+      for (let len = Math.floor(next() * 40); len > 0; len--) lines.push(next() < 0.6 ? `${"#".repeat(1 + Math.floor(next() * 6))} 제목` : "글");
+      const doc = lines.join("\n");
+      const hs = headings(doc);
+      expect(
+        hs.map((h) => h.endLine),
+        JSON.stringify(doc),
+      ).toEqual(byRule(hs, lines.length));
+    }
+  });
+
+  it("예: 하위 제목은 상위 섹션 안에 든다", () => {
+    expect(headings("# a\n## b\n글\n### c\n## d\n# e\n글").map((h) => [h.text, h.line, h.endLine])).toEqual([
+      ["a", 1, 5],
+      ["b", 2, 4],
+      ["c", 4, 4],
+      ["d", 5, 5],
+      ["e", 6, 7],
+    ]);
+  });
+
+  // 제목마다 뒤쪽을 다시 찾는 꼴은 제목 8만 줄에 수 초~수십 초가 걸린다. 2만 줄을 먼저 재고 통과한 때만 8만 줄을 잰다
+  it("제목만 수만 줄인 문서도 바로 끝난다", { timeout: 120_000 }, () => {
+    for (const n of [20000, 80000])
+      for (const line of ["# a\n", "###### a\n"]) {
+        const doc = line.repeat(n);
+        const t = performance.now();
+        const hs = headings(doc);
+        expect(performance.now() - t, `${JSON.stringify(line)} × ${n}`).toBeLessThan(1000);
+        expect(hs).toHaveLength(n);
+        expect(hs[0].endLine).toBe(1);
+      }
+  });
+});

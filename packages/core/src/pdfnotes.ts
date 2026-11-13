@@ -6,6 +6,7 @@
  *
  *   - [[raw/assets/보고서.pdf#page=3|3쪽]] “고른 글” — 메모 ^pdf-3-k2x9
  */
+import { isLineEndCode, isSpaceCode } from "./linkScan.js";
 import { vaultText, type VaultLang } from "./vaultText.js";
 
 /** 주석 절 제목(볼트 언어) */
@@ -23,16 +24,72 @@ export interface PdfAnnotation {
   line: number;
 }
 
-const LINE_RE = /^\s*[-*]\s+\[\[([^\]|#]+\.pdf)#page=(\d+)(?:\|[^\]]*)?\]\]\s+“(.*)”(?:\s+—\s+(.*?))?\s+\^([A-Za-z0-9-]+)\s*$/i;
+const LINE_HEAD_RE = /^\s*[-*]\s+\[\[([^\]|#]+\.pdf)#page=(\d+)(?:\|[^\]]*)?\]\]/i;
+const LINE_ID_RE = /^\^([A-Za-z0-9-]+)\s*$/;
+
+interface PdfLine {
+  pdf: string;
+  page: string;
+  quote: string;
+  /** ` — 메모` 가 없으면 undefined */
+  note: string | undefined;
+  id: string;
+}
+
+/**
+ * 주석 한 줄을 읽는다. 주석 줄이 아니면 null. 읽는 규칙은 정규식
+ * `/^\s*[-*]\s+\[\[([^\]|#]+\.pdf)#page=(\d+)(?:\|[^\]]*)?\]\]\s+“(.*)”(?:\s+—\s+(.*?))?\s+\^([A-Za-z0-9-]+)\s*$/i` 와 같다
+ * (`packages/core/test/pdfnotes.test.ts` 가 그 정규식과 견준다).
+ *
+ * 그 정규식을 그대로 쓰지 않는 이유: 인용·메모·공백 조각이 같은 글자를 나눠 가져, 블록 ID 없이 ` — ` 뒤에 공백이 긴 줄에서
+ * 공백 수의 세제곱으로 느리다(2,000칸에 10초). 여기서는 앞머리와 줄 끝 블록 ID 를 먼저 정하고 그 사이만 한 번 훑는다:
+ * 블록 ID 는 마지막 `^` 뒤이고, 인용은 뒤가 맞는 `”` 중 가장 뒤의 것까지, 메모는 ` — ` 뒤부터 블록 ID 앞 공백 전까지다.
+ */
+function parsePdfLine(line: string): PdfLine | null {
+  const head = LINE_HEAD_RE.exec(line);
+  if (!head) return null;
+  const caret = line.lastIndexOf("^");
+  const id = caret < 0 ? null : LINE_ID_RE.exec(line.slice(caret));
+  if (!id) return null;
+  // 블록 ID 앞 공백 구간 [gap, caret) — 하나는 있어야 한다
+  let gap = caret;
+  while (gap > 0 && isSpaceCode(line.charCodeAt(gap - 1))) gap--;
+  if (gap === caret) return null;
+  let open = head[0].length;
+  while (isSpaceCode(line.charCodeAt(open))) open++;
+  if (open === head[0].length || line[open] !== "“") return null;
+  const quoteStart = open + 1;
+  // 인용과 메모는 줄 끝 글자(CR 등)를 건너지 못한다
+  let quoteLimit = quoteStart;
+  while (quoteLimit < caret && !isLineEndCode(line.charCodeAt(quoteLimit))) quoteLimit++;
+  let lastLineEnd = gap - 1;
+  while (lastLineEnd >= quoteStart && !isLineEndCode(line.charCodeAt(lastLineEnd))) lastLineEnd--;
+  const found = (close: number, note: string | undefined): PdfLine => ({ pdf: head[1], page: head[2], quote: line.slice(quoteStart, close), note, id: id[1] });
+  for (let close = quoteLimit - 1; close >= quoteStart; close--) {
+    if (line[close] !== "”") continue;
+    let dash = close + 1;
+    while (isSpaceCode(line.charCodeAt(dash))) dash++;
+    if (dash > close + 1 && line[dash] === "—") {
+      let noteStart = dash + 1;
+      while (isSpaceCode(line.charCodeAt(noteStart))) noteStart++;
+      // ` — ` 뒤가 블록 ID 까지 공백뿐이면 빈 메모(공백이 둘은 있어야 한다: 하나는 ` — ` 의 것, 하나는 블록 ID 앞의 것)
+      if (noteStart === caret) {
+        if (caret - dash > 2) return found(close, "");
+      } else if (noteStart > dash + 1 && lastLineEnd < noteStart) return found(close, line.slice(noteStart, gap));
+    }
+    if (close + 1 >= gap) return found(close, undefined);
+  }
+  return null;
+}
 
 /** 짝 노트에 남긴 주석들. pdf를 주면 그 PDF를 가리키는 것만(이름 비교는 resolve로) */
 export function pdfAnnotations(content: string, resolve?: (target: string) => string | null, pdfPath?: string): PdfAnnotation[] {
   const out: PdfAnnotation[] = [];
   content.split("\n").forEach((line, i) => {
-    const m = LINE_RE.exec(line);
+    const m = parsePdfLine(line);
     if (!m) return;
-    if (pdfPath && (resolve ? resolve(m[1]) : m[1]) !== pdfPath) return;
-    out.push({ id: m[5], pdf: m[1], page: Number(m[2]), quote: m[3], ...(m[4] ? { note: m[4] } : {}), line: i + 1 });
+    if (pdfPath && (resolve ? resolve(m.pdf) : m.pdf) !== pdfPath) return;
+    out.push({ id: m.id, pdf: m.pdf, page: Number(m.page), quote: m.quote, ...(m.note ? { note: m.note } : {}), line: i + 1 });
   });
   return out;
 }
@@ -91,10 +148,10 @@ export function addPdfAnnotation(
   let at = -1;
   let last = -1;
   for (let i = head + 1; i < end; i++) {
-    const m = LINE_RE.exec(lines[i]);
+    const m = parsePdfLine(lines[i]);
     if (!m) continue;
     last = i;
-    if (at < 0 && Number(m[2]) > a.page) at = i;
+    if (at < 0 && Number(m.page) > a.page) at = i;
   }
   if (at < 0) at = last >= 0 ? last + 1 : head + 1;
   if (last < 0) {
@@ -110,8 +167,8 @@ export function addPdfAnnotation(
 export function removePdfAnnotation(content: string, id: string): string {
   const lines = content.split("\n");
   const i = lines.findIndex((l) => {
-    const m = LINE_RE.exec(l);
-    return m !== null && m[5] === id;
+    const m = parsePdfLine(l);
+    return m !== null && m.id === id;
   });
   if (i < 0) return content;
   lines.splice(i, 1);

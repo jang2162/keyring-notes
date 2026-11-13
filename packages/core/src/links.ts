@@ -1,6 +1,7 @@
 import { parseFrontmatter, resolveLink } from "./markdown.js";
 import { dailyOfPath, type DailyLookup } from "./daily.js";
 import { KEYRING_WIDGET_LANG, parseWidgetBlock, rewriteWidgetFileRefs, widgetDataPath } from "./keyringWidget.js";
+import { mdlinkMatches, quotedValue, wikilinkMatches } from "./linkScan.js";
 
 /**
  * 이름 바꾸기·이동 때 다른 문서의 링크를 고친다(서버 Vault.batch와 앱 LocalVault가 같이 쓴다).
@@ -35,9 +36,20 @@ export interface LinkRewriteResult {
   count: number;
 }
 
-const WIKILINK_RE = /(!?)\[\[([^\]\n|#]*)((?:#[^\]\n|]*)?)((?:\|[^\]\n]*)?)\]\]/g;
-const MDLINK_RE = /(!?)\[((?:[^\]\\\n]|\\.)*)\]\((<[^>\n]*>|[^)\s]+)((?:\s+(?:"[^"\n]*"|'[^'\n]*'))?)\)/g;
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+
+/** 찾은 자리마다 fn 이 준 글로 바꾼다. fn 이 null 을 주면 그 자리는 그대로 둔다 */
+function replaceSpans<M extends { start: number; end: number }>(text: string, matches: M[], fn: (m: M) => string | null): string {
+  let out = "";
+  let last = 0;
+  for (const m of matches) {
+    const next = fn(m);
+    if (next === null) continue;
+    out += text.slice(last, m.start) + next;
+    last = m.end;
+  }
+  return last === 0 ? text : out + text.slice(last);
+}
 
 function dirname(p: string): string {
   const i = p.lastIndexOf("/");
@@ -107,9 +119,9 @@ class Rewriter {
   }
 
   wikilinks(text: string): string {
-    return text.replace(WIKILINK_RE, (all, bang: string, target: string, heading: string, alias: string) => {
+    return replaceSpans(text, wikilinkMatches(text), ({ bang, target, heading, alias }) => {
       const next = this.wikiTarget(target);
-      if (next === null) return all;
+      if (next === null) return null;
       this.count++;
       return `${bang}[[${next}${heading}${alias}]]`;
     });
@@ -117,10 +129,10 @@ class Rewriter {
 
   /** 상대 경로 마크다운 링크: oldPath(문서의 원래 위치) 기준으로 해석해 실제 파일일 때만, newPath 기준으로 다시 쓴다 */
   mdlinks(text: string, oldPath: string, newPath: string): string {
-    return text.replace(MDLINK_RE, (all, bang: string, label: string, url: string, title: string) => {
+    return replaceSpans(text, mdlinkMatches(text), ({ bang, label, url, title }) => {
       const angle = url.startsWith("<");
       const raw = angle ? url.slice(1, -1) : url;
-      if (!raw || raw.startsWith("#") || raw.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return all;
+      if (!raw || raw.startsWith("#") || raw.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;
       const hashAt = raw.indexOf("#");
       const pathPart = hashAt < 0 ? raw : raw.slice(0, hashAt);
       const fragment = hashAt < 0 ? "" : raw.slice(hashAt);
@@ -131,10 +143,10 @@ class Rewriter {
         decoded = pathPart;
       }
       const r0 = normalizeRel(`${dirname(oldPath)}/${decoded}`);
-      if (!r0 || !this.beforeSet.has(r0)) return all;
+      if (!r0 || !this.beforeSet.has(r0)) return null;
       const expected = this.ctx.moves.get(r0) ?? r0;
-      if (!this.afterSet.has(expected)) return all;
-      if (normalizeRel(`${dirname(newPath)}/${decoded}`) === expected) return all;
+      if (!this.afterSet.has(expected)) return null;
+      if (normalizeRel(`${dirname(newPath)}/${decoded}`) === expected) return null;
       const rel = relativePath(dirname(newPath), expected);
       const encoded = angle
         ? rel
@@ -149,14 +161,15 @@ class Rewriter {
   /** 프런트매터 sources 값 하나(따옴표 포함 가능): [[…]]가 있으면 위키링크로, 아니면 경로 값으로 */
   sourceValue(token: string): string {
     if (token.includes("[[")) return this.wikilinks(token);
-    const m = /^(\s*)(["']?)(.*?)\2(\s*)$/.exec(token);
-    if (!m || !m[3] || /^[a-z][a-z0-9+.-]*:\/\//i.test(m[3])) return token;
-    const v = m[3];
+    const m = quotedValue(token);
+    if (!m) return token;
+    const [lead, quote, v, trail] = m;
+    if (!v || /^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return token;
     const target = v.split("|")[0].split("#")[0];
     const next = this.wikiTarget(target);
     if (next === null) return token;
     this.count++;
-    return `${m[1]}${m[2]}${next}${v.slice(target.length)}${m[2]}${m[4]}`;
+    return `${lead}${quote}${next}${v.slice(target.length)}${quote}${trail}`;
   }
 }
 

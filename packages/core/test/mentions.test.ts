@@ -49,3 +49,84 @@ describe("연결되지 않은 언급(로컬 볼트)", () => {
     expect((await v.mentions("경제/기준금리.md")).docs).toEqual([]);
   });
 });
+
+describe("언급 찾기는 규칙과 같은 답을 내고, 언급이 많은 줄도 바로 끝난다", () => {
+  /**
+   * 한 줄에서 언급을 고르는 규칙을 그대로 적은 것(가린 자리는 정규식으로, 겹침은 범위 전부와 견줘서).
+   * 구현에는 쓰지 않는다 — 닫히지 않는 괄호가 많거나 언급이 많은 줄에서 길이의 제곱으로 느리다.
+   */
+  function byRule(line: string, names: string[]): [number, number][] {
+    const masked: [number, number][] = [];
+    for (const re of [/`+[^`]*`+/g, /!?\[\[[^\]\n]*\]\]/g, /!?\[[^\]\n]*\]\([^)\n]*\)/g, /<[^>\n]+>/g, /https?:\/\/\S+/g])
+      for (const m of line.matchAll(re)) masked.push([m.index, m.index + m[0].length]);
+    const word = /[A-Za-z0-9_]/;
+    const lower = line.toLowerCase();
+    const taken: [number, number][] = [];
+    for (const name of names.map((n) => n.toLowerCase())) {
+      for (let at = lower.indexOf(name); at >= 0; at = lower.indexOf(name, at + name.length)) {
+        const end = at + name.length;
+        if (masked.some(([a, b]) => at < b && end > a) || taken.some(([a, b]) => at < b && end > a)) continue;
+        if (word.test(name[0]) && word.test(line[at - 1] ?? "")) continue;
+        if (word.test(name[name.length - 1]) && word.test(line[end] ?? "")) continue;
+        taken.push([at, end]);
+      }
+    }
+    return taken.sort((x, y) => x[0] - y[0]);
+  }
+
+  it("무작위 줄 3만 건", () => {
+    const parts = [
+      "ab",
+      "abc",
+      "bc",
+      "a b",
+      "AB",
+      "가나",
+      "가",
+      "[[ab]]",
+      "[[",
+      "]]",
+      "[ab](bc)",
+      "[",
+      "](",
+      ")",
+      "<ab>",
+      "<",
+      ">",
+      "`ab`",
+      "`",
+      "https://ab.c ",
+      " ",
+      "_",
+      "1",
+      "!",
+    ];
+    const names = ["a b", "abc", "ab", "가나", "bc", "AB"];
+    let seed = 31;
+    const next = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x80000000;
+    };
+    let found = 0;
+    for (let k = 0; k < 30000; k++) {
+      let line = "";
+      for (let len = Math.floor(next() * 10); len > 0; len--) line += parts[Math.floor(next() * parts.length)];
+      const got = unlinkedMentions(line, names).map((m) => [m.start, m.end]);
+      const want = byRule(line, names);
+      found += want.length;
+      if (JSON.stringify(got) !== JSON.stringify(want)) expect(got, JSON.stringify(line)).toEqual(want);
+    }
+    expect(found).toBeGreaterThan(10000);
+  });
+
+  // 찾은 자리마다 범위 전부와 견주는 꼴은 한 줄에 언급 2만 개면 수 초가 걸린다. 5천 개를 먼저 재고 통과한 때만 2만 개를 잰다
+  it("한 줄에 언급·링크가 수만 개", { timeout: 120_000 }, () => {
+    for (const n of [5000, 20000])
+      for (const unit of ["zz ", "[[x]] zz ", "`c` zz yy "]) {
+        const t = performance.now();
+        const found = unlinkedMentions(unit.repeat(n), ["zz", "yy"]);
+        expect(performance.now() - t, `${JSON.stringify(unit)} × ${n}`).toBeLessThan(1000);
+        expect(found.length).toBeGreaterThanOrEqual(n);
+      }
+  });
+});
