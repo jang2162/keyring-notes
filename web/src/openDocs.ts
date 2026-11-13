@@ -46,6 +46,29 @@ export function upsertDoc(s: DocStore, doc: Omit<OpenDoc, "seq">): DocStore {
   return { ...s, [doc.path]: { doc: { ...doc, seq }, save: { kind: "idle" }, conflict: null } };
 }
 
+/**
+ * 다시 읽은 문서를 넣는다. 부르는 쪽은 「저장 안 한 변경이 없다」를 읽기 전에만 볼 수 있다 — 읽는 사이 친 글이 있으면 초안을 남긴다.
+ * 서버 본문이 저장본과 같으면 해시만 맞추고, 다르면 손대지 않는다: 저장본을 서버 본문으로 바꾸면 다음 저장이 서버의 변경을 말없이 덮는다.
+ * 옛 해시를 두면 다음 저장이 충돌(409)로 가서 기존 3방향 병합이 맡는다.
+ * force: 초안을 버리기로 한 뒤(과거 판으로 되돌리기, 내 변경을 사본으로 저장한 뒤)
+ */
+export function reloadDoc(s: DocStore, doc: Omit<OpenDoc, "seq">, force = false): DocStore {
+  const e = s[doc.path];
+  if (force || !e || !isDirty(e)) return upsertDoc(s, doc);
+  return doc.saved === e.doc.saved ? patchDoc(s, doc.path, (d) => (d.hash === doc.hash ? d : { ...d, hash: doc.hash })) : s;
+}
+
+/**
+ * 서버가 이 문서를 content 로 썼다(이름 바꾸기가 상대 링크를 고침, 순서 바꾸기가 rank 를 적음) — 요청은 저장 안 한 변경이 없을 때 보냈다.
+ * 초안이 그 내용과 같으면 저장본·해시만 맞춘다(에디터를 다시 만들지 않는다). 응답을 기다리는 동안 친 글이 있으면 초안을 남긴다:
+ * 쓴 내용이 저장본 그대로면 해시만 맞추고, 다르면 손대지 않아 다음 저장이 충돌(409) → 3방향 병합으로 간다(reloadDoc 과 같은 이유)
+ */
+export function serverWrote(d: OpenDoc, content: string, hash: string): OpenDoc {
+  if (d.draft === content) return d.saved === content && d.hash === hash ? d : { ...d, saved: content, hash };
+  if (d.draft === d.saved) return { ...d, saved: content, draft: content, hash, seq: d.seq + 1 };
+  return content === d.saved ? (d.hash === hash ? d : { ...d, hash }) : d;
+}
+
 const patchEntry = (s: DocStore, path: string, patch: (e: DocEntry) => DocEntry): DocStore => {
   const e = s[path];
   return e ? { ...s, [path]: patch(e) } : s;

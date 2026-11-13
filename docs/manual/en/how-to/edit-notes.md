@@ -8,6 +8,7 @@ It is for everyone who writes in Keyring Notes.
 
 - Notes save 1.5 seconds after you stop typing, and when you switch tabs or the window loses focus. Turn autosave off or change the delay in Settings → **Editor**.
 - `Ctrl/Cmd+S` saves right away, as a separate commit.
+- With autosave off, an action that would replace or remove a note's unsaved text does not run. A notice asks you to save that note first. This applies to moving a note up or down, **Sort sub-notes**, **Use as folder**, renaming a workspace, and deleting a note. The same applies while a save has failed or is in conflict.
 - On the server, consecutive autosaves of the same note by the same person are grouped into one commit for 10 minutes. Another commit or a backup in between starts a new commit. Agent writes are never grouped.
 
 ## When someone else changed the note
@@ -116,6 +117,10 @@ The web app can be installed to your home screen. The installed app keeps the wh
 The installed app starts this way unless you chose a mode yourself. To keep it in the server mode below, open `https://<server>/?local=0` once in a tab of the same browser; open `https://<server>/?local` to use the device vault in browser tabs too. A note opened in a new window uses the same mode as the window that opened it. If saves made offline in the server mode are still waiting, the installed app starts in the server mode once more so they are sent first.
 
 In the server mode (a browser tab, or after `?local=0`), notes you opened once open without a connection, and saves made offline are kept on the device and sent when you reconnect. Notes changed on the server in the meantime are not overwritten; your version is kept as an offline conflict copy. Search needs the server; without a connection the search panel says so.
+
+If the server refuses one of the saves made offline, the other saves are still sent. The refused save stays on the device, and a notice names the note and the reason. Open the note to see the kept text. The status bar keeps counting it until it is sent.
+
+Logging out deletes the copies on this device, including saves made offline that were not sent yet. If notes have unsaved changes or saves are still waiting, the app says how many and asks before it logs out. Without a connection you cannot log out, and nothing on the device is deleted.
 
 When the server is updated while the web app is open, a notice says **A new version is available.** Press **Reload** to switch to it. Unsaved notes are saved first, and if a save fails the app does not reload. With autosave off, the app asks whether to save before it reloads. The app checks for a new version when you come back to it, if 30 minutes have passed since the last check.
 

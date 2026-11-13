@@ -64,6 +64,26 @@ export function searchFailedOffline(local: boolean, e: unknown): boolean {
   return !local && isNetworkError(e);
 }
 
+/**
+ * 저장 실패를 오프라인 저장(대기열)으로 돌릴지: 서버 모드의 네트워크 오류만. 기기 볼트는 대기열을 보낼 곳이 없다 —
+ * 네트워크가 끊긴 채 디스크 쓰기가 실패하면(오류에 status 가 없다) 대기열에만 들어가 「저장됨」으로 보이고 파일에는 끝내 안 써진다
+ */
+export function saveFailedOffline(local: boolean, e: unknown): boolean {
+  return !local && isNetworkError(e);
+}
+
+/**
+ * 대기열 항목을 서버로 보내다 실패했을 때 할 일.
+ *   conflict  그사이 서버에서 바뀌었다(409): 합치거나 사본으로 남긴다
+ *   stop      연결이 없거나 로그인이 필요하다(401): 뒤 항목도 같은 이유로 못 가니 멈추고 다음에 다시 보낸다
+ *   skip      그 밖의 서버 거절(400·403·413…, 5xx): 그 항목만 대기열에 남기고 뒤 항목을 계속 보낸다 — 하나가 뒤를 영영 막지 않게
+ */
+export function outboxFailure(e: unknown): "conflict" | "stop" | "skip" {
+  const status = e && typeof e === "object" && "status" in e ? (e as { status: unknown }).status : undefined;
+  if (status === 409) return "conflict";
+  return status === 401 || isNetworkError(e) ? "stop" : "skip";
+}
+
 export const offline = {
   async saveDoc(doc: Doc): Promise<void> {
     if (doc.generated) return;
