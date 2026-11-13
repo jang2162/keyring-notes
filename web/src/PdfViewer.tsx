@@ -76,7 +76,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
     Promise.all([loadPdf(), api.readBytes(path)])
       .then(async ([m, data]) => {
         const doc = await m.openPdf(data);
-        if (!alive) return void doc.destroy();
+        if (!alive) return void m.closePdf(doc);
         setBase(await m.pageSize(doc, 1, 1));
         setPdf(doc);
       })
@@ -85,7 +85,7 @@ export function PdfViewer({ path, page, from, resolver, onClose, onEditOpenDoc, 
       alive = false;
     };
   }, [path, version]);
-  useEffect(() => () => void pdf?.destroy(), [pdf]);
+  useEffect(() => () => void (pdf && loadPdf().then((m) => m.closePdf(pdf))), [pdf]);
 
   // 짝 노트 찾기
   const findCompanion = useCallback(async () => {
