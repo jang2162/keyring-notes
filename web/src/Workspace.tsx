@@ -63,7 +63,7 @@ import { GraphView } from "./Graph";
 import { IngestDialog } from "./Ingest";
 import { invalidateWidgets } from "./Widget";
 import { notePathOfHash, replaceSettingsSection, settingsBack, settingsCloseTarget, SETTINGS_HASH } from "./settingsNav";
-import { isNetworkError, offline, searchFailedOffline } from "./offline";
+import { isNetworkError, offline, outboxFailure, rejectionsToClear, saveFailedOffline, searchFailedOffline, type OutboxItem } from "./offline";
 import { CreatedNotes, dropFromNav, hasNodeChildren, isBlankNote, openAnywhere } from "./emptyNote";
 import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
@@ -119,7 +119,8 @@ import { attachmentDeleteText, extOf, sameKind } from "./attachmentManage";
 import { chooseDialog, confirmDialog, promptDialog } from "./dialog";
 import { mentionTarget, References, UnlinkedMentions } from "./Links";
 import { DEFAULT_PREFS, setPrefs, usePrefs, type Prefs } from "./prefs";
-import { errorText, toast, toastError, Toasts } from "./toast";
+import { dismissToast, errorText, toast, toastError, Toasts } from "./toast";
+import { flushDocs, logoutLoss, unsavedInNode } from "./saveFlow";
 import { commandKey, formatCombo, keyCapture, matchCommand, type Command } from "./shortcuts";
 import { IconButton, Menu, Resizer, Segmented, type MenuEntry } from "./ui";
 import { childSortItems, folderMenuItem, invalidNameReason, parentOf, stemOf, Tree, type TreeActions, type TreeDecor, type TreeHandle } from "./Tree";
@@ -168,6 +169,8 @@ import {
   setConflict as setStoreConflict,
   setDraft,
   setSave as setStoreSave,
+  reloadDoc,
+  serverWrote,
   upsertDoc,
   type DocStore,
   type OpenDoc,
@@ -364,7 +367,8 @@ const MORE_ICONS: Record<MoreEntryId, LucideIcon> = {
 /** 탭·마지막 문서를 기억하는 범위 이름: 워크스페이스, 모든 워크스페이스면 "*" */
 const scopeKeyOf = (all: boolean, ws: string) => (all ? "*" : ws);
 
-export function Workspace({ onLogout }: { onLogout: () => void }) {
+/** onLogout: 서버에 로그아웃을 보내고 이 기기의 것을 지운다. 서버에 닿지 않았으면 아무것도 지우지 않고 던진다 */
+export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }) {
   const prefs = usePrefs();
   const lang = useLang();
   const local = appMode.local;
@@ -937,13 +941,16 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     }
   }, []);
 
-  /** 문서를 (다시) 읽어 저장소에 넣는다. 그 문서를 보는 칸의 에디터를 새로 만들고 과거 판 보기를 닫는다 */
+  /**
+   * 문서를 (다시) 읽어 저장소에 넣는다. 그 문서를 보는 칸의 에디터를 새로 만들고 과거 판 보기를 닫는다.
+   * 읽는 사이 친 글이 있으면 초안을 남긴다(openDocs.ts 의 reloadDoc). force: 초안을 버리기로 한 뒤라 그대로 바꾼다
+   */
   const loadingRef = useRef(new Set<string>());
-  const load = useCallback(async (path: string): Promise<boolean> => {
+  const load = useCallback(async (path: string, opts: { force?: boolean } = {}): Promise<boolean> => {
     loadingRef.current.add(path);
     const d = await fetchDoc(path).finally(() => loadingRef.current.delete(path));
     if (!d) return false;
-    updateDocs((s) => upsertDoc(s, d));
+    updateDocs((s) => reloadDoc(s, d, opts.force));
     setRevisions((rs) => (Object.values(rs).some((r) => r?.path === path) ? Object.fromEntries(Object.entries(rs).filter(([, r]) => r?.path !== path)) : rs));
     remember(path);
     return true;
@@ -991,8 +998,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
         if (opts.auto) vaultChangedSoon();
         else vaultChanged();
       } catch (e) {
-        if (isNetworkError(e)) {
-          // 오프라인: 이 기기에 저장해 두고(문서마다 마지막 것만), 연결되면 보낸다
+        if (saveFailedOffline(local, e)) {
+          // 오프라인(서버 모드만 — 기기 볼트의 쓰기 실패는 아래 저장 실패로 알린다): 이 기기에 저장해 두고(문서마다 마지막 것만), 연결되면 보낸다
           await offline.queue(d.path, content, d.hash || null, d.hash ? d.saved : null);
           patchDoc(d.path, (prev) => ({ ...prev, saved: content }));
           setOutboxCount((await offline.pending()).length);
@@ -1082,15 +1089,28 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     };
   }, []);
 
-  /** 다른 일(이동·이름 바꾸기·워크스페이스 바꾸기) 전에 문서를 저장한다(기본은 저장 안 한 문서 전부). 못 한 것이 있으면 false */
-  const flush = async (paths?: string[]): Promise<boolean> => {
-    const list = (paths ?? dirtyPaths(docsRef.current)).filter((p) => docsRef.current[p] && isDirty(docsRef.current[p]));
-    if (!list.length || !prefsRef.current.autosave) return true;
-    for (const p of list) await saveRef.current(p, { auto: true });
-    return list.every((p) => !docsRef.current[p] || !isDirty(docsRef.current[p]));
-  };
+  /**
+   * 다른 일(이동·이름 바꾸기·워크스페이스 바꾸기) 전에 문서를 저장한다(기본은 저장 안 한 문서 전부). 저장 안 한 것이 남았으면 false —
+   * 자동 저장을 껐으면 대신 저장하지 않고 false 다(saveFlow.ts). 초안을 덮거나 버리는 일은 false 면 하지 않는다
+   */
+  const flush = (paths?: string[]): Promise<boolean> =>
+    flushDocs(paths ?? dirtyPaths(docsRef.current), {
+      dirty: (p) => !!docsRef.current[p] && isDirty(docsRef.current[p]),
+      autosave: prefsRef.current.autosave,
+      save: (p) => saveRef.current(p, { auto: true }),
+    });
   const flushRef = useRef(flush);
   flushRef.current = flush;
+  /**
+   * 노드를 지우기 전: 저장해 보고, 그 안에 저장 안 한 초안이 남았으면(자동 저장 끔·충돌·저장 실패) 먼저 저장하라고 알리고 true.
+   * 지우면 초안도 사라지고 「되돌리기」 는 저장된 내용만 되살린다. 삭제 확인을 묻기 전에 부른다 — 확인한 뒤에 거절하지 않게
+   */
+  const unsavedBlocksDelete = async (node: string): Promise<boolean> => {
+    await flush();
+    const left = unsavedInNode(dirtyPaths(docsRef.current), node);
+    if (left) toast(t("doc.saveFirst", { name: stemOf(left) }), { kind: "error" });
+    return !!left;
+  };
 
   /** 창 닫기 물음이 떠 있거나 닫기로 정해 창이 사라지는 중이다(그동안 자동 저장을 멈춘다. 아래 「창 닫기」) */
   const closeHold = useRef<SaveHold>({ asking: false, closing: false });
@@ -1586,61 +1606,108 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rightOpen, drawer, rightTab, doc?.path, doc?.hash]);
 
-  /** 오프라인 저장분을 서버로 보낸다. 그 사이 서버에서 바뀐 문서는 덮어쓰지 않고 충돌 사본으로 남긴다. */
+  /**
+   * 오프라인 저장분을 서버로 보낸다. 그 사이 서버에서 바뀐 문서는 덮어쓰지 않고 충돌 사본으로 남긴다.
+   * 서버가 거절한 항목(400·403·413 등)은 대기열에 남기고 뒤 항목을 계속 보낸다 — 그 노트를 열면 대기 중인 내용이 보인다(api.read).
+   * 같은 항목이 같은 이유로 다시 거절되면 되풀이해 알리지 않는다(30초마다 다시 보낸다). manual: 「지금 보내기」를 눌렀으면 다시 알린다.
+   * 거절됐던 항목이 나중에 보내지면 그 알림을 닫는다
+   */
   const flushing = useRef(false);
-  const flushOutbox = useCallback(async () => {
-    if (flushing.current) return;
-    flushing.current = true;
-    const synced: string[] = [];
-    const conflicts: string[] = [];
-    const merged: string[] = [];
-    try {
-      for (const item of await offline.pending()) {
+  /** 거절을 이미 알린 항목: 경로 → 알린 때의 대기 시각과 이유(told), 띄운 알림(toast) */
+  const rejectedTold = useRef(new Map<string, { told: string; toast: number }>());
+  const flushOutbox = useCallback(
+    async (opts: { manual?: boolean } = {}) => {
+      if (flushing.current) return;
+      flushing.current = true;
+      const synced: string[] = [];
+      const conflicts: string[] = [];
+      const merged: string[] = [];
+      const rejected: { path: string; message: string; told: string }[] = [];
+      /** 이번에 대기열에서 빠진 경로(보냄·합침·사본으로 남김) */
+      const done: string[] = [];
+      /** 항목 하나를 보낸다. 409 면 합치거나 사본으로. 그 밖의 실패는 던진다 */
+      const send = async (item: OutboxItem) => {
         try {
           const d = await api.write(item.path, item.content, item.baseHash);
           await offline.done(item.path);
           await offline.saveDoc(d);
           synced.push(item.path);
         } catch (e) {
-          if (e instanceof ApiError && e.status === 409) {
-            // 서로 다른 곳을 고쳤으면 합치고, 같은 곳이면 사본으로
-            const m = e.currentHash && item.baseContent != null ? await saveMerged(item.path, item.baseContent, item.content).catch(() => null) : null;
-            if (m) {
-              await offline.done(item.path);
-              await offline.saveDoc({ path: item.path, content: m.text, hash: m.hash });
-              merged.push(item.path);
-              continue;
-            }
-            const copy = conflictCopyPath(item.path, vaultText(vaultLang()).offlineConflictCopy);
-            await api.write(copy, item.content, null);
+          if (outboxFailure(e) !== "conflict") throw e;
+          // 서로 다른 곳을 고쳤으면 합치고, 같은 곳이면 사본으로
+          const m =
+            e instanceof ApiError && e.currentHash && item.baseContent != null
+              ? await saveMerged(item.path, item.baseContent, item.content).catch(() => null)
+              : null;
+          if (m) {
             await offline.done(item.path);
-            conflicts.push(copy);
-          } else break; // 아직 연결이 없거나 로그인이 필요하다
+            await offline.saveDoc({ path: item.path, content: m.text, hash: m.hash });
+            merged.push(item.path);
+            return;
+          }
+          const copy = conflictCopyPath(item.path, vaultText(vaultLang()).offlineConflictCopy);
+          await api.write(copy, item.content, null);
+          await offline.done(item.path);
+          conflicts.push(copy);
         }
+      };
+      try {
+        const pending = await offline.pending();
+        for (const item of pending) {
+          try {
+            await send(item);
+            done.push(item.path);
+          } catch (e) {
+            // 연결이 없거나 로그인이 필요하거나 서버가 내려가 있다: 뒤 항목도 못 간다
+            if (outboxFailure(e) === "stop") break;
+            // 서버가 이 항목을 거절했다(사본 쓰기가 거절된 것도 여기로): 대기열에 남기고 뒤 항목을 계속 보낸다
+            const message = errorText(e);
+            rejected.push({ path: item.path, message, told: `${item.queuedAt}\u0000${message}` });
+          }
+        }
+        // 대기열에서 빠진 항목의 「알렸음」 기록을 지우고 그 알림을 닫는다
+        for (const p of rejectionsToClear(
+          [...rejectedTold.current.keys()],
+          pending.map((i) => i.path),
+          done,
+        )) {
+          dismissToast(rejectedTold.current.get(p)!.toast);
+          rejectedTold.current.delete(p);
+        }
+      } finally {
+        flushing.current = false;
+        setOutboxCount((await offline.pending().catch(() => [])).length);
       }
-    } finally {
-      flushing.current = false;
-      setOutboxCount((await offline.pending().catch(() => [])).length);
-    }
-    if (synced.length || conflicts.length || merged.length) {
-      vaultChanged();
-      void refreshTree();
-      // 열린 문서 중 보낸 것(사본을 만들었으면 전부)을 저장 안 한 변경이 없을 때 다시 읽는다
-      for (const e of Object.values(docsRef.current))
-        if ((synced.includes(e.doc.path) || merged.includes(e.doc.path) || conflicts.length) && e.doc.draft === e.doc.saved) await load(e.doc.path);
-      toast(
-        [
-          t("offline.sent", { count: synced.length + conflicts.length + merged.length }),
-          merged.length ? t("offline.merged", { count: merged.length }) : "",
-          conflicts.length ? t("offline.copies", { list: conflicts.join(", ") }) : "",
-        ]
-          .filter(Boolean)
-          .join(" "),
-        { kind: conflicts.length ? "warn" : "success", duration: conflicts.length ? 0 : 5000 },
-      );
-    }
+      if (synced.length || conflicts.length || merged.length) {
+        vaultChanged();
+        void refreshTree();
+        // 열린 문서 중 보낸 것(사본을 만들었으면 전부)을 저장 안 한 변경이 없을 때 다시 읽는다
+        for (const e of Object.values(docsRef.current))
+          if ((synced.includes(e.doc.path) || merged.includes(e.doc.path) || conflicts.length) && e.doc.draft === e.doc.saved) await load(e.doc.path);
+        toast(
+          [
+            t("offline.sent", { count: synced.length + conflicts.length + merged.length }),
+            merged.length ? t("offline.merged", { count: merged.length }) : "",
+            conflicts.length ? t("offline.copies", { list: conflicts.join(", ") }) : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          { kind: conflicts.length ? "warn" : "success", duration: conflicts.length ? 0 : 5000 },
+        );
+      }
+      for (const r of rejected) {
+        if (!opts.manual && rejectedTold.current.get(r.path)?.told === r.told) continue;
+        const id = toast(t("offline.rejected", { name: stemOf(r.path), message: r.message }), {
+          kind: "error",
+          duration: 0,
+          action: { label: t("common.open"), run: () => void openRef.current(r.path, { newTab: true }) },
+        });
+        rejectedTold.current.set(r.path, { told: r.told, toast: id });
+      }
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vaultChanged, refreshTree]);
+    [vaultChanged, refreshTree],
+  );
 
   useEffect(() => {
     if (local) return;
@@ -1782,7 +1849,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       await api.write(copy, d.draft, null);
       vaultChanged();
       await refreshTree();
-      await load(path);
+      // 내 변경은 사본에 있다: 이 문서는 초안을 버리고 서버 것으로
+      await load(path, { force: true });
       toast(t("save.copySaved", { path: copy }), { kind: "success", action: { label: t("common.open"), run: () => void open(copy, { newTab: true }) } });
     } catch (e) {
       toastError(e);
@@ -2018,16 +2086,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     // 열린 탭 메뉴도 따라간다 — 탭을 우클릭하면 제목 칸이 blur 되어 이름 바꾸기가 메뉴보다 먼저 끝난다(옛 경로로 닫기·새 창 열기를 하지 않게)
     setTabMenu((m) => (m && m.path === from ? { ...m, path: to } : m));
     const opened = !!docsRef.current[from];
-    updateDocs((s) =>
-      renameDoc(s, from, to, (d) =>
-        content === null || hash === null
-          ? d
-          : // 내용이 그대로면(상대 링크를 고치지 않았으면) 에디터를 다시 만들지 않는다
-            d.draft === content
-            ? { ...d, saved: content, hash }
-            : { ...d, saved: content, draft: content, hash, seq: d.seq + 1 },
-      ),
-    );
+    // 내용이 그대로면(상대 링크를 고치지 않았으면) 에디터를 다시 만들지 않는다. 응답을 기다리는 동안 친 글은 남긴다(openDocs.ts 의 serverWrote)
+    updateDocs((s) => renameDoc(s, from, to, (d) => (content === null || hash === null ? d : serverWrote(d, content, hash))));
     if (opened && (content === null || hash === null)) await load(to);
   };
 
@@ -2228,6 +2288,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       counts.nodes || counts.attachments
         ? t("node.deleteAskChildren", { name, nodes: counts.nodes, attachments: counts.attachments })
         : t("node.deleteAsk", { name });
+    if (await unsavedBlocksDelete(node)) return;
     if (!(await confirmDialog(`${message}\n${node}`, t("common.delete")))) return;
     await removeNode(node);
   };
@@ -2238,7 +2299,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
    */
   const removeNode = async (node: string, hooks: { after?: () => Promise<void>; undone?: () => Promise<void>; reopen?: boolean } = {}) => {
     const name = stemOf(node);
-    await flush();
+    // 부르는 쪽(deleteNode·removeWorkspace)이 확인을 묻기 전에 이미 봤다. 묻는 동안 친 글을 위한 마지막 방어선이다
+    if (await unsavedBlocksDelete(node)) return;
     const files = nodeFiles(node, resolver.paths).filter((p) => !isVaultSettingsPath(p));
     try {
       const saved: { path: string; content?: string; data?: Uint8Array; hash: string }[] = [];
@@ -2289,6 +2351,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     const n = wsNode(name);
     const attachments = nodeFiles(name, resolver.paths).filter((p) => !/\.md$/i.test(p) && !isVaultSettingsPath(p)).length;
     const ask = t("ws.deleteAsk", { name, nodes: n ? countNode(n).nodes : 0, attachments });
+    if (await unsavedBlocksDelete(name)) return;
     if (!(await confirmDialog(ask, t("common.delete")))) return;
     const wasCurrent = name === ws;
     const next = workspaceAfterDelete(wsNames, ws, name);
@@ -2462,8 +2525,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       const vt = vaultText(vaultLang()).commit;
       const done = await api.writeMany(writes, writes.length === 1 ? vt.modify(writes[0].path) : vt.batch(writes.length));
       const hashes = new Map(done.map((d) => [d.path, d.hash]));
-      for (const w of writes)
-        patchDoc(w.path, (d) => ({ ...d, saved: w.content, draft: w.content, hash: hashes.get(w.path) ?? d.hash, virtual: false, seq: d.seq + 1 }));
+      // 읽고 쓰는 동안 친 글은 남긴다(openDocs.ts 의 serverWrote)
+      for (const w of writes) patchDoc(w.path, (d) => ({ ...serverWrote(d, w.content, hashes.get(w.path) ?? d.hash), virtual: false }));
       vaultChanged();
       await refreshTree();
       return true;
@@ -2550,7 +2613,8 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     try {
       await api.rollback(d.path, rev.commit.rev, d.hash);
       vaultChanged();
-      await load(d.path);
+      // 저장 안 한 변경은 위에서 버리기로 확인받았다
+      await load(d.path, { force: true });
       toast(t("history.rolledBack"), { kind: "success" });
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) toast(t("doc.changedReload"), { kind: "error" });
@@ -2687,6 +2751,9 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       if (wsNames.some((w) => w.toLowerCase() === n.toLowerCase() && w !== from) || isVaultSettingsPath(`${n}.md`))
         throw new Error(t("ws.exists", { name: n }));
       await flush();
+      // 옮긴 뒤 그 안의 열린 노트를 다시 읽는다 — 저장 안 한 초안이 남았으면(자동 저장 끔·충돌·저장 실패) 바꾸지 않는다
+      const unsavedInside = unsavedInNode(dirtyPaths(docsRef.current), from);
+      if (unsavedInside) throw new Error(t("doc.saveFirst", { name: stemOf(unsavedInside) }));
       const r = await api.moveNode(from, n);
       for (const [a, b] of r.moved) if (/\.md$/i.test(a)) await afterMove(a, b, null, null);
       updatePins((p) => movePins(p, from, n));
@@ -3156,11 +3223,39 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
     { label: t("ws.manage"), icon: SettingsIcon, run: () => openSettings("workspaces") },
   ];
 
-  /** 로그아웃(서버 모드): 레일과 좁은 화면의 「더 보기」 가 같이 쓴다 */
+  /**
+   * 로그아웃(서버 모드): 레일과 좁은 화면의 「더 보기」 가 같이 쓴다. 로그아웃하면 이 기기의 사본과 대기열을 지우므로,
+   * 저장 안 한 노트·그림(뒤 탭 포함)이나 아직 서버로 못 보낸 오프라인 저장분이 있으면 개수를 들어 묻는다. 취소하면 아무것도 지우지 않는다
+   */
   const logout = async () => {
     await flush();
-    const d = docRef.current;
-    if (!d || d.draft === d.saved || (await confirmDialog(t("rail.logoutUnsaved"), t("rail.logout")))) onLogout();
+    if (prefsRef.current.autosave) await flushDataFiles();
+    const loss = logoutLoss({
+      dirty: dirtyPaths(docsRef.current),
+      files: unsavedDataFiles(),
+      // 대기열을 못 읽으면 화면에 보이던 개수로
+      queued: await offline.pending().then(
+        (p) => p.length,
+        () => outboxCount,
+      ),
+    });
+    if (loss) {
+      const { names, count, more } = unsavedSummary(loss.unsaved, stemOf);
+      const ask = [
+        loss.unsaved.length ? t(more ? "rail.logoutUnsavedMore" : "rail.logoutUnsaved", { names, count }) : "",
+        loss.queued ? t("rail.logoutQueued", { count: loss.queued }) : "",
+        t("rail.logoutAnyway"),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      if (!(await confirmDialog(ask, t("rail.logout")))) return;
+    }
+    try {
+      await onLogout();
+    } catch (e) {
+      // 로그아웃이 서버에 닿지 않았다: 세션이 살아 있으니 이 기기의 것도 지우지 않았다(App.tsx)
+      toast(isNetworkError(e) ? t("rail.logoutOffline") : t("rail.logoutFailed", { message: errorText(e) }), { kind: "error" });
+    }
   };
 
   const rail = (
@@ -3673,7 +3768,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
       )}
       {!local && !online && <span className="status-item warn">{outboxCount ? t("status.offlineOutbox", { count: outboxCount }) : t("status.offline")}</span>}
       {!local && online && outboxCount > 0 && (
-        <button className="status-item warn" onClick={() => void flushOutbox()} {...tipProps({ label: t("status.sendNowTip"), side: "top" })}>
+        <button className="status-item warn" onClick={() => void flushOutbox({ manual: true })} {...tipProps({ label: t("status.sendNowTip"), side: "top" })}>
           {t("status.sendNow", { count: outboxCount })}
         </button>
       )}
@@ -4031,7 +4126,7 @@ export function Workspace({ onLogout }: { onLogout: () => void }) {
   // 누르면 할 일과 아이콘은 id 로 꽂는다(줄·항목의 조건과 글은 moreMenu.ts)
   const statusRun: Partial<Record<MoreStatusId, () => void>> = {
     save: () => void saveWithDrawings(),
-    outbox: () => void flushOutbox(),
+    outbox: () => void flushOutbox({ manual: true }),
     sync: () => openSettings("device"),
     "review-waiting": () => setReviewOpen(true),
   };
