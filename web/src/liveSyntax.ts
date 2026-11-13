@@ -37,13 +37,18 @@ export type SyntaxMark =
 /** 콜아웃(> [!note]) 첫 줄. liveBlocks 가 위젯으로 그리고, 여기서는 인용으로 보지 않는다 */
 export const CALLOUT_LINE = /^\s*>\s*\[![A-Za-z][\w-]*\][+-]?/;
 
-/** 맨 앞 프런트매터(--- … ---)의 닫는 줄 번호. 없으면 null */
+/**
+ * 맨 앞 프런트매터(--- … ---)의 닫는 줄 번호. 없으면 null.
+ * 줄 판정은 core 의 frontmatterBlock 과 같다: 여는 줄은 `---` 만(맨 앞 BOM 은 뺀다), 닫는 줄은 `---`·`...` 뒤에 공백·탭만.
+ * 다르게 보면 미리보기·속성 패널이 본문으로 그리는 줄을 Live Preview 가 속성으로 접는다.
+ * 글 전체가 아니라 줄을 보는 까닭: 장식을 다시 그릴 때마다 불리므로 문서를 글자열로 만들지 않고, 300줄 안에서만 찾는다 —
+ * 그보다 긴 프런트매터는 Live Preview 에서 접히지 않는다.
+ */
 export function frontmatterEnd(state: EditorState): number | null {
   const doc = state.doc;
-  if (doc.lines < 2 || doc.line(1).text.trimEnd() !== "---") return null;
+  if (doc.lines < 2 || doc.line(1).text.replace(/^\uFEFF/, "") !== "---") return null;
   for (let i = 2; i <= Math.min(doc.lines, 300); i++) {
-    const t = doc.line(i).text.trimEnd();
-    if (t === "---" || t === "...") return i;
+    if (/^(?:---|\.\.\.)[ \t]*$/.test(doc.line(i).text)) return i;
   }
   return null;
 }

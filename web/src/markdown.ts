@@ -3,7 +3,7 @@ import MarkdownIt from "markdown-it";
 import type { StateBlock, StateCore, StateInline, Token } from "markdown-it";
 import footnote from "markdown-it-footnote";
 import mark from "markdown-it-mark";
-import { LinkIndex, stripComments, type DailyLookup } from "@keyring-notes/core";
+import { frontmatterBlock, LinkIndex, stripComments, type DailyLookup } from "@keyring-notes/core";
 import { api, type TreeNode } from "./api";
 import { t } from "./i18n";
 import { safeDecode } from "./safeDecode";
@@ -509,11 +509,18 @@ md.core.ruler.push("tasks", (state) => {
   }
 });
 
-/** 맨 앞 YAML 프런트매터를 본문과 분리한다. */
+/**
+ * 맨 앞 YAML 프런트매터를 본문과 분리한다. 어디까지가 프런트매터인지는 core 의 frontmatterBlock 이 정한다 —
+ * 색인·속성 패널(parseFrontmatter)과 다른 줄에서 끊으면 한쪽이 속성으로 읽은 줄을 미리보기가 본문으로 그린다.
+ * 닫는 줄 뒤의 빈 줄은 본문에서 뺀다(본문 첫 줄의 들여쓰기는 남긴다).
+ */
 export function splitFrontmatter(content: string): { frontmatter: string | null; body: string } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)\s*(?:\r?\n|$)/.exec(content);
-  if (!m) return { frontmatter: null, body: content };
-  return { frontmatter: m[1], body: content.slice(m[0].length) };
+  // frontmatterBlock 은 BOM 을 뗀 글을 받고 자리(end)도 뗀 글 기준이다
+  const bom = content.startsWith("\uFEFF") ? 1 : 0;
+  const block = frontmatterBlock(bom ? content.slice(bom) : content);
+  if (!block) return { frontmatter: null, body: content };
+  const rest = content.slice(bom + block.end);
+  return { frontmatter: block.yaml, body: rest.slice(/^\s*(?:\n|$)/.exec(rest)?.[0].length ?? 0) };
 }
 
 export interface Rendered {
