@@ -94,7 +94,8 @@ const SETTINGS_FOLDED = foldPath(VAULT_SETTINGS_PATH);
  * 사람만 고치는 파일(공통 설정, 토픽의 SCHEMA.md)의 대소문자·정규화만 다른 철자. 대소문자를 가리지 않는 볼륨에서는
  * `Keyring-Settings.md` 로 만든 파일을 서버가 공통 설정으로 읽고(Vault.sharedSettings), `schema.md` 가 그 노드를 위키 토픽으로
  * 만든다(Wiki.prepare). 파일이 이미 있으면 Vault 의 철자 대조(spelledAsOnDisk)가 막지만, 아직 없을 때 다른 철자로 만드는 것은 여기서만 막힌다.
- * 대소문자를 가리는 볼륨에서는 다른 파일인데도 함께 막힌다(볼륨을 가려 판정하지 않는다)
+ * 대소문자를 가리는 볼륨에서는 다른 파일인데도 함께 막힌다(볼륨을 가려 판정하지 않는다).
+ * 규칙으로 정하는 권한이 아니라 AccessPolicy 의 접어 견주기와 따로 둔다 — 에이전트 규칙이 무엇이든 적용된다
  */
 function isHumanOnlyAlias(rel: string): boolean {
   const folded = foldPath(rel);
@@ -141,14 +142,6 @@ export class ScopedVault {
     if (this.principal.kind !== "agent" || !atLeast(level, "append")) return level;
     if (isSchemaPath(relPath) || isVaultSettingsPath(relPath) || isHumanOnlyAlias(relPath)) return "read";
     return level;
-  }
-
-  /** 아직 없는 경로를 만들 때의 단계. 에이전트는 규칙과 대소문자만 다른 이름을 가장 엄한 쪽으로 판정한다(AccessPolicy.createLevel) */
-  private createLevel(relPath: string): Level {
-    const level = this.level(relPath);
-    if (this.principal.kind !== "agent") return level;
-    const strict = this.principal.policy.createLevel(relPath);
-    return atLeast(strict, level) ? level : strict;
   }
 
   /**
@@ -638,9 +631,6 @@ export class ScopedVault {
     }
     const guard = (action: Action, rel: string) => {
       const need = ACTION_LEVEL[action];
-      // 만들기(쓰기·덧붙이기·첨부·이동의 목적지가 아직 없는 경로일 때)는 규칙과 대소문자만 다른 이름까지 본다
-      const created = action === "create" ? this.createLevel(rel) : null;
-      if (created !== null && !atLeast(created, need)) throw new ForbiddenError("forbidden_level", { level: created, path: rel });
       if (!atLeast(this.level(rel), need)) {
         const appendOnly = action === "modify" && this.level(rel) === "append";
         throw new ForbiddenError(appendOnly ? "forbidden_append_only" : "forbidden_need", { level: need, path: rel });

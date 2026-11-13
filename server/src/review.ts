@@ -2,11 +2,11 @@ import { randomBytes } from "node:crypto";
 import { editedStamp } from "@keyring-notes/core";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AccessPolicy, atLeast, respells } from "./access.js";
+import { AccessPolicy, atLeast, covers, foldPath } from "./access.js";
 import type { ConfigStore } from "./config.js";
 import { serverText } from "./lang.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
-import { cleanMessage, ForbiddenError, hashContent, NotFoundError, type FilePreview, type Guard, type Op, type Vault } from "./vault.js";
+import { cleanMessage, hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
 
 /**
  * 변경 검토 대기열(W5). 검토 대상 경로에 에이전트가 쓰면 바로 커밋하지 않고 제안으로 쌓아 두었다가,
@@ -48,17 +48,14 @@ const KEEP_DECIDED_DAYS = 30;
 
 /**
  * 검토 대상 경로 판정: 설정의 reviewPaths(접두 경로, "/"는 전체) 중 하나 아래면 검토 대상.
- * 권한 규칙(AccessPolicy.level)과 같은 모양으로 견준다 — 경로 `X` 는 하위 `X/…` 와 노드 노트 `X.md` 를 덮고, 유니코드는 NFC 로 맞춘다.
- * 어긋나면 권한으로는 쓸 수 있는 경로가 검토 없이 커밋된다.
- * 검토 대상이나 그 조상을 대소문자만 다르게 적은 경로도 검토 대상이다(respells) — 검토 대상 폴더가 아직 없을 때 다른 철자로 먼저
- * 만들면 그 폴더는 그 철자로 굳고, 거기 들어가는 쓰기가 계속 검토를 비켜 간다. 볼륨이 대소문자를 가리는지는 재지 않는다
+ * 권한 규칙과 같은 함수로 견준다(access.ts covers — 경로 `X` 는 하위 `X/…` 와 노드 노트 `X.md` 를 덮는다). 어긋나면 권한으로는
+ * 쓸 수 있는 경로가 검토 없이 커밋된다.
+ * 대소문자·정규화는 접어서 견준다. 검토는 제한이므로 철자가 달라도 적용된다(AccessPolicy 의 「제한하는 규칙」과 같은 이유) —
+ * 검토 대상 폴더가 다른 철자로 먼저 생겨도 그 안의 쓰기가 검토를 비켜 가지 않는다
  */
 export function underReview(rel: string, reviewPaths: string[]): boolean {
-  const target = rel.normalize("NFC");
-  return reviewPaths.some((p) => {
-    const prefix = p.replace(/^\/+|\/+$/g, "").normalize("NFC");
-    return prefix === "" || target === prefix || target.startsWith(prefix + "/") || target === prefix + ".md" || respells(target, prefix);
-  });
+  const target = foldPath(rel);
+  return reviewPaths.some((p) => covers(foldPath(p.replace(/^\/+|\/+$/g, "")), target));
 }
 
 export class ReviewQueue {
@@ -223,17 +220,11 @@ export class ReviewQueue {
     const links = p.links?.enabled
       ? { enabled: true, fullPaths: true, only: new Set(p.links.paths), canSee: (rel: string) => (policy ? atLeast(policy.level(rel), "read") : false) }
       : { enabled: false };
-    // 권한은 제안할 때 검사했다. 다만 그 뒤에 생긴 규칙과 대소문자만 다른 이름은 승인으로도 만들지 않는다 — 만들어지면 그 규칙의
-    // 폴더를 다른 철자가 차지한다(AccessPolicy.createLevel)
-    const guard: Guard = (action, rel) => {
-      const respelled = action === "create" ? (policy?.respelledLevel(rel) ?? null) : null;
-      if (respelled !== null && !atLeast(respelled, "append")) throw new ForbiddenError("forbidden_level", { level: respelled, path: rel });
-    };
     const res = await this.vault.batch(
       ops,
       { name: p.agent, email: p.agentEmail },
       // 승인해 적용하는 것도 에이전트의 쓰기다 — 승인한 때의 시각을 적는다
-      { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, links, edited: editedStamp(new Date()), guard },
+      { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, links, edited: editedStamp(new Date()) },
     );
     p.status = "approved";
     p.decidedAt = new Date().toISOString();
