@@ -36,6 +36,17 @@ describe("손대지 않은 노트 내용", () => {
     expect(isBlankNote("---\n- a\n---\n")).toBe(false);
   });
 
+  it("빈 프런트매터뿐이면 빈 노트다", () => {
+    expect(isBlankNote("---\n---\n")).toBe(true);
+    expect(isBlankNote("---\n---")).toBe(true);
+    expect(isBlankNote("---\n...\n\n  \n")).toBe(true);
+  });
+
+  it("빈 프런트매터 뒤의 수평선·글은 본문이다", () => {
+    expect(isBlankNote("---\n---\n---\n")).toBe(false);
+    expect(isBlankNote("---\n---\n가")).toBe(false);
+  });
+
   it("닫히지 않은 프런트매터는 본문 글이다", () => {
     expect(isBlankNote("---\nedited: x\n")).toBe(false);
   });

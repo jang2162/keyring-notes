@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { analyze, headings } from "../src/index.js";
 
 /**
- * 제목 줄을 정규식 하나로 읽던 구현. 꼬리의 공백을 네 조각이 나눠 가져 공백 수의 세제곱으로 느렸다.
- * 고친 구현이 같은 답(level·text)을 내는지 견주는 기준으로만 둔다.
+ * 제목 줄을 정규식 하나로 읽는 꼴. 꼬리의 공백을 네 조각이 나눠 가져 공백 수의 세제곱으로 느리므로 구현에는 쓰지 않고,
+ * headings() 가 같은 답(level·text)을 내는지 견주는 기준으로만 둔다.
  */
 function byOneRegex(line: string): { level: number; text: string } | null {
   const h = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/.exec(line);
@@ -39,15 +39,15 @@ describe("ATX 제목 줄", () => {
       ["    # a", null],
       ["\t# a", null],
       ["#  a  b  ", { level: 1, text: "a  b" }],
-      ["# 　a ", { level: 1, text: "a" }],
+      ["# \u3000a\u00a0", { level: 1, text: "a" }],
       ["# a\\#", { level: 1, text: "a\\" }],
-      // 닫는 # 앞에 공백이 없어도 걷는다 — CommonMark 와 다르지만 고치기 전부터 이랬다
+      // 닫는 # 앞에 공백이 없어도 걷는다(CommonMark 와 다르다 — 바꾸면 기존 노트의 제목과 `[[노트#제목]]` 링크의 글자가 바뀐다)
       ["# a#", { level: 1, text: "a" }],
       ["# C#", { level: 1, text: "C" }],
       // 줄 안의 CR·줄 구분 문자(U+2028·U+2029)가 있으면 제목이 아니다
       ["# a\rb", null],
-      ["# a b", null],
-      ["# a ", null],
+      ["# a\u2028b", null],
+      ["# a\u2029", null],
     ];
     for (const [line, want] of cases) {
       expect(byOneRegex(line), JSON.stringify(line)).toEqual(want);
@@ -76,8 +76,8 @@ describe("ATX 제목 줄", () => {
     ]);
   });
 
-  // 고치기 전 실측: 공백 3,000칸에 5.8초, 2,000칸에 1.6초(세제곱). 20,000칸이면 20분이 넘는다.
-  // 느려졌을 때 20,000칸에서 멈춰 서지 않게 3,000칸을 먼저 재고, 통과한 때만 20,000칸을 잰다.
+  // 꼬리를 정규식 하나로 잡는 꼴(byOneRegex)은 공백 3,000칸에 수 초, 20,000칸이면 수십 분이 걸린다(byOneRegex 에 같은 줄을 넣어 잰다).
+  // 그 꼴로 돌아갔을 때 20,000칸에서 멈춰 서지 않게 3,000칸을 먼저 재고, 통과한 때만 20,000칸을 잰다.
   it("공백이 아주 긴 제목 줄도 바로 끝난다", { timeout: 60_000 }, () => {
     const elapsed = (n: number, run: (s: string) => unknown) => {
       const s = "# a" + " ".repeat(n) + "b\n";
@@ -90,5 +90,52 @@ describe("ATX 제목 줄", () => {
     expect(headings("# a" + " ".repeat(20000) + "b #  \n")[0]).toMatchObject({ level: 1, text: "a" + " ".repeat(20000) + "b" });
     // 색인이 부르는 길 전체
     expect(elapsed(20000, (s) => analyze("a.md", s))).toBeLessThan(500);
+  });
+});
+
+describe("제목의 섹션 끝 줄", () => {
+  /** 규칙: 섹션은 같거나 높은 수준의 다음 제목 앞 줄에서 끝나고, 그런 제목이 없으면 문서 끝까지다 */
+  const byRule = (hs: { level: number; line: number }[], total: number) =>
+    hs.map((h, i) => (hs.slice(i + 1).find((x) => x.level <= h.level)?.line ?? total + 1) - 1);
+
+  it("무작위 문서 2천 건에서 규칙과 같다", () => {
+    let seed = 99;
+    const next = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x80000000;
+    };
+    for (let k = 0; k < 2000; k++) {
+      const lines: string[] = [];
+      for (let len = Math.floor(next() * 40); len > 0; len--) lines.push(next() < 0.6 ? `${"#".repeat(1 + Math.floor(next() * 6))} 제목` : "글");
+      const doc = lines.join("\n");
+      const hs = headings(doc);
+      expect(
+        hs.map((h) => h.endLine),
+        JSON.stringify(doc),
+      ).toEqual(byRule(hs, lines.length));
+    }
+  });
+
+  it("예: 하위 제목은 상위 섹션 안에 든다", () => {
+    expect(headings("# a\n## b\n글\n### c\n## d\n# e\n글").map((h) => [h.text, h.line, h.endLine])).toEqual([
+      ["a", 1, 5],
+      ["b", 2, 4],
+      ["c", 4, 4],
+      ["d", 5, 5],
+      ["e", 6, 7],
+    ]);
+  });
+
+  // 제목마다 뒤쪽을 다시 찾는 꼴은 제목 8만 줄에 수 초~수십 초가 걸린다. 2만 줄을 먼저 재고 통과한 때만 8만 줄을 잰다
+  it("제목만 수만 줄인 문서도 바로 끝난다", { timeout: 120_000 }, () => {
+    for (const n of [20000, 80000])
+      for (const line of ["# a\n", "###### a\n"]) {
+        const doc = line.repeat(n);
+        const t = performance.now();
+        const hs = headings(doc);
+        expect(performance.now() - t, `${JSON.stringify(line)} × ${n}`).toBeLessThan(1000);
+        expect(hs).toHaveLength(n);
+        expect(hs[0].endLine).toBe(1);
+      }
   });
 });

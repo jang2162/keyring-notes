@@ -66,8 +66,7 @@ export interface PaneHandle extends TitleHandle {
 
 /** 문서 초안의 속성(프런트매터)·속성 개수·아이콘 */
 export function docMeta(draft: string): { fm: Record<string, unknown> | null; propCount: number; icon: string | null } {
-  const block = /^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(draft)?.[0] ?? "";
-  const fm = block ? parseFrontmatter(block).data : null;
+  const fm = parseFrontmatter(draft).data;
   return {
     fm,
     propCount: fm ? Object.keys(fm).filter((k) => !isAppField(k)).length : 0,

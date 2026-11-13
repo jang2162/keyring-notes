@@ -1,3 +1,4 @@
+import { angleRanges, inlineLinkRanges, wikilinkMatches } from "./linkScan.js";
 import { parseFrontmatter, stripComments } from "./markdown.js";
 
 /**
@@ -33,8 +34,25 @@ export function mentionNames(path: string, frontmatter: Record<string, unknown> 
 /** 링크·코드·HTML 태그 자리(줄 안 범위). 그 안의 이름은 언급으로 세지 않는다 */
 function maskedRanges(line: string): [number, number][] {
   const out: [number, number][] = [];
-  for (const re of [/`+[^`]*`+/g, /!?\[\[[^\]\n]*\]\]/g, /!?\[[^\]\n]*\]\([^)\n]*\)/g, /<[^>\n]+>/g, /https?:\/\/\S+/g]) {
+  const byRegex = (re: RegExp) => {
     for (const m of line.matchAll(re)) out.push([m.index!, m.index! + m[0].length]);
+  };
+  byRegex(/`+[^`]*`+/g);
+  // 괄호 짝을 찾는 셋은 정규식 대신 스캐너로 — 닫히지 않는 `[`·`<` 가 많은 줄에서 정규식은 길이의 제곱으로 느리다(linkScan.ts)
+  for (const m of wikilinkMatches(line)) out.push([m.start, m.end]);
+  for (const r of inlineLinkRanges(line)) out.push(r);
+  for (const r of angleRanges(line)) out.push(r);
+  byRegex(/https?:\/\/\S+/g);
+  return out;
+}
+
+/** 겹치거나 맞닿은 범위를 합쳐 시작 순으로 */
+function mergeRanges(ranges: [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [a, b] of [...ranges].sort((x, y) => x[0] - y[0])) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else out.push([a, b]);
   }
   return out;
 }
@@ -58,20 +76,29 @@ export function unlinkedMentions(content: string, names: string[]): Mention[] {
     }
     if (fence !== null) continue;
     const lower = line.toLowerCase();
-    const masked = maskedRanges(line);
-    const taken: [number, number][] = [];
+    // 가린 자리와 앞선(더 긴) 이름이 차지한 자리는 합쳐 시작 순으로 두고, 이름마다 앞에서부터 한 번만 훑는다 —
+    // 찾은 자리마다 범위 전부와 견주면 한 줄에 언급·링크가 수만 개일 때 그 수의 제곱이 된다
+    const masked = mergeRanges(maskedRanges(line));
+    let taken: [number, number][] = [];
     for (const name of lowered) {
+      // 같은 이름끼리는 겹치지 않는다(다음 자리를 이름 길이만큼 뒤에서 찾는다). 그래서 이 이름이 차지한 자리는 다음 이름부터 본다
+      const mine: [number, number][] = [];
+      let mi = 0;
+      let ti = 0;
       for (let at = lower.indexOf(name); at >= 0; at = lower.indexOf(name, at + name.length)) {
         const end = at + name.length;
-        if (masked.some(([a, b]) => at < b && end > a) || taken.some(([a, b]) => at < b && end > a)) continue;
+        while (mi < masked.length && masked[mi][1] <= at) mi++;
+        while (ti < taken.length && taken[ti][1] <= at) ti++;
+        if ((mi < masked.length && masked[mi][0] < end) || (ti < taken.length && taken[ti][0] < end)) continue;
         if (WORD.test(name[0]) && WORD.test(line[at - 1] ?? "")) continue;
         if (WORD.test(name[name.length - 1]) && WORD.test(line[end] ?? "")) continue;
-        taken.push([at, end]);
+        mine.push([at, end]);
         const from = Math.max(0, at - 40);
         const before = `${from > 0 ? "…" : ""}${line.slice(from, at).trimStart()}`;
         const context = `${before}${line.slice(at, end + 40).trimEnd()}${end + 40 < line.length ? "…" : ""}`;
         out.push({ line: i + 1, start: at, end, text: line.slice(at, end), context, contextAt: before.length });
       }
+      if (mine.length) taken = mergeRanges([...taken, ...mine]);
     }
   }
   return out.sort((a, b) => a.line - b.line || a.start - b.start);
