@@ -64,6 +64,30 @@ export function parseFrontmatter(content: string): Frontmatter {
   }
 }
 
+const SPACE = 32;
+const TAB = 9;
+const HASH = 35;
+
+/**
+ * ATX 제목 줄 하나. 앞머리(`#` 과 첫 공백)만 정규식으로 잡고, 꼬리의 닫는 `#` 과 공백은 뒤에서부터 걷는다.
+ * 꼬리까지 정규식 하나로 잡으면(`(.*?)[ \t]*#*[ \t]*$`) 같은 공백을 여러 조각이 나눠 가져 공백 수의 세제곱으로 느려지고,
+ * 그런 줄 하나가 색인을 멈춘다(`pnpm --filter @keyring-notes/core test headings` 가 공백 20,000칸으로 잰다).
+ */
+function atxHeading(line: string): { level: number; text: string } | null {
+  const open = /^ {0,3}(#{1,6})[ \t]+/.exec(line);
+  // 줄 안에 CR·줄 구분 문자(U+2028·U+2029)가 남은 줄은 제목이 아니다 — 정규식의 `.` 이 건너지 못해 제목으로 읽히지 않던 줄이라 그대로 둔다
+  if (!open || /[\r\u2028\u2029]/.test(line)) return null;
+  const from = open[0].length;
+  let end = line.length;
+  const blank = () => {
+    while (end > from && (line.charCodeAt(end - 1) === SPACE || line.charCodeAt(end - 1) === TAB)) end--;
+  };
+  blank();
+  while (end > from && line.charCodeAt(end - 1) === HASH) end--;
+  blank();
+  return { level: open[1].length, text: line.slice(from, end).trim() };
+}
+
 /** 코드 블록 밖의 ATX 제목(`#`~`######`)을 찾는다. */
 export function headings(content: string): Heading[] {
   const lines = content.split("\n");
@@ -79,8 +103,8 @@ export function headings(content: string): Heading[] {
       continue;
     }
     if (fence !== null) continue;
-    const h = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/.exec(line);
-    if (h) out.push({ level: h[1].length, text: h[2].trim(), line: i + 1, endLine: lines.length });
+    const h = atxHeading(line);
+    if (h) out.push({ level: h.level, text: h.text, line: i + 1, endLine: lines.length });
   }
   for (let i = 0; i < out.length; i++) {
     const next = out.slice(i + 1).find((h) => h.level <= out[i].level);
