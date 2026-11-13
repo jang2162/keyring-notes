@@ -2041,3 +2041,26 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 - 이름 바꾸기 응답 사이에 본문 첫 줄을 고치면 충돌 화면으로 간다(서버가 맨 위에 `edited:` 를 넣는다). 초안은 남는다.
 - `setIcon` 은 지금 보는 문서가 아닌 열린 노트의 저장 안 한 변경을 보지 않고 서버 본문에 아이콘을 쓴다(초안은 남고 다음 저장이 충돌로 간다).
 - 로그아웃 요청에 시간 제한이 없다.
+
+## 색인·링크 고치기가 멈추던 입력, 프런트매터 판정 한 벌
+
+**무엇이 문제였나.**
+
+- 닫히지 않는 `[[`·`[`·`<` 가 수만 개인 한 줄, 제목만 수만 줄인 문서에서 색인(`analyze`)·링크 고치기(`rewriteLinks`)·언급 찾기(`unlinkedMentions`)가 길이의 제곱으로 느렸다. 공백이 긴 제목 줄과 PDF 주석 줄은 세제곱이었다. 쓰기 권한이 있는 에이전트나 붙여넣기가 그런 줄을 넣으면 서버 색인이 이벤트 루프를 멈추고, 재시작해도 다시 멈췄다.
+- 속성 편집(`editFrontmatter`·`editSettings`)이 `...`·`---` 로 끝나는 값을 닫는 구분선으로 보아 뒤 속성을 본문으로 밀어냈다. 읽기·편집·미리보기·Live Preview 가 프런트매터의 끝을 각자 다른 정규식으로 정했다.
+
+**정한 것.**
+
+- 링크 꼴은 정규식이 아니라 `packages/core/src/linkScan.ts` 의 스캐너로 찾는다. 결과는 정규식과 같아야 하고 `packages/core/test/linkScan.test.ts` 가 그 정규식을 옮겨 두고 견준다. 규칙을 바꾸려면 그 시험의 정규식부터 바꾼다.
+- 프런트매터의 끝은 core 의 `frontmatterBlock` 하나가 정한다 — 닫는 구분선은 줄 전체가 `---` 나 `...` 일 때만이다. 읽기(`parseFrontmatter`)·편집·미리보기(`splitFrontmatter`)·속성 개수와 아이콘(`docMeta`)·Live Preview(`frontmatterEnd`)가 같은 줄에서 끊는다(`web/src/frontmatterSplit.test.ts`). Live Preview 만 300줄 안에서 닫는 줄을 찾는다.
+- 빈 프런트매터(`---` 바로 뒤 `---`)는 프런트매터다. 뒤의 수평선까지 삼키지 않는다.
+
+**확인한 것.** 다시 재는 법: `packages/core/test/linkScan.test.ts`·`headings.test.ts` 의 시간 시험. `analyze` 에 `[[` 4만 번(78KB)이 한 자릿수 ms, 100만 번(2MB)이 100ms 안쪽, `rewriteLinks` 에 `[[a#b` 2만 번이 한 자릿수 ms. 무작위 문서에서 공개 함수의 결과가 정규식 구현과 같고, 고칠 것이 없는 문서를 다시 쓰지 않는다.
+
+**남은 것.**
+
+- `web/src/tableModel.ts` `setAlign` 의 정규식이 공백 길이의 제곱이다(20,000칸에 0.2초). 같은 정규식은 칸에 U+2028·CR 이 있으면 null 을 내는데 코드가 단언한다.
+- web 쪽 정규식(Live Preview·미리보기)은 나쁜 입력으로 재지 않았다.
+- Live Preview 는 300줄이 넘는 프런트매터를 접지 않는다. CR 만으로 줄을 나눈 문서는 CodeMirror 와 core 가 줄을 다르게 센다.
+- `# C#` 은 제목 `C` 로 읽힌다(CommonMark 는 `C#`). 바꾸면 기존 노트의 제목·`[[노트#제목]]` 링크 글자가 바뀐다.
+- CRLF 문서의 프런트매터를 편집하면 프런트매터는 LF, 본문은 CRLF 로 섞인다. `setVaultSetting`·`replaceSettingsObject` 는 BOM 이 붙은 설정 파일에서 프런트매터를 못 찾아 블록을 하나 더 만든다.
