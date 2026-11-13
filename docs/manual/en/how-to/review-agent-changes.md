@@ -6,7 +6,7 @@ It is for people who want to check what an agent changes before it lands.
 
 ## Choose the folders to review
 
-Click **Review** on the rail (✔) and list folders under **Review targets**. Use `/` for the whole vault.
+Click **Review** on the rail (✔) and list folders under **Review targets**. Use `/` for the whole vault. A review target covers the folder and the note of the same name: `Work/Wiki` covers `Work/Wiki/…` and `Work/Wiki.md`.
 
 From then on, changes that **agents** write under those folders are not applied right away. They queue up as proposals. Writes by people always apply immediately.
 

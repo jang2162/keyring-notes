@@ -37,8 +37,10 @@ Rules:
 - Paths without a rule are `hidden`. A rule for the whole vault uses the path `/`.
 - When several rules match a note, the most specific (longest) path wins.
 - A rule on a node covers both its folder and its note. `Work/Project` covers `Work/Project/…` and `Work/Project.md`, unless a more specific `Work/Project.md` rule exists. With `Work/Secret: hidden`, the note `Work/Secret.md` never shows up in lists, search, backlinks, link resolution, tags, graph, widgets, wiki index and log, or history.
+- Rules and paths are compared after Unicode normalization. A rule matches a name whether it is stored in composed (NFC) or decomposed (NFD) form.
+- Letter case must match the name on disk. A path that differs only in letter case is a missing path, even on a volume that ignores case, such as the macOS default.
 - A commit that touches even one path the agent cannot see has its message replaced with "(change involving hidden paths)". This is decided by the commit's actual list of changed paths, including the old and new paths of moved nodes.
-- A wiki topic's `SCHEMA.md` and the vault's `keyring-settings.md` are read-only for agents, whatever the rules.
+- A wiki topic's `SCHEMA.md` and the vault's `keyring-settings.md` are read-only for agents, whatever the rules. The same holds for names that differ from these only in letter case.
 - Commits made by an agent are recorded with the agent's name as author.
 
 ## MCP tools
@@ -125,8 +127,8 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | POST | `/api/attachment?path=` | file bytes, header `x-keyring-upload: 1` | Create a new attachment, up to 50 MB. 409 if it exists |
 | PUT | `/api/attachment?path=&baseHash=` | file bytes, header `x-keyring-upload: 1` | Replace an attachment's bytes at the same path, so links keep working. `baseHash` is the sha256 of the current bytes: 409 with `currentHash` if it changed, 404 if the file is missing. Needs `write`. The old bytes stay in history → `path`, `hash` |
 | GET | `/api/raw?path=` | | Raw attachment file |
-| GET | `/api/history?path=` | | A note's commits, with authors |
-| GET | `/api/revision?path=&rev=` | | Content at a revision |
+| GET | `/api/history?path=` | | A note's commits, with authors. `path` is one literal path, not a pattern |
+| GET | `/api/revision?path=&rev=` | | Content at a revision. `content` is `null` when the path is not a file at that revision, or when `rev` is not a commit in the current history |
 | POST | `/api/rollback` | `{path, rev, baseHash}` | Roll back to a past revision, as a new commit |
 | GET | `/api/trash` | `?folder=&cursor=` | Trash, owner only: deletes newest first → `items[{id, date, author, node, notes, attachments, lost}]`, `next` (the last commit read; pass it as `cursor` for older deletes, `null` when done). Moves made on the server and paths in use are left out |
 | GET | `/api/trash/preview?id=&path=` | | A deleted note's content just before the delete. Owner only |
