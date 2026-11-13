@@ -46,11 +46,16 @@ export interface ProposalSummary extends Omit<Proposal, "ops" | "preview"> {
 const ID_RE = /^[0-9a-f]{16}$/;
 const KEEP_DECIDED_DAYS = 30;
 
-/** 검토 대상 경로 판정: 설정의 reviewPaths(접두 경로, "/"는 전체) 중 하나 아래면 검토 대상. */
+/**
+ * 검토 대상 경로 판정: 설정의 reviewPaths(접두 경로, "/"는 전체) 중 하나 아래면 검토 대상.
+ * 권한 규칙(AccessPolicy.level)과 같은 모양으로 견준다 — 경로 `X` 는 하위 `X/…` 와 노드 노트 `X.md` 를 덮고, 유니코드는 NFC 로 맞춘다.
+ * 어긋나면 권한으로는 쓸 수 있는 경로가 검토 없이 커밋된다.
+ */
 export function underReview(rel: string, reviewPaths: string[]): boolean {
+  const target = rel.normalize("NFC");
   return reviewPaths.some((p) => {
-    const prefix = p.replace(/^\/+|\/+$/g, "");
-    return prefix === "" || rel === prefix || rel.startsWith(prefix + "/");
+    const prefix = p.replace(/^\/+|\/+$/g, "").normalize("NFC");
+    return prefix === "" || target === prefix || target.startsWith(prefix + "/") || target === prefix + ".md";
   });
 }
 

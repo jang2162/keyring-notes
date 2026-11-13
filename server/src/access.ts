@@ -19,17 +19,21 @@ export function atLeast(level: Level, required: Level): boolean {
   return LEVELS.indexOf(level) >= LEVELS.indexOf(required);
 }
 
-/** 규칙 키를 정규화한다. 볼트 전체는 "/" 로 쓰고 내부적으로 "" 로 둔다. */
+/** 규칙 키를 정규화한다. 볼트 전체는 "/" 로 쓰고 내부적으로 "" 로 둔다. 유니코드는 NFC 로 맞춘다(AccessPolicy.level). */
 export function normalizeRulePath(p: string): string {
   const trimmed = p.trim();
   if (trimmed === "/" || trimmed === "" || trimmed === "*") return "";
-  return normalizeVaultPath(trimmed.replace(/\/+$/, ""));
+  return normalizeVaultPath(trimmed.replace(/\/+$/, "")).normalize("NFC");
 }
 
 /**
  * 토큰 하나의 "노드 → 권한" 표. 가장 구체적인(가장 긴) 경로 규칙이 이긴다. 규칙이 없으면 숨김.
  * 노드 모델(형제 방식 `X.md` + `X/`)이라 규칙 `X`는 하위 `X/…`와 함께 노드 노트 `X.md`도 덮는다
  * (숨김 노드의 노트가 상위 규칙으로 보이지 않게).
+ *
+ * 규칙과 경로는 둘 다 NFC 로 맞춘 뒤 견준다. 같은 이름이 디스크에는 NFD 로(macOS 에서 만든 볼트), 규칙에는 NFC 로 적혀 있을 수
+ * 있고, 정규화를 가리지 않는 볼륨은 어느 형태로 온 요청이든 같은 파일을 연다 — 글자 그대로 견주면 숨김 규칙을 비켜 간다.
+ * 대소문자는 여기서 접지 않는다: 디스크의 철자와 다른 경로는 Vault 가 없는 경로로 다룬다(Vault.spelledAsOnDisk).
  */
 export class AccessPolicy {
   private rules: [string, Level][];
@@ -41,8 +45,9 @@ export class AccessPolicy {
   }
 
   level(relPath: string): Level {
+    const p = relPath.normalize("NFC");
     for (const [prefix, level] of this.rules) {
-      if (prefix === "" || relPath === prefix || relPath.startsWith(prefix + "/") || relPath === prefix + ".md") return level;
+      if (prefix === "" || p === prefix || p.startsWith(prefix + "/") || p === prefix + ".md") return level;
     }
     return "hidden";
   }
@@ -50,7 +55,8 @@ export class AccessPolicy {
   /** 이 폴더 아래 어딘가에 보이는 경로가 있을 수 있는지(폴더 자체는 숨김이어도 하위 규칙이 열어 줄 때). */
   mayContainVisible(dirPath: string): boolean {
     if (atLeast(this.level(dirPath), "read")) return true;
-    return this.rules.some(([prefix, level]) => prefix.startsWith(dirPath + "/") && atLeast(level, "read"));
+    const dir = dirPath.normalize("NFC");
+    return this.rules.some(([prefix, level]) => prefix.startsWith(dir + "/") && atLeast(level, "read"));
   }
 
   toJSON(): Record<string, Level> {

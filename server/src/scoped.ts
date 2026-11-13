@@ -37,6 +37,7 @@ import {
   withoutRank,
   editedStamp,
   sameExceptEdited,
+  VAULT_SETTINGS_PATH,
   inTrashScope,
   restoreTargets,
   trashHead,
@@ -65,6 +66,7 @@ import {
   type BatchResult,
   type Doc,
   type LinkUpdateOptions,
+  type Listings,
   type Op,
   type TreeNode,
   type Vault,
@@ -85,6 +87,21 @@ const ACTION_LEVEL: Record<Action, Level> = {
 };
 
 export type { SearchHit };
+
+/** 대소문자·정규화를 접은 경로. 대문자로 올렸다 내린다 — ſ(U+017F)·K(U+212A)는 소문자로만 내려서는 s·k 가 되지 않는데 APFS 에서는 같은 이름이다 */
+const foldPath = (rel: string) => rel.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
+const SETTINGS_FOLDED = foldPath(VAULT_SETTINGS_PATH);
+
+/**
+ * 사람만 고치는 파일(공통 설정, 토픽의 SCHEMA.md)의 대소문자·정규화만 다른 철자. 대소문자를 가리지 않는 볼륨에서는
+ * `Keyring-Settings.md` 로 만든 파일을 서버가 공통 설정으로 읽고(Vault.sharedSettings), `schema.md` 가 그 노드를 위키 토픽으로
+ * 만든다(Wiki.prepare). 파일이 이미 있으면 Vault 의 철자 대조(spelledAsOnDisk)가 막지만, 아직 없을 때 다른 철자로 만드는 것은 여기서만 막힌다.
+ * 대소문자를 가리는 볼륨에서는 다른 파일인데도 함께 막힌다(볼륨을 가려 판정하지 않는다)
+ */
+function isHumanOnlyAlias(rel: string): boolean {
+  const folded = foldPath(rel);
+  return folded === SETTINGS_FOLDED || /^[^/]+\/[^/]+\/schema\.md$/.test(folded);
+}
 
 export interface Outline {
   path: string;
@@ -123,7 +140,8 @@ export class ScopedVault {
     const level = levelOf(this.principal, relPath);
     // 위키 SCHEMA.md와 모든 기기 공통 설정 파일(서버의 링크 해석·데일리 판정을 바꾼다)은 사람만 고친다.
     // 에이전트 규칙이 무엇이든 읽기까지만.
-    if (this.principal.kind === "agent" && (isSchemaPath(relPath) || isVaultSettingsPath(relPath)) && atLeast(level, "append")) return "read";
+    if (this.principal.kind !== "agent" || !atLeast(level, "append")) return level;
+    if (isSchemaPath(relPath) || isVaultSettingsPath(relPath) || isHumanOnlyAlias(relPath)) return "read";
     return level;
   }
 
@@ -208,11 +226,30 @@ export class ScopedVault {
     return (await this.vault.markdownPaths()).filter((p) => this.canRead(p));
   }
 
+  /**
+   * 요청 경로가 가리키는 위키 생성 문서(index·log)의 경로(위키가 아는 철자), 아니면 null. 유니코드 정규화만 다른 철자도 같은
+   * 문서다 — 디스크의 생성 문서는 숨김 문서까지 든 소유자용이라, 글자 그대로만 견주면 정규화가 다른 철자로 온 에이전트에게
+   * 그 파일이 그대로 나간다(Vault 의 철자 대조는 정규화만 다른 철자를 같은 파일로 연다)
+   */
+  private generatedDoc(rel: string): string | null {
+    if (!this.wiki) return null;
+    if (this.wiki.isGenerated(rel)) return rel;
+    const composed = rel.normalize("NFC");
+    for (const topic of this.wiki.topics) {
+      for (const name of ["index.md", "log.md"]) {
+        const known = `${topic}/wiki/${name}`;
+        if (known.normalize("NFC") === composed) return known;
+      }
+    }
+    return null;
+  }
+
   async read(input: string): Promise<Doc & { generated?: true }> {
     const rel = this.requireRead(input);
-    if (this.wiki?.isGenerated(rel)) {
+    const generated = this.generatedDoc(rel);
+    if (generated !== null && this.wiki) {
       // 위키 index·log는 읽는 사람이 볼 수 있는 문서만으로 다시 만든다.
-      const content = this.principal.kind === "owner" ? (await this.vault.read(rel)).content : await this.wiki.render(rel, (p) => this.canRead(p));
+      const content = this.principal.kind === "owner" ? (await this.vault.read(rel)).content : await this.wiki.render(generated, (p) => this.canRead(p));
       return { path: rel, content, hash: hashContent(content), generated: true };
     }
     return this.vault.read(rel);
@@ -220,7 +257,7 @@ export class ScopedVault {
 
   async readRaw(input: string) {
     const rel = this.requireRead(input);
-    if (this.wiki?.isGenerated(rel)) {
+    if (this.generatedDoc(rel) !== null) {
       const doc = await this.read(rel);
       return { path: rel, data: Buffer.from(doc.content) };
     }
@@ -328,9 +365,10 @@ export class ScopedVault {
   async frontmatterList(folder?: string, fields?: string[]) {
     const docs = await this.documents(folder);
     const out: { path: string; frontmatter: Record<string, unknown> | null; error?: string }[] = [];
+    const listings: Listings = new Map();
     for (const d of docs) {
       if (this.wiki?.isGenerated(d.path)) continue;
-      const { content } = await this.vault.read(d.path);
+      const { content } = await this.vault.read(d.path, listings);
       const fm = parseFrontmatter(content);
       let data = fm.data;
       if (data && fields && fields.length > 0) data = Object.fromEntries(fields.filter((k) => k in data!).map((k) => [k, data![k]]));
@@ -413,11 +451,12 @@ export class ScopedVault {
     const candidates = new Set<string>();
     for (const name of names) for (const hit of this.index.search(name)) candidates.add(hit.path);
     const out: { path: string; title: string; hash: string; mentions: Mention[] }[] = [];
+    const listings: Listings = new Map();
     for (const p of [...candidates].sort()) {
       if (p === doc.path || !this.canRead(p) || this.wiki?.isGenerated(p)) continue;
       let other: Doc;
       try {
-        other = await this.vault.read(p);
+        other = await this.vault.read(p, listings);
       } catch {
         continue; // 인덱스와 파일이 잠시 어긋난 경우
       }
@@ -483,12 +522,13 @@ export class ScopedVault {
     const files = await this.visibleFiles();
     // 문단·제목을 가리키는 출처(`[[원본#^id]]`)가 실제로 있는지: 볼 수 있는 대상만 읽어 본다
     const missingAnchors: { src: string; target: string; anchor: string }[] = [];
+    const listings: Listings = new Map();
     for (const d of this.visibleDocs()) {
       for (const r of sourceRefs(d.frontmatter)) {
         if (!r.anchor) continue;
         const to = resolveLink(r.target, files, this.linkOpts(d.path));
         if (!to || !/\.md$/i.test(to)) continue;
-        const content = await this.vault.read(to).then(
+        const content = await this.vault.read(to, listings).then(
           (x) => x.content,
           () => null,
         );
@@ -720,8 +760,9 @@ export class ScopedVault {
     const files = await this.nodeFilesOf(from);
     if (files.length === 0) throw new NotFoundError("node_missing", { path: from });
     const ops: Op[] = [];
+    const listings: Listings = new Map();
     for (const f of files) {
-      const { data } = await this.vault.readRaw(f);
+      const { data } = await this.vault.readRaw(f, listings);
       ops.push({ op: "move", from: f, to: moveNodePath(f, from, to), baseHash: hashContent(data) });
       // 다른 부모 안으로 옮기면 노드 노트의 rank(옛 부모 안의 순서)를 같은 커밋에서 지운다 → 새 부모에서 rank 없는 노드로 맨 뒤.
       // 고칠 권한이 없으면 rank 는 그대로 옮긴다(옮기기는 막지 않는다)
@@ -751,7 +792,8 @@ export class ScopedVault {
       : null;
     if (given && (given.size !== files.length || files.some((f) => !given.has(f)))) throw new ConflictError(null, "node_children_changed", { path: node });
     const ops: Op[] = [];
-    for (const f of files) ops.push({ op: "delete", path: f, baseHash: given?.get(f) ?? hashContent((await this.vault.readRaw(f)).data) });
+    const listings: Listings = new Map();
+    for (const f of files) ops.push({ op: "delete", path: f, baseHash: given?.get(f) ?? hashContent((await this.vault.readRaw(f, listings)).data) });
     const res = await this.batch(ops, this.vault.text().commit.nodeDelete(node));
     return res.pending ? { rev: null, deleted: files, pending: res.pending } : { rev: res.rev, deleted: files };
   }
@@ -786,7 +828,7 @@ export class ScopedVault {
   async history(input: string): Promise<CommitInfo[]> {
     const rel = this.requireRead(input);
     if (this.principal.kind === "owner") return this.vault.history(rel);
-    const commits = await this.vault.git.logWithChanges(rel);
+    const commits = await this.vault.historyWithChanges(rel);
     return commits.map(({ files, ...c }) => (files.every((p) => this.safeCanRead(p)) ? c : { ...c, message: agentText(this.agentLang).hiddenCommit }));
   }
 
