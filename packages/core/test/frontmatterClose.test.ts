@@ -45,7 +45,7 @@ const CASES: { name: string; doc: string; data: Record<string, unknown> | null; 
   { name: "닫는 줄이 ...", doc: "---\ntitle: x\nrank: m\n...\n본문\n", data: { title: "x", rank: "m" }, body: "본문\n" },
   { name: "닫는 줄 뒤 공백", doc: "---\ntitle: x\nrank: m\n--- \t\n본문\n", data: { title: "x", rank: "m" }, body: "본문\n" },
   { name: "닫는 줄이 글의 끝", doc: "---\ntitle: x\nrank: m\n---", data: { title: "x", rank: "m" }, body: "" },
-  { name: "BOM 뒤 프런트매터", doc: "﻿---\ntitle: 생각 중...\nrank: m\n---\n본문\n", data: { title: "생각 중...", rank: "m" }, body: "본문\n" },
+  { name: "BOM 뒤 프런트매터", doc: "\uFEFF---\ntitle: 생각 중...\nrank: m\n---\n본문\n", data: { title: "생각 중...", rank: "m" }, body: "본문\n" },
   { name: "프런트매터 없음", doc: "# 글\n\n본문 ---\n...\n", data: null, body: "# 글\n\n본문 ---\n...\n" },
   { name: "닫는 줄이 없음", doc: "---\ntitle: 생각 중...\n본문\n", data: null, body: "---\ntitle: 생각 중...\n본문\n" },
 ];
@@ -76,12 +76,12 @@ describe("프런트매터의 닫는 구분선 — 줄 전체가 --- 나 ... 일 
       it("필드 지우기", () => expectEdited(setFrontmatterField(c.doc, "rank", null), c, {}, ["rank"]));
       it("공통 설정 키 쓰기", () => {
         // 설정 편집은 BOM 을 다루지 않는다(설정 파일은 앱이 쓴다)
-        if (c.doc.startsWith("﻿")) return;
+        if (c.doc.startsWith("\uFEFF")) return;
         expectEdited(setVaultSetting(c.doc, ["daily", "folder"], "일기"), c, { daily: { folder: "일기" } });
         expectEdited(setVaultSetting(c.doc, ["rank"], null), c, {}, ["rank"]);
       });
       it("설정 객체 바꿔 쓰기", () => {
-        if (c.doc.startsWith("﻿")) return;
+        if (c.doc.startsWith("\uFEFF")) return;
         const out = replaceSettingsObject(c.doc, { a: 1 });
         expect(out.endsWith(c.body)).toBe(true);
         expect(out.slice(0, out.length - c.body.length)).toBe("---\na: 1\n---\n");

@@ -39,15 +39,15 @@ describe("ATX 제목 줄", () => {
       ["    # a", null],
       ["\t# a", null],
       ["#  a  b  ", { level: 1, text: "a  b" }],
-      ["# 　a ", { level: 1, text: "a" }],
+      ["# \u3000a\u00a0", { level: 1, text: "a" }],
       ["# a\\#", { level: 1, text: "a\\" }],
       // 닫는 # 앞에 공백이 없어도 걷는다(CommonMark 와 다르다 — 바꾸면 기존 노트의 제목과 `[[노트#제목]]` 링크의 글자가 바뀐다)
       ["# a#", { level: 1, text: "a" }],
       ["# C#", { level: 1, text: "C" }],
       // 줄 안의 CR·줄 구분 문자(U+2028·U+2029)가 있으면 제목이 아니다
       ["# a\rb", null],
-      ["# a b", null],
-      ["# a ", null],
+      ["# a\u2028b", null],
+      ["# a\u2029", null],
     ];
     for (const [line, want] of cases) {
       expect(byOneRegex(line), JSON.stringify(line)).toEqual(want);
