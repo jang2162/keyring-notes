@@ -435,6 +435,7 @@
   "doc.reloadAskServer": "Discard your changes and load the server version?",
   "doc.reloadLocal": "Load saved version",
   "doc.reloadServer": "Load server version",
+  "doc.renderFailed": "This note could not be displayed. Its text is shown below as written.",
   "doc.rightPanel": "Outline · backlinks · history",
   "doc.saveCopy": "Save my changes as a copy",
   "doc.saveFirst": "\"{name}\" has unsaved changes. Save it first.",

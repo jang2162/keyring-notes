@@ -894,6 +894,12 @@ body.resizing { cursor: col-resize; user-select: none; }
 .banner.info, .banner.generated { background: var(--info-bg); }
 .banner.conflict, .banner.revision { background: var(--warn-bg); color: var(--warn-fg); }
 
+/* 노트를 그리지 못했을 때(RenderBoundary.tsx): 안내·다시 시도 단추, 그 아래 원문 */
+.render-failed-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-radius: var(--radius); background: var(--warn-bg); color: var(--warn-fg); font-size: var(--fs-md); }
+.render-failed-head p { margin: 0; flex: 1 1 240px; }
+.render-failed pre { margin: 8px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-soft); font-family: var(--font-mono); font-size: var(--fs-md); white-space: pre-wrap; overflow-wrap: anywhere; }
+.trash-body .render-failed pre { max-height: 50vh; overflow: auto; }
+
 /* 본문 */
 /* 가운데 칸들(나눈 트리). 칸마다 탭 바·문서 머리·에디터. 한 칸이면 지금 화면과 같다 */
 .split-root { flex: 1; display: flex; min-height: 0; min-width: 0; }
