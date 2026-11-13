@@ -94,6 +94,10 @@ web 시험은 Node 환경이 기본이다. DOM 이 필요한 시험(`renderMarkd
 
 포맷과 린트는 `pnpm fmt`, `pnpm lint`. lefthook 이 커밋 전에는 stage 된 파일을, push 전에는 저장소 전체를 검사한다(`lefthook.yml`).
 
+`main` 으로의 push 와 pull request 마다 GitHub Actions(`.github/workflows/ci.yml`)가 `pnpm fmt:check` → `pnpm lint` → `pnpm typecheck` → `pnpm test` → `pnpm build` 를 Node 22 와 24 두 벌로 돌린다. 22 는 Docker 이미지의 런타임이고 24 는 개발 런타임(`mise.toml`)이다. 로컬에서 22 로 돌려 보려면 `MISE_NODE_VERSION=22 mise exec -- pnpm test` 를 쓴다(`mise.toml` 은 바꾸지 않는다). macOS 릴리스 워크플로(`release-macos.yml`)는 시험을 돌리지 않는다 — 태그를 찍기 전에 그 커밋의 `ci` 가 통과했는지 본다.
+
+`pnpm audit` 은 패키지 이름으로만 본다. 다른 패키지의 배포 파일 안에 묶여 실린 사본(서버의 `unpdf` 안의 pdf.js 등)은 잡지 못하므로, 취약점 권고가 나온 라이브러리는 `node_modules` 의 다른 패키지 `dist` 에 묶인 판도 찾아본다.
+
 ## 버전과 릴리스
 
 제품 버전의 원천은 루트 `package.json` 이고, 서버와 앱이 같은 버전과 릴리스를 쓴다. 버전 올리기와 macOS 앱 릴리스 절차는 `docs/guides/release-macos.md` 에 있다. 사용자에게 보이는 변경은 릴리스마다 `CHANGELOG.md`(영어)에 적는다.
@@ -204,6 +208,8 @@ Tauri 가 부른 빌드(`beforeBuildCommand` — 환경 변수 `TAURI_ENV_TARGET
 **묶임 검사**: 빌드가 출력에 쓰인 `node_modules` 파일마다 동봉 소스맵(끝의 `sourceMappingURL` 이나 옆의 `.map`)을 읽어, `sources` 에 다른 패키지(`…/node_modules/<이름>/…`)가 있는데 고지에도 손 목록에도 없으면 「<이름>(<via> 안에 묶여 있다) 가 고지에 없다」 로 멈춘다. 그 이름을 `bundled` 로 넣는다.
 
 자동 수집이 보지 않는 것: 실행 중에 네트워크에서 받는 것(플러그인 등), 저장소 코드에 옮겨 붙인 남의 코드, OS 가 주는 라이브러리(WebKit 등). 패키지가 자기 배포 파일 안에 미리 묶어 싣는 남의 코드(예: `@mermaid-js/parser` 안의 langium·chevrotain, `mermaid` 안의 js-yaml, `pdfjs-dist` legacy 빌드 안의 core-js, `roughjs` 의 `bundled/` 안 하위 패키지)와 네이티브 바이너리에 정적으로 링크된 라이브러리(`@napi-rs/canvas` 의 Skia)도 자동 수집이 보지 못한다 — 패키지 이름 단위로만 모으기 때문이다. 묶임 검사는 이 중 **web 번들의, 소스맵을 동봉한 파일만** 잡는다. 소스맵이 없는 묶음(`roughjs`·`unpdf`), 네이티브 바이너리(Skia), 서버·앱 조각은 검사하지 않으므로, 의존성을 더하거나 올릴 때 그 패키지의 배포 파일에 `.map` 이 있으면 `sources` 에 다른 패키지가 있는지, 없으면 배포 파일이 import 없이 큰 코드를 싣는지 직접 본다. 이것들은 손 목록에 넣거나 따로 판단한다. 새 의존성의 라이선스가 GPL·LGPL·AGPL·MPL 처럼 소스 제공 의무가 따르거나 출처가 불분명하면 넣기 전에 정한다.
+
+`@napi-rs/canvas` 의 고지는 Skia 하나뿐이고 나머지는 아직 없다. 플랫폼 패키지(`@napi-rs/canvas-<플랫폼>`)의 `sbom.cdx.json` 이 그 바이너리에 정적으로 링크된 구성요소를 나열한다 — FreeType(FTL), ICU, libjpeg-turbo(IJG), MPL-2.0 크레이트(`cssparser`·`selectors` 등)가 들어 있다. 서버는 PDF 글 추출 길에서 이 모듈을 불러오지 않으므로, 고지를 채우는 대신 Dockerfile 의 실행 의존성 설치에서 선택적 의존성을 빼는(`--no-optional`) 길도 있다. 둘 중 하나를 하기 전까지 Docker 이미지의 고지는 이 부분이 비어 있다.
 
 ### 확인
 

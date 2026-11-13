@@ -32,6 +32,11 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - Desktop and mobile app: a failed write to the device vault while the network is down is now reported as a failed save instead of showing as saved.
 - Text typed while a note was being reloaded, renamed or reordered is no longer replaced by the server's version.
 
+### Security
+
+- Updated PDF.js to 6.5 in the app, and to 6.4 in the server's PDF text extraction. Both fix a flaw that let a malicious PDF run its own script when opened.
+- Updated DOMPurify, markdown-it, Hono, Zod and other dependencies to versions that fix known vulnerabilities.
+
 ## [0.12.0] - 2026-11-02
 
 ### Added
