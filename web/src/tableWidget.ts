@@ -251,7 +251,12 @@ class TableWidget extends WidgetType {
       }
     });
     const ctx2 = ctx;
-    if (painted && ctx2) enhance(table, { resolver: ctx2.resolver, docPath: ctx2.docPath }, () => wrap.isConnected || !view.dom.isConnected);
+    try {
+      if (painted && ctx2) enhance(table, { resolver: ctx2.resolver, docPath: ctx2.docPath }, () => wrap.isConnected || !view.dom.isConnected);
+    } catch (e) {
+      // 칸은 이미 그려져 있다 — 수식·그림 자리만 원문으로 남는다(liveBlocks.ts 의 paintBlock 이 왜 막는지 적는다)
+      console.error("keyring: live preview table failed", e);
+    }
   }
   ignoreEvent() {
     return true;
@@ -493,8 +498,17 @@ function attachHandles(view: EditorView, wrap: HTMLElement) {
 /** 칸을 그린 HTML 로(칸 원문은 data-raw 에 두어 같으면 다시 그리지 않는다) */
 export function paintCell(td: HTMLElement, raw: string, ctx: LiveRenderContext | null) {
   td.dataset.raw = raw;
-  if (ctx) td.innerHTML = renderInlineMarkdown(cellText(raw), { resolver: ctx.resolver, docPath: ctx.docPath });
-  else td.textContent = cellText(raw);
+  if (!ctx) {
+    td.textContent = cellText(raw);
+    return;
+  }
+  try {
+    td.innerHTML = renderInlineMarkdown(cellText(raw), { resolver: ctx.resolver, docPath: ctx.docPath });
+  } catch (e) {
+    // 렌더러가 던지면 그 칸만 원문 글자로 — 위젯이 던지면 화면이 통째로 내려간다(liveBlocks.ts 의 paintBlock)
+    console.error("keyring: live preview table cell failed", e);
+    td.textContent = cellText(raw);
+  }
 }
 
 /**
