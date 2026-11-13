@@ -1,5 +1,5 @@
 import { parseDocument, isMap } from "yaml";
-import { parseFrontmatter } from "./markdown.js";
+import { frontmatterBlock, parseFrontmatter } from "./markdown.js";
 import { dailyFormatProblem, type DailyConfig, type DailyLookup, type WeekStart } from "./daily.js";
 import { PathError } from "./errors.js";
 import { parseMarketplace, type MarketplaceSettings } from "./marketLock.js";
@@ -219,13 +219,10 @@ export function settingsObject(content: string | null | undefined): Record<strin
   return parseFrontmatter(content).data;
 }
 
-const FM_RE = /^---\r?\n([\s\S]*?)\r?\n?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
-
 function editSettings(content: string, edit: (doc: ReturnType<typeof parseDocument>) => void): string {
-  const m = FM_RE.exec(content);
-  const yamlText = m ? m[1] : "";
-  const body = m ? content.slice(m[0].length) : content;
-  const doc = parseDocument(yamlText);
+  const block = frontmatterBlock(content);
+  const body = block ? content.slice(block.end) : content;
+  const doc = parseDocument(block ? block.yaml : "");
   if (doc.errors.length) throw new PathError("settings_yaml", { message: doc.errors[0].message.split("\n")[0] });
   if (doc.contents === null || doc.contents === undefined) doc.contents = doc.createNode({}) as unknown as typeof doc.contents;
   if (!isMap(doc.contents)) throw new PathError("settings_not_object");

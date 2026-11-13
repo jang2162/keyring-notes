@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, appMode } from "./api";
+import { api, ApiError, appMode } from "./api";
 import { ClipPage } from "./Ingest";
 import { Login } from "./Login";
 import { authMemo, isNetworkError, offline } from "./offline";
@@ -54,14 +54,17 @@ function ServerApp() {
     <>
       {(auth.ok || auth.wasIn) && (
         <Workspace
-          onLogout={() =>
-            api.logout().finally(() => {
-              authMemo.set(false);
-              void offline.clear().catch(() => undefined);
-              setAuth((a) => ({ ...a, wasIn: false }));
-              void checkAuth();
-            })
-          }
+          onLogout={async () => {
+            // 서버에 닿지 않았으면(오프라인 등) 던진다: 세션이 살아 있는데 이 기기의 사본·못 보낸 저장분만 지워지지 않게.
+            // 세션이 이미 끊겼으면(401) 로그아웃된 것과 같다
+            await api.logout().catch((e) => {
+              if (!(e instanceof ApiError && e.status === 401)) throw e;
+            });
+            authMemo.set(false);
+            void offline.clear().catch(() => undefined);
+            setAuth((a) => ({ ...a, wasIn: false }));
+            void checkAuth();
+          }}
         />
       )}
       {!auth.ok && <Login passwordSet={auth.passwordSet} passkey={auth.passkey} onDone={checkAuth} />}

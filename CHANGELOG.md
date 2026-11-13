@@ -18,6 +18,20 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - The button at the top right of the right panel now collapses the panel, with a panel icon instead of ✕.
 - In the editor, `**bold**`, `*italic*` and `~~strikethrough~~` text now look bold, italic and struck through, and `[ ]` markers, code fence language names and HTML tags are colored.
 
+### Fixed
+
+- A note whose text made the preview fail no longer blanks the whole app. A relative link with a malformed percent-encoded anchor, such as `[x](page.md#caf%E9)`, was enough. It also happened in **Edit** with Live Preview when the link was inside a callout or a table cell, and the app stayed blank after a reload.
+- When a note cannot be drawn, the preview shows a notice, the text of the note and a **Try again** button. The editor, the other tabs and the sidebar keep working. The Trash preview does the same, and in Live Preview a callout, table cell or formula that cannot be drawn stays as plain text.
+- An address whose hash is not valid percent-encoding, such as `#%E9`, no longer leaves the app blank on load.
+- Editing a note's properties no longer pushes the properties below out of the front matter when a value ends with `...` or `---`, such as `title: Thinking...`. Setting an icon, reordering notes and changing vault settings were affected in the same way.
+- A heading line with a very long run of spaces no longer freezes the server while it indexes the note.
+- A note that starts with empty front matter (`---` directly followed by `---`) is read as having no properties, instead of treating everything up to the next horizontal rule as front matter. Its title, summary and outline now come from the text below. A new note whose only content is those two lines counts as empty and is removed when you close it.
+- With autosave off, moving a note up or down, **Sort sub-notes**, **Use as folder**, renaming or deleting a workspace and deleting a note no longer discard unsaved text. A notice asks you to save the note first.
+- Logging out now asks first when any note or drawing has unsaved changes (not only the note in view) or when saves made offline are still waiting, and says how many. Logging out without a connection no longer deletes them.
+- A save the server refuses no longer blocks later offline saves from being sent. The refused save stays on the device and a notice names the note and the reason.
+- Desktop and mobile app: a failed write to the device vault while the network is down is now reported as a failed save instead of showing as saved.
+- Text typed while a note was being reloaded, renamed or reordered is no longer replaced by the server's version.
+
 ## [0.12.0] - 2026-11-02
 
 ### Added
