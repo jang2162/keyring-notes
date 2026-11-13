@@ -28,6 +28,9 @@ function urlAttrs(root: HTMLElement): string[] {
   return [...root.querySelectorAll("*")].flatMap((el) => ["href", "src", "xlink:href", "action", "formaction"].flatMap((n) => el.getAttribute(n) ?? []));
 }
 
+/** 실행되는 스킴의 주소인가. 브라우저는 스킴 안의 탭·줄바꿈을 지우고 읽으므로 같이 지우고 본다 */
+const runsScript = (url: string) => /^(?:javascript|vbscript|data):/i.test(url.replace(/\s/g, ""));
+
 describe("renderMarkdown: 깨진 퍼센트 인코딩", () => {
   it("상대 링크의 앵커가 깨져 있어도 던지지 않고 원문 그대로 쓴다", () => {
     const a = dom("[카페](page.md#caf%E9)").querySelector("a")!;
@@ -93,6 +96,20 @@ describe("renderMarkdown: 정화", () => {
     expect(dom('<a href="javascript:alert(1)">x</a>').querySelector("a")?.hasAttribute("href")).toBe(false);
   });
 
+  it("탭을 끼운 javascript: 와 data:text/html 주소도 링크에 남기지 않는다", () => {
+    for (const src of [
+      '<a href="java&#x09;script:alert(1)">x</a>',
+      '<a href="java&#10;script:alert(1)">x</a>',
+      '<a href="data:text/html,<script>alert(1)</script>">x</a>',
+      '<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>',
+      '<a href="vbscript:msgbox(1)">x</a>',
+    ]) {
+      const out = dom(src);
+      expect(out.querySelector("a")?.textContent).toBe("x");
+      expect(urlAttrs(out).filter(runsScript)).toEqual([]);
+    }
+  });
+
   it("<script> 를 남기지 않는다", () => {
     const out = dom("앞\n\n<script>window.pwned = 1</script>\n\n<div><script>window.pwned = 2</script>안</div>\n\n뒤");
     expect(out.querySelector("script")).toBeNull();
@@ -115,6 +132,28 @@ describe("renderMarkdown: 정화", () => {
     expect(el.querySelector("script")).toBeNull();
     expect(el.innerHTML).not.toMatch(/onerror|alert\(3\)/i);
     expect(urlAttrs(el).filter((v) => /javascript/i.test(v))).toEqual([]);
+  });
+
+  // 마크다운 링크의 javascript: 는 markdown-it 이 먼저 거른다 — 줄 안 렌더의 주소 정책(ALLOWED_URI_REGEXP)은 원시 HTML 로만 닿는다
+  it("줄 안 렌더(표 칸)도 원시 HTML 의 실행되는 주소를 남기지 않는다", () => {
+    for (const src of [
+      '<a href="javascript:alert(1)">x</a>',
+      '<a href=" JaVaScRiPt:alert(1)">x</a>',
+      '<img src="javascript:alert(1)">',
+      '<a href="java&#x09;script:alert(1)">x</a>',
+      '<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>',
+    ]) {
+      const el = document.createElement("div");
+      el.innerHTML = renderInlineMarkdown(src, ctx);
+      expect(el.querySelector("a, img")).not.toBeNull();
+      expect(urlAttrs(el).filter(runsScript)).toEqual([]);
+    }
+  });
+
+  it("줄 안 렌더(표 칸)도 앱의 첨부 주소와 보통 링크는 남긴다", () => {
+    const el = document.createElement("div");
+    el.innerHTML = renderInlineMarkdown('<a href="https://example.com/a">a</a> <img src="blob:http://localhost/1"> <img src="asset://localhost/x.png">', ctx);
+    expect(urlAttrs(el)).toEqual(["https://example.com/a", "blob:http://localhost/1", "asset://localhost/x.png"]);
   });
 
   it("class 와 data-* 는 남긴다 — 원시 HTML 로 수식·다이어그램 자리를 만들 수 있다", () => {
