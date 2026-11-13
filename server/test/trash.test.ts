@@ -243,7 +243,13 @@ describe("휴지통(서버: Git 이력 기반)", { timeout: 20_000 }, () => {
     await rm(path.join(vault.root, "W/c.md"));
     await vault.git.raw(["add", "--all", "--", "W/c.md"]);
     // 구분 글자로 쪼개 읽으면 가짜 레코드의 끝 문단이 트레일러가 되는 메시지(재리뷰 R1)
-    await vault.git.raw(["commit", "-q", "--no-verify", "-m", "제목\n\nx\x1e" + "a\x1f".repeat(5) + "Keyring-Moves: 1\nKeyring-Move: W/c.md\tW/zz.md\x1f"]);
+    // commitStaged 는 메시지를 거르지 않고 그대로 넘기고, 작성자를 스스로 넣는다(git 전역 사용자 정보가 없는 환경에서도 커밋된다)
+    const rev = await vault.git.commitStaged("제목\n\nx\x1e" + "a\x1f".repeat(5) + "Keyring-Moves: 1\nKeyring-Move: W/c.md\tW/zz.md\x1f", {
+      name: "old",
+      email: "old@example.invalid",
+    });
+    expect(rev).toMatch(/^[0-9a-f]{40}$/);
+    expect(await vault.git.raw(["log", "-1", "--format=%B"])).toMatchObject({ stdout: expect.stringContaining("x\x1e" + "a\x1f".repeat(5)) });
     const items = (await owner.trash()).items;
     expect(items.map((i) => [i.notes, i.id.length])).toEqual([[["W/c.md"], 40]]);
     expect((await owner.restoreTrash(items[0].id)).restored).toEqual([["W/c.md", "W/c.md"]]);
