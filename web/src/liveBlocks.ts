@@ -1,11 +1,12 @@
 import { syntaxTree } from "@codemirror/language";
-import { StateField, type EditorState, type Extension, type Range, type Transaction } from "@codemirror/state";
+import { StateField, type ChangeDesc, type EditorState, type Extension, type Range, type Text, type Transaction } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { enhance } from "./enhance";
 import { encodeSource, renderMarkdown, vaultRelative, type LinkResolver } from "./markdown";
 import { api } from "./api";
 import { t } from "./i18n";
-import { CALLOUT_LINE } from "./liveSyntax";
+import { CALLOUT_LINE, frontmatterEnd } from "./liveSyntax";
+import { matchChunks, topChunks, type TopChunk } from "./treeChunks";
 import { inlineImageUrl, isCommentBlock } from "./liveImage";
 import { widgetBlockAt, widgetBlockOfNode, widgetEditField } from "./widgets/blockEdit";
 import { KeyringBlockWidget } from "./widgets/liveWidget";
@@ -123,61 +124,173 @@ class HiddenBlock extends WidgetType {
   }
 }
 
-interface Block {
+interface Span {
   from: number;
   to: number;
+}
+
+interface Block extends Span {
   kind: string;
 }
 
-/** 문서 순서·비중첩 범위들에 대해, 늘기만 하는 위치가 어느 범위 안(양 끝 포함)인가 */
-function sweep(ranges: readonly { from: number; to: number }[]): (pos: number) => boolean {
-  let i = 0;
+/** 트리에서 찾는 것. 문서 순서이고 겹치지 않는다(아래 블록을 찾으면 그 안을 보지 않는다) */
+interface TreeScan {
+  /** 줄 루프가 보지 않을 범위(코드·HTML 블록) */
+  code: Span[];
+  /** 트리 노드로 정해지는 블록(mermaid·위젯·HTML·콜아웃) */
+  blocks: Block[];
+  /** blocks 마다 그 노드의 시작 — 블록 from 은 줄 처음이라 노드보다 앞일 수 있다. 덩어리별로 옛 결과를 옮길 때 쓴다 */
+  blockAt: number[];
+}
+
+/**
+ * 블록 찾기 결과와, 다음 트랜잭션에서 바뀐 범위만 다시 보는 데 쓰는 중간 결과.
+ * lines 는 줄 루프가 찾은 블록(수식·주석·임베드), blocks 는 트리 블록과 합쳐 from 순으로 늘어놓은 것.
+ * doc·chunks·frontmatter 는 그때의 문서·최상위 덩어리·프런트매터 닫는 줄 — 다음 갱신이 옛 트리와 맞대 본다
+ */
+export interface BlockScan {
+  tree: TreeScan;
+  lines: Block[];
+  blocks: Block[];
+  doc: Text;
+  chunks: TopChunk[];
+  frontmatter: number | null;
+}
+
+/** pos 이상인 to 를 가진 첫 범위의 순번 */
+function firstEndingAtOrAfter(ranges: readonly Span[], pos: number): number {
+  let lo = 0;
+  let hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ranges[mid]!.to < pos) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** 문서 순서·비중첩 범위들에 대해, start 부터 늘기만 하는 위치가 어느 범위 안(양 끝 포함)인가 */
+function sweep(ranges: readonly Span[], start: number): (pos: number) => boolean {
+  let i = firstEndingAtOrAfter(ranges, start);
   return (pos) => {
     while (i < ranges.length && ranges[i]!.to < pos) i++;
     return i < ranges.length && pos >= ranges[i]!.from;
   };
 }
 
-/** 블록으로 그릴 범위를 찾는다(코드 블록 안은 보지 않는다) */
-function findBlocks(state: EditorState): Block[] {
-  const out: Block[] = [];
+/**
+ * visitNode 가 찾는 넷(펜스·HTML·들여쓴 코드·인용)이 올 수 있는 노드만 들어간다. 마크다운에서 블록을 품는 것은 문서·목록 항목·인용뿐이고
+ * 인용은 들어가지 않는다 — 문단·제목·표 안은 줄 안 노드뿐이라 들어가도 찾을 것이 없는데, 큰 문서에서 그 노드를 다 훑는 값이 든다.
+ * 모든 노드에 들어가는 기준 구현과 결과가 같은지는 liveBlocks.test.ts 의 퍼즈가 맞대 본다
+ */
+const BLOCK_CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem"]);
+
+type Cursor = ReturnType<ReturnType<typeof syntaxTree>["cursor"]>;
+
+/** 커서 자리 노드에서(블록을 품는 노드면 그 안까지) 찾아 out 에 더한다. 커서는 그 노드로 돌아온다 */
+function visitNode(state: EditorState, c: Cursor, out: TreeScan) {
   const doc = state.doc;
-  const code: [number, number][] = [];
-  const tree = syntaxTree(state);
-  tree.iterate({
-    enter: (n) => {
-      if (n.name === "FencedCode") {
-        code.push([n.from, n.to]);
-        const info = /^\s*(`{3,}|~{3,})\s*([\w-]*)/.exec(doc.lineAt(n.from).text)?.[2];
-        if (info === "mermaid") out.push({ from: doc.lineAt(n.from).from, to: doc.lineAt(n.to).to, kind: "mermaid" });
-        else if (widgetBlockOfNode(state, n.node)) out.push({ from: doc.lineAt(n.from).from, to: doc.lineAt(n.to).to, kind: "keyring-widget" });
-        return false;
-      }
-      if (n.name === "HTMLBlock") {
-        code.push([n.from, n.to]);
-        // 붙여넣기 업로드 자리 표시(<!-- uploading… -->)가 주석 블록이다 — 그리면 업로드 중인 줄이 사라져 보인다
-        if (!isCommentBlock(doc.sliceString(n.from, n.to))) out.push({ from: doc.lineAt(n.from).from, to: doc.lineAt(n.to).to, kind: "html" });
-        return false;
-      }
-      if (n.name === "CodeBlock") {
-        code.push([n.from, n.to]);
-        return false;
-      }
-      if (n.name === "Blockquote") {
-        const first = doc.lineAt(n.from);
-        if (CALLOUT_LINE.test(first.text)) out.push({ from: first.from, to: doc.lineAt(n.to).to, kind: "callout" });
-        return false;
-      }
-      return undefined;
-    },
-  });
-  // 아래 줄 루프는 위치가 늘기만 하므로 포인터로 훑는다. 줄마다 목록 전체를 보면 줄 × 블록이라 펜스가 많은 큰 문서에서 키마다 수십 ms 다.
-  // 둘 다 문서 순서이고 겹치지 않는다(트리 순회가 위 블록에서 return false 로 안을 보지 않는다). 루프가 out 에 더하는 블록은
-  // 그 줄 뒤로 i 를 넘기므로 taken 이 볼 필요가 없다 — 그래서 트리에서 찾은 것만 본다
-  const inCode = sweep(code.map(([from, to]) => ({ from, to })));
-  const taken = sweep(out.slice());
-  // 줄 단위로: $$ 수식 블록, 여러 줄 주석, 임베드만 있는 줄
-  for (let i = 1; i <= doc.lines; i++) {
+  const name = c.name;
+  let kind: string | null = null;
+  if (name === "FencedCode") {
+    out.code.push({ from: c.from, to: c.to });
+    const info = /^\s*(`{3,}|~{3,})\s*([\w-]*)/.exec(doc.lineAt(c.from).text)?.[2];
+    kind = info === "mermaid" ? "mermaid" : widgetBlockOfNode(state, c.node) ? "keyring-widget" : null;
+  } else if (name === "HTMLBlock") {
+    out.code.push({ from: c.from, to: c.to });
+    // 붙여넣기 업로드 자리 표시(<!-- uploading… -->)가 주석 블록이다 — 그리면 업로드 중인 줄이 사라져 보인다
+    kind = isCommentBlock(doc.sliceString(c.from, c.to)) ? null : "html";
+  } else if (name === "CodeBlock") {
+    out.code.push({ from: c.from, to: c.to });
+    return;
+  } else if (name === "Blockquote") {
+    kind = CALLOUT_LINE.test(doc.lineAt(c.from).text) ? "callout" : null;
+  }
+  if (name === "FencedCode" || name === "HTMLBlock" || name === "Blockquote") {
+    if (kind) {
+      out.blocks.push({ from: doc.lineAt(c.from).from, to: doc.lineAt(c.to).to, kind });
+      out.blockAt.push(c.from);
+    }
+    return;
+  }
+  if (!BLOCK_CONTAINERS.has(name) || !c.firstChild()) return;
+  do visitNode(state, c, out);
+  while (c.nextSibling());
+  c.parent();
+}
+
+/** 최상위 노드 중 시작이 from 이상 to 미만인 것만 본다 */
+function scanTopRange(state: EditorState, from: number, to: number, out: TreeScan) {
+  const c = syntaxTree(state).cursor();
+  if (!c.childAfter(from)) return;
+  do {
+    if (c.from >= to) break;
+    visitNode(state, c, out);
+  } while (c.nextSibling());
+}
+
+/**
+ * 트리 결과를 옛것에서 옮긴다. 옛 트리의 같은 덩어리 객체를 다시 쓴 자리(treeChunks.ts matchChunks)는 옛 결과를 옮기고,
+ * 나머지 덩어리만 다시 본다. 트리는 바뀐 곳에서 먼 데까지 달라질 수 있지만(닫히지 않은 펜스 등) 그런 덩어리는 다시 쓰이지 않는다.
+ * 덩어리 밖에서 오는 것은 위젯 블록 판정의 프런트매터뿐이라(widgetBlockOfNode) 그것이 달라질 수 있으면 다 다시 본다
+ */
+function updateTreeScan(prev: BlockScan, state: EditorState, changes: ChangeDesc, chunks: TopChunk[], frontmatter: number | null): TreeScan {
+  const out: TreeScan = { code: [], blocks: [], blockAt: [] };
+  let firstChange = Infinity;
+  changes.iterChangedRanges((fromA) => (firstChange = Math.min(firstChange, fromA)));
+  if (frontmatter !== prev.frontmatter || (frontmatter !== null && firstChange <= prev.doc.line(frontmatter).to)) {
+    visitNode(state, syntaxTree(state).cursor(), out);
+    return out;
+  }
+  const match = matchChunks(prev.chunks, chunks, changes, prev.doc);
+  const old = prev.tree;
+  let ci = 0;
+  let bi = 0;
+  for (let j = 0; j < chunks.length;) {
+    const m = match[j]!;
+    if (m < 0) {
+      let k = j;
+      while (k < chunks.length && match[k]! < 0) k++;
+      scanTopRange(state, chunks[j]!.from, chunks[k - 1]!.to, out);
+      j = k;
+      continue;
+    }
+    const o = prev.chunks[m]!;
+    const shift = chunks[j]!.from - o.from;
+    while (ci < old.code.length && old.code[ci]!.from < o.from) ci++;
+    for (; ci < old.code.length && old.code[ci]!.from < o.to; ci++) {
+      const r = old.code[ci]!;
+      out.code.push(shift ? { from: r.from + shift, to: r.to + shift } : r);
+    }
+    while (bi < old.blockAt.length && old.blockAt[bi]! < o.from) bi++;
+    for (; bi < old.blockAt.length && old.blockAt[bi]! < o.to; bi++) {
+      const b = old.blocks[bi]!;
+      out.blocks.push(shift ? { from: b.from + shift, to: b.to + shift, kind: b.kind } : b);
+      out.blockAt.push(old.blockAt[bi]! + shift);
+    }
+    j++;
+  }
+  return out;
+}
+
+/**
+ * 줄 루프가 한 줄을 정할 때 그 줄과 그 뒤로 보는 줄 수(그 줄 포함). 수식은 닫는 줄을 199줄 뒤까지, 주석은 499줄 뒤까지 찾는다.
+ * 증분 갱신이 바뀐 줄보다 이만큼 앞에서 다시 훑기 시작하는 근거다 — 찾는 거리를 늘리면 여기도 늘린다
+ */
+const LOOKAHEAD = 500;
+
+/**
+ * 줄 단위로: $$ 수식 블록, 여러 줄 주석, 임베드만 있는 줄. first 줄을 앞 블록에 걸치지 않은 줄로 보고 훑어 out 에 더한다.
+ * 새로 정하는 줄(앞 블록 안이 아닌 줄)마다 stop 을 묻고 참이면 그 줄 번호를, 끝까지 가면 lines + 1 을 돌려준다.
+ * 위치가 늘기만 하므로 코드·트리 블록 안인지는 포인터로 훑는다 — 줄마다 목록 전체를 보면 줄 × 블록이라 펜스가 많은 큰 문서에서 키마다 수십 ms 다.
+ * 루프가 더하는 블록은 그 줄 뒤로 i 를 넘기므로 taken 은 트리 블록만 본다
+ */
+function scanLines(doc: Text, tree: TreeScan, first: number, out: Block[], stop?: (line: number) => boolean): number {
+  const start = first <= doc.lines ? doc.line(first).from : doc.length;
+  const inCode = sweep(tree.code, start);
+  const taken = sweep(tree.blocks, start);
+  for (let i = first; i <= doc.lines; i++) {
+    if (stop?.(i)) return i;
     const line = doc.line(i);
     if (inCode(line.from) || taken(line.from)) continue;
     const t = line.text.trim();
@@ -196,7 +309,7 @@ function findBlocks(state: EditorState): Block[] {
       continue;
     }
     if (t.startsWith("%%") && !(t.length > 2 && t.slice(2).includes("%%"))) {
-      for (let j = i + 1; j <= doc.lines && j < i + 500; j++) {
+      for (let j = i + 1; j <= doc.lines && j < i + LOOKAHEAD; j++) {
         if (doc.line(j).text.trimEnd().endsWith("%%")) {
           out.push({ from: line.from, to: doc.line(j).to, kind: "comment" });
           i = j;
@@ -211,12 +324,131 @@ function findBlocks(state: EditorState): Block[] {
       out.push({ from: line.from, to: line.to, kind: target === undefined || IMAGE_EXT.test(target) ? "image" : "embed" });
     }
   }
-  return out.sort((a, b) => a.from - b.from);
+  return doc.lines + 1;
+}
+
+/** 둘 다 from 순. 같은 from 이면 트리 블록이 앞(한 목록에 모아 안정 정렬하던 순서) */
+function mergeBlocks(tree: readonly Block[], lines: readonly Block[]): Block[] {
+  const out: Block[] = [];
+  let a = 0;
+  let b = 0;
+  while (a < tree.length || b < lines.length) {
+    if (b >= lines.length || (a < tree.length && tree[a]!.from <= lines[b]!.from)) out.push(tree[a++]!);
+    else out.push(lines[b++]!);
+  }
+  return out;
+}
+
+/** 블록으로 그릴 범위를 문서 전체에서 찾는다(코드 블록 안은 보지 않는다) */
+export function liveBlockScan(state: EditorState): BlockScan {
+  const tree: TreeScan = { code: [], blocks: [], blockAt: [] };
+  visitNode(state, syntaxTree(state).cursor(), tree);
+  const lines: Block[] = [];
+  scanLines(state.doc, tree, 1, lines);
+  return { tree, lines, blocks: mergeBlocks(tree.blocks, lines), doc: state.doc, chunks: topChunks(syntaxTree(state)), frontmatter: frontmatterEnd(state) };
+}
+
+/**
+ * 트리 결과의 옛것(바뀐 뒤 위치로 옮긴 것)과 새것이 갈리는 범위(바뀐 뒤 위치). 같으면 null.
+ * 앞·뒤에서 위치가 같은 짝을 걷어 내고 남은 가운데의 자리를 합친다. 짝이 맞은 범위 밖의 자리에서는
+ * 「코드 안인가·트리 블록 안인가」 의 답이 옛 문서의 같은 자리와 같다
+ */
+function treeDiff<T extends Span>(prev: readonly T[], next: readonly T[], changes: ChangeDesc, same: (a: T, b: T) => boolean): Span | null {
+  const mapped = (r: T): T => ({ ...r, from: changes.mapPos(r.from, -1), to: changes.mapPos(r.to, 1) });
+  const eq = (a: T, b: T) => {
+    const m = mapped(a);
+    return m.from === b.from && m.to === b.to && same(a, b);
+  };
+  let head = 0;
+  while (head < prev.length && head < next.length && eq(prev[head]!, next[head]!)) head++;
+  let tail = 0;
+  while (tail < prev.length - head && tail < next.length - head && eq(prev[prev.length - 1 - tail]!, next[next.length - 1 - tail]!)) tail++;
+  let from = Infinity;
+  let to = -Infinity;
+  for (let i = head; i < prev.length - tail; i++) {
+    const m = mapped(prev[i]!);
+    from = Math.min(from, m.from);
+    to = Math.max(to, m.to);
+  }
+  for (let i = head; i < next.length - tail; i++) {
+    from = Math.min(from, next[i]!.from);
+    to = Math.max(to, next[i]!.to);
+  }
+  return from <= to ? { from, to } : null;
+}
+
+/**
+ * prev(바뀌기 전 상태의 결과)를 state 로 옮긴다. 결과는 liveBlockScan(state) 와 늘 같다 — 퍼즈 시험(liveBlocks.test.ts)이 맞대 본다.
+ *
+ * 트리 결과는 다시 쓰이지 않은 덩어리만 다시 본다(updateTreeScan). 줄 루프는 이렇게 좁힌다:
+ * - 더러운 범위 = 바뀐 글 + 트리 결과가 옛것과 갈리는 범위. 그 밖의 줄은 글도, 코드·블록 안인지도 옛것과 같다.
+ * - 한 줄의 판정은 그 줄부터 LOOKAHEAD 줄까지만 본다. 그래서 더러운 첫 줄보다 LOOKAHEAD - 1 줄 넘게 앞인 줄의 판정은 그대로이고,
+ *   거기서부터 다시 훑는다(그 줄이 옛 블록 안이면 그 블록 다음 줄부터 — 그 블록도 그대로다).
+ * - 더러운 끝 줄 뒤에서, 새로 정하는 줄이 옛 결과에서도 새로 정하던 줄이면 거기부터는 옛 결과를 옮겨 붙인다.
+ *   맞지 않으면(수식 $$ 짝이 하나씩 밀렸을 때 등) 맞을 때까지, 끝까지라도 훑는다.
+ * 더러운 범위는 하나로 합친다 — 덜 파싱된 트리가 편집과 같은 트랜잭션에서 멀리까지 자라면 그 사이를 다 훑는다(틀리지는 않고 느릴 뿐)
+ */
+export function updateLiveBlockScan(prev: BlockScan, state: EditorState, changes: ChangeDesc): BlockScan {
+  const doc = state.doc;
+  const chunks = topChunks(syntaxTree(state));
+  const frontmatter = frontmatterEnd(state);
+  const tree = updateTreeScan(prev, state, changes, chunks, frontmatter);
+  const done = (lines: Block[]): BlockScan => ({ tree, lines, blocks: mergeBlocks(tree.blocks, lines), doc, chunks, frontmatter });
+  let dFrom = Infinity;
+  let dTo = -Infinity;
+  changes.iterChangedRanges((_fA, _tA, fromB, toB) => {
+    dFrom = Math.min(dFrom, fromB);
+    dTo = Math.max(dTo, toB);
+  });
+  for (const d of [treeDiff(prev.tree.code, tree.code, changes, () => true), treeDiff(prev.tree.blocks, tree.blocks, changes, (a, b) => a.kind === b.kind)]) {
+    if (!d) continue;
+    dFrom = Math.min(dFrom, d.from);
+    dTo = Math.max(dTo, d.to);
+  }
+  if (dFrom > dTo) {
+    // 글도 트리 결과도 그대로다(위치만 옮길 것이 없다 — 문서가 바뀌었으면 위에서 범위가 생긴다)
+    return done(prev.lines);
+  }
+  dFrom = Math.max(0, Math.min(dFrom, doc.length));
+  dTo = Math.max(0, Math.min(dTo, doc.length));
+  const firstDirty = doc.lineAt(dFrom).number;
+  const lastDirty = doc.lineAt(dTo).number;
+
+  // 다시 훑기 시작할 줄. 그 앞의 옛 블록은 위치가 그대로다(바뀐 글보다 앞)
+  let first = Math.max(1, firstDirty - (LOOKAHEAD - 1));
+  const firstPos = doc.line(first).from;
+  let keep = 0;
+  while (keep < prev.lines.length && prev.lines[keep]!.from < firstPos) keep++;
+  const straddle = prev.lines[keep - 1];
+  if (straddle && straddle.to >= firstPos) first = doc.lineAt(straddle.to).number + 1;
+  const lines = prev.lines.slice(0, keep);
+
+  // 바뀐 글 뒤에서는 옛 위치 = 새 위치 - delta
+  const delta = changes.newLength - changes.length;
+  let k = 0;
+  let resume = -1;
+  const stop = (i: number) => {
+    if (i <= lastDirty) return false;
+    const old = doc.line(i).from - delta;
+    while (k < prev.lines.length && prev.lines[k]!.to < old) k++;
+    // 옛 결과에서 이 줄이 블록 안(블록 첫 줄 뒤)이었으면 옛 판정을 이어 쓸 수 없다
+    if (k < prev.lines.length && prev.lines[k]!.from < old) return false;
+    resume = old;
+    return true;
+  };
+  scanLines(doc, tree, first, lines, stop);
+  if (resume >= 0) {
+    for (let i = firstEndingAtOrAfter(prev.lines, resume); i < prev.lines.length; i++) {
+      const b = prev.lines[i]!;
+      if (b.from >= resume) lines.push(delta ? { from: b.from + delta, to: b.to + delta, kind: b.kind } : b);
+    }
+  }
+  return done(lines);
 }
 
 /** 시험용: 블록으로 그릴 범위 */
 export function liveBlockRanges(state: EditorState): { from: number; to: number; kind: string }[] {
-  return findBlocks(state);
+  return liveBlockScan(state).blocks;
 }
 
 /** 커서가 블록 줄에 걸치면 원문. 단 수정 중인 위젯 블록은 커서가 걸쳐도 그린다(수정 모드가 원문으로 바뀌지 않게) */
@@ -226,12 +458,11 @@ export function shouldDrawBlock(lines: [number, number], active: Set<number>, ed
   return true;
 }
 
-function buildBlocks(state: EditorState, getCtx: GetCtx): DecorationSet {
-  if (!getCtx()) return Decoration.none;
+function buildBlocks(state: EditorState, blocks: readonly Block[], getCtx: GetCtx): DecorationSet {
   const active = activeLines(state);
   const edit = state.field(widgetEditField, false);
   const ranges: Range<Decoration>[] = [];
-  for (const b of findBlocks(state)) {
+  for (const b of blocks) {
     const a = state.doc.lineAt(b.from).number;
     const z = state.doc.lineAt(b.to).number;
     const editing = b.kind === "keyring-widget" && !!edit && !edit.gone && edit.from === b.from;
@@ -260,11 +491,27 @@ export function blockFieldNeedsUpdate(tr: Transaction): boolean {
   );
 }
 
+/** scan 은 그린 상태의 블록 찾기 결과. 그릴 맥락이 없으면 null — 다음에 맥락이 생기면 처음부터 찾는다 */
+interface BlockField {
+  scan: BlockScan | null;
+  deco: DecorationSet;
+}
+
+const NO_BLOCKS: BlockField = { scan: null, deco: Decoration.none };
+
 function blockField(getCtx: GetCtx) {
-  return StateField.define<DecorationSet>({
-    create: (state) => buildBlocks(state, getCtx),
-    update: (deco, tr) => (blockFieldNeedsUpdate(tr) ? buildBlocks(tr.state, getCtx) : deco),
-    provide: (f) => EditorView.decorations.from(f),
+  const draw = (state: EditorState, scan: BlockScan): BlockField => ({ scan, deco: buildBlocks(state, scan.blocks, getCtx) });
+  return StateField.define<BlockField>({
+    create: (state) => (getCtx() ? draw(state, liveBlockScan(state)) : NO_BLOCKS),
+    update: (v, tr) => {
+      if (!blockFieldNeedsUpdate(tr)) return v;
+      if (!getCtx()) return NO_BLOCKS;
+      // 선택·위젯 수정만 바뀌었으면 찾은 블록은 그대로이고 그릴지(커서가 걸쳤는지)만 다시 정한다
+      const moved = tr.docChanged || syntaxTree(tr.state) !== syntaxTree(tr.startState);
+      const scan = !v.scan ? liveBlockScan(tr.state) : moved ? updateLiveBlockScan(v.scan, tr.state, tr.changes) : v.scan;
+      return draw(tr.state, scan);
+    },
+    provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
   });
 }
 
