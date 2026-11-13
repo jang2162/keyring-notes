@@ -502,7 +502,8 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .kw-raw-button:hover { color: var(--accent); background: var(--hover); }
 .kw-raw-button:focus-visible { outline: none; box-shadow: var(--focus); }
 /* iframe 위젯(frame/mountFrame.ts). 전체 화면은 감싸개를 top layer(popover)로 — iframe 을 DOM 에서 옮기면 문서가 다시 불린다.
-   Popover API 가 없는 엔진은 .kw-fixed 겹침으로 대신한다 */
+   Popover API 가 없는 엔진은 .kw-fixed 겹침으로 대신한다. .kw-fixed 는 창이 기준이어야 하므로 조상에 contain 을 걸면
+   그동안 풀어야 한다(.preview-pane 의 contain 규칙) */
 .kw-frame-wrap { display: flex; flex-direction: column; }
 .kw-frame { display: block; width: 100%; border: none; border-radius: var(--radius); background: transparent; color-scheme: normal; }
 .kw-frame-bar { display: flex; justify-content: flex-end; }
@@ -932,6 +933,14 @@ body.resizing-row { cursor: row-resize; user-select: none; }
 .page { padding: var(--sp-6) var(--sp-8) 30vh; min-height: 100%; display: flex; flex-direction: column; }
 .panes.readable .page { max-width: calc(var(--read-w) + 2 * var(--sp-8)); margin: 0 auto; }
 .preview-pane { padding: 0; }
+/* 미리보기 칸은 레이아웃을 가둔다 — 안 가두면 WebKit 이 다른 칸에 한 글자를 넣을 때마다 이 칸의 DOM 을 통째로 다시 배치한다
+   (나란히 보기, 338KB 노트에서 글자당 0.3~1.3초. 가두면 약 30ms. Chromium 은 가두나 안 가두나 같다. 재는 법은
+   docs/ops/ux.md 「큰 문서 입력 지연 수정」 의 측정).
+   contain 은 안쪽 position: fixed 의 기준을 창에서 이 칸으로 바꾼다. 그래서 위젯 전체 화면의 대체 경로(.kw-frame-wrap.kw-fixed)가
+   켜진 동안은 푼다 — 안 풀면 전체 화면이 칸 안에 갇힌다. :has() 를 모르는 엔진은 풀 길이 없으니 가두지도 않는다.
+   칸 안에 position: fixed 로 창을 덮는 것을 새로 더하면 그것도 같은 식으로 풀어야 한다. stylesContain.test.ts 는 contain 규칙이
+   .kw-fixed 에서 풀리는지만 보고, 새로 더한 fixed 는 보지 않는다 */
+@supports selector(:has(*)) { .preview-pane:not(:has(.kw-fixed)) { contain: layout; } }
 .markdown-body { padding: 0; line-height: 1.75; font-size: var(--editor-size, 16px); }
 .panes.font-serif .markdown-body, .panes.font-serif .cm-scroller { font-family: var(--font-serif); }
 .panes.font-mono .markdown-body, .panes.font-mono .cm-scroller { font-family: var(--font-mono); }
