@@ -33,7 +33,7 @@ Live Preview is on by default. Turn it off from the status bar or in Settings â†
 
 `Ctrl/Cmd+E` switches between editing and preview. The supported syntax is listed in [Reference](../reference.md#markdown-syntax).
 
-In **Side by side**, the preview updates when you pause typing. If you add or remove lines, or a widget has just saved its content, and you click the preview right away, that click is ignored while the preview catches up. Click again.
+In **Side by side**, the preview updates when you pause typing. If you add or remove lines and click the preview right away, that click is ignored while the preview catches up. The same happens when your click is what saves a widget you were editing. Click again.
 
 ## Edit tables
 

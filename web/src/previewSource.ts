@@ -28,6 +28,14 @@ export interface PreviewState {
   key: string;
   /** settle 에서 마지막으로 그린 본문 */
   text: string;
+  /**
+   * 미리보기에서 시작한 쓰기(체크박스·위젯 상태)가 성공했다 — 그 쓰기가 줄 수를 바꿨으면 기다리지 않고 그린다.
+   * 줄 수가 달라진 채 기다리면 그사이 미리보기 누름이 맞추느라 무시된다(sameLineLayout). 위젯이 한 줄 JSON 을 여러 줄로 펼 때다.
+   * 줄 수가 같은 쓰기(체크 토글, 이미 펴진 블록의 상태)는 표시만 내리고 기다린다 — 누름은 그대로 살고, 바로 그리면
+   * 큰 문서에서 전체 렌더(수백 ms)가 누름에 붙어 체크 표시가 늦고 쓸 때마다 위젯(iframe)이 다시 붙는다.
+   * 쓰기 성공은 늘 본문을 바꾼다(같은 본문은 쓰지 않는다 — rewriteWidgetBlock) — 그러니 다음 본문 변화가 그 쓰기다.
+   */
+  flush?: boolean;
 }
 
 /**
@@ -44,13 +52,23 @@ export function previewStep(
   if (plan === "skip") return { text: null, state: prev.plan === "skip" ? prev : { plan, key, text: "" }, settleLater: false };
   if (plan === "now") return { text: source, state: prev.plan === "now" ? prev : { plan, key, text: "" }, settleLater: false };
   if (prev.plan !== "settle" || prev.key !== key) return { text: source, state: { plan, key, text: source }, settleLater: false };
+  if (prev.flush && prev.text !== source)
+    return sameLineLayout(prev.text, source)
+      ? { text: prev.text, state: { plan, key, text: prev.text }, settleLater: true }
+      : { text: source, state: { plan, key, text: source }, settleLater: false };
   return { text: prev.text, state: prev, settleLater: prev.text !== source };
+}
+
+/** 미리보기에서 시작한 쓰기가 성공한 뒤의 상태 — 나란히 보기에서만 뜻이 있다(다른 계획은 이미 바로 그린다) */
+export function previewWrote(prev: PreviewState): PreviewState {
+  return prev.plan === "settle" && !prev.flush ? { ...prev, flush: true } : prev;
 }
 
 /**
  * 낡은 미리보기의 줄 번호가 지금 본문에서도 그 줄을 가리킨다고 볼까 — 줄 수가 같으면 그렇다고 본다.
  * 체크 토글·한 줄 안 입력은 줄 수를 바꾸지 않으므로 맞추지 않고 누름을 살린다(맞추면 innerHTML 을 갈아 그 누름이 사라진다).
- * 위젯 상태 쓰기는 블록 JSON 을 여러 줄로 펴서 줄 수가 바뀔 수 있다 — 그 직후의 누름은 맞추느라 무시된다.
+ * 위젯 상태 쓰기는 블록 JSON 을 여러 줄로 펴서 줄 수가 바뀔 수 있다 — 그래서 미리보기에서 시작한 쓰기가 줄 수를 바꾸면 바로 맞춘다(previewWrote).
+ * 그래도 그 누름 자체가 고치던 위젯을 적용하게 하면(포커스가 빠지며 mousedown 과 click 사이에 쓴다) 그 누름은 무시된다.
  * 「첫 다른 줄 뒤의 줄 수」까지 보지 않는 이유: 줄 수가 같은 채 줄이 밀리려면 250ms 안에 줄을 지우고 다른 곳에 더해야 하는데,
  * 그 드문 경우는 쓰는 쪽(sameTaskLine·sameWidgetBlock)이 그린 때의 글과 대조해 막는다.
  */
@@ -118,7 +136,7 @@ export function previewWidgetWrite(state: EditorState, lineNo: number, widgetSta
  * 그 사이 위에서 줄이 늘거나 줄면 다른 줄을 고친다. 그래서 미리보기를 누르거나 포커스가 들어갈 때 줄 수가 달라졌으면(sameLineLayout)
  * 그 자리에서 settleNow 로 맞춘다 — 그 누름은 바뀐 DOM 에 떨어져 무시되고(다시 누르면 된다) 엉뚱한 줄은 고치지 않는다.
  */
-export function usePreviewSource(plan: PreviewPlan, key: string, source: string): { text: string | null; settleNow: () => void } {
+export function usePreviewSource(plan: PreviewPlan, key: string, source: string): { text: string | null; settleNow: () => void; wrote: () => void } {
   const [state, setState] = useState<PreviewState>(() => ({ plan, key, text: plan === "settle" ? source : "" }));
   const step = previewStep(state, plan, key, source);
   if (step.state !== state) setState(step.state);
@@ -134,5 +152,7 @@ export function usePreviewSource(plan: PreviewPlan, key: string, source: string)
     const l = latest.current;
     if (l.settleLater && !sameLineLayout(l.drawn, l.source)) setState({ plan: "settle", key: l.key, text: l.source });
   }, []);
-  return { text: step.text, settleNow };
+  // 쓰기를 부른 쪽이 성공한 직후에 부른다 — 쓰기가 낸 초안과 같은 렌더에 묶여, 줄 수가 바뀌었으면 그 본문을 바로 그린다(previewStep)
+  const wrote = useCallback(() => setState(previewWrote), []);
+  return { text: step.text, settleNow, wrote };
 }

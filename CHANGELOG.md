@@ -18,6 +18,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - The button at the top right of the right panel now collapses the panel, with a panel icon instead of ✕.
 - In the editor, `**bold**`, `*italic*` and `~~strikethrough~~` text now look bold, italic and struck through, and `[ ]` markers, code fence language names and HTML tags are colored.
 - On a volume that keeps `secret/` and `Secret/` as separate folders, a `hidden` rule on either one now hides both from that agent. A rule that grants access still applies only to the name spelled as in the rule.
+- In **Side by side**, the preview now updates when you pause typing, not after every key. If you add or remove lines and click the preview right away, that click is ignored while the preview catches up, so a checkbox never changes the wrong line. The same happens when your click is what saves a widget you were editing. Click again. A click after a widget has finished saving works the first time.
 
 ### Fixed
 
@@ -39,6 +40,9 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - A batch that creates two paths differing only in letter case (`New/x.md` and `new/y.md`) is now rejected. On volumes that ignore case, the second file was written but left out of history.
 - Two writes that arrive together under different letter cases of the same new folder no longer end up in one folder.
 - Writing a wiki topic's generated index or log through a differently normalized path now answers `generated_readonly` instead of a server error.
+- Typing in a large note no longer lags, especially in notes with many code blocks or widgets. With only the editor shown, the hidden preview is no longer redrawn on every key, and Live Preview does less work per key.
+- In **Side by side**, typing in a large note no longer lags in the macOS desktop app and in Safari.
+- In browsers without popover support, a widget in full screen, such as an Excalidraw sketch, is no longer covered by the preview, the bottom bar or status bar items.
 
 ### Security
 

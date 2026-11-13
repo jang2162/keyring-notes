@@ -21,8 +21,10 @@ export function PreviewKeyringWidget(p: {
   /** 이 노트 경로 — 데이터 파일 쓰기의 주인 */
   owner: string;
   handle: MutableRefObject<EditorHandle | null>;
+  /** 쓰기가 성공했다 — 나란히 보기의 미리보기가 기다리지 않고 새 본문을 그린다(previewSource.ts previewWrote) */
+  onWrote: () => void;
 }): null {
-  const { el, body, line, readOnly, history, owner, handle } = p;
+  const { el, body, line, readOnly, history, owner, handle, onWrote } = p;
   useEffect(() => {
     const h = () => handle.current;
     const edit = readOnly ? null : h()?.widgetEdit();
@@ -35,7 +37,11 @@ export function PreviewKeyringWidget(p: {
       owner,
       resume,
       // body 는 그린 때의 본문 — 낡은 미리보기의 줄 번호가 다른 위젯 블록을 가리키면 쓰지 않는다(previewSource.ts sameWidgetBlock)
-      write: (state, version) => h()?.writeWidget(line, state, version, body) ?? false,
+      write: (state, version) => {
+        const ok = h()?.writeWidget(line, state, version, body) ?? false;
+        if (ok) onWrote();
+        return ok;
+      },
       currentEdit: () => {
         const e = readOnly ? null : h()?.widgetEdit();
         return widgetResume(e ? { ...e, gone: false } : null, "preview", e?.line === line);
@@ -48,6 +54,6 @@ export function PreviewKeyringWidget(p: {
       },
     });
     return () => m.destroy();
-  }, [el, body, line, readOnly, history, owner, handle]);
+  }, [el, body, line, readOnly, history, owner, handle, onWrote]);
   return null;
 }
