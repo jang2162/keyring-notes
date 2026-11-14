@@ -2075,7 +2075,7 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 - 더러운 범위는 하나로 합친다. 덜 파싱된 트리가 편집과 같은 트랜잭션에서 멀리까지 자라면 그 사이 줄을 다 훑는다(틀리지는 않고 그 한 번이 느리다).
 - 장식(`buildBlocks`)은 여전히 블록마다 다시 만든다(mixed-800 글자당 약 0.5ms, 위젯 블록마다 `widgetBlockAt`).
 - 남은 큰 몫은 이 작업 범위 밖이다: `Workspace` 의 글자 수 세기가 키마다 문서 전체를 정규식으로 센다(prose-3200 글자당 약 2ms), 표 편집기 `tableRanges`(mixed-800 약 1.7ms).
-- 루트 `pnpm test` 한 번에서 `web/src/widgets/liveWidget.test.ts` 「최상위 위젯 블록은 keyring-widget」 이 떨어졌다(load average 16, 다시 돌린 네 번은 통과). 그 시험의 `state()` 는 `ensureSyntaxTree` 뒤 같은 상태를 돌려주는데, `ensureSyntaxTree` 는 그 상태의 `syntaxTree()` 를 바꾸지 않는다 — 처음 파싱(20ms 한도)이 부하로 다 못 끝나면 트리가 덜 파싱된 채 남는 것으로 본다(재현은 못 했다). 고치려면 그 `state()` 가 `ensureSyntaxTree` 뒤 `s.update({}).state` 를 돌려주게 한다(`treeChunks.test.ts` 의 `md()` 처럼). 이 작업의 퍼즈는 같은 상태의 증분 결과와 전체 계산을 맞대므로 덜 파싱된 트리에서도 흔들리지 않는다.
+- 부하 속 시험이 덜 파싱된 트리를 읽어 떨어지던 것(`liveWidget.test.ts` 「최상위 위젯 블록은 keyring-widget」, `tableWidget.test.ts` 「원문으로 편집을 고르면…」)은 고쳤다. `ensureSyntaxTree` 는 그 상태의 `syntaxTree()` 를 바꾸지 않아, 상태를 만들 때의 첫 파싱(20ms 한도)이 못 끝나면 트리가 덜 파싱된 채 남는다 — 시험 안에서 `Date.now` 를 빨리 흐르게 하면 재현된다(`web/src/parsedState.test.ts`). 시험 도우미는 끝까지 파싱한 상태를 `web/src/parsedState.testkit.ts` 의 `parsed()`(파싱을 더 시킨 뒤 빈 트랜잭션)로 만든다. 남은 것: 문서를 바꾼 트랜잭션 뒤 상태도 재파싱 한도가 20ms 라, 그 상태를 그대로 읽는 시험(`cellEditor`·`blockEdit` 의 `apply` 등 21개 — 모든 `Date.now` 를 빨리 흐르게 해 센 수)은 같은 이유로 흔들릴 수 있다. 이 작업의 퍼즈는 같은 상태의 증분 결과와 전체 계산을 맞대므로 덜 파싱된 트리에서도 흔들리지 않는다.
 - 데스크톱 앱 실기기 값은 아래 「데스크톱 앱 실기기 확인」(이 절까지 든 빌드). 트랜잭션 하나의 동기 시간은 실기기로 따로 재지 않았다.
 
 ### 데스크톱 앱 실기기 확인 (2026-11-13)

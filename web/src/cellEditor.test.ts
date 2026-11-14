@@ -1,22 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { EditorState, Transaction, type TransactionSpec } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { ensureSyntaxTree } from "@codemirror/language";
 import { history, undo } from "@codemirror/commands";
 import { cellTransactionToMain, remapRef, selectedCell, shouldDefer } from "./cellEditor";
 import { cellText, insertColumn, insertRow, parseTable } from "./tableModel";
 import { editTableRaw, setVirtualCell, tableEditor, virtualField, type CellRef } from "./tableWidget";
 import { mirrored } from "./mirror";
+import { parsed } from "./parsedState.testkit";
 
 const opts = { linkCandidates: () => [] };
 function state(doc: string, anchor = 0, head = anchor) {
-  const s = EditorState.create({
-    doc,
-    selection: { anchor, head },
-    extensions: [history(), markdown({ base: markdownLanguage }), tableEditor(() => null, opts)],
-  });
-  ensureSyntaxTree(s, doc.length, 5000);
-  return s;
+  return parsed(
+    EditorState.create({
+      doc,
+      selection: { anchor, head },
+      extensions: [history(), markdown({ base: markdownLanguage }), tableEditor(() => null, opts)],
+    }),
+  );
 }
 
 /** 칸 편집기 상태(칸 글)와 그 위의 트랜잭션 하나 */
@@ -76,12 +76,13 @@ describe("selectedCell", () => {
   });
 
   it("읽기 전용이면 null(칸 편집기 없음)", () => {
-    const s = EditorState.create({
-      doc: DOC,
-      selection: { anchor: DOC.indexOf("| 1") + 2 },
-      extensions: [markdown({ base: markdownLanguage }), tableEditor(() => null, opts), EditorState.readOnly.of(true)],
-    });
-    ensureSyntaxTree(s, DOC.length, 5000);
+    const s = parsed(
+      EditorState.create({
+        doc: DOC,
+        selection: { anchor: DOC.indexOf("| 1") + 2 },
+        extensions: [markdown({ base: markdownLanguage }), tableEditor(() => null, opts), EditorState.readOnly.of(true)],
+      }),
+    );
     expect(selectedCell(s)).toBeNull();
   });
 

@@ -7,10 +7,10 @@ import { gutterLineClass, type GutterMarker } from "@codemirror/view";
 import { headingGutterClass, headingGutterLines, updateHeadings } from "./foldGutterClass";
 import { topChunks } from "./treeChunks";
 import { FUZZ_TIMEOUT, randomEdit, randomLines, rng } from "./editFuzz.testkit";
+import { parsed } from "./parsedState.testkit";
 
 const classes = (doc: string) => {
-  const s = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage })] });
-  ensureSyntaxTree(s, s.doc.length, 5000);
+  const s = parsed(EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage })] }));
   const out: [number, string][] = [];
   const it = headingGutterLines(s).iter();
   for (; it.value; it.next()) out.push([s.doc.lineAt(it.from).number, it.value.elementClass]);

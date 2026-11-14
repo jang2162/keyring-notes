@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { ensureSyntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { syntaxMarks, toggleTaskAt, type SyntaxMark } from "./liveSyntax";
+import { parsed } from "./parsedState.testkit";
 
-const state = (doc: string, anchor = 0) => {
-  const s = EditorState.create({ doc, selection: { anchor }, extensions: [markdown({ base: markdownLanguage })] });
-  ensureSyntaxTree(s, s.doc.length, 5000);
-  return s;
-};
+const state = (doc: string, anchor = 0) => parsed(EditorState.create({ doc, selection: { anchor }, extensions: [markdown({ base: markdownLanguage })] }));
 const marks = (doc: string, active: number[] = []) => {
   const s = state(doc);
   return syntaxMarks(s, 0, s.doc.length, new Set(active));

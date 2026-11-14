@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { Compartment, EditorState } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorView, type DecorationSet } from "@codemirror/view";
 import { disposeTable, editTableRaw, inDrawnTable, onDispose, tableEditor, tableRanges } from "./tableWidget";
+import { parsed } from "./parsedState.testkit";
 
 const opts = { linkCandidates: () => [] };
 function state(doc: string, anchor = 0, readOnly = false) {
-  const s = EditorState.create({
-    doc,
-    selection: { anchor },
-    extensions: [markdown({ base: markdownLanguage }), tableEditor(() => null, opts), EditorState.readOnly.of(readOnly)],
-  });
-  ensureSyntaxTree(s, doc.length, 5000);
-  return s;
+  return parsed(
+    EditorState.create({
+      doc,
+      selection: { anchor },
+      extensions: [markdown({ base: markdownLanguage }), tableEditor(() => null, opts), EditorState.readOnly.of(readOnly)],
+    }),
+  );
 }
 
 const DOC = "앞\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n뒤";
@@ -76,8 +76,7 @@ describe("inDrawnTable: 본문 자동완성을 그린 표 안에서 끈다(칸�
   it("원문으로 편집 중인 표와 표 편집기가 꺼진 상태(Live Preview 끔)는 false", () => {
     const raw = state(DOC).update({ effects: editTableRaw.of(FROM), selection: { anchor: FROM } }).state;
     expect(inDrawnTable(raw, FROM + 3)).toBe(false);
-    const off = EditorState.create({ doc: DOC, extensions: [markdown({ base: markdownLanguage })] });
-    ensureSyntaxTree(off, DOC.length, 5000);
+    const off = parsed(EditorState.create({ doc: DOC, extensions: [markdown({ base: markdownLanguage })] }));
     expect(inDrawnTable(off, FROM + 3)).toBe(false);
   });
 });
@@ -85,8 +84,7 @@ describe("inDrawnTable: 본문 자동완성을 그린 표 안에서 끈다(칸�
 describe("Live Preview 를 껐다 켜기(Compartment 재구성)", () => {
   it("표 편집기를 다시 넣는 트랜잭션에서 던지지 않고 표를 그린다", () => {
     const slot = new Compartment();
-    let s = EditorState.create({ doc: DOC, extensions: [markdown({ base: markdownLanguage }), slot.of([])] });
-    ensureSyntaxTree(s, DOC.length, 5000);
+    let s = parsed(EditorState.create({ doc: DOC, extensions: [markdown({ base: markdownLanguage }), slot.of([])] }));
     s = s.update({ effects: slot.reconfigure(tableEditor(() => null, opts)) }).state;
     expect(tableRanges(s)).toEqual([{ from: FROM, to: TO }]);
     s = s.update({ effects: slot.reconfigure([]) }).state;

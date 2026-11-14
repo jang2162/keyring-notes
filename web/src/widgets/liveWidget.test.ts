@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { EditorState, type TransactionSpec } from "@codemirror/state";
-import { ensureSyntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { blockFieldNeedsUpdate, liveBlockRanges, shouldDrawBlock } from "../liveBlocks";
 import { endWidgetEdit, startWidgetEdit, widgetEditField } from "./blockEdit";
+import { parsed } from "../parsedState.testkit";
 
 function state(doc: string, anchor = 0) {
-  const s = EditorState.create({ doc, selection: { anchor }, extensions: [markdown({ base: markdownLanguage }), widgetEditField] });
-  ensureSyntaxTree(s, doc.length, 5000);
-  return s;
+  return parsed(EditorState.create({ doc, selection: { anchor }, extensions: [markdown({ base: markdownLanguage }), widgetEditField] }));
 }
 
 const DOC = '앞\n\n```keyring-widget\n{"widget": "keyring/dday@1"}\n```\n\n뒤';

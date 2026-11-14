@@ -5,12 +5,6 @@ import type { EditorState, Transaction, TransactionSpec } from "@codemirror/stat
  * 편집기 증분 갱신 시험(liveBlocks·foldGutterClass)이 함께 쓰는 무작위 문서·편집. 시험 파일이 아니라 시험이 부르는 도구다.
  * 씨앗이 같으면 같은 문서·편집이 나온다 — 실패하면 시험이 씨앗을 이름에 남긴다.
  */
-/**
- * 무작위 편집 퍼즈 시험 하나의 시간 한도. 기본 5초에 붙어 있어(한가할 때 작은 문서 퍼즈 약 2.7초) 기계에 부하가 걸리면
- * 9~15초로 늘어 떨어졌다. 전역 testTimeout 은 다른 시험의 멈춤을 늦게 찾게 되므로 그대로 두고 퍼즈에만 준다.
- */
-export const FUZZ_TIMEOUT = 60_000;
-
 export function rng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -21,6 +15,12 @@ export function rng(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+/**
+ * 무작위 편집 퍼즈 시험 하나의 시간 한도. 기본 5초에 붙어 있어(한가할 때 작은 문서 퍼즈 약 2.7초) 기계에 부하가 걸리면
+ * 9~15초로 늘어 떨어졌다. 전역 testTimeout 은 다른 시험의 멈춤을 늦게 찾게 되므로 그대로 두고 퍼즈에만 준다.
+ */
+export const FUZZ_TIMEOUT = 60_000;
 
 /** 블록 판정이 갈리는 줄들 — 펜스·HTML·인용·목록 안 블록·수식·주석·임베드·제목·표·프런트매터 */
 const LINES = [

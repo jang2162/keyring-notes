@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import { syntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { CODE_ALIASES, findLanguage } from "./codeLanguages";
+import { parsed } from "./parsedState.testkit";
 
 describe("코드 블록 언어 찾기", () => {
   it("별칭 표의 언어는 모두 language-data 에 있다", () => {
@@ -41,8 +42,9 @@ describe("코드 블록 언어 찾기", () => {
 
   it("편집 화면(markdown 의 codeLanguages 함수)도 같은 표로 py 블록을 Python 으로 읽는다", async () => {
     await findLanguage("py")!.load();
-    const s = EditorState.create({ doc: "```py\ndef f():\n  pass\n```", extensions: [markdown({ base: markdownLanguage, codeLanguages: findLanguage })] });
-    ensureSyntaxTree(s, s.doc.length, 5000);
+    const s = parsed(
+      EditorState.create({ doc: "```py\ndef f():\n  pass\n```", extensions: [markdown({ base: markdownLanguage, codeLanguages: findLanguage })] }),
+    );
     // 안쪽 언어 트리는 mount 되어 있어 resolveInner 로 들어간다
     expect(syntaxTree(s).resolveInner(s.doc.toString().indexOf("def") + 1, 1).name).toBe("def");
   });

@@ -9,11 +9,10 @@ import { CALLOUT_LINE } from "./liveSyntax";
 import { isCommentBlock } from "./liveImage";
 import { widgetBlockOfNode, widgetEditField } from "./widgets/blockEdit";
 import { FUZZ_TIMEOUT, randomEdit, randomLines, rng } from "./editFuzz.testkit";
+import { parsed } from "./parsedState.testkit";
 
 function state(doc: string) {
-  const s = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), widgetEditField] });
-  ensureSyntaxTree(s, doc.length, 5000);
-  return s;
+  return parsed(EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), widgetEditField] }));
 }
 
 /** 블록을 [종류, 첫 줄, 끝 줄] 로 */
@@ -88,8 +87,9 @@ describe("findBlocks", () => {
     const some = vi.spyOn(Array.prototype, "some");
     try {
       liveBlockRanges(s);
-      // 고치기 전에는 줄마다 code.some 을 불렀다(이 문서는 2,800 줄)
-      expect(some.mock.calls.length).toBeLessThan(50);
+      // 줄마다 code.some·out.some 을 부르면 줄 수(2,800)의 두 배를 넘는다. 끝까지 파싱한 트리에서는 lezer 의 hasChild 도
+      // 블록 수에 비례해 부른다(이 문서에서 268 번 — 호출 자리는 Array.prototype.some 을 감싸 스택을 찍어 잰다)
+      expect(some.mock.calls.length).toBeLessThan(s.doc.lines / 4);
     } finally {
       some.mockRestore();
     }
@@ -215,8 +215,7 @@ describe("블록 찾기 증분 갱신", () => {
   it("주석 %% 짝이 수백 줄 떨어진 채 여는 줄 바로 뒤·닫는 줄 바로 앞을 고쳐도 같다", () => {
     const body = (n: number) => Array.from({ length: n }, (_, i) => `글 ${i}`);
     const doc = ["앞", "%%", ...body(480), "끝 %%", ...body(30), "$$", ...body(190), "$$", "뒤"].join("\n");
-    let s = EditorState.create({ doc, extensions: fuzzExtensions });
-    ensureSyntaxTree(s, s.doc.length, 5000);
+    let s = parsed(EditorState.create({ doc, extensions: fuzzExtensions }));
     let scan = liveBlockScan(s);
     // 닫는 줄을 깨고, 되돌리고, 여는 줄을 지우고, 수식 닫는 줄 뒤에 줄을 넣는다
     const edits = [
@@ -252,8 +251,7 @@ describe("블록 찾기 증분 갱신", () => {
 
   it("문서 끝까지 다시 훑지 않는다 — 큰 문서 가운데 한 글자에 줄 루프가 보는 줄이 LOOKAHEAD 근처", () => {
     const doc = Array.from({ length: 5000 }, (_, i) => (i % 50 === 0 ? "$$ a $$" : `글 ${i}`)).join("\n");
-    let s = EditorState.create({ doc, extensions: fuzzExtensions });
-    ensureSyntaxTree(s, s.doc.length, 5000);
+    let s = parsed(EditorState.create({ doc, extensions: fuzzExtensions }));
     const scan = liveBlockScan(s);
     const tr = s.update({ changes: { from: s.doc.line(2500).from, insert: "x" } });
     s = tr.state;
