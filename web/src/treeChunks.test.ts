@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { ChangeSet, EditorState, Text } from "@codemirror/state";
-import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import { syntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { matchChunks, topChunks, type TopChunk } from "./treeChunks";
+import { parsed } from "./parsedState.testkit";
 
-/** 끝까지 파싱한 상태(처음 상태는 앞 3,000 자만 파싱한다 — 더 시킨 뒤 빈 트랜잭션으로 그 트리를 받는다) */
 function md(doc: string) {
-  const s = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage })] });
-  ensureSyntaxTree(s, doc.length, 5000);
-  return s.update({}).state;
+  return parsed(EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage })] }));
 }
 
 describe("최상위 덩어리", () => {

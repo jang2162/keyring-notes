@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { ensureSyntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { parsed } from "./parsedState.testkit";
 import {
   previewFoldSource,
   previewPlan,
@@ -15,9 +15,7 @@ import {
 } from "./previewSource";
 
 function edState(doc: string) {
-  const s = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage })] });
-  ensureSyntaxTree(s, doc.length, 5000);
-  return s;
+  return parsed(EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage })] }));
 }
 const apply = (s: EditorState, spec: ReturnType<typeof previewTaskToggle>) => (spec ? s.update(spec).state.doc.toString() : null);
 

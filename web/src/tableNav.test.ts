@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EditorState, Text } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { ensureSyntaxTree } from "@codemirror/language";
+import { parsed } from "./parsedState.testkit";
 import { parseTable } from "./tableModel";
 import { enterTableFrom, exitTarget, navigate, newRowSpec, snapToCell } from "./tableNav";
 import { tableEditor } from "./tableWidget";
@@ -80,11 +80,7 @@ describe("newRowSpec / exitTarget", () => {
 describe("enterTableFrom: 본문에서 ↓·↑ 로 표에 들어가기", () => {
   // 표 바로 뒤에 글 줄이 붙으면 GFM 은 그 줄도 표의 행으로 읽는다 — 빈 줄로 뗀다
   const doc = "위\n" + T + "\n\n아래";
-  const state = (() => {
-    const s = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), tableEditor(() => null, { linkCandidates: () => [] })] });
-    ensureSyntaxTree(s, doc.length, 5000);
-    return s;
-  })();
+  const state = parsed(EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), tableEditor(() => null, { linkCandidates: () => [] })] }));
   it("표 바로 위 줄에서 ↓ → 머리 첫 칸", () => {
     expect(enterTableFrom(state, 1, "down")).toBe(doc.indexOf("a"));
   });

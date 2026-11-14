@@ -4,6 +4,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { history, undo } from "@codemirror/commands";
 import { mirrored, outgoingChanges } from "../mirror";
+import { parsed } from "../parsedState.testkit";
 import {
   endWidgetEdit,
   nextWidgetBody,
@@ -21,13 +22,13 @@ import {
 } from "./blockEdit";
 
 function state(doc: string, opts: { anchor?: number; readOnly?: boolean } = {}) {
-  const s = EditorState.create({
-    doc,
-    selection: { anchor: opts.anchor ?? 0 },
-    extensions: [markdown({ base: markdownLanguage }), history(), widgetEditField, EditorState.readOnly.of(opts.readOnly ?? false)],
-  });
-  ensureSyntaxTree(s, doc.length, 5000);
-  return s;
+  return parsed(
+    EditorState.create({
+      doc,
+      selection: { anchor: opts.anchor ?? 0 },
+      extensions: [markdown({ base: markdownLanguage }), history(), widgetEditField, EditorState.readOnly.of(opts.readOnly ?? false)],
+    }),
+  );
 }
 
 function apply(s: EditorState, spec: TransactionSpec) {
