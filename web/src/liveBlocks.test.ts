@@ -87,7 +87,7 @@ describe("findBlocks", () => {
     const some = vi.spyOn(Array.prototype, "some");
     try {
       liveBlockRanges(s);
-      // 줄마다 code.some·out.some 을 부르면 줄 수(2,800)의 두 배를 넘는다. 끝까지 파싱한 트리에서는 lezer 의 hasChild 도
+      // 줄마다 code.some·out.some 을 부르면(코드 줄은 그 전에 끝난다) 줄 수(2,400 = 400 × 6줄)의 1.5배(3,600 번)를 부른다. 끝까지 파싱한 트리에서는 lezer 의 hasChild 도
       // 블록 수에 비례해 부른다(이 문서에서 268 번 — 호출 자리는 Array.prototype.some 을 감싸 스택을 찍어 잰다)
       expect(some.mock.calls.length).toBeLessThan(s.doc.lines / 4);
     } finally {

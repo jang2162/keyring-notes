@@ -1,22 +1,7 @@
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import {
-  codeFolding,
-  ensureSyntaxTree,
-  foldable,
-  foldAll,
-  foldCode,
-  foldEffect,
-  foldedRanges,
-  foldGutter,
-  foldNodeProp,
-  syntaxHighlighting,
-  syntaxTree,
-  unfoldAll,
-  unfoldCode,
-  unfoldEffect,
-} from "@codemirror/language";
+import { codeFolding, foldCode, foldedRanges, foldGutter, foldNodeProp, syntaxHighlighting, unfoldCode, unfoldEffect } from "@codemirror/language";
 import { classHighlighter } from "@lezer/highlight";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type ChangeSet, type StateEffect } from "@codemirror/state";
@@ -30,7 +15,8 @@ import { bodyStart, codeFont, frontmatterFold, livePreview } from "./livePreview
 import type { LiveRenderContext } from "./liveBlocks";
 import { inDrawnTable, type TableOptions } from "./tableWidget";
 import { headingGutterClass } from "./foldGutterClass";
-import { anchorsOf, CODE_FOLD_MIN_LINES, getFolds, onFoldsChange, resolveFolds, setFolds } from "./folds";
+import { foldAllParsed, foldedLineNumbers, foldLevel, foldMemory, toggleLine } from "./editorFolds";
+import { CODE_FOLD_MIN_LINES, onFoldsChange } from "./folds";
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
 import { diffChange, mirrorSpec, outgoingChanges } from "./mirror";
@@ -163,64 +149,12 @@ interface Props {
   autoFocus?: boolean;
 }
 
-/** 블록의 접힌 줄들(접힌 범위가 시작하는 줄) */
-function foldedLineNumbers(state: EditorState): number[] {
-  const out: number[] = [];
-  foldedRanges(state).between(0, state.doc.length, (from) => {
-    out.push(state.doc.lineAt(from).number);
-  });
-  return out;
-}
-
-/** 그 줄에서 시작하는 접힌 범위를 펴거나, 접을 수 있으면 접는다 */
-function toggleLine(view: EditorView, lineNo: number): boolean {
-  if (lineNo < 1 || lineNo > view.state.doc.lines) return false;
-  const line = view.state.doc.line(lineNo);
-  const effects: StateEffect<unknown>[] = [];
-  foldedRanges(view.state).between(line.from, line.to, (from, to) => {
-    if (view.state.doc.lineAt(from).number === lineNo) effects.push(unfoldEffect.of({ from, to }));
-  });
-  if (!effects.length) {
-    const r = foldable(view.state, line.from, line.to);
-    if (r) effects.push(foldEffect.of(r));
-  }
-  if (effects.length) view.dispatch({ effects });
-  return effects.length > 0;
-}
-
 /** 그 위치를 덮는 접힌 범위를 편다(검색 결과·제목 링크로 갈 때) */
 function revealPos(view: EditorView, pos: number) {
   const effects: StateEffect<unknown>[] = [];
   foldedRanges(view.state).between(pos, pos, (from, to) => {
     if (from <= pos && pos <= to) effects.push(unfoldEffect.of({ from, to }));
   });
-  if (effects.length) view.dispatch({ effects });
-}
-
-/** 이 수준 제목만 보기: 커서가 든 섹션의 제목 수준과 같은 제목을 모두 접는다 */
-function foldLevel(view: EditorView) {
-  const { state } = view;
-  ensureSyntaxTree(state, state.doc.length, 300);
-  const head = state.selection.main.head;
-  let level = 0;
-  const heads: { level: number; line: number }[] = [];
-  syntaxTree(state).iterate({
-    enter: (n) => {
-      const m = /^(?:ATX|Setext)Heading(\d)$/.exec(n.name);
-      if (!m) return;
-      heads.push({ level: Number(m[1]), line: state.doc.lineAt(n.from).number });
-      if (n.from <= head) level = Number(m[1]);
-      return false;
-    },
-  });
-  if (!level) level = Math.min(...heads.map((h) => h.level), 6);
-  const effects: StateEffect<unknown>[] = [];
-  for (const h of heads) {
-    if (h.level !== level) continue;
-    const line = state.doc.line(h.line);
-    const r = foldable(state, line.from, line.to);
-    if (r) effects.push(foldEffect.of(r));
-  }
   if (effects.length) view.dispatch({ effects });
 }
 
@@ -310,6 +244,7 @@ export function Editor({
   useEffect(() => {
     /** 이 뷰를 만든 문서. 다시 그려 docKey 가 바뀌면 이 뷰는 곧 없어질 낡은 뷰다 */
     const createdKey = docKey;
+    const folds = foldMemory(() => foldKeyRef.current);
     const view = new EditorView({
       parent: host.current!,
       state: EditorState.create({
@@ -382,10 +317,7 @@ export function Editor({
               for (const changes of own) callbacks.current.onChanges?.(changes, createdKey);
             }
             // 접은 것을 이 기기에 기억한다(내용이 바뀌어 줄이 밀리면 새 줄로)
-            const foldChanged = u.transactions.some((t) => t.effects.some((e) => e.is(foldEffect) || e.is(unfoldEffect)));
-            if (foldKeyRef.current && (foldChanged || (u.docChanged && foldedRanges(u.state).size))) {
-              setFolds(foldKeyRef.current, anchorsOf(u.state.doc.toString().split("\n"), foldedLineNumbers(u.state)), view);
-            }
+            folds.update(u);
             if (u.selectionSet || u.docChanged) {
               const head = u.state.selection.main.head;
               const line = u.state.doc.lineAt(head);
@@ -510,14 +442,11 @@ export function Editor({
         fold(what) {
           if (what === "here") foldCode(view);
           else if (what === "unfold-here") unfoldCode(view);
-          else if (what === "all") {
-            ensureSyntaxTree(view.state, view.state.doc.length, 300);
-            foldAll(view);
-          } else if (what === "unfold-all") unfoldAll(view);
+          else if (what === "all") foldAllParsed(view);
+          else if (what === "unfold-all") folds.unfoldAll(view);
           else foldLevel(view);
         },
         toggleFoldLine(lineNo) {
-          ensureSyntaxTree(view.state, view.state.doc.length, 300);
           toggleLine(view, lineNo);
         },
         foldedLines() {
@@ -548,32 +477,15 @@ export function Editor({
       };
     }
     // 이 문서에서 접어 두었던 곳을 다시 접는다. 미리보기·개요에서 바꾸면 따라간다
-    const applyFolds = () => {
-      const key = foldKeyRef.current;
-      if (!key) return;
-      ensureSyntaxTree(view.state, view.state.doc.length, 500);
-      const want = resolveFolds(view.state.doc.toString().split("\n"), getFolds(key));
-      const have = new Set(foldedLineNumbers(view.state));
-      const effects: StateEffect<unknown>[] = [];
-      foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => {
-        if (!want.has(view.state.doc.lineAt(from).number)) effects.push(unfoldEffect.of({ from, to }));
-      });
-      for (const n of want) {
-        if (have.has(n) || n > view.state.doc.lines) continue;
-        const line = view.state.doc.line(n);
-        const r = foldable(view.state, line.from, line.to);
-        if (r) effects.push(foldEffect.of(r));
-      }
-      if (effects.length) view.dispatch({ effects });
-    };
-    applyFolds();
+    folds.restore(view);
     const offFolds = onFoldsChange((path, source) => {
-      if (source !== view && path === foldKeyRef.current) applyFolds();
+      if (source !== view && path === foldKeyRef.current) folds.restore(view);
     });
     viewRef.current = view;
     if (!readOnly && autoFocusRef.current) view.focus();
     return () => {
       offFolds();
+      folds.dispose();
       viewRef.current = null;
       if (handle) handle.current = null;
       view.destroy();
