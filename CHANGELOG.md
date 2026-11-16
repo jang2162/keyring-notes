@@ -4,7 +4,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
-## [0.13.0] - 2026-11-16
+## [0.13.0] - 2026-11-17
 
 ### Added
 
