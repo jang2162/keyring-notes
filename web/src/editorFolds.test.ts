@@ -110,6 +110,79 @@ describe("저장된 접기 되살리기", () => {
     expect(storedLines(key2)).toEqual(HEADINGS.slice(1));
   });
 
+  it("개요에서 못 되살린 제목을 누르면 펴기다 — 저장값에서 빠지고, 파싱이 따라와도 접지 않는다", async () => {
+    const key = `k${++n}.md`;
+    store(key, HEADINGS);
+    const { view, folds } = open(key);
+    whileBusy(() => folds.restore(view));
+    const last = HEADINGS.at(-1)!;
+    expect(foldedLineNumbers(view.state)).not.toContain(last);
+    expect(folds.toggleLine(view, last)).toBe(true);
+    expect(foldedLineNumbers(view.state)).not.toContain(last);
+    expect(storedLines(key)).toEqual(HEADINGS.slice(0, -1));
+    parseView(view, 5000);
+    await microtasks();
+    expect(foldedLineNumbers(view.state)).toEqual(HEADINGS.slice(0, -1));
+    expect(storedLines(key)).toEqual(HEADINGS.slice(0, -1));
+    // 다시 누르면 접는다
+    expect(folds.toggleLine(view, last)).toBe(true);
+    expect(storedLines(key)).toEqual(HEADINGS);
+  });
+
+  it("파싱이 아직 안 닿은 제목을 개요에서 접으면 저장하고, 파싱이 닿으면 접는다", async () => {
+    const key = `k${++n}.md`;
+    const { view, folds } = open(key);
+    const last = HEADINGS.at(-1)!;
+    expect(whileBusy(() => folds.toggleLine(view, last))).toBe(true);
+    expect(foldedLineNumbers(view.state)).toEqual([]);
+    expect(storedLines(key)).toEqual([last]);
+    parseView(view, 5000);
+    await microtasks();
+    expect(foldedLineNumbers(view.state)).toEqual([last]);
+    expect(storedLines(key)).toEqual([last]);
+  });
+
+  it("커서가 든 구역은 늦은 되살리기가 접지 않고 저장값에서도 뺀다", async () => {
+    const key = `k${++n}.md`;
+    store(key, HEADINGS);
+    const { view, folds } = open(key);
+    whileBusy(() => folds.restore(view));
+    const last = HEADINGS.at(-1)!;
+    expect(foldedLineNumbers(view.state)).not.toContain(last);
+    // 검색 결과·제목 링크로 그 구역 본문에 간다
+    const body = view.state.doc.line(last + 2);
+    expect(body.text).toMatch(/^Text of section/);
+    view.dispatch({ selection: { anchor: body.from + 3 } });
+    parseView(view, 5000);
+    await microtasks();
+    expect(foldedLineNumbers(view.state)).toEqual(HEADINGS.slice(0, -1));
+    expect(storedLines(key)).toEqual(HEADINGS.slice(0, -1));
+    // 커서가 제목 줄에 있으면(접힌 범위 밖) 접는다
+    const key2 = `k${++n}.md`;
+    store(key2, HEADINGS);
+    const b = open(key2);
+    whileBusy(() => b.folds.restore(b.view));
+    b.view.dispatch({ selection: { anchor: b.view.state.doc.line(last).from } });
+    parseView(b.view, 5000);
+    await microtasks();
+    expect(foldedLineNumbers(b.view.state)).toEqual(HEADINGS);
+    expect(storedLines(key2)).toEqual(HEADINGS);
+  });
+
+  it("못 되살린 제목 줄 맨 앞에서 Enter 를 쳐도 따라간다 — 제목 글을 고치면 버린다", () => {
+    const key = `k${++n}.md`;
+    store(key, HEADINGS);
+    const { view, folds } = open(key);
+    whileBusy(() => folds.restore(view));
+    const last = HEADINGS.at(-1)!;
+    const prev = HEADINGS.at(-2)!;
+    expect(foldedLineNumbers(view.state)).not.toContain(prev);
+    view.dispatch({ changes: { from: view.state.doc.line(last).from, insert: "\n" } });
+    expect(storedLines(key)).toEqual([...HEADINGS.slice(0, -1), last + 1]);
+    view.dispatch({ changes: { from: view.state.doc.line(prev).from, insert: "x" } });
+    expect(storedLines(key)).toEqual([...HEADINGS.slice(0, -2), last + 1]);
+  });
+
   it("「모두 펴기」는 못 되살린 것까지 잊는다", () => {
     const key = `k${++n}.md`;
     store(key, HEADINGS);

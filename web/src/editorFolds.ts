@@ -87,6 +87,8 @@ export interface FoldMemory {
   restore(view: EditorView): void;
   /** updateListener 에서 매번: 사용자가 접거나 폈거나, 접힌 곳이 있는 채 내용이 바뀌었으면 저장한다 */
   update(u: ViewUpdate): void;
+  /** 개요의 한 줄 접기·펴기. 못 되살린 줄이면 펴기, 파싱이 아직 안 닿은 줄이면 접을 것으로 기억한다 */
+  toggleLine(view: EditorView, lineNo: number): boolean;
   /** 「모두 펴기」: 아직 못 되살린 것까지 잊는다 */
   unfoldAll(view: EditorView): void;
   /** 뷰를 없앨 때(미뤄 둔 되살리기를 막는다) */
@@ -98,7 +100,8 @@ export interface FoldMemory {
  *
  * 되살리기가 저장값을 줄이면 안 된다 — 되살린 몇 개로 저장값을 덮으면 나머지는 다음에 열 때 영영 없다. 그래서 되살리는
  * 트랜잭션은 저장하지 않고, 파싱이 아직 닿지 않아 못 접은 것(아주 큰 문서)은 `pending` 에 두었다가 ① 트리가 자랄 때마다
- * 다시 접어 보고 ② 그사이 사용자가 접거나 편 것을 저장할 때 함께 적는다. 문서에 더는 없는 줄(같은 글의 줄이 없음)은
+ * 다시 접어 보고 ② 그사이 사용자가 접거나 편 것을 저장할 때 함께 적는다. 사용자가 편 것으로 볼 때는 pending 에서도 잊는다 —
+ * 모두 펴기, 개요에서 그 줄을 누름, 커서가 그 구역 안에 있음(`retry`). 문서에 더는 없는 줄(같은 글의 줄이 없음)은
  * 되살리지 않되, 되살리기가 저장값에서 지우지도 않는다(사용자가 다음에 접기를 바꾸거나 접힌 채 내용을 고치면 그때의
  * 접힌 곳으로 저장된다 — 고치기 전과 같다).
  */
@@ -116,22 +119,35 @@ export function foldMemory(getKey: () => string | null | undefined): FoldMemory 
     setFolds(key, anchorsOf(state.doc.toString().split("\n"), lines), view);
   }
 
-  /** pending 중 이제 접을 수 있는 것을 접는다. 트리가 문서 끝까지 왔는데도 못 접는 것은 버린다 */
+  /**
+   * pending 중 이제 접을 수 있는 것을 접는다. 트리가 문서 끝까지 왔는데도 못 접는 것은 버린다.
+   *
+   * 커서가 든 구역은 접지 않고 잊는다(저장값에서도 뺀다). 검색 결과·제목 링크·스크롤로 그 구역에 간 뒤 몇 초 늦게 오는
+   * 되살리기가 보고 있는 줄을 숨기면 안 된다 — CodeMirror 도 선택이 접힌 곳에 들어가면 그 접기를 걷는다(`clearTouchedFolds`
+   * 와 같은 판정). 저장값에 남기면 다음에 열 때 사용자가 펴 두고 본 구역이 다시 숨고, 개요는 펴진 구역을 접힘으로 그린다.
+   */
   function retry(view: EditorView) {
     retryQueued = false;
     if (disposed || !pending.length) return;
     const { state } = view;
     const complete = syntaxTree(state).length >= state.doc.length;
     const folded = new Set(foldedLineNumbers(state));
+    const head = state.selection.main.head;
     const effects: StateEffect<unknown>[] = [];
+    let opened = false;
     pending = pending.filter((p) => {
       const line = state.doc.lineAt(p.pos);
       if (folded.has(line.number)) return false;
       const r = foldable(state, line.from, line.to);
+      if (r && r.from < head && r.to > head) {
+        opened = true;
+        return false;
+      }
       if (r) effects.push(foldEffect.of(r));
       return !r && !complete;
     });
     if (effects.length) view.dispatch({ effects, annotations: restoring.of(true) });
+    if (opened) save(view, view.state);
   }
 
   return {
@@ -165,9 +181,10 @@ export function foldMemory(getKey: () => string | null | undefined): FoldMemory 
 
     update(u) {
       if (pending.length && u.docChanged) {
-        // 그 줄을 고쳤거나 지웠으면(시작 위치·글이 안 맞으면) 버린다
+        // 그 줄을 고쳤거나 지웠으면(시작 위치·글이 안 맞으면) 버린다. 줄 맨 앞에 넣은 것 뒤로 옮겨야(assoc 1) 제목 위에
+        // 빈 줄을 넣어도(줄 맨 앞 Enter) 제목 줄을 따라간다 — 앞에 머물면 새 빈 줄을 가리켜 버려진다
         pending = pending.flatMap((p) => {
-          const pos = u.changes.mapPos(p.pos, -1);
+          const pos = u.changes.mapPos(p.pos, 1);
           const line = u.state.doc.lineAt(pos);
           return line.from === pos && line.text.trim() === p.text ? [{ pos, text: p.text }] : [];
         });
@@ -179,6 +196,27 @@ export function foldMemory(getKey: () => string | null | undefined): FoldMemory 
         // 업데이트 안에서는 dispatch 하지 않는다
         queueMicrotask(() => retry(u.view));
       }
+    },
+
+    toggleLine(view, lineNo) {
+      // 못 되살린 줄은 저장값(= 개요)에서는 접혀 있고 편집기에서는 펴져 있다. 누르는 사람은 「펴기」를 본 것이므로 잊는다
+      if (lineNo >= 1 && lineNo <= view.state.doc.lines) {
+        const from = view.state.doc.line(lineNo).from;
+        const i = pending.findIndex((p) => p.pos === from);
+        if (i >= 0) {
+          pending.splice(i, 1);
+          save(view, view.state);
+          return true;
+        }
+      }
+      if (toggleLine(view, lineNo)) return true;
+      // 파싱이 아직 그 줄에 닿지 않아 못 접었으면 접을 것으로 기억한다 — 저장값(개요)은 바로 접힘이 되고, 파싱이 닿으면 접힌다
+      const { state } = view;
+      if (lineNo < 1 || lineNo > state.doc.lines || syntaxTree(state).length >= state.doc.length) return false;
+      const line = state.doc.line(lineNo);
+      pending.push({ pos: line.from, text: line.text.trim() });
+      save(view, state);
+      return true;
     },
 
     unfoldAll(view) {

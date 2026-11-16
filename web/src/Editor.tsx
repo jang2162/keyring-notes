@@ -15,7 +15,7 @@ import { bodyStart, codeFont, frontmatterFold, livePreview } from "./livePreview
 import type { LiveRenderContext } from "./liveBlocks";
 import { inDrawnTable, type TableOptions } from "./tableWidget";
 import { headingGutterClass } from "./foldGutterClass";
-import { foldAllParsed, foldedLineNumbers, foldLevel, foldMemory, toggleLine } from "./editorFolds";
+import { foldAllParsed, foldedLineNumbers, foldLevel, foldMemory } from "./editorFolds";
 import { CODE_FOLD_MIN_LINES, onFoldsChange } from "./folds";
 import { t } from "./i18n";
 import { lineNumberGutter } from "./lineSelect";
@@ -447,7 +447,7 @@ export function Editor({
           else foldLevel(view);
         },
         toggleFoldLine(lineNo) {
-          toggleLine(view, lineNo);
+          folds.toggleLine(view, lineNo);
         },
         foldedLines() {
           return foldedLineNumbers(view.state);

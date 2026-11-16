@@ -57,7 +57,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - `/api/revision` returns only files from commits in the current history. A folder path returned the names of hidden children.
 - A review target now covers the node's own note (`Work/Wiki` covers `Work/Wiki.md`) and applies whatever the letter case. Agent writes to that note, or to `Work/wiki/…`, skipped review.
 - A wiki topic's generated index and log no longer list hidden pages when requested with a differently normalized path.
-- Reopening a long note keeps its folded sections. Only the folds in roughly the first 3,000 characters came back, and the rest were forgotten for good. **Fold all**, **Show only headings of this level** and folding from the outline now reach the end of a long note right after it opens.
+- Reopening a long note keeps its folded sections. Only the folds in roughly the first 3,000 characters came back, and the rest were forgotten for good. In very long notes, folds further down come back once the editor reaches them, for example when you scroll there. **Fold all**, **Show only headings of this level** and folding from the outline now reach the end of a long note right after it opens.
 
 ## [0.12.0] - 2026-11-02
 
