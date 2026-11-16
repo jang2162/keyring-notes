@@ -4,19 +4,35 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-17
+
 ### Added
 
+- Marketplace: install widgets, themes and languages from marketplace repositories. Open Settings → **Marketplace**, or run **Open marketplace** from the command palette. **Browse** lists the packages of every repository, **Installed** shows what you installed with **Update** and **Remove**, and **Repositories** lists repositories in priority order, starting with the official one. You can add your own. Installed packages are recorded in the vault's shared settings, so every device uses the same version of the same files, and packages already on a device keep working offline. Updates never happen on their own. On a server the server downloads the packages; the desktop app without a server downloads them itself.
+- Themes from the marketplace change the app's colors. **Theme** in **General** lists them next to **System**, **Light** and **Dark**, and warns when text and background are too close (below 4.5:1). If a theme makes the screen hard to read, click **Back to the default theme** below the theme list, run it from the command palette, or open the app address with `?theme=default`.
+- Languages from the marketplace appear in **Display language**, marked **(marketplace)**. A language pack loaded on this device with the same language id is used instead.
+- Widgets from the marketplace appear in **Insert widget** once installed. They always run in an isolated frame and cannot read the app or your other notes. Installing a widget first asks you to confirm a notice that it can still communicate with the outside (WebRTC). A block whose widget is not installed shows **Install**, which opens the marketplace with only that widget.
+- Note widgets: small apps inside a note that keep their state in a `keyring-widget` block. **Insert widget** in the command palette adds the built-in **D-day** widget. Click a widget to edit it in Live Preview or the preview, click outside to apply, or press `Esc` to discard. One undo reverts the change.
 - Excalidraw sketches inside notes. **Insert widget** → **Excalidraw sketch** creates a drawing file in the note's attachment folder and draws it in place, with full screen, autosave on the note's schedule and conflict copies instead of overwriting.
+- Switch workspaces from the keyboard: `Ctrl+1` … `Ctrl+9` on macOS, `Alt+Shift+1` … `Alt+Shift+9` on Windows and Linux, in the switcher's order. `Ctrl+0` (macOS) or `Alt+Shift+0` shows all workspaces. The keys can be changed in Settings → **Shortcuts**.
+- In **All workspaces**, opening today's note first asks which workspace to use when more than one has daily notes turned on. Use ↑↓ and Enter, or press its number (1–9). Yesterday's and tomorrow's note ask the same way.
+- **Use as folder** in a note's right-click menu in the tree, or in its **Note menu** (⋯), makes clicking the note in the tree expand or collapse it instead of opening it. `Ctrl/Cmd`+click, middle-click, `Ctrl/Cmd+Enter` and **Open in this tab** still open it. The note shows a folder icon, and the choice is saved in the note's `folder` field, so every device shows the same.
+- Replace or delete an attachment by right-clicking it in a node's "N files" row in the tree. **Replace contents…** puts a file of the same type at the same path, so links and embeds keep working, and open previews show the new content. **Delete** first lists the notes that link to the attachment. On a server, a deleted attachment goes to the trash (attachments kept in S3 too), where an image shows as a preview and **Restore** brings it back byte for byte. In the desktop and mobile app, **Undo** on the notice brings the old content back, and sync sends a changed attachment to the server only when the server still has the version both sides last agreed on.
 - Live Preview draws horizontal rules, quotes, bullets, to-dos, code blocks, images between words (`![text](url)`) and HTML blocks. Click a to-do's checkbox to check it without moving the cursor. Code blocks hide their fence lines, show the language and a **Copy** button, and keep the code editable in place.
 - Tables in Live Preview are edited in place. Click a cell to edit its Markdown with `[[` autocomplete and formatting shortcuts, move between cells with `Tab`, `Enter` and the arrow keys, and use the row and column handles to insert, move, delete, align and sort, or drag to move. Only the cells and rows you change are rewritten in the file, and undo works across cells and the note. **Edit as Markdown** in the table's **⋯** menu shows the table as source.
-- Note widgets: small apps inside a note that keep their state in a `keyring-widget` block. **Insert widget** in the command palette adds the built-in **D-day** widget. Click a widget to edit it in Live Preview or the preview, click outside to apply, or press `Esc` to discard. One undo reverts the change.
 - Code blocks are colored by language in the editor and the preview, with the same colors in the light and dark themes. Short language names such as `py`, `sh`, `yml`, `rs` and `kt` work too.
+- Server: `KEYRING_PACKAGES_DIR` sets where downloaded marketplace packages are cached. `KEYRING_MARKET_ALLOW_HTTP` and `KEYRING_MARKET_ALLOW_PRIVATE` let the server download repositories over plain `http:` or from private addresses, and Docker Compose passes them from `.env`. The REST API has `PUT /api/attachment` to replace an attachment, `/api/trash/raw` for deleted attachments, and `/api/market/index`, `/api/market/ensure`, `/api/market/file` and `/api/market/status`.
 
 ### Changed
 
 - The rail button for the attachments panel is now **Files**, and the button for the note tree is now **Notes**, on the rail and the bottom bar. The panel title, its filter, the **Files in the tree** setting and the "N files" row under each note in the tree use the new name too.
 - The button at the top right of the right panel now collapses the panel, with a panel icon instead of ✕.
 - In the editor, `**bold**`, `*italic*` and `~~strikethrough~~` text now look bold, italic and struck through, and `[ ]` markers, code fence language names and HTML tags are colored.
+- Lists in the preview and Live Preview are indented by a wider step at each level, the bullet changes with the level (•, ◦, ▪, then again), and a long item that wraps lines up with its text instead of the bullet.
+- Fold arrows in the editor and the preview sit in the vertical middle of the line, including on headings.
+- Headings in Live Preview are the same size as in the preview.
+- The note tree has larger icons and slightly taller rows. The **Pinned** list matches it.
+- `Ctrl/Cmd+A` in the editor selects only the note body, without the frontmatter, with Live Preview on or off. In the preview, including the preview side of **Side by side**, it selects only the note body, without the title or the side panels, also right after you open a note from the tree or a tab. To select the frontmatter too, click **Show source** first and press `Ctrl/Cmd+A` there.
 - On a volume that keeps `secret/` and `Secret/` as separate folders, a `hidden` rule on either one now hides both from that agent. A rule that grants access still applies only to the name spelled as in the rule.
 - In **Side by side**, the preview now updates when you pause typing, not after every key. If you add or remove lines and click the preview right away, that click is ignored while the preview catches up, so a checkbox never changes the wrong line. The same happens when your click is what saves a widget you were editing. Click again. A click after a widget has finished saving works the first time.
 
@@ -44,6 +60,11 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - In **Side by side**, typing in a large note no longer lags in the macOS desktop app and in Safari.
 - In browsers without popover support, a widget in full screen, such as an Excalidraw sketch, is no longer covered by the preview, the bottom bar or status bar items.
 - In the macOS desktop app and in Safari, `Esc` right after clicking **Full screen** above a widget, such as an Excalidraw sketch, now closes full screen. Before, it did nothing until you clicked inside the drawing. `Esc` also closes full screen after you close the command palette on top of it.
+- Reopening a long note keeps its folded sections. Only the folds in roughly the first 3,000 characters came back, and the rest were forgotten for good. In very long notes, folds further down come back once the editor reaches them, for example when you scroll there. **Fold all**, **Show only headings of this level** and folding from the outline now reach the end of a long note right after it opens.
+- In **All workspaces**, the tree and the list of places to move a note to show workspaces in the switcher's order (Settings → **Workspaces**) instead of by name.
+- Backlinks of an attachment, such as an image or a PDF, now list the notes that link to or embed it. They always showed none, in the server and in the app.
+- Sync no longer drops a shared setting that another device added when this device had removed the whole group, such as all of its custom shortcuts.
+- macOS desktop app: rows at the top left of the window no longer sit under the window buttons. That covers the PDF viewer, whose file name was hidden, maximized dialogs, dialogs and the command palette in a window 640 px wide or less, the narrow layout and the right drawer in a narrow window. You can drag the window by their empty space.
 
 ### Security
 
@@ -57,7 +78,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - `/api/revision` returns only files from commits in the current history. A folder path returned the names of hidden children.
 - A review target now covers the node's own note (`Work/Wiki` covers `Work/Wiki.md`) and applies whatever the letter case. Agent writes to that note, or to `Work/wiki/…`, skipped review.
 - A wiki topic's generated index and log no longer list hidden pages when requested with a differently normalized path.
-- Reopening a long note keeps its folded sections. Only the folds in roughly the first 3,000 characters came back, and the rest were forgotten for good. In very long notes, folds further down come back once the editor reaches them, for example when you scroll there. **Fold all**, **Show only headings of this level** and folding from the outline now reach the end of a long note right after it opens.
+- URL collection in an LLM Wiki checks the address it actually connects to. A host name that resolves to a private or loopback address only on the second lookup (DNS rebinding), and IPv4-mapped IPv6 loopback addresses such as `[::ffff:7f00:1]`, are now blocked unless `KEYRING_FETCH_ALLOW_PRIVATE=1` is set. Redirects are checked at every hop. URL collection and marketplace downloads connect directly and ignore HTTP proxy settings, so they don't work on a server that reaches the internet only through a proxy.
 
 ## [0.12.0] - 2026-11-02
 
@@ -233,7 +254,8 @@ First tagged release.
 - Notes and folders form one tree of nodes, grouped into workspaces.
 - English and Korean interface.
 
-[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/jang2162/keyring-notes/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/jang2162/keyring-notes/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/jang2162/keyring-notes/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/jang2162/keyring-notes/compare/v0.9.0...v0.10.0
