@@ -9,6 +9,7 @@ import {
   type Extension,
   type Range,
   type StateCommand,
+  type Text,
   type TransactionSpec,
 } from "@codemirror/state";
 import { Decoration, EditorView, keymap, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
@@ -650,13 +651,32 @@ const keepSelectionOutAfter = ViewPlugin.define((view) => {
 });
 
 /**
- * 접혀 있는 동안의 바꾸기(하나·모두)는 프런트매터 안을 고치지 않는다. 찾기 막대도 그 안의 일치를 세지 않는다(hiddenFromFind) —
- * 「3개」를 보고 모두 바꾸기를 눌렀는데 보이지 않는 속성까지 바뀌면 안 된다
+ * 접혀 있는 동안의 바꾸기(하나·모두)는 프런트매터를 고치지 않는다. 시작이 닫는 줄 끝(to) 이하인 변경은 통째로 버린다 —
+ * 그 안의 변경뿐 아니라 맨 앞(0)·닫는 줄 끝의 삽입(정규식 ^·$), 닫는 줄에서 본문으로 넘어가는 일치(`---\n`)도 여는·닫는 줄을 깬다.
+ * 찾기 막대가 세는 일치(hiddenFromFind: 시작이 to 보다 뒤)와 같은 기준이라, 「3개」를 보고 모두 바꾸기를 누르면 그 3개만 바뀐다.
+ * 본문 첫 줄 맨 앞(to + 1)의 삽입은 본문 쪽이라 둔다. changeFilter 는 범위 안만 막고 경계의 삽입·걸친 변경의 바깥 쪽을 통과시켜 쓰지 않는다
  */
-const keepReplaceOut = EditorState.changeFilter.of((tr) => {
-  if (!tr.isUserEvent("input.replace") || isOpen(tr.startState)) return true;
+const keepReplaceOut = EditorState.transactionFilter.of((tr): Transaction | TransactionSpec => {
+  if (!tr.docChanged || !tr.isUserEvent("input.replace") || isOpen(tr.startState)) return tr;
   const to = frontmatterTo(tr.startState);
-  return to === null ? true : [0, to];
+  if (to === null) return tr;
+  const kept: { from: number; to: number; insert: Text }[] = [];
+  let dropped = false;
+  tr.changes.iterChanges((fromA, toA, _fromB, _toB, insert) => {
+    if (fromA > to) kept.push({ from: fromA, to: toA, insert });
+    else dropped = true;
+  });
+  if (!dropped) return tr;
+  const changes = tr.startState.changes(kept);
+  // 원래 결과 문서의 위치(선택·스크롤 효과)를 남긴 변경만 적용한 문서로 옮긴다
+  const back = tr.changes.invert(tr.startState.doc).compose(changes);
+  return {
+    changes,
+    selection: tr.selection?.map(back),
+    effects: tr.effects.flatMap((e) => e.map(back) ?? []),
+    scrollIntoView: tr.scrollIntoView,
+    userEvent: tr.annotation(Transaction.userEvent),
+  };
 });
 
 /** 찾기 막대가 접힌 프런트매터 안의 일치를 건너뛴다 */
@@ -681,7 +701,8 @@ export function frontmatterFold(onProps: () => void): Extension {
       return true;
     },
   });
-  // transactionFilter 는 뒤에 둔 것부터 돈다: keepSelectionOut 이 keepFrontmatter 가 옮긴 결과까지 보고 마지막에 판정한다
+  // 세 거래 필터는 서로의 순서에 기대지 않는다(뒤에 둔 것부터 돈다). keepFrontmatter 가 옮기는 입력 거래는 keepSelectionOut 이
+  // editsInto 로 건너뛰고, keepReplaceOut 은 선택을 새로 정하지 않고 남긴 변경에 맞춰 옮기기만 하므로 어느 쪽이 먼저 돌아도 밀기 결과가 같다
   return [
     foldField,
     foldTheme,

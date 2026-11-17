@@ -171,7 +171,7 @@ export const findPrevMatch = step(-1);
  * 하나 바꾸기. CodeMirror 의 replaceNext 는 다음 일치를 자기 검색으로 고르므로 찾기에서 뺀 범위(접힌 프런트매터) 안으로도 넘어간다.
  * 그 선택은 본문 시작으로 밀리므로, 뺀 범위가 있으면 바꾼 뒤 이 막대의 찾기로 다음 일치를 다시 고른다
  */
-const replaceOne: Command = (view) => {
+export const replaceOne: Command = (view) => {
   if (!replaceNext(view)) return false;
   if (hiddenEnd(view.state) < 0) return true;
   const sel = view.state.selection.main;
