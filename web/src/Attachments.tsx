@@ -3,6 +3,25 @@ import { useMemo, useRef, useState, type DragEvent } from "react";
 import { api } from "./api";
 import { t } from "./i18n";
 import { tipProps } from "./Tooltip";
+import type { TreeActions } from "./Tree";
+import { Menu, type MenuEntry } from "./ui";
+
+/** 패널 메뉴가 쓰는 트리 동작(같은 함수를 받아 확인창·휴지통·되돌리기를 트리와 똑같이 탄다) */
+export type AttachmentMenuActions = Pick<TreeActions, "openAttachment" | "replace" | "remove">;
+
+/**
+ * 「파일」 패널 항목의 오른쪽 클릭 메뉴. 트리의 파일 줄 메뉴와 같은 이름·순서에서 열기·내용 바꾸기·삭제만 둔다
+ * (이름 바꾸기·옮기기·경로 복사는 트리에서)
+ */
+export function attachmentMenu(path: string, a: AttachmentMenuActions): MenuEntry[] {
+  return [
+    { label: t("common.open"), run: () => a.openAttachment(path) },
+    "-",
+    { label: t("file.replace"), run: () => a.replace(path) },
+    "-",
+    { label: t("common.delete"), danger: true, run: () => a.remove(path, "file") },
+  ];
+}
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 
@@ -25,6 +44,7 @@ export function AttachmentList({
   onOpen,
   onInsert,
   onUpload,
+  actions,
 }: {
   /** 보일 첨부 경로(범위는 부르는 쪽이 정한다) */
   paths: string[];
@@ -35,8 +55,11 @@ export function AttachmentList({
   onInsert?: (path: string) => void;
   /** 파일을 첨부 폴더에 올리기. 올릴 워크스페이스가 없으면 undefined(영역을 숨긴다) */
   onUpload?: (files: File[]) => void;
+  /** 항목 메뉴(오른쪽 클릭·메뉴 키)의 동작 — 트리의 actions 를 그대로 넘긴다. 없으면 메뉴를 띄우지 않는다 */
+  actions?: AttachmentMenuActions;
 }) {
   const [q, setQ] = useState("");
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const [over, setOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   // 목록의 첨부를 끌 때(글자만 실림)는 받지 않는다
@@ -75,7 +98,21 @@ export function AttachmentList({
                   e.dataTransfer.setData("text/plain", embedText(p));
                 }}
                 onClick={() => onOpen(p)}
-                onKeyDown={(e) => e.key === "Enter" && onOpen(p)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onOpen(p);
+                  // 메뉴 키: 트리처럼 항목 아래에 띄운다
+                  else if (e.key === "ContextMenu" && actions) {
+                    e.preventDefault();
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setMenu({ x: r.left + 24, y: r.bottom, path: p });
+                  }
+                }}
+                onContextMenu={(e) => {
+                  if (!actions) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMenu({ x: e.clientX, y: e.clientY, path: p });
+                }}
               >
                 <span className="attachment-thumb">
                   {IMAGE_RE.test(p) ? <img src={api.rawUrl(p)} alt="" loading="lazy" draggable={false} /> : <KindIcon path={p} />}
@@ -104,6 +141,7 @@ export function AttachmentList({
         })}
       </ul>
       {paths.length > 0 && shown.length === 0 && <p className="meta">{t("attach.noMatch")}</p>}
+      {menu && actions && <Menu at={menu} items={attachmentMenu(menu.path, actions)} onClose={() => setMenu(null)} />}
       {onUpload && (
         <button
           type="button"

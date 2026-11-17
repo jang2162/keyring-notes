@@ -3529,6 +3529,7 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
             onOpen={(p) => treeActions.openAttachment(p)}
             onInsert={canInsert ? (p) => editorHandle.current?.insertText(embedText(p), { keepSelection: true, ownLine: true }) : undefined}
             onUpload={ws ? (files) => void uploadFiles(files, undefined, allWs ? wsOfPath(doc?.path) : ws) : undefined}
+            actions={treeActions}
           />
         </>
       )}
