@@ -1,7 +1,19 @@
 import { syntaxTree } from "@codemirror/language";
-import { EditorState, Prec, StateField, Transaction, type Extension, type Range, type StateCommand, type TransactionSpec } from "@codemirror/state";
+import {
+  EditorSelection,
+  EditorState,
+  Prec,
+  StateEffect,
+  StateField,
+  Transaction,
+  type Extension,
+  type Range,
+  type StateCommand,
+  type TransactionSpec,
+} from "@codemirror/state";
 import { Decoration, EditorView, keymap, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { liveBlocks, type LiveRenderContext } from "./liveBlocks";
+import { hiddenFromFind } from "./findQuery";
 import { frontmatterEnd, syntaxMarks, toggleTaskAt } from "./liveSyntax";
 import { t } from "./i18n";
 import { isAppField } from "./childSortUi";
@@ -429,7 +441,8 @@ export function codeFont(): Extension {
 
 /**
  * 맨 앞 프런트매터(--- … ---)를 한 줄 표시로 접는다: "속성 N개 — 오른쪽 패널에서 보기 · 원문 보기".
- * 앞부분을 누르면 오른쪽 패널의 속성 탭을 열고, "원문 보기"를 누르거나 커서가 그 안에 들어가면 원문을 보인다.
+ * 앞부분을 누르면 오른쪽 패널의 속성 탭을 열고, "원문 보기"를 눌렀을 때만 원문을 펼친다(showRaw). 선택이 본문으로 다 나가면 다시 접힌다.
+ * 접혀 있는 동안은 어떤 선택도 프런트매터 안에 들지 않는다(keepSelectionOut) — 위로 끌기·Shift+↑·Mod+Home 도, 줄 이동·되돌리기도.
  */
 class FrontmatterWidget extends WidgetType {
   constructor(readonly count: number) {
@@ -484,7 +497,8 @@ export function bodyStart(state: EditorState): { at: number; prefix: string } | 
  * 앱으로 만든 노트는 처음부터 프런트매터(edited)가 있으므로 새 노트에서 늘 일어난다
  */
 const keepFrontmatter = EditorState.transactionFilter.of((tr): Transaction | TransactionSpec => {
-  if (!tr.docChanged || !tr.isUserEvent("input")) return tr;
+  // 원문 보기로 펼친 채 맨 앞에 둔 커서는 원문을 고치는 중이다
+  if (!tr.docChanged || !tr.isUserEvent("input") || isOpen(tr.startState)) return tr;
   const sel = tr.startState.selection.main;
   if (!sel.empty || sel.head !== 0) return tr;
   const body = bodyStart(tr.startState);
@@ -504,35 +518,149 @@ const keepFrontmatter = EditorState.transactionFilter.of((tr): Transaction | Tra
 });
 
 /**
- * 전체 선택(Mod-a)을 본문만으로 줄인다. 기본 전체 선택은 0 부터 잡아 접힌 프런트매터를 펼치고 복사에도 속성이 섞인다.
- * 원문 보기로 펼친 프런트매터 안에 커서가 있으면 문서 전체를 고르는 기본 동작에 맡긴다(속성 원문을 고치는 중이다)
+ * 전체 선택(Mod-a)을 본문만으로 줄인다. 기본 전체 선택은 0 부터 잡아 복사에 속성이 섞인다.
+ * 원문 보기로 펼쳐 있으면 문서 전체를 고르는 기본 동작에 맡긴다(속성 원문을 고치는 중이다)
  */
 export const selectBody: StateCommand = ({ state, dispatch }) => {
   const body = bodyStart(state);
-  if (!body) return false;
-  const sel = state.selection.main;
-  if (sel.from < body.at && !(sel.empty && sel.head === 0)) return false;
-  // 본문이 없으면 고를 것이 없다 — 닫는 줄 끝의 커서도 프런트매터를 펼치므로 선택을 옮기지 않는다
+  if (!body || isOpen(state)) return false;
+  // 본문이 없으면 고를 것이 없다 — 프런트매터 안의 선택은 어차피 맨 앞 커서로 밀린다(keepSelectionOut)
   if (body.prefix) return true;
   dispatch(state.update({ selection: { anchor: body.at, head: state.doc.length }, userEvent: "select" }));
   return true;
 };
 
-function buildFold(state: EditorState): DecorationSet {
+/** 「원문 보기」: 접힌 프런트매터를 펼친다. 펼치는 길은 이것뿐이다 */
+export const showRaw = StateEffect.define<null>();
+
+interface Fold {
+  /** 원문 보기로 펼쳤는가 */
+  open: boolean;
+  deco: DecorationSet;
+}
+
+/** 프런트매터 닫는 줄의 끝(그 위치까지가 프런트매터). 없으면 null */
+function frontmatterTo(state: EditorState): number | null {
   const end = frontmatterEnd(state);
-  if (end === null) return Decoration.none;
+  return end === null ? null : state.doc.line(end).to;
+}
+
+/** 막 연 문서의 커서(맨 앞, 선택 없음 하나) */
+const isFresh = (sel: EditorSelection) => sel.ranges.length === 1 && sel.main.empty && sel.main.head === 0;
+
+const inside = (sel: EditorSelection, to: number) => sel.ranges.some((r) => r.from <= to);
+
+function buildFold(state: EditorState, open: boolean): DecorationSet {
+  const end = frontmatterEnd(state);
+  if (end === null || open) return Decoration.none;
   const to = state.doc.line(end).to;
-  const sel = state.selection.main;
-  // 문서를 막 열었을 때의 커서(맨 앞, 선택 없음)는 안으로 치지 않는다
-  if (sel.from <= to && !(sel.empty && sel.head === 0)) return Decoration.none;
   return Decoration.set([Decoration.replace({ widget: new FrontmatterWidget(topKeys(state, end)), block: true }).range(0, to)]);
 }
 
-const foldField = StateField.define<DecorationSet>({
-  create: buildFold,
-  update: (deco, tr) => (tr.docChanged || tr.selection ? buildFold(tr.state) : deco),
-  provide: (f) => EditorView.decorations.from(f),
+/**
+ * 이동이 아니라 글을 고쳐서 선택이 프런트매터 안에 든 경우. 이때는 밀지 않고 원문을 보인다(nextOpen) —
+ * 사람이 친 `---` 로 프런트매터가 막 생겼거나(접힌 적이 없다), 본문 첫 줄의 Backspace·Alt+↑ 처럼 사용자의 편집이 경계를 고쳤다.
+ * 밀면 방금 고친 것이 커서와 함께 접힌 줄 뒤로 사라진다. 되돌리기·바꾸기·앱이 넣은 변경(프런트매터를 새로 만든 것은 빼고)은 여기에 들지 않는다
+ */
+function editsInto(tr: Transaction): boolean {
+  // 되돌리기는 접힌 원문을 고쳐도 접힌 채로 둔다(선택은 keepSelectionOut 이 민다)
+  if (!tr.docChanged || tr.isUserEvent("undo") || tr.isUserEvent("redo")) return false;
+  if (frontmatterTo(tr.startState) === null) return true;
+  return (tr.isUserEvent("input") && !tr.isUserEvent("input.replace")) || tr.isUserEvent("delete") || tr.isUserEvent("move");
+}
+
+/** 펼친 뒤에는 선택(어느 범위든)이 프런트매터에 걸쳐 있는 동안 열어 둔다. 맨 앞 커서도 원문 위의 커서다 */
+function nextOpen(tr: Transaction, was: boolean): boolean {
+  const to = frontmatterTo(tr.state);
+  if (to === null) return false;
+  if (tr.effects.some((e) => e.is(showRaw))) return true;
+  const sel = tr.state.selection;
+  if (was) return inside(sel, to);
+  return editsInto(tr) && inside(sel, to) && !isFresh(sel);
+}
+
+const foldField = StateField.define<Fold>({
+  create(state) {
+    // 이미 안에 커서가 있는 상태에 붙으면(설정으로 접기를 켤 때) 펼친 채로 시작한다 — 보이지 않는 곳의 커서를 만들지 않는다
+    const to = frontmatterTo(state);
+    const open = to !== null && !isFresh(state.selection) && inside(state.selection, to);
+    return { open, deco: buildFold(state, open) };
+  },
+  update(fold, tr) {
+    const open = nextOpen(tr, fold.open);
+    return open === fold.open && !tr.docChanged ? fold : { open, deco: buildFold(tr.state, open) };
+  },
+  provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
 });
+
+const isOpen = (state: EditorState) => state.field(foldField, false)?.open ?? false;
+
+/** 원문 보기로 펼쳐 있는가 */
+export const frontmatterOpen = isOpen;
+
+/**
+ * 접혀 있는 동안 선택이 프런트매터 안에 들지 않게 한다. 위로 끌기·Shift+↑·본문 첫 줄의 ↑·Mod+Home·Shift+Mod+Home 같은 사용자 선택도,
+ * 줄 번호로 가기·되돌리기가 되살리는 선택·찾기 명령(Mod+D 등) 같은 앱의 이동도 같다. 펼치는 길은 「원문 보기」뿐이라
+ * (보이지 않는 곳에 커서를 두면 친 글이 접힌 원문에 들어간다) 프런트매터 안에 걸친 끝은 본문 시작으로 밀고, 다 들어간 범위는 뺀다.
+ * 본문이 없으면 맨 앞 커서로 둔다(친 글은 keepFrontmatter 가 본문 자리로 옮긴다).
+ * 앱이 놓은 맨 앞 커서(막 연 문서·1행으로 가기)는 그대로 둔다 — 사용자 선택(userSelect)의 Mod+Home 만 본문 시작으로 민다.
+ * 밀 것이 없으면 null
+ */
+export function selectionOutside(state: EditorState, sel = state.selection, userSelect = false): EditorSelection | null {
+  if (isOpen(state)) return null;
+  const to = frontmatterTo(state);
+  if (to === null || !inside(sel, to) || (isFresh(sel) && !userSelect)) return null;
+  const at = to < state.doc.length ? to + 1 : 0;
+  const kept = at > 0 ? sel.ranges.filter((r) => r.to > to) : [];
+  const main = kept.indexOf(sel.main);
+  const next = kept.length
+    ? EditorSelection.create(
+        kept.map((r) => EditorSelection.range(Math.max(r.anchor, at), Math.max(r.head, at))),
+        main < 0 ? kept.length - 1 : main,
+      )
+    : EditorSelection.single(at);
+  return next.eq(sel) ? null : next;
+}
+
+const keepSelectionOut = EditorState.transactionFilter.of((tr): Transaction | readonly (Transaction | TransactionSpec)[] => {
+  if ((!tr.selection && !tr.docChanged) || isOpen(tr.startState) || tr.effects.some((e) => e.is(showRaw)) || editsInto(tr)) return tr;
+  // 위에서 거른 둘(showRaw·editsInto)이 아니면 이 거래로 펼쳐지지 않으므로 tr.state 는 접힌 채다
+  const next = selectionOutside(tr.state, tr.newSelection, tr.isUserEvent("select"));
+  return next ? [tr, { selection: next, sequential: true }] : tr;
+});
+
+/**
+ * 되돌리기·다시 하기는 거래 필터를 건너뛴다(@codemirror/commands 의 history 가 filter: false 로 보낸다). 그 선택은 바로 뒤 거래로 민다.
+ * 업데이트 중에는 보낼 수 없어 마이크로태스크로 미룬다 — 그리기 전에 돈다
+ */
+const keepSelectionOutAfter = ViewPlugin.define((view) => {
+  let destroyed = false;
+  return {
+    update(u: ViewUpdate) {
+      if (!(u.selectionSet || u.docChanged) || !selectionOutside(u.state)) return;
+      queueMicrotask(() => {
+        const next = destroyed ? null : selectionOutside(view.state);
+        if (next) view.dispatch({ selection: next });
+      });
+    },
+    destroy() {
+      destroyed = true;
+    },
+  };
+});
+
+/**
+ * 접혀 있는 동안의 바꾸기(하나·모두)는 프런트매터 안을 고치지 않는다. 찾기 막대도 그 안의 일치를 세지 않는다(hiddenFromFind) —
+ * 「3개」를 보고 모두 바꾸기를 눌렀는데 보이지 않는 속성까지 바뀌면 안 된다
+ */
+const keepReplaceOut = EditorState.changeFilter.of((tr) => {
+  if (!tr.isUserEvent("input.replace") || isOpen(tr.startState)) return true;
+  const to = frontmatterTo(tr.startState);
+  return to === null ? true : [0, to];
+});
+
+/** 찾기 막대가 접힌 프런트매터 안의 일치를 건너뛴다 */
+const hideFromFind = hiddenFromFind.of((state) => (isOpen(state) ? -1 : (frontmatterTo(state) ?? -1)));
 
 const foldTheme = EditorView.baseTheme({
   ".cm-fm-fold": { fontSize: "12px", color: "var(--muted)", padding: "2px 0 6px", fontFamily: "var(--font-sans)" },
@@ -547,11 +675,22 @@ export function frontmatterFold(onProps: () => void): Extension {
       if (!t.closest(".cm-fm-fold")) return false;
       e.preventDefault();
       if (t.closest(".cm-fm-raw")) {
-        view.dispatch({ selection: { anchor: 3 } });
+        view.dispatch({ selection: { anchor: 3 }, effects: showRaw.of(null) });
         view.focus();
       } else onProps();
       return true;
     },
   });
-  return [foldField, foldTheme, click, keepFrontmatter, Prec.high(keymap.of([{ key: "Mod-a", run: selectBody }]))];
+  // transactionFilter 는 뒤에 둔 것부터 돈다: keepSelectionOut 이 keepFrontmatter 가 옮긴 결과까지 보고 마지막에 판정한다
+  return [
+    foldField,
+    foldTheme,
+    click,
+    keepSelectionOut,
+    keepFrontmatter,
+    keepReplaceOut,
+    keepSelectionOutAfter,
+    hideFromFind,
+    Prec.high(keymap.of([{ key: "Mod-a", run: selectBody }])),
+  ];
 }

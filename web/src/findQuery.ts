@@ -1,5 +1,5 @@
 import type { SearchQuery } from "@codemirror/search";
-import type { EditorState } from "@codemirror/state";
+import { Facet, type EditorState } from "@codemirror/state";
 
 /** 찾기 막대(findBar.ts)가 쓰는 계산. DOM 없이 상태만 본다 */
 export interface Match {
@@ -15,12 +15,23 @@ export interface MatchStats {
   capped: boolean;
 }
 
+/**
+ * 찾기에서 뺄 문서 맨 앞 범위의 끝(그 위치까지 포함, 없으면 -1). 화면에 없는 글이다 — 접힌 프런트매터(livePreview.ts frontmatterFold).
+ * 그 안에서 시작하는 일치는 세지도 고르지도 않는다
+ */
+export const hiddenFromFind = Facet.define<(state: EditorState) => number, (state: EditorState) => number>({
+  combine: (fs) => (state) => fs.reduce((end, f) => Math.max(end, f(state)), -1),
+});
+
+export const hiddenEnd = (state: EditorState) => state.facet(hiddenFromFind)(state);
+
 /** 일치를 차례로. 빈 일치(정규식 ^ 등)는 찾기에서 쓸모가 없어 뺀다 */
 function* matches(state: EditorState, query: SearchQuery, from = 0): Generator<Match> {
   if (!query.valid) return;
-  const cur = query.getCursor(state, from);
+  const hidden = hiddenEnd(state);
+  const cur = query.getCursor(state, Math.min(state.doc.length, Math.max(from, hidden + 1)));
   for (let r = cur.next(); !r.done; r = cur.next()) {
-    if (r.value.to > r.value.from) yield { from: r.value.from, to: r.value.to };
+    if (r.value.to > r.value.from && r.value.from > hidden) yield { from: r.value.from, to: r.value.to };
   }
 }
 
