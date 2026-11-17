@@ -1819,6 +1819,10 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 **확인하지 못한 것**
 - 실제 터치 기기의 길게 누르기(트리와 같이 브라우저의 `contextmenu` 에 기댄다 — iOS Safari 는 주지 않는다), Windows·Linux 의 Shift+F10, 데스크톱 앱(Tauri).
 
+**리뷰에서 이월한 것(낮음)**
+- `Workspace.tsx` 에서 `AttachmentList` 에 `actions={treeActions}` 를 넘기는 줄을 지워도 `Attachments.test.tsx` 는 통과한다. 이 연결은 화면 확인으로만 지켜진다.
+- 패널 항목에 `tipProps` 툴팁이 있어, Android 처럼 길게 누르기를 `contextmenu` 로 주는 브라우저에서는 메뉴와 툴팁이 함께 뜰 수 있다. 에뮬레이션에서 툴팁만 보였고 실기기는 확인하지 못했다.
+
 ### keyring-widget 1단계 구현
 
 설계 `docs/superpowers/specs/2026-11-09-keyring-widget-design.md`, 계획 `docs/superpowers/plans/2026-11-09-keyring-widget-phase1.md`.
