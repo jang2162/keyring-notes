@@ -170,7 +170,7 @@ The Files panel on the rail also has a drop area for adding files.
 
 ## Replace or delete attachments
 
-Right-click an attachment in a node's "N files" row in the tree.
+Right-click an attachment in a node's "N files" row in the tree, or in the Files panel on the rail. The Files panel menu has **Open**, **Replace contents…** and **Delete**. Rename and move an attachment from the tree.
 
 - **Replace contents…** swaps in a new file at the same path, so every link and embed keeps working. Pick a file of the same type: a different extension is refused. On a server, the old content stays in history. **Undo** on the notice puts the old content back. Open previews, Live Preview images and PDF viewers in this window show the new content.
 - **Delete** first lists the notes that link to the attachment (wikilinks, Markdown links and embeds), because those links break. On a server, the deleted attachment goes to the trash (attachments kept in S3 too, while S3 is on), where an image shows as a preview and **Restore** brings it back byte for byte.

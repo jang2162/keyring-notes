@@ -1805,6 +1805,20 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 - 기기에서 노드를 옮기면 동기화 뒤 서버 휴지통에 옛 자리의 첨부 줄이 하나 더 생긴다(되살리면 사본이 생길 뿐 손실은 없다).
 - 같은 첨부를 여러 번 지우면 열어 둔 휴지통 창에 옛 줄이 남는다(기존 동작). 휴지통 쪽마다 이력 전체를 읽는다.
 
+#### 「파일」 패널에서도 첨부 삭제·교체 (2026-11-17)
+
+**정한 것(워커 — 사용자 요청 「파일 패널에서도 삭제 할 수 있도록」)**
+- 패널 항목에 오른쪽 클릭 메뉴(트리와 같은 `ui.tsx` `Menu`). 항목은 트리 파일 줄 메뉴의 이름·순서에서 **열기 · 내용 바꾸기… · 삭제(danger)** 만 둔다. 이름 바꾸기·옮기기·경로 복사는 트리에서.
+- 새 삭제·교체 로직은 없다. `AttachmentList` 의 `actions` 에 Workspace 의 `treeActions` 를 그대로 넘기고, 메뉴는 `actions.remove(path, "file")`·`actions.replace(path)`·`actions.openAttachment(path)` 를 부른다 — 확인창·휴지통·되돌리기 알림이 트리와 같다. 메뉴 항목은 `attachmentMenu()`(`Attachments.tsx`)로 뺐다.
+- 여는 길도 트리와 같다: 오른쪽 클릭(`contextmenu` — 길게 누르기도 브라우저가 이 이벤트로 주면 열린다), 메뉴 키(`ContextMenu` keydown, 항목 아래에 띄움). 트리의 첨부 줄에는 읽기 전용·권한 규칙이 없어 패널도 두지 않았다.
+
+**확인한 것**
+- `Attachments.test.tsx`(jsdom): 메뉴 항목·순서·danger, 각 항목이 트리 동작을 그 경로로 부름, 오른쪽 클릭 → 「삭제」 → `remove(path, "file")`, 메뉴 키로 열기, `actions` 가 없으면 메뉴를 띄우지 않음. 메뉴 렌더 줄을 지우거나 삭제가 다른 동작을 부르게 바꾸면 각각 2개가 실패.
+- Chromium(neo 에 Playwright), 임시 `KEYRING_DATA`·다른 포트: 서버에서 패널 오른쪽 클릭 → 삭제 → 확인창에 가리키는 노트 2개 → 패널·트리에서 사라짐 → 휴지통 되살리기 → 패널·트리에 다시. 패널에서 내용 바꾸기(디스크 sha256 이 고른 파일과 같고 썸네일이 바로 바뀜). 메뉴 키로 열기. `?local` 에서 삭제 → 「휴지통에 남지 않는다」 확인창 → 알림 되돌리기로 복원. 어두운 테마·390px 서랍에서 항목 오른쪽 끝을 눌러도 메뉴가 화면 안(x 166–386).
+
+**확인하지 못한 것**
+- 실제 터치 기기의 길게 누르기(트리와 같이 브라우저의 `contextmenu` 에 기댄다 — iOS Safari 는 주지 않는다), Windows·Linux 의 Shift+F10, 데스크톱 앱(Tauri).
+
 ### keyring-widget 1단계 구현
 
 설계 `docs/superpowers/specs/2026-11-09-keyring-widget-design.md`, 계획 `docs/superpowers/plans/2026-11-09-keyring-widget-phase1.md`.
