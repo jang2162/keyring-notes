@@ -8,6 +8,10 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 - Right-click an attachment in the **Files** panel to open it, replace its contents or delete it. It works the same as in the tree: **Delete** lists the notes that link to the attachment first, and a deleted attachment goes to the trash on a server, or can be undone from the notice in the desktop and mobile app.
 
+### Changed
+
+- The folded frontmatter at the top of a note opens only when you click **Show source**. Selecting upward from the body, jumping to the top, going to a line, find and replace, and undo no longer open it. Selections stop at the start of the body, so copied text no longer includes the frontmatter.
+
 ## [0.13.0] - 2026-11-17
 
 ### Added
