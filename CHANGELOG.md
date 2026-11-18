@@ -4,6 +4,8 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-18
+
 ### Added
 
 - Right-click an attachment in the **Files** panel to open it, replace its contents or delete it. It works the same as in the tree: **Delete** lists the notes that link to the attachment first, and a deleted attachment goes to the trash on a server, or can be undone from the notice in the desktop and mobile app.
@@ -262,7 +264,8 @@ First tagged release.
 - Notes and folders form one tree of nodes, grouped into workspaces.
 - English and Korean interface.
 
-[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/jang2162/keyring-notes/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/jang2162/keyring-notes/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/jang2162/keyring-notes/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/jang2162/keyring-notes/compare/v0.10.0...v0.11.0
