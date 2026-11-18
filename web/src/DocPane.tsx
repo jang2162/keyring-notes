@@ -577,6 +577,21 @@ export function DocPane({ pane, entry, mode, focused, revision, handle, paneApi,
     const el = crumbsRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
   }, [doc.path, crumbsKey]);
+  // 앞쪽이 가려져 있을 때만 왼쪽 끝을 흐린다(styles.css .crumbs.clip-start). CSS 스크롤 구동 애니메이션은 WKWebView(앱)에서 보장되지 않아
+  // 스크롤·크기 변화에 클래스를 붙인다. className 은 늘 "crumbs" 라 React 가 다시 그려도 이 클래스를 지우지 않는다
+  useEffect(() => {
+    const el = crumbsRef.current;
+    if (!el) return;
+    const update = () => el.classList.toggle("clip-start", el.scrollLeft > 0);
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    ro?.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro?.disconnect();
+    };
+  }, [doc.path, crumbsKey]);
   const toggleKey = formatCombo(ctx.keyOf("toggle-mode"));
 
   return (
