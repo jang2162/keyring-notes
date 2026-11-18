@@ -4,6 +4,10 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
+### Fixed
+
+- The fold arrow of long code blocks in the preview was cut off and could not be clicked. It now shows next to the block, like the arrows for headings and lists.
+
 ### Changed
 
 - Better contrast and focus: secondary text is darker in the light theme, accent-colored text on light accent backgrounds is darker, placeholders and the status bar's secondary items use the secondary text color, and the keyboard focus ring is solid. In the dark theme, text on accent-colored buttons is dark instead of white.

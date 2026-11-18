@@ -1441,14 +1441,14 @@ h1.inline-title.static .doc-icon { font-size: var(--fs-title); width: auto; }
 .markdown-body .callout .callout-title { position: relative; }
 .markdown-body .callout .pv-fold { left: -22px; }
 /* 코드·표는 첫 줄이 안쪽 여백(pre 10px, 표 칸 테두리 1px + 4px) 아래에서 시작한다 */
-.markdown-body pre > .pv-fold { left: -24px; top: 10px; }
+.markdown-body .pv-code > .pv-fold { left: -24px; top: 10px; }
 .markdown-body table > .pv-fold { top: 5px; }
 .fold-hidden { display: none !important; }
 .markdown-body li.pv-folded > ul, .markdown-body li.pv-folded > ol { display: none; }
 .markdown-body li.pv-folded::after, .markdown-body h1.pv-folded::after, .markdown-body h2.pv-folded::after, .markdown-body h3.pv-folded::after, .markdown-body h4.pv-folded::after, .markdown-body h5.pv-folded::after, .markdown-body h6.pv-folded::after { content: " …"; color: var(--muted); font-weight: normal; }
 .markdown-body .callout.pv-folded > .callout-body { display: none; }
-.markdown-body pre.pv-folded { max-height: 2.6em; overflow: hidden; }
-.markdown-body pre.pv-folded::after { content: "…"; position: absolute; right: 10px; bottom: 4px; color: var(--muted); }
+.markdown-body .pv-code.pv-folded > pre { max-height: 2.6em; overflow: hidden; }
+.markdown-body .pv-code.pv-folded::after { content: "…"; position: absolute; right: 10px; bottom: 4px; color: var(--muted); }
 .markdown-body table.pv-folded > tbody { display: none; }
 .outline-list li { display: flex; align-items: flex-start; }
 .outline-list li > button:last-child { flex: 1; min-width: 0; }
@@ -1458,9 +1458,9 @@ h1.inline-title.static .doc-icon { font-size: var(--fs-title); width: auto; }
 .outline-list li.folded > button:last-child { color: var(--muted); }
 @media (max-width: 800px) { .editor .cm-gutters { margin-left: -14px; } .pv-fold { left: -18px; } }
 /* 좁은 화면의 본문 왼쪽 여백은 16px 이다. 제목 접기 단추(20px)를 -18px 에 두면 왼쪽 2px 이 화면 밖이라, 단추를 여백 안(16px 폭)에 맞춘다. 화살표 가운데는 그대로(x 8) */
-@media (max-width: 800px) { .markdown-body :is(h1, h2, h3, h4, h5, h6) > .pv-fold { left: -16px; width: 16px; } }
+@media (max-width: 800px) { .markdown-body :is(h1, h2, h3, h4, h5, h6, .pv-code) > .pv-fold { left: -16px; width: 16px; } }
 /* 터치: 눌리는 폭은 16px 이다(본문 글자를 덮지 않으려고 오른쪽으로 넓히지 않는다. 24px 원 안에 다른 누를 것이 없으면 WCAG 2.5.8 간격 예외). 줄이 24px 보다 낮은 작은 제목(h5·h6)은 아래로 넓힌다 */
-@media (pointer: coarse) and (max-width: 800px) { .markdown-body :is(h1, h2, h3, h4, h5, h6) > .pv-fold::before { min-height: 24px; } }
+@media (pointer: coarse) and (max-width: 800px) { .markdown-body :is(h1, h2, h3, h4, h5, h6, .pv-code) > .pv-fold::before { min-height: 24px; } }
 /* 표(결합 테두리 반 칸)와 맨 위 목록(표시 칸 왼쪽 끝)도 단추를 화면 안(x 0~)으로 둔다. 목록은 터치 영역이 표시 칸 쪽으로 8px(글머리는 안 덮는다) */
 @media (max-width: 800px) {
   .markdown-body table > .pv-fold { left: -16.5px; width: 16px; }
