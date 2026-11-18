@@ -82,7 +82,7 @@ The `colors` object of a theme has `light`, `dark` or both. Each maps a color to
 
 - Token names look like `--bg`: two dashes, then lowercase letters, digits and `-`. Size, font and spacing tokens (`--fs-*`, `--font-*`, `--radius-*`, `--*-h`, `--*-w`) are refused. Themes change colors only. The app reads only the tokens in the table below. Other tokens are ignored, and `keyring-market check` warns about them (`unknown_tokens`).
 - Values are `#rgb`, `#rrggbb`, `#rrggbbaa`, or `rgb()`, `rgba()`, `hsl()`, `hsla()`, `oklch()`, `oklab()` with numbers, `%`, `deg`, spaces, `,` and `/` inside. Anything else is refused, including names such as `red`, `var(…)`, `url(…)` and values with `;`, `{`, `}` or `!`.
-- A token the theme leaves out keeps the default value of that mode.
+- A token the theme leaves out keeps the default value of that mode. There are two exceptions when the theme sets `--accent`. A missing `--accent-text` uses the theme's `--accent`. A missing `--on-accent` is `#ffffff` or `#17191c`, whichever has more contrast with the theme's `--accent`.
 - If a theme has only `light` or only `dark`, the app always draws it in that mode, whatever the system setting is.
 
 #### Theme tokens
@@ -92,12 +92,14 @@ The `colors` object of a theme has `light`, `dark` or both. Each maps a color to
 | `--bg` | Page background | `#ffffff` | `#17191c` |
 | `--bg-soft` | Side panels, code blocks, inputs | `#f6f7f9` | `#1f2226` |
 | `--fg` | Body text | `#1f2328` | `#e6e6e6` |
-| `--muted` | Secondary text | `#6b7280` | `#9aa0a6` |
+| `--muted` | Secondary text | `#5f6672` | `#9aa0a6` |
 | `--border` | Lines and borders | `#e3e6ea` | `#30343a` |
 | `--accent` | Links, buttons, selection | `#3b6fd8` | `#7aa2f7` |
+| `--accent-text` | Accent-colored text on a light accent background (the current row, the selected tab) | `#2f5bb7` | `#7aa2f7` |
+| `--on-accent` | Text and icons on an `--accent` background (pressed buttons, the sign-in button) | `#ffffff` | `#17191c` |
 | `--hover` | Hovered rows | `rgb(0 0 0 / 0.05)` | `rgb(255 255 255 / 0.06)` |
 | `--active` | Selected rows | `rgb(59 111 216 / 0.12)` | `rgb(122 162 247 / 0.16)` |
-| `--focus-ring` | Keyboard focus ring | `rgb(59 111 216 / 0.55)` | `rgb(122 162 247 / 0.6)` |
+| `--focus-ring` | Keyboard focus ring | `#3b6fd8` | `#7aa2f7` |
 | `--warn-bg` | Warning background | `#fff4e5` | `#3a2a12` |
 | `--warn-fg` | Warning text | `#8a4b00` | `#f5c27a` |
 | `--info-bg` | Notice background | `#eef4ff` | `#1d2a42` |

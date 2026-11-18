@@ -7,6 +7,8 @@
   --accent: #3b6fd8;
   /* 강조색 글자가 강조색 옅은 배경(--active·--info-bg) 위에 올라갈 때 쓴다. --accent 는 흰 바탕 기준이라 옅은 배경 위에서는 3.8~4.0:1 */
   --accent-text: #2f5bb7;
+  /* --accent 바탕 위 글자·아이콘. 어두움의 --accent(#7aa2f7)는 밝아서 흰 글자가 2.52:1 — 어두움은 어두운 글자(6.99:1) */
+  --on-accent: #ffffff;
   --warn-bg: #fff4e5;
   --warn-fg: #8a4b00;
   --info-bg: #eef4ff;
@@ -69,6 +71,7 @@
     --border: #30343a;
     --accent: #7aa2f7;
     --accent-text: #7aa2f7;
+    --on-accent: #17191c;
     --warn-bg: #3a2a12;
     --warn-fg: #f5c27a;
     --info-bg: #1d2a42;
@@ -102,6 +105,7 @@
     --border: #30343a;
     --accent: #7aa2f7;
     --accent-text: #7aa2f7;
+    --on-accent: #17191c;
     --warn-bg: #3a2a12;
     --warn-fg: #f5c27a;
     --info-bg: #1d2a42;
@@ -160,7 +164,7 @@ button {
 }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
-button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 .markdown-body img { max-width: 100%; }
 .markdown-body pre { background: var(--bg-soft); padding: 10px 12px; border-radius: 6px; overflow: auto; }
@@ -285,7 +289,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .login-field label { font-size: var(--fs-md); color: var(--muted); }
 .login input { font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .login button { padding: 8px; }
-.login button[type="submit"] { background: var(--accent); color: var(--bg); border-color: transparent; }
+.login button[type="submit"] { background: var(--accent); color: var(--on-accent); border-color: transparent; }
 .login button[type="submit"]:disabled { background: var(--bg-soft); color: var(--muted); border-color: var(--border); opacity: 1; }
 .login-error { color: #c0392b; font-size: 13px; margin: 0; }
 
@@ -359,7 +363,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .backups .row-actions a { color: var(--accent); font-size: 12px; }
 .note-ok { color: var(--fg); background: var(--info-bg); padding: 6px 10px; border-radius: 6px; font-size: 13px; }
 .note-warn { color: var(--warn-fg); background: var(--warn-bg); padding: 6px 10px; border-radius: 6px; font-size: 13px; }
-.badge { margin-left: 8px; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: #fff; }
+.badge { margin-left: 8px; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); }
 .password-form { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
 .password-form button { align-self: flex-start; }
 .login p { margin: 0; }
@@ -1134,14 +1138,15 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .bottom-bar { display: none; }
 .bar-cell { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 44px; min-height: 44px; padding: 4px 0; border: none; border-radius: 0; background: transparent; color: var(--muted); }
 .bar-cell:hover:not(:disabled) { border: none; color: var(--fg); }
-/* 탭이 0개일 때 opacity 로 흐리면 1.98:1 — 색만 --muted 로 둔다 */
+/* 탭이 0개일 때 opacity 로 흐리면 1.98:1 — 색만 --muted 로 둔다. 활성 칸도 --muted 라 탭 개수 상자는 점선으로 가른다 */
 .bar-cell:disabled { opacity: 1; color: var(--muted); }
+.bar-cell:disabled .bar-tab-count { border-style: dashed; }
 .bar-cell[aria-pressed="true"] { color: var(--accent); }
 .bar-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; }
 .bar-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); line-height: 1.1; }
 /* ＋: 강조색 원. 길게 누르기(오늘 노트)가 iOS 글 선택·콜아웃, 두 번 눌러 확대와 겹치지 않게 */
 .bar-new { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
-.bar-new .bar-icon { border-radius: 50%; background: var(--accent); color: #fff; }
+.bar-new .bar-icon { border-radius: 50%; background: var(--accent); color: var(--on-accent); }
 .bar-new:hover:not(:disabled) { color: var(--muted); }
 /* 탭 칸: 모바일 브라우저처럼 둥근 네모 안에 열린 탭 수 */
 .bar-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 3px; border: 1.75px solid currentColor; border-radius: 5px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }

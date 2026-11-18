@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { checkThemeColors, isThemeColor, THEME_DEFAULTS, THEME_TOKENS } from "../src/index.js";
 
 describe("THEME_TOKENS", () => {
-  it("55개이고 겹치지 않는다", () => {
-    expect(THEME_TOKENS).toHaveLength(55);
-    expect(new Set(THEME_TOKENS).size).toBe(55);
+  it("57개이고 겹치지 않는다", () => {
+    expect(THEME_TOKENS).toHaveLength(57);
+    expect(new Set(THEME_TOKENS).size).toBe(57);
   });
 
   it("모두 테마 색 검사를 지난다(크기·글꼴 꼴에 걸리지 않음)", () => {
