@@ -2288,7 +2288,7 @@ macOS 앱에서 PDF 미리보기의 파일 이름이 신호등과 겹친다(사�
 
 **정한 것.**
 
-- 토큰(`web/src/styles.css` 와 `packages/core/src/themeTokens.ts` 가 같다 — `web/src/theme/tokens.test.ts`): 라이트 `--muted` #5f6672. `--focus-ring` 불투명(라이트 #3b6fd8, 다크 #7aa2f7). 새 `--accent-text`(옅은 강조 바탕 위 강조색 글자, 라이트 #2f5bb7·다크 #7aa2f7)와 `--on-accent`(강조색 바탕 위 글자·아이콘, 라이트 #ffffff·다크 #17191c). `--on-accent` 를 쓰는 자리: `button.on`, `.badge`, 모바일 하단 바 「새 노트」 원, 로그인 주 단추.
+- 토큰(`web/src/styles.css` 와 `packages/core/src/themeTokens.ts` 가 같다 — `web/src/theme/tokens.test.ts`): 라이트 `--muted` #5f6672. `--focus-ring` 불투명(라이트 #3b6fd8, 다크 #7aa2f7). 새 `--accent-text`(옅은 강조 바탕 위 강조색 글자, 라이트 #2f5bb7·다크 #7aa2f7)와 `--on-accent`(강조색 바탕 위 글자·아이콘, 라이트 #ffffff·다크 #17191c) — 테마 토큰이 55개에서 57개가 된다. `--on-accent` 를 쓰는 자리: `button.on`, `.badge`, 모바일 하단 바 「새 노트」 원, 로그인 주 단추.
 - 받은 테마가 `--accent` 만 주면 `resolveTheme`(`web/src/theme/resolve.ts`)이 `--accent-text` 는 그 `--accent` 로(두 토큰 전과 같은 화면), `--on-accent` 는 #ffffff·#17191c 중 대비가 큰 쪽으로 채운다. 반투명 강조색은 그 모드 바탕 위에 합성해 재고, 읽지 못하면 기본값에 맡긴다. 사용자 문서 「마켓 패키지 올리기」 의 토큰 표에도 적었다.
 - 비활성 단추는 opacity 대신 `--muted` 글자, 채운 주 단추(`button.on`)는 `--bg-soft` 바탕. 아이콘만 있거나 평소 글자가 이미 `--muted` 인 단추(`.icon-btn`·`.find-btn`·`.title-icon`·`.title-date`·`.tab-close`·`.tree-add`·`.attachment-insert`·`.prop-icon-btn`)와 스위치는 색으로는 활성과 갈리지 않아 흐리기를 둔다(비활성은 WCAG 대비 예외). 하단 바 「탭」 0개는 색을 `--muted` 로 두고 개수 상자를 점선으로 가른다.
 - 클릭 영역은 보이는 모양을 바꾸지 않고 투명한 의사 요소로 넓힌다. 표 손잡이는 24×24(`::after`, 행은 왼쪽 바깥·열은 위로 — 칸 글자 쪽으로는 넓히지 않는다). 행 손잡이가 접기 거터(`.cm-gutters`, z-index 200) 밑에 깔려 눌리지 않아 손잡이를 z-index 201 로 올렸다. 미리보기 접기는 24px, 터치 36px(왼쪽으로, 목록은 표시 칸 쪽으로). 본문 위키링크(높이 19px)는 WCAG 2.5.8 의 「문장 안 링크」 예외라 두었다.
