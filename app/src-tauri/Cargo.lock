@@ -1878,7 +1878,7 @@ dependencies = [
 
 [[package]]
 name = "keyring-notes"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "reqwest 0.12.28",
  "rfd",
