@@ -1120,7 +1120,7 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .switch:hover:not(:disabled) { border: none; }
 .switch.on { background: var(--accent); }
 .switch-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm); transition: transform 0.15s; }
-.switch.on .switch-knob { transform: translateX(16px); }
+.switch.on .switch-knob { transform: translateX(16px); background: var(--on-accent); }
 @media (prefers-reduced-motion: reduce) { .switch, .switch-knob { transition: none; } }
 .key-group h3 { font-size: var(--fs-md); color: var(--muted); margin: var(--sp-4) 0 var(--sp-1); }
 .key-group:first-child h3 { margin-top: 0; }
@@ -1456,6 +1456,10 @@ h1.inline-title.static .doc-icon { font-size: 30px; width: auto; }
 .outline-fold-space { flex: 0 0 20px; }
 .outline-list li.folded > button:last-child { color: var(--muted); }
 @media (max-width: 800px) { .editor .cm-gutters { margin-left: -14px; } .pv-fold { left: -18px; } }
+/* 좁은 화면의 본문 왼쪽 여백은 16px 이다. 제목 접기 단추(20px)를 -18px 에 두면 왼쪽 2px 이 화면 밖이라, 단추를 여백 안(16px 폭)에 맞춘다. 화살표 가운데는 그대로(x 8) */
+@media (max-width: 800px) { .markdown-body :is(h1, h2, h3, h4, h5, h6) > .pv-fold { left: -16px; width: 16px; } }
+/* 터치: 누르는 영역을 오른쪽(제목 첫 글자 쪽)으로 8px 넓혀 화면 안에서 24px 이 되게 한다. 왼쪽은 화면 밖이라 넓힐 수 없다. 줄이 24px 보다 낮은 작은 제목(h5·h6)은 아래로 넓힌다 */
+@media (pointer: coarse) and (max-width: 800px) { .markdown-body :is(h1, h2, h3, h4, h5, h6) > .pv-fold::before { right: -8px; min-height: 24px; } }
 
 /* ── 사용성 3·4차: 툴팁·워크스페이스·노드·설정 범위 ── */
 .tooltip { position: fixed; z-index: 1000; pointer-events: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-width: min(320px, calc(100vw - 8px)); padding: 4px 8px; border-radius: var(--radius); background: var(--fg); color: var(--bg); font-size: var(--fs-sm); line-height: 1.4; box-shadow: var(--shadow); }
