@@ -285,7 +285,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 .login-field label { font-size: var(--fs-md); color: var(--muted); }
 .login input { font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .login button { padding: 8px; }
-.login button[type="submit"] { background: var(--accent); color: #fff; border-color: transparent; }
+.login button[type="submit"] { background: var(--accent); color: var(--bg); border-color: transparent; }
 .login button[type="submit"]:disabled { background: var(--bg-soft); color: var(--muted); border-color: var(--border); opacity: 1; }
 .login-error { color: #c0392b; font-size: 13px; margin: 0; }
 
