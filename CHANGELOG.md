@@ -12,6 +12,7 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 - The sign-in and first-install screens show a visible label above each field, and the main button is filled with the accent color.
 - Larger click and touch areas for tab close buttons, the tree's add buttons, table row and column handles, and the fold arrows in the preview. On touch screens, to-do checkboxes, settings tabs and command palette rows are bigger too, and the bottom bar's labels are larger. Table row handles could not be clicked where they overlapped the editor's fold column; they now can.
 - On narrow screens, the **Tabs** count has a dashed outline while no note is open, and the path above the note fades at its left edge while its start is scrolled out of view.
+- Toggle switches that are off are easier to see against the page in both themes. On narrow screens the preview's fold arrows for headings, tables and top-level lists now sit inside the screen edge. The red count badges use dark text in the dark theme.
 - Themes: two new color tokens, `--accent-text` and `--on-accent`. A theme that sets `--accent` but not these gets them from its `--accent`, so existing themes look the same as before, except that text on accent-colored buttons picks white or dark, whichever is easier to read.
 
 ## [0.13.1] - 2026-11-18
