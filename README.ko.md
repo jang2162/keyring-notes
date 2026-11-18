@@ -1,4 +1,4 @@
-<!-- source: README.md @ v0.13.1 -->
+<!-- source: README.md @ v0.13.2 -->
 <p align="center"><a href="README.md">English</a> | <b>한국어</b></p>
 
 <h1 align="center">Keyring Notes</h1>

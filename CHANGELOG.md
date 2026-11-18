@@ -4,6 +4,8 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-18
+
 ### Fixed
 
 - The fold arrow of long code blocks in the preview was cut off and could not be clicked. It now shows next to the block, like the arrows for headings and lists.
@@ -280,7 +282,8 @@ First tagged release.
 - Notes and folders form one tree of nodes, grouped into workspaces.
 - English and Korean interface.
 
-[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/jang2162/keyring-notes/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/jang2162/keyring-notes/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/jang2162/keyring-notes/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/jang2162/keyring-notes/compare/v0.11.0...v0.12.0
