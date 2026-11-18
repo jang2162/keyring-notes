@@ -45,14 +45,17 @@ export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; 
       <form onSubmit={submit}>
         <h1>Keyring Notes</h1>
         {passwordSet ? (
-          <input
-            type="password"
-            autoFocus
-            autoComplete="current-password"
-            placeholder={t("login.password")}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <div className="login-field">
+            <label htmlFor="login-password">{t("login.password")}</label>
+            <input
+              id="login-password"
+              type="password"
+              autoFocus
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
         ) : (
           <>
             <p className="meta">
