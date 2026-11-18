@@ -5,7 +5,8 @@
   --muted: #5f6672;
   --border: #e3e6ea;
   --accent: #3b6fd8;
-  /* 강조색 글자가 강조색 옅은 배경(--active·--info-bg) 위에 올라갈 때 쓴다. --accent 는 흰 바탕 기준이라 옅은 배경 위에서는 3.8~4.0:1 */
+  /* 강조색 글자가 강조색 옅은 배경(--active·--info-bg) 위에 올라갈 때 쓴다. --accent 는 흰 바탕 기준이라 옅은 배경 위에서 4.5:1 에 못 미친다(WCAG 2, 반투명은 sRGB 합성):
+     --active 를 --bg 에 겹친 #e7eefa 4.04, --bg-soft 에 겹친 #e0e7f5 3.79, --info-bg 4.27. --accent-text 는 각각 5.45·5.11·5.76 */
   --accent-text: #2f5bb7;
   /* --accent 바탕 위 글자·아이콘. 어두움의 --accent(#7aa2f7)는 밝아서 흰 글자가 2.52:1 — 어두움은 어두운 글자(6.99:1) */
   --on-accent: #ffffff;
@@ -687,6 +688,7 @@ button.on:not(.switch):disabled { background: var(--bg-soft); color: var(--muted
 
 /* 패스키 */
 .login .passkey-login { margin-top: 8px; background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.login .passkey-login:disabled { color: var(--muted); border-color: var(--border); }
 .passkeys { margin: 16px 0; }
 .passkey-table { border-collapse: collapse; margin: 6px 0; font-size: var(--fs-md); }
 .passkey-table td { padding: 4px 10px 4px 0; }
@@ -1035,6 +1037,8 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
 .menu-item.checked { background: var(--active); color: var(--accent); font-weight: 600; }
 .menu-item.checked .menu-icon { color: var(--accent); }
+/* 위험·체크 항목의 클래스 색(0,2,0)은 button:disabled(0,1,1)를 이긴다 — 비활성이면 글자·아이콘을 --muted 로 되돌린다(위 규칙들보다 뒤에 둔다) */
+.menu-item:disabled, .menu-item:disabled .menu-icon { color: var(--muted); }
 .menu-icon { justify-content: center; align-items: center; flex-shrink: 0; }
 .menu .menu-emoji { font-size: var(--fs-base); line-height: 1; }
 .menu .menu-letter { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 10px; font-weight: 600; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-soft); color: var(--fg); }
@@ -1116,7 +1120,8 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .setting-control { flex-shrink: 0; display: flex; gap: 6px; align-items: center; }
 .setting-control select, .setting-control input { font: inherit; font-size: var(--fs-md); padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--fg); }
 .setting-control input { width: 220px; }
-/* 꺼짐 트랙은 바탕(--bg·--bg-soft)과 흰 손잡이 모두 3:1 이상이어야 한다(비텍스트 대비). --border 는 라이트 1.25:1 이라 --muted 를 바탕에 섞은 색을 쓴다: 라이트 #878c95(3.38·3.15, 손잡이 3.38), 다크 #797e84(4.30·3.90, 손잡이 4.09). color-mix 가 없는 엔진은 앞 줄의 --muted */
+/* 꺼짐 트랙은 바탕(--bg·--bg-soft)과 흰 손잡이 모두 3:1 이상이어야 한다(비텍스트 대비). --border 는 라이트 1.25:1 이라 --muted 를 바탕에 섞은 색을 쓴다 —
+   수치는 docs/ops/ux.md 「UI 감사 — 대비·포커스·클릭 영역」. color-mix 가 없는 엔진은 앞 줄의 --muted */
 .switch { position: relative; width: 36px; height: 20px; padding: 0; border-radius: 999px; border: none; background: var(--muted); background: color-mix(in srgb, var(--muted) 75%, var(--bg)); transition: background 0.15s; }
 .switch:hover:not(:disabled) { border: none; }
 .switch.on { background: var(--accent); }
