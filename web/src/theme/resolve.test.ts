@@ -77,6 +77,43 @@ describe("resolveTheme", () => {
   });
 });
 
+describe("resolveTheme — --accent 에서 나오는 토큰(--accent-text·--on-accent)", () => {
+  const withAccent = (mode: "light" | "dark", colors: Record<string, string>): ThemePackage => ({ ...paper, colors: { [mode]: colors } });
+
+  it("--accent 만 준 밝은 테마: --accent-text 는 그 --accent, 어두운 강조색 위 글자는 흰색", () => {
+    const r = resolveTheme("@me/paper", [withAccent("light", { "--accent": "#1d6fb8" })], env(false));
+    expect(r.tokens).toEqual({ "--accent": "#1d6fb8", "--accent-text": "#1d6fb8", "--on-accent": "#ffffff" });
+  });
+
+  it("밝은 강조색이면 어두운 글자", () => {
+    const r = resolveTheme("@me/paper", [withAccent("dark", { "--accent": "#9ecbff" })], env(true));
+    expect(r.tokens["--on-accent"]).toBe("#17191c");
+  });
+
+  it("테마가 준 --accent-text·--on-accent 는 그대로", () => {
+    const own = { "--accent": "#9ecbff", "--accent-text": "#3355aa", "--on-accent": "#ffffff" };
+    expect(resolveTheme("@me/paper", [withAccent("dark", own)], env(true)).tokens).toEqual(own);
+  });
+
+  it("--accent 가 없으면 둘 다 채우지 않는다(기본값)", () => {
+    expect(resolveTheme("@me/paper", [withAccent("light", { "--fg": "#111111" })], env(false)).tokens).toEqual({ "--fg": "#111111" });
+  });
+
+  it("반투명 --accent 는 그 모드 바탕 위에 합성해 고른다", () => {
+    // 어두운 바탕 위 흰색 10% 는 어둡다 — 흰 바탕에 합성하면 거의 흰색이 되어 어두운 글자를 고르게 된다
+    const r = resolveTheme("@me/paper", [withAccent("dark", { "--accent": "rgb(255 255 255 / 0.1)" })], env(true));
+    expect(r.tokens["--on-accent"]).toBe("#ffffff");
+    // 테마의 --bg 위에: 흰 바탕 위 검정 10% 는 밝다
+    const light = resolveTheme("@me/paper", [withAccent("dark", { "--bg": "#ffffff", "--accent": "rgb(0 0 0 / 0.1)" })], env(true));
+    expect(light.tokens["--on-accent"]).toBe("#17191c");
+  });
+
+  it("꼴은 지났지만 읽지 못하는 --accent 면 --on-accent 는 채우지 않는다", () => {
+    const r = resolveTheme("@me/paper", [withAccent("light", { "--accent": "rgb(1deg 2 3)" })], env(false));
+    expect(r.tokens).toEqual({ "--accent": "rgb(1deg 2 3)", "--accent-text": "rgb(1deg 2 3)" });
+  });
+});
+
 describe("themeModes", () => {
   it("가진 모드", () => {
     expect(themeModes(sea)).toEqual(["light", "dark"]);

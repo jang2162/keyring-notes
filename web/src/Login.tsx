@@ -45,14 +45,17 @@ export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; 
       <form onSubmit={submit}>
         <h1>Keyring Notes</h1>
         {passwordSet ? (
-          <input
-            type="password"
-            autoFocus
-            autoComplete="current-password"
-            placeholder={t("login.password")}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <div className="login-field">
+            <label htmlFor="login-password">{t("login.password")}</label>
+            <input
+              id="login-password"
+              type="password"
+              autoFocus
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
         ) : (
           <>
             <p className="meta">
@@ -60,23 +63,25 @@ export function Login({ passwordSet, passkey, onDone }: { passwordSet: boolean; 
               <br />
               (Docker: <code>docker compose logs keyring</code>)
             </p>
-            <input autoFocus placeholder={t("login.code")} value={code} onChange={(e) => setCode(e.target.value)} />
-            <input
-              type="password"
-              autoComplete="new-password"
-              placeholder={t("login.newPassword")}
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <input
-              type="password"
-              autoComplete="new-password"
-              placeholder={t("login.again")}
-              minLength={8}
-              value={again}
-              onChange={(e) => setAgain(e.target.value)}
-            />
+            <div className="login-field">
+              <label htmlFor="setup-code">{t("login.code")}</label>
+              <input id="setup-code" autoFocus value={code} onChange={(e) => setCode(e.target.value)} />
+            </div>
+            <div className="login-field">
+              <label htmlFor="setup-password">{t("login.newPassword")}</label>
+              <input
+                id="setup-password"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <div className="login-field">
+              <label htmlFor="setup-again">{t("login.again")}</label>
+              <input id="setup-again" type="password" autoComplete="new-password" minLength={8} value={again} onChange={(e) => setAgain(e.target.value)} />
+            </div>
           </>
         )}
         <button type="submit" disabled={busy || !password || (!passwordSet && !code)}>

@@ -33,6 +33,21 @@ function targets(root: HTMLElement): Target[] {
   return out;
 }
 
+/**
+ * 코드 블록은 pre 가 overflow: auto(가로 스크롤)라 안에 단추를 달면 왼쪽 바깥 자리(x −24)가 잘려 보이지도 눌리지도 않는다.
+ * 그래서 pre 를 .pv-code 감싸개로 싸고 단추를 pre 의 형제로 둔다 — 접기 상태·단추·숨김은 감싸개가 갖는다.
+ * 감싸개는 여백·테두리가 없어 pre 의 위아래 여백이 그대로 감싸개 밖으로 합쳐진다(자리가 바뀌지 않는다).
+ */
+function codeHost(pre: HTMLElement): HTMLElement {
+  const host = pre.parentElement;
+  if (host?.classList.contains("pv-code")) return host;
+  const wrap = document.createElement("div");
+  wrap.className = "pv-code";
+  pre.replaceWith(wrap);
+  wrap.append(pre);
+  return wrap;
+}
+
 /** 접기 단추를 달고(이미 있으면 그대로) 기억한 대로 접는다 */
 export function applyPreviewFolds(root: HTMLElement, path: string, content: string) {
   const lines = content.split("\n");
@@ -43,6 +58,7 @@ export function applyPreviewFolds(root: HTMLElement, path: string, content: stri
   }
   const list = targets(root);
   for (const tg of list) {
+    if (tg.kind === "code") tg.el = codeHost(tg.el);
     let btn = tg.el.querySelector<HTMLButtonElement>(":scope > .pv-fold");
     if (!btn) {
       btn = document.createElement("button");

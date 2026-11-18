@@ -56,7 +56,8 @@ describe("DOM 쓰기", () => {
       setThemePackages([light]);
       applyThemeChoice("@me/sea");
       expect(attrs.get("data-theme")).toBe("light");
-      expect(Object.fromEntries(style)).toEqual({ "--bg": "#eef6ff", "--accent": "#1d6fb8" });
+      // --accent 에서 나오는 두 토큰은 resolveTheme 이 채운다(resolve.test.ts)
+      expect(Object.fromEntries(style)).toEqual({ "--bg": "#eef6ff", "--accent": "#1d6fb8", "--accent-text": "#1d6fb8", "--on-accent": "#ffffff" });
       expect(metas).toEqual({ light: { content: "#eef6ff" }, dark: { content: "#eef6ff" } });
       setThemePackages([{ ...sea, colors: { dark: { "--bg": "#0d1b2a" } } }]);
       expect(attrs.get("data-theme")).toBe("dark");

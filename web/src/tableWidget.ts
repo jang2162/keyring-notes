@@ -580,7 +580,8 @@ const theme = EditorView.baseTheme({
   ".cm-lp-table:hover .cm-lp-table-menu, .cm-lp-table-menu:focus-visible": { opacity: "1" },
   ".cm-lp-handle": {
     position: "absolute",
-    zIndex: "1",
+    // 행 손잡이는 표 왼쪽 바깥 = 접기 거터(.cm-gutters, sticky·z-index 200) 위라 그보다 위에 둔다 — 아래면 보이기만 하고 눌리지 않는다
+    zIndex: "201",
     padding: "0",
     border: "1px solid var(--border)",
     borderRadius: "4px",
@@ -597,10 +598,20 @@ const theme = EditorView.baseTheme({
   ".cm-lp-row-handle::before": { content: '"⋮"' },
   ".cm-lp-col-handle": { width: "20px", height: "12px", transform: "translate(-50%, -6px)" },
   ".cm-lp-col-handle::before": { content: '"⋯"' },
+  // 누르는 영역만 24×24 로(보이는 모양은 그대로) — ::before 는 글리프가 쓴다. 표 안(칸 글자) 쪽으로는 넓히지 않는다:
+  // 행 손잡이는 왼쪽 바깥으로, 열 손잡이는 위로. 손잡이가 보일 때(표에 마우스가 있을 때)만 둔다
+  ".cm-lp-table.cm-lp-handles-on:hover .cm-lp-handle::after, .cm-lp-handle:focus-visible::after": { content: '""', position: "absolute" },
+  // inset 은 테두리(1px) 안쪽 기준 — 10×18 → 24×24, 18×10 → 24×24
+  ".cm-lp-row-handle::after": { inset: "-3px 0 -3px -14px" },
+  ".cm-lp-col-handle::after": { inset: "-14px -3px 0 -3px" },
   ".cm-lp-table.cm-lp-handles-on:hover .cm-lp-handle, .cm-lp-handle:focus-visible": { opacity: "1" },
   ".cm-lp-drop-line": { position: "absolute", display: "none", background: "var(--accent)", pointerEvents: "none", zIndex: "2" },
   ".cm-lp-drop-line.on": { display: "block" },
-  "@media (pointer: coarse)": { ".cm-lp-table-menu": { opacity: "1" }, ".cm-lp-table.cm-lp-handles-on .cm-lp-handle": { opacity: "1" } },
+  "@media (pointer: coarse)": {
+    ".cm-lp-table-menu": { opacity: "1" },
+    ".cm-lp-table.cm-lp-handles-on .cm-lp-handle": { opacity: "1" },
+    ".cm-lp-table.cm-lp-handles-on .cm-lp-handle::after": { content: '""', position: "absolute" },
+  },
 });
 
 /** Live Preview 안에서만 켠다(livePreview 가 부른다) */
