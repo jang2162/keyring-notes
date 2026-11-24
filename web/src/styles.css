@@ -1029,6 +1029,8 @@ button.status-item:hover { background: var(--hover); color: var(--fg); border: n
 .menu { position: fixed; z-index: 90; min-width: 220px; max-width: 320px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--shadow); outline: none; }
 .menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: none; border-radius: var(--radius); background: transparent; text-align: left; font-size: var(--fs-md); color: var(--fg); }
 .menu-item:hover:not(:disabled), .menu-item.on { background: var(--hover); border: none; }
+/* 고른 줄의 .on 은 전역 button.on(눌린 토글, 글자 --on-accent)에도 걸린다 — 글자색은 항목 것을 그대로 둔다. 아래 .danger·.checked 가 이것을 이긴다 */
+.menu-item.on { color: var(--fg); }
 .menu-item.danger { color: var(--danger); }
 .menu-icon { width: 16px; display: inline-flex; color: var(--muted); }
 .menu-item.danger .menu-icon { color: var(--danger); }
