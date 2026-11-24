@@ -535,6 +535,7 @@
   "error.integer_required": "{field} must be a whole number, 0 or more",
   "error.internal": "Server error",
   "error.invalid": "{message}",
+  "error.issue_agent_only": "Only agent tokens can issue tokens. The owner manages agents in the admin console",
   "error.issue_level": "You cannot grant this level here (at most delete, and no more than your own level): {path}",
   "error.issue_limit": "You can issue at most {limit} tokens",
   "error.issue_scope": "Outside the paths you can issue tokens for: {path}",

@@ -1,5 +1,6 @@
 import { atLeast, foldPath, levelOf, type Level, type Policy, type Principal } from "./access.js";
 import { agentText, type AgentLang } from "./agentText.js";
+import type { ConfigStore } from "./config.js";
 import type { Author, CommitInfo } from "./git.js";
 import {
   linkingDocs,
@@ -169,6 +170,8 @@ export class ScopedVault {
     private wiki?: Wiki,
     private review?: ReviewQueue,
     private semanticIndex?: SemanticIndex,
+    /** 하위 토큰 발급(issueToken 류)에 쓴다. 없으면 그 메서드들은 소유자와 같이 거부한다 */
+    private tokens?: Pick<ConfigStore, "createChild" | "childrenOf" | "rotateChild" | "removeChild" | "lastUsed">,
   ) {}
 
   /** 에이전트에게 가는 글의 언어(서버 설정) */
@@ -1053,10 +1056,63 @@ export class ScopedVault {
     return { restored, lost, rev: res.rev };
   }
 
-  /** 에이전트가 자기 권한 표를 확인할 때. */
+  /** 에이전트가 자기 권한 표를 확인할 때. 하위 토큰이면 발급자 이름을 함께 준다 */
   whoami() {
-    return this.principal.kind === "owner"
-      ? { name: this.principal.name, kind: "owner", rules: { "/": "delete" as Level } }
-      : { name: this.principal.name, kind: "agent", rules: this.principal.policy.toJSON() };
+    if (this.principal.kind === "owner") return { name: this.principal.name, kind: "owner", rules: { "/": "delete" as Level } };
+    const me = { name: this.principal.name, kind: "agent", rules: this.principal.policy.toJSON() };
+    return this.principal.issuedBy === undefined ? me : { ...me, issuedBy: this.principal.issuedBy };
+  }
+
+  // ── 하위 토큰 발급: 에이전트만. 소유자는 관리 API 를 쓴다 ──
+
+  private issuer() {
+    if (this.principal.kind !== "agent" || !this.tokens) throw new ForbiddenError("issue_agent_only");
+    return { name: this.principal.name, tokens: this.tokens };
+  }
+
+  /**
+   * 하위 토큰 `<발급자>-<suffix>` 를 만든다. 토큰 원문과 MCP 설정 예시는 이때 한 번만 준다.
+   * baseUrl 은 /llms.txt 와 같은 KEYRING_PUBLIC_URL(끝 슬래시 없음)이고, 없으면 상대 경로(/mcp)가 된다
+   */
+  issueToken(suffix: string, rules: Record<string, Level>, baseUrl: string) {
+    const { name: issuer, tokens } = this.issuer();
+    const { name, token } = tokens.createChild(issuer, suffix, rules);
+    return issued(name, token, baseUrl);
+  }
+
+  /** 자기가 발급한 하위 토큰 목록(토큰 원문은 없다) */
+  issuedTokens(): { name: string; rules: Record<string, Level>; createdAt: string; lastUsed: string | null }[] {
+    const { name: issuer, tokens } = this.issuer();
+    return tokens
+      .childrenOf(issuer)
+      .map((a) => ({ name: a.name, rules: a.rules, createdAt: a.createdAt, lastUsed: tokens.lastUsed.get(a.name)?.toISOString() ?? null }));
+  }
+
+  /** 자기가 발급한 하위 토큰을 새로 발급한다(이전 토큰은 바로 무효). 남의 이름은 없는 에이전트와 같다 */
+  rotateIssued(name: string, baseUrl: string) {
+    const { name: issuer, tokens } = this.issuer();
+    const token = notFoundIfMissing(() => tokens.rotateChild(issuer, name));
+    return issued(name, token, baseUrl);
+  }
+
+  /** 자기가 발급한 하위 토큰을 지운다. 남의 이름은 없는 에이전트와 같다 */
+  revokeIssued(name: string): { ok: true } {
+    const { name: issuer, tokens } = this.issuer();
+    notFoundIfMissing(() => tokens.removeChild(issuer, name));
+    return { ok: true };
+  }
+}
+
+function issued(name: string, token: string, baseUrl: string) {
+  return { name, token, mcp: { url: `${baseUrl}/mcp`, headers: { Authorization: `Bearer ${token}` } } };
+}
+
+/** ConfigStore 는 없는 이름을 PathError(400)로 낸다. 에이전트에게는 다른 없는 문서처럼 404 로 준다 */
+function notFoundIfMissing<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof PathError && e.code === "agent_missing") throw new NotFoundError("agent_missing", e.params);
+    throw e;
   }
 }

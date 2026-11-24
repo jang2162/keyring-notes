@@ -1,7 +1,11 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createApp } from "../src/app.js";
+import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
-import { tempDir } from "./helpers.js";
+import { openVault, tempDir } from "./helpers.js";
 
 let config: ConfigStore;
 let cleanup: () => Promise<void>;
@@ -195,5 +199,145 @@ describe("하위 토큰 발급", () => {
     const { token } = config.createChild("boss", "w1", { "업무/a": "read" });
     config.issueToken("boss");
     expect(config.agentByToken(token)).not.toBeNull();
+  });
+});
+
+describe("에이전트 표면: REST·MCP", () => {
+  const json = { "content-type": "application/json" };
+  let app: ReturnType<typeof createApp>;
+  let bossToken = "";
+  let cookie = "";
+  const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+
+  beforeEach(async () => {
+    const t = await tempDir("keyring-issue-app-");
+    const prev = cleanup;
+    cleanup = async () => {
+      await prev();
+      await t.cleanup();
+    };
+    const { vault, index, wiki, ingestor } = await openVault(path.join(t.dir, "vault"));
+    await vault.batch(
+      [
+        { op: "write", path: "업무/a/n.md", content: "# n\n", baseHash: null },
+        { op: "write", path: "업무/b.md", content: "# b\n", baseHash: null },
+      ],
+      { name: "me", email: "me@test" },
+      { message: "seed" },
+    );
+    config.setPassword("correct horse");
+    bossToken = config.issueToken("boss");
+    app = createApp({
+      vault,
+      index,
+      config,
+      wiki,
+      ingestor,
+      admin: { publicUrl: "https://notes.example.com", backups: new BackupService(vault, config, path.join(t.dir, "backups"), () => wiki.resync()) },
+    });
+    const login = await app.request("/api/auth/login", { method: "POST", headers: json, body: JSON.stringify({ password: "correct horse" }) });
+    cookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
+  });
+
+  async function connect(token: string) {
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://localhost/mcp"), {
+        requestInit: { headers: bearer(token) },
+        fetch: async (url, init) => app.request(String(url), init as RequestInit),
+      }),
+    );
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+      return { error: res.isError === true, data: JSON.parse(res.content[0].text) };
+    };
+    return { client, call };
+  }
+
+  it("REST: 발급한 토큰은 범위 안에서만 동작하고, 목록·재발급·삭제는 자기 것만", async () => {
+    const res = await app.request("/api/tokens", {
+      method: "POST",
+      headers: { ...json, ...bearer(bossToken) },
+      body: JSON.stringify({ name: "w1", rules: { "업무/a": "read" } }),
+    });
+    expect(res.status).toBe(200);
+    const issued = await res.json();
+    expect(issued).toMatchObject({
+      name: "boss-w1",
+      mcp: { url: "https://notes.example.com/mcp", headers: { Authorization: `Bearer ${issued.token}` } },
+    });
+    const file = (p: string) => app.request(`/api/file?path=${encodeURIComponent(p)}`, { headers: bearer(issued.token) });
+    expect((await file("업무/a/n.md")).status).toBe(200);
+    expect((await file("업무/b.md")).status).toBe(404);
+    expect(await (await app.request("/api/whoami", { headers: bearer(issued.token) })).json()).toMatchObject({ name: "boss-w1", issuedBy: "boss" });
+    expect(await (await app.request("/api/whoami", { headers: bearer(bossToken) })).json()).not.toHaveProperty("issuedBy");
+
+    const list = await (await app.request("/api/tokens", { headers: bearer(bossToken) })).json();
+    expect(list).toEqual({ tokens: [{ name: "boss-w1", rules: { "업무/a": "read" }, createdAt: expect.any(String), lastUsed: expect.any(String) }] });
+
+    const rotated = await (await app.request("/api/tokens/boss-w1/rotate", { method: "POST", headers: { ...json, ...bearer(bossToken) } })).json();
+    expect(rotated).toMatchObject({ name: "boss-w1", mcp: { headers: { Authorization: `Bearer ${rotated.token}` } } });
+    expect((await file("업무/a/n.md")).status).toBe(401);
+
+    // 남의 이름은 없는 것과 같다
+    config.issueToken("claude");
+    expect((await app.request("/api/tokens/claude", { method: "DELETE", headers: { ...json, ...bearer(bossToken) } })).status).toBe(404);
+    expect((await app.request("/api/tokens/claude/rotate", { method: "POST", headers: { ...json, ...bearer(bossToken) } })).status).toBe(404);
+    expect(config.get().agents.map((a) => a.name)).toContain("claude");
+
+    const del = await app.request("/api/tokens/boss-w1", { method: "DELETE", headers: { ...json, ...bearer(bossToken) } });
+    expect(await del.json()).toEqual({ ok: true });
+    expect(config.childrenOf("boss")).toEqual([]);
+  });
+
+  it("REST: 범위 밖은 400 issue_scope, 잘못된 본문은 400", async () => {
+    const post = (body: unknown) => app.request("/api/tokens", { method: "POST", headers: { ...json, ...bearer(bossToken) }, body: JSON.stringify(body) });
+    const scope = await post({ name: "w1", rules: { 개인: "read" } });
+    expect(scope.status).toBe(400);
+    expect(await scope.json()).toMatchObject({ code: "issue_scope" });
+    expect(await (await post({ rules: {} })).json()).toMatchObject({ code: "field_required", params: { field: "name" } });
+    expect(await (await post({ name: "w1", rules: null })).json()).toMatchObject({ code: "rules_invalid" });
+    expect(await (await post({ name: "w1", rules: { "업무/a": "boss" } })).json()).toMatchObject({ code: "level_invalid" });
+    expect(config.childrenOf("boss")).toEqual([]);
+  });
+
+  it("REST: 소유자(세션)는 403 issue_agent_only", async () => {
+    const owner = { ...json, cookie };
+    for (const [method, url] of [
+      ["GET", "/api/tokens"],
+      ["POST", "/api/tokens"],
+      ["POST", "/api/tokens/boss-w1/rotate"],
+      ["DELETE", "/api/tokens/boss-w1"],
+    ]) {
+      const res = await app.request(url, { method, headers: owner, body: method === "GET" ? undefined : JSON.stringify({ name: "w1", rules: {} }) });
+      expect(res.status, `${method} ${url}`).toBe(403);
+      expect(await res.json()).toMatchObject({ code: "issue_agent_only" });
+    }
+    expect(config.childrenOf("boss")).toEqual([]);
+  });
+
+  it("MCP: issue_token·list_issued_tokens·rotate·revoke, whoami 에 issuedBy", async () => {
+    const { client, call } = await connect(bossToken);
+    const tools = (await client.listTools()).tools.map((t) => t.name);
+    expect(tools).toEqual(expect.arrayContaining(["issue_token", "list_issued_tokens", "rotate_issued_token", "revoke_issued_token"]));
+    const issued = await call("issue_token", { name: "w1", rules: { "업무/a": "read" } });
+    expect(issued).toMatchObject({ error: false, data: { name: "boss-w1", mcp: { url: "https://notes.example.com/mcp" } } });
+    expect((await call("list_issued_tokens")).data).toEqual([{ name: "boss-w1", rules: { "업무/a": "read" }, createdAt: expect.any(String), lastUsed: null }]);
+    expect(await call("issue_token", { name: "w2", rules: { 개인: "read" } })).toMatchObject({
+      error: true,
+      data: { error: "bad_request", code: "issue_scope" },
+    });
+
+    const child = await connect(issued.data.token);
+    expect((await child.call("whoami")).data).toMatchObject({ name: "boss-w1", kind: "agent", issuedBy: "boss", rules: { "업무/a": "read" } });
+    expect(await child.call("issue_token", { name: "x", rules: {} })).toMatchObject({ error: true, data: { code: "issue_scope" } });
+    await child.client.close();
+
+    const rotated = await call("rotate_issued_token", { name: "boss-w1" });
+    expect(rotated.data.token).not.toBe(issued.data.token);
+    expect(await call("revoke_issued_token", { name: "nobody" })).toMatchObject({ error: true, data: { error: "not_found", code: "agent_missing" } });
+    expect(await call("revoke_issued_token", { name: "boss-w1" })).toMatchObject({ error: false, data: { ok: true } });
+    expect((await call("list_issued_tokens")).data).toEqual([]);
+    await client.close();
   });
 });

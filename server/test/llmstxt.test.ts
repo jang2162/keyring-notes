@@ -50,6 +50,7 @@ describe("GET /llms.txt", () => {
     expect(body).toContain("409");
     expect(body).toContain("/api/market/");
     expect(body).toContain("owner only");
+    for (const t of ["issue_token", "list_issued_tokens", "rotate_issued_token", "revoke_issued_token", "/api/tokens"]) expect(body).toContain(t);
   });
 
   it("볼트 내용·토큰·비밀번호 같은 이 서버의 상태를 담지 않는다", async () => {

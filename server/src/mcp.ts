@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import { LEVELS } from "./access.js";
 import type { Ingestor } from "./ingest.js";
 import type { ScopedVault } from "./scoped.js";
 import { errorMessage, translate } from "@keyring-notes/core";
@@ -54,8 +55,11 @@ async function runIn(fn: () => Promise<unknown>, lang: AgentLang): Promise<ToolR
   }
 }
 
-/** 에이전트 언어(서버 설정, 기본 영어)로 안내·도구 설명을 쓴다 */
-export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: AgentLang = "en"): McpServer {
+/**
+ * 에이전트 언어(서버 설정, 기본 영어)로 안내·도구 설명을 쓴다.
+ * baseUrl: KEYRING_PUBLIC_URL(끝 슬래시 없음) — 발급한 토큰의 MCP 설정 예시 주소. 없으면 상대 경로
+ */
+export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: AgentLang = "en", baseUrl = ""): McpServer {
   const T = agentText(lang);
   const run = (fn: () => Promise<unknown>) => runIn(fn, lang);
   const server = new McpServer({ name: "keyring-notes", version: APP_VERSION }, { instructions: T.instructions });
@@ -295,6 +299,43 @@ export function createMcpServer(scoped: ScopedVault, ingestor: Ingestor, lang: A
     ({ message, operations, update_links }) => run(() => scoped.batch(operations.map(toOp), message, { updateLinks: update_links })),
   );
 
+  // ── 하위 토큰 발급(issue 권한을 가진 에이전트) ──
+  server.registerTool(
+    "issue_token",
+    {
+      description: T.tools.issue_token,
+      inputSchema: {
+        name: z.string().describe(T.params.issueName),
+        // 하위 토큰은 issue 를 가질 수 없지만 스키마는 전체 단계를 받는다 — issue 는 서버가 issue_level 로 거부해 이유를 알려 준다
+        rules: z.record(z.string(), z.enum(LEVELS)).describe(T.params.issueRules),
+      },
+      annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    ({ name, rules }) => run(async () => scoped.issueToken(name, rules, baseUrl)),
+  );
+
+  server.registerTool("list_issued_tokens", { description: T.tools.list_issued_tokens, annotations: ro }, () => run(async () => scoped.issuedTokens()));
+
+  server.registerTool(
+    "rotate_issued_token",
+    {
+      description: T.tools.rotate_issued_token,
+      inputSchema: { name: z.string().describe(T.params.issuedName) },
+      annotations: { destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    },
+    ({ name }) => run(async () => scoped.rotateIssued(name, baseUrl)),
+  );
+
+  server.registerTool(
+    "revoke_issued_token",
+    {
+      description: T.tools.revoke_issued_token,
+      inputSchema: { name: z.string().describe(T.params.issuedName) },
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    ({ name }) => run(async () => scoped.revokeIssued(name)),
+  );
+
   return server;
 }
 
@@ -304,9 +345,9 @@ function stripContent<T extends object>(doc: T): Omit<T, "content"> {
 }
 
 /** 요청마다 서버를 새로 만드는 무상태 Streamable HTTP 처리. */
-export async function handleMcpRequest(req: Request, scoped: ScopedVault, ingestor: Ingestor, lang: AgentLang = "en"): Promise<Response> {
+export async function handleMcpRequest(req: Request, scoped: ScopedVault, ingestor: Ingestor, lang: AgentLang = "en", baseUrl = ""): Promise<Response> {
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-  const server = createMcpServer(scoped, ingestor, lang);
+  const server = createMcpServer(scoped, ingestor, lang, baseUrl);
   await server.connect(transport);
   try {
     return await transport.handleRequest(req);
