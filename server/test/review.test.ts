@@ -35,6 +35,9 @@ beforeEach(async () => {
   config.update((c) => {
     c.reviewPaths = ["업무/경제/wiki", "업무/경제/raw/"];
   });
+  // 승인은 설정에 있는 에이전트의 지금 정책으로 다시 판정한다 — 테스트 에이전트도 설정에 둔다
+  config.issueToken("wiki-work");
+  config.setRules("wiki-work", { ...RULES });
   review = new ReviewQueue(vault, config);
   owner = new ScopedVault(vault, ownerPrincipal, index, wiki, review);
   agent = new ScopedVault(vault, agentPrincipal("wiki-work", { ...RULES }), index, wiki, review);
@@ -155,6 +158,54 @@ describe("변경 검토 대기열", () => {
     await expect(readFile(path.join(vault.root, r.asset!))).rejects.toThrow();
     await review.approve(p.id, "me");
     expect(await readFile(path.join(vault.root, r.asset!))).toEqual(Buffer.from([9, 8, 7]));
+  });
+
+  it("승인 전 권한을 줄이면 승인이 거부되고 제안은 pending", async () => {
+    const cur = await owner.read("업무/경제/wiki/금리.md");
+    const res = await agent.write("업무/경제/wiki/금리.md", "# 금리\n고침\n", cur.hash);
+    const id = res.pending!.proposal;
+    config.setRule("wiki-work", "업무/경제/wiki", "read");
+    await expect(review.approve(id, "me")).rejects.toMatchObject({ code: "forbidden_level", params: { path: "업무/경제/wiki/금리.md" } });
+    expect((await review.get(id)).status).toBe("pending");
+    expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe(cur.content);
+    // 쓰기는 남고 고치기만 못 하게 줄이면 연산별 판정(guard)에서 막힌다
+    config.setRule("wiki-work", "업무/경제/wiki", "append");
+    await expect(review.approve(id, "me")).rejects.toMatchObject({ code: "forbidden_append_only" });
+    expect((await review.get(id)).status).toBe("pending");
+    // 사람이 다시 넓히면 승인된다
+    config.setRule("wiki-work", "업무/경제/wiki", "write");
+    expect((await review.approve(id, "me")).status).toBe("approved");
+  });
+
+  it("발급자를 지우면 하위 토큰의 제안 승인은 proposal_agent_missing", async () => {
+    config.setRules("wiki-work", { ...RULES, "업무/경제/wiki": "issue" });
+    const { token } = config.createChild("wiki-work", "w1", { "업무/경제/wiki": "write" });
+    const child = new ScopedVault(vault, config.agentByToken(token)!, index, wiki, review);
+    const cur = await owner.read("업무/경제/wiki/금리.md");
+    const res = await child.write("업무/경제/wiki/금리.md", "# 금리\n하위\n", cur.hash);
+    const id = res.pending!.proposal;
+    config.removeAgent("wiki-work");
+    await expect(review.approve(id, "me")).rejects.toMatchObject({ code: "proposal_agent_missing", params: { name: "wiki-work-w1" } });
+    expect((await review.get(id)).status).toBe("pending");
+    expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe(cur.content);
+  });
+
+  it("하위 토큰의 제안은 발급자의 지금 규칙에 깎인 권한으로 판정한다", async () => {
+    config.setRules("wiki-work", { ...RULES, "업무/경제/wiki": "issue" });
+    const { token } = config.createChild("wiki-work", "w1", { "업무/경제/wiki": "write" });
+    const child = new ScopedVault(vault, config.agentByToken(token)!, index, wiki, review);
+    const cur = await owner.read("업무/경제/wiki/금리.md");
+    const res = await child.write("업무/경제/wiki/금리.md", "# 금리\n하위\n", cur.hash);
+    config.setRule("wiki-work", "업무/경제/wiki", "read");
+    await expect(review.approve(res.pending!.proposal, "me")).rejects.toMatchObject({ code: "forbidden_level" });
+    expect((await review.get(res.pending!.proposal)).status).toBe("pending");
+  });
+
+  it("권한이 그대로면 지금처럼 승인된다", async () => {
+    const cur = await owner.read("업무/경제/wiki/금리.md");
+    const res = await agent.write("업무/경제/wiki/금리.md", "# 금리\n그대로\n", cur.hash);
+    expect((await review.approve(res.pending!.proposal, "me")).status).toBe("approved");
+    expect(withoutEdited((await owner.read("업무/경제/wiki/금리.md")).content)).toBe("# 금리\n그대로\n");
   });
 
   it("REST: 소유자만 목록·승인·거절·설정, 에이전트는 403", async () => {

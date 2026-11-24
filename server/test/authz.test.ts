@@ -595,7 +595,7 @@ describe("제한하는 규칙은 대소문자가 달라도 적용되고, 대소�
     expect((await owner.read("Work/wiki/old.md")).hash).toBe(made.hash);
   });
 
-  it("제안 뒤에 숨김 규칙이 생기면, 승인으로 만들어진 다른 철자의 문서도 그 에이전트에게 보이지 않는다", async () => {
+  it("제안 뒤에 숨김 규칙이 생기면, 다른 철자의 경로라도 승인이 거부되고 그 에이전트에게 보이지 않는다", async () => {
     const config = new ConfigStore(path.join(root, "config.json"));
     config.issueToken("probe");
     config.setRules("probe", { "/": "write" });
@@ -605,8 +605,9 @@ describe("제한하는 규칙은 대소문자가 달라도 적용되고, 대소�
     const review = new ReviewQueue(vault, config);
     const alias = await agentOf({ "/": "write" }, review).write("secret/a.md", "제안\n", null);
     config.setRules("probe", { "/": "write", Secret: "hidden" });
-    // 승인은 사람이 본 제안을 그대로 적용한다(권한은 제안할 때 검사했다)
-    expect((await review.approve(alias.pending!.proposal, "me")).rev).toMatch(/^[0-9a-f]{40}$/);
+    // 승인은 지금 규칙으로 다시 판정한다 — 숨김 규칙은 철자가 달라도 적용된다
+    await expect(review.approve(alias.pending!.proposal, "me")).rejects.toMatchObject({ code: "forbidden_level", params: { path: "secret/a.md" } });
+    expect((await review.get(alias.pending!.proposal)).status).toBe("pending");
     const now = agentOf({ "/": "write", Secret: "hidden" }, review);
     await expect(now.read("secret/a.md")).rejects.toBeInstanceOf(NotFoundError);
     expect(await now.documents()).toEqual([]);

@@ -2,11 +2,12 @@ import { randomBytes } from "node:crypto";
 import { editedStamp } from "@keyring-notes/core";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AccessPolicy, atLeast, covers, foldPath } from "./access.js";
+import { atLeast, covers, foldPath } from "./access.js";
 import type { ConfigStore } from "./config.js";
 import { serverText } from "./lang.js";
 import { normalizeVaultPath, PathError } from "./paths.js";
-import { cleanMessage, hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
+import { agentLevel, checkOpLevels, opGuard } from "./scoped.js";
+import { cleanMessage, ForbiddenError, hashContent, NotFoundError, type FilePreview, type Op, type Vault } from "./vault.js";
 
 /**
  * 변경 검토 대기열(W5). 검토 대상 경로에 에이전트가 쓰면 바로 커밋하지 않고 제안으로 쌓아 두었다가,
@@ -199,10 +200,17 @@ export class ReviewQueue {
     return T.proposal(files);
   }
 
-  /** 승인: 저장해 둔 연산을 그대로(같은 baseHash로) 적용한다. 그 사이 문서가 바뀌었으면 충돌로 거부된다. */
+  /**
+   * 승인: 저장해 둔 연산을 그대로(같은 baseHash로) 적용한다. 그 사이 문서가 바뀌었으면 충돌로 거부된다.
+   * 권한은 승인 시점의 설정으로 다시 판정한다(하위 토큰이면 발급자의 지금 규칙에 깎인 정책) — 제안 뒤에 줄었으면 거부되고
+   * 제안은 pending 으로 남아 소유자가 거절할 수 있다
+   */
   async approve(id: string, approver: string): Promise<Proposal> {
     const p = await this.get(id);
     if (p.status !== "pending") throw new PathError("proposal_done", { status: p.status });
+    const policy = this.config.policyOf(p.agent);
+    if (!policy) throw new ForbiddenError("proposal_agent_missing", { name: p.agent });
+    const level = (rel: string) => agentLevel(policy, rel);
     const ops: Op[] = [];
     for (const op of p.ops) {
       if (op.op === "put")
@@ -214,17 +222,16 @@ export class ReviewQueue {
         });
       else ops.push(op);
     }
+    checkOpLevels(ops, level);
     // 링크 갱신은 승인 시점의 내용으로 다시 계산하되, 제안 때와 같은 범위(그 에이전트가 볼 수 있는 경로, 미리보기에 보인 문서)로만
-    const agentRules = this.config.get().agents.find((a) => a.name === p.agent)?.rules;
-    const policy = agentRules ? new AccessPolicy(agentRules) : null;
     const links = p.links?.enabled
-      ? { enabled: true, fullPaths: true, only: new Set(p.links.paths), canSee: (rel: string) => (policy ? atLeast(policy.level(rel), "read") : false) }
+      ? { enabled: true, fullPaths: true, only: new Set(p.links.paths), canSee: (rel: string) => atLeast(level(rel), "read") }
       : { enabled: false };
     const res = await this.vault.batch(
       ops,
       { name: p.agent, email: p.agentEmail },
       // 승인해 적용하는 것도 에이전트의 쓰기다 — 승인한 때의 시각을 적는다
-      { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, links, edited: editedStamp(new Date()) },
+      { message: `${p.message}\n\n${this.vault.text().commit.approved(approver, p.id)}`, guard: opGuard(level), links, edited: editedStamp(new Date()) },
     );
     p.status = "approved";
     p.decidedAt = new Date().toISOString();

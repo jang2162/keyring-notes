@@ -604,6 +604,7 @@
   "error.path_outside": "The path is outside the vault",
   "error.plugin_missing": "No such plugin",
   "error.private_address": "Private or internal addresses cannot be fetched: {host}",
+  "error.proposal_agent_missing": "The agent that made the proposal no longer exists: {name}",
   "error.proposal_done": "The proposal was already handled ({status})",
   "error.proposal_id_invalid": "Invalid proposal ID",
   "error.proposal_missing": "No such proposal: {id}",

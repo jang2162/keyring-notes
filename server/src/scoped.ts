@@ -1,4 +1,4 @@
-import { atLeast, foldPath, levelOf, type Level, type Principal } from "./access.js";
+import { atLeast, foldPath, levelOf, type Level, type Policy, type Principal } from "./access.js";
 import { agentText, type AgentLang } from "./agentText.js";
 import type { Author, CommitInfo } from "./git.js";
 import {
@@ -102,6 +102,49 @@ function isHumanOnlyAlias(rel: string): boolean {
   return folded === SETTINGS_FOLDED || /^[^/]+\/[^/]+\/schema\.md$/.test(folded);
 }
 
+/**
+ * 에이전트가 경로에 갖는 단계. 위키 SCHEMA.md와 모든 기기 공통 설정 파일(서버의 링크 해석·데일리 판정을 바꾼다)은 사람만 고친다 —
+ * 에이전트 규칙이 무엇이든 읽기까지만. ScopedVault 와 검토 승인(ReviewQueue.approve)이 같은 판정을 쓴다
+ */
+export function agentLevel(policy: Policy, relPath: string): Level {
+  const level = policy.level(relPath);
+  if (!atLeast(level, "append")) return level;
+  if (isSchemaPath(relPath) || isVaultSettingsPath(relPath) || isHumanOnlyAlias(relPath)) return "read";
+  return level;
+}
+
+/** 연산마다 경로의 최소 권한을 먼저 확인한다. 연산 종류별 정확한 권한은 계획 단계의 guard(opGuard)가 본다 */
+export function checkOpLevels(ops: Op[], level: (rel: string) => Level): void {
+  const require = (rel: string, need: Level) => {
+    // 숨김 경로는 존재 여부와 상관없이 같은 메시지를 낸다.
+    if (!atLeast(level(rel), need)) throw new ForbiddenError("forbidden_level", { level: level(rel), path: rel });
+  };
+  for (const op of ops) {
+    if (!op || typeof op !== "object") throw new PathError("op_invalid");
+    if (op.op === "move") {
+      require(normalizeVaultPath(op.from), "delete");
+      require(normalizeVaultPath(op.to), "append");
+    } else if (op.op === "put") {
+      require(normalizeVaultPath(op.path), "append");
+    } else if (op.op === "write" || op.op === "append" || op.op === "delete") {
+      require(normalizeVaultPath(op.path), op.op === "delete" ? "delete" : "append");
+    } else {
+      throw new PathError("op_unknown", { op: String((op as { op: unknown }).op) });
+    }
+  }
+}
+
+/** Vault.batch 의 guard: 계획 단계의 동작(만들기·고치기·지우기)마다 필요한 단계를 본다 */
+export function opGuard(level: (rel: string) => Level): (action: Action, rel: string) => void {
+  return (action, rel) => {
+    const need = ACTION_LEVEL[action];
+    if (!atLeast(level(rel), need)) {
+      const appendOnly = action === "modify" && level(rel) === "append";
+      throw new ForbiddenError(appendOnly ? "forbidden_append_only" : "forbidden_need", { level: need, path: rel });
+    }
+  };
+}
+
 export interface Outline {
   path: string;
   hash: string;
@@ -136,12 +179,7 @@ export class ScopedVault {
   }
 
   level(relPath: string): Level {
-    const level = levelOf(this.principal, relPath);
-    // 위키 SCHEMA.md와 모든 기기 공통 설정 파일(서버의 링크 해석·데일리 판정을 바꾼다)은 사람만 고친다.
-    // 에이전트 규칙이 무엇이든 읽기까지만.
-    if (this.principal.kind !== "agent" || !atLeast(level, "append")) return level;
-    if (isSchemaPath(relPath) || isVaultSettingsPath(relPath) || isHumanOnlyAlias(relPath)) return "read";
-    return level;
+    return this.principal.kind === "agent" ? agentLevel(this.principal.policy, relPath) : levelOf(this.principal, relPath);
   }
 
   /**
@@ -161,13 +199,6 @@ export class ScopedVault {
     const rel = normalizeVaultPath(input);
     if (!this.canRead(rel)) throw new NotFoundError("doc_missing", { path: rel });
     return rel;
-  }
-
-  private requireLevel(rel: string, level: Level) {
-    if (!atLeast(this.level(rel), level)) {
-      // 숨김 경로는 존재 여부와 상관없이 같은 메시지를 낸다.
-      throw new ForbiddenError("forbidden_level", { level: this.level(rel), path: rel });
-    }
   }
 
   private filterTree(nodes: TreeNode[]): TreeNode[] {
@@ -616,26 +647,9 @@ export class ScopedVault {
 
   async batch(ops: Op[], message?: string, opts: { updateLinks?: boolean; coalesce?: boolean } = {}): Promise<BatchResult & { pending?: PendingInfo }> {
     if (!Array.isArray(ops)) throw new PathError("field_required", { field: "operations" });
-    for (const op of ops) {
-      if (!op || typeof op !== "object") throw new PathError("op_invalid");
-      if (op.op === "move") {
-        this.requireLevel(normalizeVaultPath(op.from), "delete");
-        this.requireLevel(normalizeVaultPath(op.to), "append");
-      } else if (op.op === "put") {
-        this.requireLevel(normalizeVaultPath(op.path), "append");
-      } else if (op.op === "write" || op.op === "append" || op.op === "delete") {
-        this.requireLevel(normalizeVaultPath(op.path), op.op === "delete" ? "delete" : "append");
-      } else {
-        throw new PathError("op_unknown", { op: String((op as { op: unknown }).op) });
-      }
-    }
-    const guard = (action: Action, rel: string) => {
-      const need = ACTION_LEVEL[action];
-      if (!atLeast(this.level(rel), need)) {
-        const appendOnly = action === "modify" && this.level(rel) === "append";
-        throw new ForbiddenError(appendOnly ? "forbidden_append_only" : "forbidden_need", { level: need, path: rel });
-      }
-    };
+    const level = (rel: string) => this.level(rel);
+    checkOpLevels(ops, level);
+    const guard = opGuard(level);
     const links = this.linkOptions(opts.updateLinks !== false);
     // 수정 시각: 동기화 기기(기기 토큰)의 쓰기는 기기의 로컬 볼트가 이미 적었으므로 다시 적지 않는다 — 다시 덮으면
     // 기기와 서버의 해시가 계속 어긋나 동기화마다 같은 노트를 다시 올린다. 그 밖의 쓰기(웹·에이전트·MCP·REST)는 늘 적는다

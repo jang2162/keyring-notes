@@ -593,6 +593,7 @@
   "error.path_outside": "볼트 밖 경로입니다",
   "error.plugin_missing": "플러그인이 없습니다",
   "error.private_address": "사설·내부 주소는 가져올 수 없습니다: {host}",
+  "error.proposal_agent_missing": "제안을 낸 에이전트가 없습니다: {name}",
   "error.proposal_done": "이미 처리된 제안입니다({status})",
   "error.proposal_id_invalid": "제안 ID가 잘못되었습니다",
   "error.proposal_missing": "제안이 없습니다: {id}",
