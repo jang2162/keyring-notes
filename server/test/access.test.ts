@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { withoutEdited } from "@keyring-notes/core";
-import { AccessPolicy } from "../src/access.js";
+import { AccessPolicy, atLeast, boundedPolicy, isLevel, issueViolations } from "../src/access.js";
 import { ScopedVault } from "../src/scoped.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import type { Vault } from "../src/vault.js";
@@ -177,5 +177,37 @@ describe("소유자", () => {
   it("모든 경로에 접근한다", async () => {
     expect((await owner.documents()).length).toBe(7); // 시드 5 + 위키 index·log
     await owner.write("개인·재무/가계부.md", "바꿈", h["개인·재무/가계부.md"]);
+  });
+});
+
+describe("issue 단계와 겹친 정책", () => {
+  it("issue 는 delete 위 단계", () => {
+    expect(atLeast("issue", "delete")).toBe(true);
+    expect(isLevel("issue")).toBe(true);
+  });
+  it("boundedPolicy: 발급자 단계와 delete 로 깎인다", () => {
+    const p = boundedPolicy(new AccessPolicy({ 업무: "delete" }), new AccessPolicy({ 업무: "issue", "업무/비밀": "hidden", "업무/x": "read" }));
+    expect(p.level("업무/a.md")).toBe("delete");
+    expect(p.level("업무/비밀/a.md")).toBe("hidden");
+    expect(p.level("업무/x/a.md")).toBe("read");
+    expect(p.level("기타/a.md")).toBe("hidden");
+  });
+  it("boundedPolicy: mayContainVisible 은 둘 다 참일 때, toJSON 은 자기 규칙", () => {
+    const own = new AccessPolicy({ 업무: "read" });
+    const p = boundedPolicy(own, new AccessPolicy({ 업무: "issue" }));
+    expect(p.mayContainVisible("업무")).toBe(true);
+    expect(boundedPolicy(own, new AccessPolicy({ 기타: "issue" })).mayContainVisible("업무")).toBe(false);
+    expect(p.toJSON()).toEqual(own.toJSON());
+  });
+  it("issueViolations: 범위 밖·단계 초과·좁히기 허용", () => {
+    const issuer = new AccessPolicy({ 업무: "issue", "업무/x": "write" });
+    expect(issueViolations(issuer, { "업무/x": "read", "업무/y": "delete" })).toEqual([]);
+    expect(issueViolations(issuer, { "업무/x": "delete" })).toEqual([{ path: "업무/x", reason: "level" }]);
+    expect(issueViolations(issuer, { "/": "read" })).toEqual([{ path: "/", reason: "scope" }]);
+    expect(issueViolations(issuer, { 업무: "issue" })).toEqual([{ path: "업무", reason: "level" }]);
+  });
+  it("issueCovers 는 대소문자를 넓히지 않고 NFD 는 같은 것으로 본다", () => {
+    expect(issueViolations(new AccessPolicy({ Work: "issue" }), { "work/x": "read" })).toEqual([{ path: "work/x", reason: "scope" }]);
+    expect(issueViolations(new AccessPolicy({ 업무: "issue" }), { ["업무".normalize("NFD") + "/a"]: "read" })).toEqual([]);
   });
 });

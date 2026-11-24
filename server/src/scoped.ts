@@ -1,5 +1,6 @@
-import { atLeast, foldPath, levelOf, type Level, type Principal } from "./access.js";
+import { atLeast, foldPath, levelOf, type Level, type Policy, type Principal } from "./access.js";
 import { agentText, type AgentLang } from "./agentText.js";
+import type { ConfigStore } from "./config.js";
 import type { Author, CommitInfo } from "./git.js";
 import {
   linkingDocs,
@@ -102,6 +103,49 @@ function isHumanOnlyAlias(rel: string): boolean {
   return folded === SETTINGS_FOLDED || /^[^/]+\/[^/]+\/schema\.md$/.test(folded);
 }
 
+/**
+ * 에이전트가 경로에 갖는 단계. 위키 SCHEMA.md와 모든 기기 공통 설정 파일(서버의 링크 해석·데일리 판정을 바꾼다)은 사람만 고친다 —
+ * 에이전트 규칙이 무엇이든 읽기까지만. ScopedVault 와 검토 승인(ReviewQueue.approve)이 같은 판정을 쓴다
+ */
+export function agentLevel(policy: Policy, relPath: string): Level {
+  const level = policy.level(relPath);
+  if (!atLeast(level, "append")) return level;
+  if (isSchemaPath(relPath) || isVaultSettingsPath(relPath) || isHumanOnlyAlias(relPath)) return "read";
+  return level;
+}
+
+/** 연산마다 경로의 최소 권한을 먼저 확인한다. 연산 종류별 정확한 권한은 계획 단계의 guard(opGuard)가 본다 */
+export function checkOpLevels(ops: Op[], level: (rel: string) => Level): void {
+  const require = (rel: string, need: Level) => {
+    // 숨김 경로는 존재 여부와 상관없이 같은 메시지를 낸다.
+    if (!atLeast(level(rel), need)) throw new ForbiddenError("forbidden_level", { level: level(rel), path: rel });
+  };
+  for (const op of ops) {
+    if (!op || typeof op !== "object") throw new PathError("op_invalid");
+    if (op.op === "move") {
+      require(normalizeVaultPath(op.from), "delete");
+      require(normalizeVaultPath(op.to), "append");
+    } else if (op.op === "put") {
+      require(normalizeVaultPath(op.path), "append");
+    } else if (op.op === "write" || op.op === "append" || op.op === "delete") {
+      require(normalizeVaultPath(op.path), op.op === "delete" ? "delete" : "append");
+    } else {
+      throw new PathError("op_unknown", { op: String((op as { op: unknown }).op) });
+    }
+  }
+}
+
+/** Vault.batch 의 guard: 계획 단계의 동작(만들기·고치기·지우기)마다 필요한 단계를 본다 */
+export function opGuard(level: (rel: string) => Level): (action: Action, rel: string) => void {
+  return (action, rel) => {
+    const need = ACTION_LEVEL[action];
+    if (!atLeast(level(rel), need)) {
+      const appendOnly = action === "modify" && level(rel) === "append";
+      throw new ForbiddenError(appendOnly ? "forbidden_append_only" : "forbidden_need", { level: need, path: rel });
+    }
+  };
+}
+
 export interface Outline {
   path: string;
   hash: string;
@@ -126,6 +170,8 @@ export class ScopedVault {
     private wiki?: Wiki,
     private review?: ReviewQueue,
     private semanticIndex?: SemanticIndex,
+    /** 하위 토큰 발급(issueToken 류)에 쓴다. 없으면 그 메서드들은 소유자와 같이 거부한다 */
+    private tokens?: Pick<ConfigStore, "createChild" | "childrenOf" | "rotateChild" | "removeChild" | "lastUsed">,
   ) {}
 
   /** 에이전트에게 가는 글의 언어(서버 설정) */
@@ -136,12 +182,7 @@ export class ScopedVault {
   }
 
   level(relPath: string): Level {
-    const level = levelOf(this.principal, relPath);
-    // 위키 SCHEMA.md와 모든 기기 공통 설정 파일(서버의 링크 해석·데일리 판정을 바꾼다)은 사람만 고친다.
-    // 에이전트 규칙이 무엇이든 읽기까지만.
-    if (this.principal.kind !== "agent" || !atLeast(level, "append")) return level;
-    if (isSchemaPath(relPath) || isVaultSettingsPath(relPath) || isHumanOnlyAlias(relPath)) return "read";
-    return level;
+    return this.principal.kind === "agent" ? agentLevel(this.principal.policy, relPath) : levelOf(this.principal, relPath);
   }
 
   /**
@@ -161,13 +202,6 @@ export class ScopedVault {
     const rel = normalizeVaultPath(input);
     if (!this.canRead(rel)) throw new NotFoundError("doc_missing", { path: rel });
     return rel;
-  }
-
-  private requireLevel(rel: string, level: Level) {
-    if (!atLeast(this.level(rel), level)) {
-      // 숨김 경로는 존재 여부와 상관없이 같은 메시지를 낸다.
-      throw new ForbiddenError("forbidden_level", { level: this.level(rel), path: rel });
-    }
   }
 
   private filterTree(nodes: TreeNode[]): TreeNode[] {
@@ -616,26 +650,9 @@ export class ScopedVault {
 
   async batch(ops: Op[], message?: string, opts: { updateLinks?: boolean; coalesce?: boolean } = {}): Promise<BatchResult & { pending?: PendingInfo }> {
     if (!Array.isArray(ops)) throw new PathError("field_required", { field: "operations" });
-    for (const op of ops) {
-      if (!op || typeof op !== "object") throw new PathError("op_invalid");
-      if (op.op === "move") {
-        this.requireLevel(normalizeVaultPath(op.from), "delete");
-        this.requireLevel(normalizeVaultPath(op.to), "append");
-      } else if (op.op === "put") {
-        this.requireLevel(normalizeVaultPath(op.path), "append");
-      } else if (op.op === "write" || op.op === "append" || op.op === "delete") {
-        this.requireLevel(normalizeVaultPath(op.path), op.op === "delete" ? "delete" : "append");
-      } else {
-        throw new PathError("op_unknown", { op: String((op as { op: unknown }).op) });
-      }
-    }
-    const guard = (action: Action, rel: string) => {
-      const need = ACTION_LEVEL[action];
-      if (!atLeast(this.level(rel), need)) {
-        const appendOnly = action === "modify" && this.level(rel) === "append";
-        throw new ForbiddenError(appendOnly ? "forbidden_append_only" : "forbidden_need", { level: need, path: rel });
-      }
-    };
+    const level = (rel: string) => this.level(rel);
+    checkOpLevels(ops, level);
+    const guard = opGuard(level);
     const links = this.linkOptions(opts.updateLinks !== false);
     // 수정 시각: 동기화 기기(기기 토큰)의 쓰기는 기기의 로컬 볼트가 이미 적었으므로 다시 적지 않는다 — 다시 덮으면
     // 기기와 서버의 해시가 계속 어긋나 동기화마다 같은 노트를 다시 올린다. 그 밖의 쓰기(웹·에이전트·MCP·REST)는 늘 적는다
@@ -1039,10 +1056,63 @@ export class ScopedVault {
     return { restored, lost, rev: res.rev };
   }
 
-  /** 에이전트가 자기 권한 표를 확인할 때. */
+  /** 에이전트가 자기 권한 표를 확인할 때. 하위 토큰이면 발급자 이름을 함께 준다 */
   whoami() {
-    return this.principal.kind === "owner"
-      ? { name: this.principal.name, kind: "owner", rules: { "/": "delete" as Level } }
-      : { name: this.principal.name, kind: "agent", rules: this.principal.policy.toJSON() };
+    if (this.principal.kind === "owner") return { name: this.principal.name, kind: "owner", rules: { "/": "delete" as Level } };
+    const me = { name: this.principal.name, kind: "agent", rules: this.principal.policy.toJSON() };
+    return this.principal.issuedBy === undefined ? me : { ...me, issuedBy: this.principal.issuedBy };
+  }
+
+  // ── 하위 토큰 발급: 에이전트만. 소유자는 관리 API 를 쓴다 ──
+
+  private issuer() {
+    if (this.principal.kind !== "agent" || !this.tokens) throw new ForbiddenError("issue_agent_only");
+    return { name: this.principal.name, tokens: this.tokens };
+  }
+
+  /**
+   * 하위 토큰 `<발급자>-<suffix>` 를 만든다. 토큰 원문과 MCP 설정 예시는 이때 한 번만 준다.
+   * baseUrl 은 /llms.txt 와 같은 KEYRING_PUBLIC_URL(끝 슬래시 없음)이고, 없으면 상대 경로(/mcp)가 된다
+   */
+  issueToken(suffix: string, rules: Record<string, Level>, baseUrl: string) {
+    const { name: issuer, tokens } = this.issuer();
+    const { name, token } = tokens.createChild(issuer, suffix, rules);
+    return issued(name, token, baseUrl);
+  }
+
+  /** 자기가 발급한 하위 토큰 목록(토큰 원문은 없다) */
+  issuedTokens(): { name: string; rules: Record<string, Level>; createdAt: string; lastUsed: string | null }[] {
+    const { name: issuer, tokens } = this.issuer();
+    return tokens
+      .childrenOf(issuer)
+      .map((a) => ({ name: a.name, rules: a.rules, createdAt: a.createdAt, lastUsed: tokens.lastUsed.get(a.name)?.toISOString() ?? null }));
+  }
+
+  /** 자기가 발급한 하위 토큰을 새로 발급한다(이전 토큰은 바로 무효). 남의 이름은 없는 에이전트와 같다 */
+  rotateIssued(name: string, baseUrl: string) {
+    const { name: issuer, tokens } = this.issuer();
+    const token = notFoundIfMissing(() => tokens.rotateChild(issuer, name));
+    return issued(name, token, baseUrl);
+  }
+
+  /** 자기가 발급한 하위 토큰을 지운다. 남의 이름은 없는 에이전트와 같다 */
+  revokeIssued(name: string): { ok: true } {
+    const { name: issuer, tokens } = this.issuer();
+    notFoundIfMissing(() => tokens.removeChild(issuer, name));
+    return { ok: true };
+  }
+}
+
+function issued(name: string, token: string, baseUrl: string) {
+  return { name, token, mcp: { url: `${baseUrl}/mcp`, headers: { Authorization: `Bearer ${token}` } } };
+}
+
+/** ConfigStore 는 없는 이름을 PathError(400)로 낸다. 에이전트에게는 다른 없는 문서처럼 404 로 준다 */
+function notFoundIfMissing<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof PathError && e.code === "agent_missing") throw new NotFoundError("agent_missing", e.params);
+    throw e;
   }
 }

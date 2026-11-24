@@ -17,12 +17,13 @@ import {
   type UpdateInfo,
   type WebhookInfo,
 } from "./api";
+import { agentGroups, issuedNames, unconfirmedRemoved } from "./agentGroups";
 import { fmtBytes, fmtDate, fmtDateTime, fmtNumber, t } from "./i18n";
 import { useCloseGuard } from "./Modal";
 import { errorText } from "./toast";
 import { tipProps } from "./Tooltip";
 
-const LEVELS: Level[] = ["hidden", "read", "append", "write", "delete"];
+const LEVELS: Level[] = ["hidden", "read", "append", "write", "delete", "issue"];
 
 function levelLabel(l: Level): string {
   switch (l) {
@@ -36,6 +37,8 @@ function levelLabel(l: Level): string {
       return t("admin.agents.level.write");
     case "delete":
       return t("admin.agents.level.delete");
+    case "issue":
+      return t("admin.agents.level.issue");
   }
 }
 
@@ -329,6 +332,8 @@ function AgentsView({ folders }: { folders: string[] }) {
     void load();
   }, [load]);
 
+  const groups = useMemo(() => agentGroups(agents), [agents]);
+
   const create = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const input = e.currentTarget.elements.namedItem("name") as HTMLInputElement;
@@ -361,8 +366,17 @@ function AgentsView({ folders }: { folders: string[] }) {
         ))}
       </datalist>
       {agents.length === 0 && <p className="meta">{t("admin.agents.empty")}</p>}
-      {agents.map((a) => (
-        <AgentCard key={a.name} agent={a} onToken={setToken} onChanged={load} onError={setError} />
+      {groups.map(({ agent, children }) => (
+        <div key={agent.name}>
+          <AgentCard agent={agent} childNames={children.map((c) => c.name)} onToken={setToken} onChanged={load} onError={setError} />
+          {children.length > 0 && (
+            <div className="agent-children">
+              {children.map((c) => (
+                <AgentCard key={c.name} agent={c} childNames={[]} onToken={setToken} onChanged={load} onError={setError} />
+              ))}
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -370,15 +384,19 @@ function AgentsView({ folders }: { folders: string[] }) {
 
 function AgentCard({
   agent,
+  childNames,
   onToken,
   onChanged,
   onError,
 }: {
   agent: AgentInfo;
+  /** 이 에이전트가 발급한 하위 토큰 이름(재발급 안내용. 삭제 확인은 직전에 새로 불러온 목록을 쓴다) */
+  childNames: string[];
   onToken: (t: { name: string; token: string }) => void;
   onChanged: () => void;
   onError: (e: string) => void;
 }) {
+  const isChild = !!agent.issuedBy;
   const initial = useMemo(() => Object.entries(agent.rules).map(([path, level]) => ({ path, level })), [agent.rules]);
   const [rows, setRows] = useState(initial);
   const [saved, setSaved] = useState(true);
@@ -409,6 +427,7 @@ function AgentCard({
     <section className="agent-card">
       <div className="agent-head">
         <strong>{agent.name}</strong>
+        {agent.issuedBy && <span className="meta">{t("admin.agents.issuedBy", { name: agent.issuedBy })}</span>}
         <span className="meta">
           {t("admin.agents.meta", {
             created: agent.createdAt ? fmtDate(agent.createdAt) : "—",
@@ -418,7 +437,9 @@ function AgentCard({
         <span className="spacer" />
         <button
           onClick={async () => {
-            if (!confirm(t("admin.agents.confirmRotate", { name: agent.name }))) return;
+            const ask =
+              childNames.length > 0 ? t("admin.agents.confirmRotateIssuer", { name: agent.name }) : t("admin.agents.confirmRotate", { name: agent.name });
+            if (!confirm(ask)) return;
             try {
               onToken(await admin.rotate(agent.name));
             } catch (e) {
@@ -430,10 +451,25 @@ function AgentCard({
         </button>
         <button
           onClick={async () => {
-            if (!confirm(t("admin.agents.confirmDelete", { name: agent.name }))) return;
+            // 화면을 연 뒤 발급자가 하위 토큰을 더 만들었을 수 있으니 확인 직전에 새로 불러온다. 못 불러오면 지우지 않는다
+            let children: string[];
             try {
-              await admin.removeAgent(agent.name);
+              children = issuedNames(await admin.agents(), agent.name);
+            } catch (e) {
+              onError(errorText(e));
+              return;
+            }
+            const ask =
+              children.length > 0
+                ? t("admin.agents.confirmRemoveWithChildren", { name: agent.name, children: children.join(", ") })
+                : t("admin.agents.confirmDelete", { name: agent.name });
+            if (!confirm(ask)) return;
+            try {
+              const { removed } = await admin.removeAgent(agent.name);
               onChanged();
+              // 확인과 삭제 사이에 발급된 것까지 서버가 함께 지웠으면 알린다
+              const extra = unconfirmedRemoved(removed, children);
+              if (extra.length > 0) onError(t("admin.agents.removedUnconfirmed", { children: extra.join(", ") }));
             } catch (e) {
               onError(errorText(e));
             }
@@ -464,7 +500,8 @@ function AgentCard({
               <td>
                 <select value={r.level} onChange={(e) => update(i, { level: e.target.value as Level })}>
                   {LEVELS.map((l) => (
-                    <option key={l} value={l}>
+                    // 하위 토큰은 issue 를 가질 수 없다(서버도 child_cannot_issue 로 막는다)
+                    <option key={l} value={l} disabled={isChild && l === "issue"}>
                       {levelLabel(l)}
                     </option>
                   ))}

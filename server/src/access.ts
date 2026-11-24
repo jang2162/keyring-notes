@@ -7,8 +7,9 @@ import { normalizeVaultPath } from "./paths.js";
  * - append: 새 문서 만들기, 기존 문서 끝에 덧붙이기
  * - write: 기존 내용 수정
  * - delete: 삭제·다른 곳으로 이동
+ * - issue: delete 에 더해 자기 범위 안에서 하위 토큰을 발급(규칙에 쓸 수 있는 가장 높은 단계. 문서 권한으로는 delete 와 같다)
  */
-export const LEVELS = ["hidden", "read", "append", "write", "delete"] as const;
+export const LEVELS = ["hidden", "read", "append", "write", "delete", "issue"] as const;
 export type Level = (typeof LEVELS)[number];
 
 export function isLevel(v: unknown): v is Level {
@@ -44,6 +45,13 @@ export function covers(prefix: string, relPath: string): boolean {
 /** 둘 가운데 엄한 단계 */
 const stricter = (a: Level, b: Level): Level => (atLeast(a, b) ? b : a);
 
+/** 경로 → 단계 판정. 토큰 하나의 정책이거나, 발급자에 묶인 겹친 정책 */
+export interface Policy {
+  level(relPath: string): Level;
+  mayContainVisible(dirPath: string): boolean;
+  toJSON(): Record<string, Level>;
+}
+
 /**
  * 토큰 하나의 "노드 → 권한" 표. 가장 구체적인(가장 긴) 경로 규칙이 이긴다. 규칙이 없으면 숨김.
  *
@@ -57,7 +65,7 @@ const stricter = (a: Level, b: Level): Level => (atLeast(a, b) ? b : a);
  * 볼륨이 대소문자를 가리는지는 재지 않는다: 가리는 볼륨에서 `secret/` 과 `Secret/` 을 따로 둔 볼트는 숨김 규칙 `Secret` 이 둘 다
  * 가린다(과하게 막는 쪽으로만 틀린다)
  */
-export class AccessPolicy {
+export class AccessPolicy implements Policy {
   /** NFC 로 맞춘 규칙(긴 것부터) */
   private rules: [string, Level][];
   /** 대소문자까지 접은 규칙(긴 것부터). 접은 꼴이 같은 규칙들은 엄한 쪽 하나로 모은다 */
@@ -99,14 +107,48 @@ export class AccessPolicy {
     return this.folded.some(([prefix, level]) => prefix.startsWith(dir + "/") && atLeast(level, "read"));
   }
 
+  /**
+   * 글자 그대로의 규칙 가운데 단계가 issue 이고 이 경로를 덮는 것이 있는가. 발급 범위는 허용 범위라 대소문자를 접어 넓히지 않는다
+   * (NFC 로만 맞춘다)
+   */
+  issueCovers(relPath: string): boolean {
+    const p = relPath.normalize("NFC");
+    return this.rules.some(([prefix, level]) => level === "issue" && covers(prefix, p));
+  }
+
   toJSON(): Record<string, Level> {
     return Object.fromEntries(this.rules.map(([k, v]) => [k === "" ? "/" : k, v]));
   }
 }
 
+/**
+ * 에이전트가 발급한 토큰의 실제 정책: 자기 규칙과 발급자의 현재 정책(delete 까지)에 모두 깎인다. 발급자가 규칙을 줄이면 이미 낸
+ * 토큰도 따라서 줄어든다. toJSON 은 자기 규칙만 낸다
+ */
+export function boundedPolicy(own: AccessPolicy, issuer: AccessPolicy): Policy {
+  return {
+    level: (p) => stricter(own.level(p), stricter(issuer.level(p), "delete")),
+    mayContainVisible: (d) => own.mayContainVisible(d) && issuer.mayContainVisible(d),
+    toJSON: () => own.toJSON(),
+  };
+}
+
+/** 발급자가 이 규칙들을 낼 수 있는지 검사해 어긋난 것을 모은다. scope: 발급 범위 밖, level: 단계 초과(issue 는 못 넘긴다) */
+export function issueViolations(issuer: AccessPolicy, rules: Record<string, Level>): { path: string; reason: "scope" | "level" }[] {
+  const out: { path: string; reason: "scope" | "level" }[] = [];
+  for (const [key, level] of Object.entries(rules)) {
+    const p = normalizeRulePath(key);
+    const path = p === "" ? "/" : p;
+    if (!issuer.issueCovers(p)) out.push({ path, reason: "scope" });
+    else if (level === "issue" || !atLeast(stricter(issuer.level(p), "delete"), level)) out.push({ path, reason: "level" });
+  }
+  return out;
+}
+
 export type Principal =
   /** device: 앱(기기 토큰)으로 들어온 소유자. 문서는 소유자 권한, 관리 콘솔은 못 쓴다 */
-  { kind: "owner"; name: string; email: string; device?: string } | { kind: "agent"; name: string; email: string; policy: AccessPolicy };
+  | { kind: "owner"; name: string; email: string; device?: string }
+  | { kind: "agent"; name: string; email: string; policy: Policy; /** 이 에이전트를 발급한 에이전트 이름 */ issuedBy?: string };
 
 export function levelOf(principal: Principal, relPath: string): Level {
   return principal.kind === "owner" ? "delete" : principal.policy.level(relPath);

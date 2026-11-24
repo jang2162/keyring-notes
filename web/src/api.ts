@@ -197,12 +197,14 @@ export async function passkeyLogin(): Promise<void> {
   await request<{ ok: true }>("POST", "/api/auth/passkey/login", { id, response });
 }
 
-export type Level = "hidden" | "read" | "append" | "write" | "delete";
+export type Level = "hidden" | "read" | "append" | "write" | "delete" | "issue";
 
 export interface AgentInfo {
   name: string;
   createdAt: string;
   rules: Record<string, Level>;
+  /** 이 토큰을 발급한 에이전트 이름. 사람이 만든 에이전트면 null */
+  issuedBy?: string | null;
   lastUsed: string | null;
 }
 
@@ -393,7 +395,7 @@ export const admin = {
   createAgent: (name: string) => request<{ name: string; token: string }>("POST", "/api/admin/agents", { name }),
   rotate: (name: string) => request<{ name: string; token: string }>("POST", `/api/admin/agents/${enc(name)}/rotate`, {}),
   setRules: (name: string, rules: Record<string, Level>) => request<{ rules: Record<string, Level> }>("PUT", `/api/admin/agents/${enc(name)}/rules`, { rules }),
-  removeAgent: (name: string) => request<unknown>("DELETE", `/api/admin/agents/${enc(name)}`, {}),
+  removeAgent: (name: string) => request<{ ok: true; removed: string[] }>("DELETE", `/api/admin/agents/${enc(name)}`, {}),
   devices: () => request<{ devices: DeviceInfo[] }>("GET", "/api/admin/devices").then((r) => r.devices),
   removeDevice: (id: string) => request<unknown>("DELETE", `/api/admin/devices/${enc(id)}`, {}),
   password: (current: string, next: string) => request<unknown>("POST", "/api/admin/password", { current, next }),

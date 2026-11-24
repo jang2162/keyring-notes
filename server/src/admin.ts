@@ -233,6 +233,7 @@ export function adminRoutes(deps: AdminDeps) {
         name: a.name,
         createdAt: a.createdAt,
         rules: a.rules,
+        issuedBy: a.issuedBy ?? null,
         lastUsed: config.lastUsed.get(a.name)?.toISOString() ?? null,
       })),
     });
@@ -270,9 +271,9 @@ export function adminRoutes(deps: AdminDeps) {
 
   admin.delete("/agents/:name", (c) => {
     const name = agentName(c.req.param("name"));
-    config.removeAgent(name);
-    config.lastUsed.delete(name);
-    return c.json({ ok: true });
+    // 발급자면 그 하위 토큰도 함께 지워진다(마지막 사용 시각도 removeAgent 가 지운다)
+    const removed = config.removeAgent(name);
+    return c.json({ ok: true, removed });
   });
 
   // ── 비밀번호 변경 ──

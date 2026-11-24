@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PathError } from "@keyring-notes/core";
-import { AccessPolicy, isLevel, normalizeRulePath, type Level, type Principal } from "./access.js";
+import { AccessPolicy, boundedPolicy, isLevel, issueViolations, normalizeRulePath, type Level, type Policy, type Principal } from "./access.js";
 import { serverText } from "./lang.js";
 
 export interface AgentConfig {
@@ -11,6 +11,8 @@ export interface AgentConfig {
   tokenHash: string;
   rules: Record<string, Level>;
   createdAt: string;
+  /** 이 에이전트를 발급한 에이전트 이름(하위 토큰). 사람이 만든 에이전트는 없다 */
+  issuedBy?: string;
 }
 
 /** 데스크톱·모바일 앱(기기) 하나. 앱은 이 토큰으로 동기화한다. */
@@ -179,6 +181,8 @@ export function validateBackupSettings(raw: unknown): BackupSettings {
 }
 
 export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+/** 발급자 한 명이 만들 수 있는 하위 토큰 수 */
+export const CHILD_TOKEN_LIMIT = 50;
 const TOKEN_PREFIX = "kn_";
 const DEVICE_TOKEN_PREFIX = "kd_";
 export const SESSION_COOKIE = "keyring_session";
@@ -249,12 +253,23 @@ function validate(raw: unknown): KeyringConfig {
     for (const [k, v] of Object.entries(a.rules ?? {})) {
       normalizeRulePath(k);
       if (!isLevel(v)) throw new PathError("config.agent_level", { name: a.name, path: k, level: String(v) });
+      if (v === "issue" && typeof a.issuedBy === "string") throw new PathError("config.child_issue", { name: a.name });
+    }
+    // 발급자가 설정에 없는 것은 통과시킨다(그 토큰은 인증에서 막힌다 — ConfigStore.policyOf)
+    if (typeof a.issuedBy === "string" && agents.some((x) => x.name === a.issuedBy && typeof x.issuedBy === "string")) {
+      throw new PathError("config.child_chain", { name: a.name });
     }
   }
   return {
     owner: { name: c.owner?.name ?? base.owner.name, passwordHash: c.owner?.passwordHash ?? null },
     sessionSecret: typeof c.sessionSecret === "string" && c.sessionSecret.length >= 32 ? c.sessionSecret : base.sessionSecret,
-    agents: agents.map((a) => ({ name: a.name, tokenHash: a.tokenHash, rules: a.rules ?? {}, createdAt: a.createdAt ?? "" })),
+    agents: agents.map((a) => ({
+      name: a.name,
+      tokenHash: a.tokenHash,
+      rules: a.rules ?? {},
+      createdAt: a.createdAt ?? "",
+      ...(typeof a.issuedBy === "string" ? { issuedBy: a.issuedBy } : {}),
+    })),
     devices: (Array.isArray(c.devices) ? c.devices : []).map((d) => {
       if (typeof d?.id !== "string" || typeof d.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(d.tokenHash)) throw new PathError("config.devices");
       return { id: d.id, name: validDeviceName(d.name), tokenHash: d.tokenHash, createdAt: d.createdAt ?? "" };
@@ -430,43 +445,136 @@ export class ConfigStore {
     for (const a of this.get().agents) {
       const stored = Buffer.from(a.tokenHash, "hex");
       if (stored.length === h.length && timingSafeEqual(stored, h)) {
+        const policy = this.policyOf(a.name);
+        if (!policy) return null;
         this.lastUsed.set(a.name, new Date());
-        return { kind: "agent", name: a.name, email: `${a.name}@agent.keyring-notes.local`, policy: new AccessPolicy(a.rules) };
+        return {
+          kind: "agent",
+          name: a.name,
+          email: `${a.name}@agent.keyring-notes.local`,
+          policy,
+          ...(a.issuedBy !== undefined ? { issuedBy: a.issuedBy } : {}),
+        };
       }
     }
     return null;
+  }
+
+  /**
+   * 에이전트의 지금 정책. 하위 토큰이면 발급자의 지금 규칙에 깎인 정책이다(발급자가 줄이면 다음 요청부터 줄어든다).
+   * 에이전트가 없거나 발급자가 설정에 없으면 null
+   */
+  policyOf(name: string): Policy | null {
+    const agents = this.get().agents;
+    const a = agents.find((x) => x.name === name);
+    if (!a) return null;
+    const own = new AccessPolicy(a.rules);
+    if (a.issuedBy === undefined) return own;
+    const issuer = agents.find((x) => x.name === a.issuedBy);
+    return issuer ? boundedPolicy(own, new AccessPolicy(issuer.rules)) : null;
+  }
+
+  // ── 에이전트가 발급하는 하위 토큰 ──
+
+  /**
+   * 발급자가 하위 토큰 `<발급자>-<뒷부분>` 을 만든다. 같은 이름이 있으면 거부한다(issueToken 처럼 갈아 끼우면 남의 토큰을
+   * 가로챈다). 규칙은 발급자의 issue 범위 안, delete 이하·발급자의 지금 단계 이하여야 하고 하나라도 어기면 아무것도 만들지 않는다
+   */
+  createChild(issuer: string, suffix: string, rules: Record<string, Level>): { name: string; token: string } {
+    const normalized = normalizeRules(rules);
+    const name = `${issuer}-${suffix}`;
+    const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
+    let orphans: string[] = [];
+    // 존재·상한 검사와 추가를 한 번의 update 안에서 한다(동시 요청이 상한을 넘지 않게)
+    this.update((c) => {
+      const from = c.agents.find((a) => a.name === issuer);
+      if (!from) throw new PathError("agent_missing", { name: issuer });
+      const own = new AccessPolicy(from.rules);
+      // 하위 토큰은 issue 를 가질 수 없지만 명시적으로 막는다. issue 규칙이 하나도 없으면 빈 규칙으로도 못 만든다.
+      // 경로가 아니라 발급 권한 자체가 없는 것이므로 경로 없는 issue_none 이다(경로만 바꿔 재시도하지 않게)
+      if (from.issuedBy !== undefined || !Object.values(from.rules).includes("issue")) throw new PathError("issue_none");
+      if (!suffix || !AGENT_NAME_RE.test(name)) throw new PathError("agent_name");
+      const bad = issueViolations(own, normalized);
+      const scope = bad.filter((v) => v.reason === "scope");
+      if (scope.length) throw new PathError("issue_scope", { path: scope.map((v) => v.path).join(", ") });
+      if (bad.length) throw new PathError("issue_level", { path: bad.map((v) => v.path).join(", ") });
+      // 발급자보다 긴 다른 에이전트 X 의 이름 공간(X-…)에 들어가면 이력에서 X 가 발급한 것으로 읽히고 X 의 발급 이름을 선점한다
+      const taken = c.agents.some((a) => a.name === name || (a.name !== issuer && a.name.length > issuer.length && name.startsWith(`${a.name}-`)));
+      if (taken) throw new PathError("agent_exists", { name });
+      if (c.agents.filter((a) => a.issuedBy === issuer).length >= CHILD_TOKEN_LIMIT) throw new PathError("issue_limit", { limit: CHILD_TOKEN_LIMIT });
+      // 손편집으로 이 이름을 발급자로 가진 고아가 남아 있으면 지운다(issueToken 의 새 에이전트 갈래와 같다 — 고아는 이미 못 쓴다)
+      orphans = c.agents.filter((a) => a.issuedBy === name).map((a) => a.name);
+      c.agents = c.agents.filter((a) => a.issuedBy !== name);
+      c.agents.push({ name, tokenHash: sha256(token), rules: normalized, createdAt: new Date().toISOString(), issuedBy: issuer });
+    });
+    for (const n of orphans) this.lastUsed.delete(n);
+    return { name, token };
+  }
+
+  /** 발급자가 만든 하위 토큰들 */
+  childrenOf(issuer: string): AgentConfig[] {
+    return this.get().agents.filter((a) => a.issuedBy === issuer);
+  }
+
+  /** 자기가 만든 하위 토큰의 토큰을 새로 발급한다. 남의 이름은 없는 에이전트와 같은 오류(존재를 흘리지 않는다) */
+  rotateChild(issuer: string, name: string): string {
+    const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
+    this.update((c) => {
+      const a = c.agents.find((x) => x.name === name && x.issuedBy === issuer);
+      if (!a) throw new PathError("agent_missing", { name });
+      a.tokenHash = sha256(token);
+    });
+    return token;
+  }
+
+  /** 자기가 만든 하위 토큰을 지운다. 남의 이름은 없는 에이전트와 같은 오류 */
+  removeChild(issuer: string, name: string) {
+    this.update((c) => {
+      const before = c.agents.length;
+      c.agents = c.agents.filter((x) => !(x.name === name && x.issuedBy === issuer));
+      if (c.agents.length === before) throw new PathError("agent_missing", { name });
+    });
+    this.lastUsed.delete(name);
   }
 
   /** 에이전트를 만들거나 토큰을 새로 발급한다. 토큰 원문은 이때 한 번만 돌려준다. */
   issueToken(name: string): string {
     if (!AGENT_NAME_RE.test(name)) throw new PathError("agent_name");
     const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
+    let orphans: string[] = [];
     this.update((c) => {
       const existing = c.agents.find((a) => a.name === name);
       if (existing) existing.tokenHash = sha256(token);
-      else c.agents.push({ name, tokenHash: sha256(token), rules: {}, createdAt: new Date().toISOString() });
+      else {
+        // 발급자가 설정 손편집·복원으로 사라졌다면 남은 하위 토큰은 고아다. 같은 이름의 새 에이전트에 다시 묶이지 않게 지운다.
+        orphans = c.agents.filter((a) => a.issuedBy === name).map((a) => a.name);
+        c.agents = c.agents.filter((a) => a.issuedBy !== name);
+        c.agents.push({ name, tokenHash: sha256(token), rules: {}, createdAt: new Date().toISOString() });
+      }
     });
+    for (const n of orphans) this.lastUsed.delete(n);
     return token;
   }
 
-  removeAgent(name: string) {
+  /** 에이전트를 지운다. 발급자면 그 하위 토큰도 함께 지우고 그 이름들을 돌려준다 */
+  removeAgent(name: string): string[] {
+    let children: string[] = [];
     this.update((c) => {
-      const before = c.agents.length;
-      c.agents = c.agents.filter((a) => a.name !== name);
-      if (c.agents.length === before) throw new PathError("agent_missing", { name });
+      if (!c.agents.some((a) => a.name === name)) throw new PathError("agent_missing", { name });
+      children = c.agents.filter((a) => a.issuedBy === name).map((a) => a.name);
+      c.agents = c.agents.filter((a) => a.name !== name && a.issuedBy !== name);
     });
+    for (const n of [name, ...children]) this.lastUsed.delete(n);
+    return children;
   }
 
   /** 에이전트 권한 표를 통째로 바꾼다(관리 콘솔). */
   setRules(name: string, rules: Record<string, Level>) {
-    const normalized: Record<string, Level> = {};
-    for (const [k, v] of Object.entries(rules)) {
-      if (!isLevel(v)) throw new PathError("level_invalid", { level: String(v) });
-      normalized[normalizeRulePath(k) || "/"] = v;
-    }
+    const normalized = normalizeRules(rules);
     this.update((c) => {
       const a = c.agents.find((x) => x.name === name);
       if (!a) throw new PathError("agent_missing", { name });
+      if (a.issuedBy !== undefined && Object.values(normalized).includes("issue")) throw new PathError("child_cannot_issue");
       a.rules = normalized;
     });
   }
@@ -482,10 +590,21 @@ export class ConfigStore {
     this.update((c) => {
       const a = c.agents.find((x) => x.name === name);
       if (!a) throw new PathError("agent_missing", { name });
+      if (a.issuedBy !== undefined && level === "issue") throw new PathError("child_cannot_issue");
       for (const k of Object.keys(a.rules)) if ((normalizeRulePath(k) || "/") === key) delete a.rules[k];
       if (level !== null) a.rules[key] = level;
     });
   }
+}
+
+/** 규칙 키를 정규화하고 단계를 검사한다(볼트 전체는 "/") */
+function normalizeRules(rules: Record<string, Level>): Record<string, Level> {
+  const normalized: Record<string, Level> = {};
+  for (const [k, v] of Object.entries(rules)) {
+    if (!isLevel(v)) throw new PathError("level_invalid", { level: String(v) });
+    normalized[normalizeRulePath(k) || "/"] = v;
+  }
+  return normalized;
 }
 
 export function hashPassword(password: string): string {

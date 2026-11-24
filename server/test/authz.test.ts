@@ -1,9 +1,13 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AccessPolicy, type Level } from "../src/access.js";
+import { createApp } from "../src/app.js";
+import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { ReviewQueue, underReview } from "../src/review.js";
@@ -591,7 +595,7 @@ describe("제한하는 규칙은 대소문자가 달라도 적용되고, 대소�
     expect((await owner.read("Work/wiki/old.md")).hash).toBe(made.hash);
   });
 
-  it("제안 뒤에 숨김 규칙이 생기면, 승인으로 만들어진 다른 철자의 문서도 그 에이전트에게 보이지 않는다", async () => {
+  it("제안 뒤에 숨김 규칙이 생기면, 다른 철자의 경로라도 승인이 거부되고 그 에이전트에게 보이지 않는다", async () => {
     const config = new ConfigStore(path.join(root, "config.json"));
     config.issueToken("probe");
     config.setRules("probe", { "/": "write" });
@@ -601,8 +605,9 @@ describe("제한하는 규칙은 대소문자가 달라도 적용되고, 대소�
     const review = new ReviewQueue(vault, config);
     const alias = await agentOf({ "/": "write" }, review).write("secret/a.md", "제안\n", null);
     config.setRules("probe", { "/": "write", Secret: "hidden" });
-    // 승인은 사람이 본 제안을 그대로 적용한다(권한은 제안할 때 검사했다)
-    expect((await review.approve(alias.pending!.proposal, "me")).rev).toMatch(/^[0-9a-f]{40}$/);
+    // 승인은 지금 규칙으로 다시 판정한다 — 숨김 규칙은 철자가 달라도 적용된다
+    await expect(review.approve(alias.pending!.proposal, "me")).rejects.toMatchObject({ code: "forbidden_level", params: { path: "secret/a.md" } });
+    expect((await review.get(alias.pending!.proposal)).status).toBe("pending");
     const now = agentOf({ "/": "write", Secret: "hidden" }, review);
     await expect(now.read("secret/a.md")).rejects.toBeInstanceOf(NotFoundError);
     expect(await now.documents()).toEqual([]);
@@ -660,5 +665,43 @@ describe("위키 생성 문서 판정은 정규화를 맞춘다", () => {
     expect(wiki.isGenerated(nfd("업무/경제/wiki/index.md"))).toBe(true);
     expect(wiki.isGenerated(nfd("업무/경제/wiki/page.md"))).toBe(false);
     expect(wiki.isGenerated(nfd("업무/다른/wiki/index.md"))).toBe(false);
+  });
+});
+
+describe("하위 토큰의 실제 권한은 발급자 정책에 깎인다", () => {
+  it("발급자에게 숨긴 경로는 하위 토큰 규칙이 덮어도 MCP·REST 에서 없는 경로다", async () => {
+    const config = new ConfigStore(path.join(root, "config.json"));
+    config.issueToken("boss");
+    config.setRules("boss", { 업무: "issue", "업무/비밀": "hidden" });
+    const { token } = config.createChild("boss", "w1", { 업무: "delete" });
+    await owner.write("업무/비밀/a.md", "# 비밀\n", null);
+    await owner.write("업무/열린.md", "# 열린\n", null);
+    const app = createApp({
+      vault,
+      index,
+      config,
+      wiki,
+      ingestor: undefined as never,
+      admin: { backups: new BackupService(vault, config, path.join(root, "backups"), () => wiki.resync()) },
+    });
+    const headers = { authorization: `Bearer ${token}` };
+    const rest = (p: string) => app.request(`/api/file?path=${encodeURIComponent(p)}`, { headers });
+    expect((await rest("업무/비밀/a.md")).status).toBe(404);
+    expect((await rest("업무/열린.md")).status).toBe(200);
+
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://localhost/mcp"), {
+        requestInit: { headers },
+        fetch: async (url, init) => app.request(String(url), init as RequestInit),
+      }),
+    );
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+      return { error: res.isError === true, data: JSON.parse(res.content[0].text) };
+    };
+    expect(await call("read_document", { path: "업무/비밀/a.md" })).toMatchObject({ error: true, data: { error: "not_found" } });
+    expect(await call("read_document", { path: "업무/열린.md" })).toMatchObject({ error: false });
+    await client.close();
   });
 });

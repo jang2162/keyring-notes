@@ -40,7 +40,9 @@ English terms used in the manual and the Korean terms used in the Korean manual 
 | custom order | 커스텀 순서 | The order of child notes set by hand, kept in each note's `rank` |
 | agent | 에이전트 | An AI client that reaches the vault with a token |
 | token | 토큰 | The secret an agent or device sends as `Authorization: Bearer` |
-| permission level | 권한 | `hidden`, `read`, `append`, `write`, `delete` |
+| permission level | 권한 | `hidden`, `read`, `append`, `write`, `delete`, `issue` |
+| issuer | 발급자 | An agent with `issue` that creates tokens for other agents |
+| issued token | 하위 토큰 | A token an issuer created, named `<issuer>-<name>` and tied to the issuer's current permission |
 | review queue | 검토 대기열 | Agent changes waiting for approval |
 | proposal | 제안 | One agent change in the review queue |
 | owner | 소유자 | The person who logs in with the password |

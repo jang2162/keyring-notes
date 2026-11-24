@@ -236,6 +236,27 @@ describe("관리 API·설치·보안", () => {
     expect((await app.request("/api/whoami", { headers: { authorization: `Bearer ${rotated.token}` } })).status).toBe(401);
   });
 
+  it("하위 토큰: 목록에 발급자, 하위 토큰엔 issue 를 못 주고, 발급자 삭제는 하위 토큰 이름을 돌려준다", async () => {
+    config.issueToken("boss");
+    config.setRules("boss", { 업무: "issue" });
+    config.createChild("boss", "w1", { "업무/경제": "write" });
+    const list = await (await app.request("/api/admin/agents", { headers: { cookie } })).json();
+    expect(list.agents.map((a: { name: string; issuedBy: string | null }) => [a.name, a.issuedBy])).toEqual([
+      ["boss", null],
+      ["boss-w1", "boss"],
+    ]);
+    const res = await app.request("/api/admin/agents/boss-w1/rules", {
+      method: "PUT",
+      headers: { ...json, cookie },
+      body: JSON.stringify({ rules: { "업무/경제": "issue" } }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("child_cannot_issue");
+    const del = await app.request("/api/admin/agents/boss", { method: "DELETE", headers: { ...json, cookie } });
+    expect(await del.json()).toEqual({ ok: true, removed: ["boss-w1"] });
+    expect(config.get().agents).toHaveLength(0);
+  });
+
   it("비밀번호 변경: 지금 브라우저는 유지, 다른 세션은 끊김", async () => {
     const other = await login();
     const bad = await app.request("/api/admin/password", {

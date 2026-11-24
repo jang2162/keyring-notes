@@ -5,7 +5,7 @@ import { PLUGIN_NAME_RE, WIDGET_FRAME_SCRIPT_HASH, type LockEntry } from "@keyri
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import type { Principal } from "./access.js";
+import type { Level, Principal } from "./access.js";
 import { SESSION_COOKIE, validDeviceName, type ConfigStore } from "./config.js";
 import { adminRoutes, type AdminDeps } from "./admin.js";
 import { PasskeyError, PasskeyService } from "./passkeys.js";
@@ -248,9 +248,9 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
       return fail(c, 401, "unauthorized", "agent_token_required");
     }
     const lang = config.get().agentLanguage;
-    const scoped = new ScopedVault(vault, principal, index, wiki, review, semantic);
+    const scoped = new ScopedVault(vault, principal, index, wiki, review, semantic, config);
     scoped.agentLang = lang;
-    return handleMcpRequest(c.req.raw, scoped, ingestor, lang);
+    return handleMcpRequest(c.req.raw, scoped, ingestor, lang, admin.publicUrl ?? "");
   });
 
   const api = new Hono<Env>();
@@ -388,13 +388,30 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   api.use("*", async (c, next) => {
     const p = principalOf(c);
     if (!p) return fail(c, 401, "unauthorized", "login_required");
-    const scoped = new ScopedVault(vault, p, index, wiki, review, semantic);
+    const scoped = new ScopedVault(vault, p, index, wiki, review, semantic, config);
     scoped.agentLang = config.get().agentLanguage;
     c.set("scoped", scoped);
     await next();
   });
 
   api.get("/whoami", (c) => c.json(c.var.scoped.whoami()));
+
+  // ── 하위 토큰 발급(에이전트 토큰만 — 소유자는 /api/admin/agents). 발급 자체는 볼트 변경이 아니라 검토를 거치지 않는다 ──
+  const publicBase = admin.publicUrl ?? "";
+  api.get("/tokens", (c) => c.json({ tokens: c.var.scoped.issuedTokens() }));
+  api.post("/tokens", async (c) => {
+    // 소유자 거부가 본문 파싱보다 먼저다(본문 오류로 소유자에게 이 API 의 형식을 알려 주지 않는다)
+    if (c.var.scoped.principal.kind !== "agent") throw new ForbiddenError("issue_agent_only");
+    // 깨진 JSON·객체가 아닌 본문(null·숫자·배열)은 구조 분해에서 500 이 나지 않게 이름 누락으로 본다
+    const body: unknown = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new PathError("field_required", { field: "name" });
+    const { name, rules } = body as { name?: unknown; rules?: unknown };
+    if (typeof name !== "string") throw new PathError("field_required", { field: "name" });
+    if (!rules || typeof rules !== "object" || Array.isArray(rules)) throw new PathError("rules_invalid");
+    return c.json(c.var.scoped.issueToken(name, rules as Record<string, Level>, publicBase));
+  });
+  api.post("/tokens/:name/rotate", (c) => c.json(c.var.scoped.rotateIssued(c.req.param("name"), publicBase)));
+  api.delete("/tokens/:name", (c) => c.json(c.var.scoped.revokeIssued(c.req.param("name"))));
 
   // ── 앱 동기화: 파일 목록과 해시(소유자만). 내용은 /file·/raw, 쓰기는 /file(baseHash)로 한다 ──
   const manifest = new SyncManifest(vault, (rel) => wiki.isGenerated(rel));

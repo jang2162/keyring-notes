@@ -199,6 +199,10 @@ describe("MCP", () => {
         "semantic_search",
         "whoami",
         "write_document",
+        "issue_token",
+        "list_issued_tokens",
+        "rotate_issued_token",
+        "revoke_issued_token",
       ].sort(),
     );
     const me = await call(client, "whoami");

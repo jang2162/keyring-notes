@@ -23,9 +23,9 @@ Agent tokens are issued by the vault owner (admin console, or \`keyring agent ad
 
 ## Permissions
 
-Each token has a per-path permission table: \`hidden\` < \`read\` < \`append\` < \`write\` < \`delete\`.
+Each token has a per-path permission table: \`hidden\` < \`read\` < \`append\` < \`write\` < \`delete\` < \`issue\`.
 
-- \`read\`: read, search, view history. \`append\`: also create new notes and append to the end of existing ones. \`write\`: also edit and roll back. \`delete\`: also delete and move.
+- \`read\`: read, search, view history. \`append\`: also create new notes and append to the end of existing ones. \`write\`: also edit and roll back. \`delete\`: also delete and move. \`issue\`: also issue tokens for other agents (below).
 - Paths without a rule are \`hidden\`: they do not show up in lists, search, links or history, and reads fail as "not found".
 - The most specific (longest) path rule wins. A rule on \`Work/Project\` covers \`Work/Project/…\` and the node note \`Work/Project.md\`.
 - A wiki topic's \`SCHEMA.md\` and the vault's \`keyring-settings.md\` are read-only for agents.
@@ -40,6 +40,7 @@ Each token has a per-path permission table: \`hidden\` < \`read\` < \`append\` <
 - Attachments (REST only): \`POST /api/attachment?path=\` creates a new file (409 if it exists). \`PUT /api/attachment?path=&baseHash=\` replaces the bytes at the same path, so links to it keep working; it needs \`write\` there and \`baseHash\` is the sha256 of the current bytes. Send the bytes with \`Content-Type: application/octet-stream\` and \`x-keyring-upload: 1\`. \`DELETE /api/file\` deletes an attachment; check \`GET /api/backlinks?path=\` first, which lists the notes that link to or embed it.
 - Collect sources: \`ingest_url\` (web page or PDF) and \`ingest_text\` save a source under \`<topic>/raw/\` (needs \`append\` there). REST: \`POST /api/ingest\`.
 - Check structure: \`lint\` (broken links, orphan wiki pages, pages without sources, stale pages).
+- Issue tokens for other agents (needs \`issue\`): \`issue_token\` (\`name\`, \`rules\`), \`list_issued_tokens\`, \`rotate_issued_token\`, \`revoke_issued_token\`. REST: \`POST /api/tokens\` (\`{name, rules}\`), \`GET /api/tokens\`, \`POST /api/tokens/<name>/rotate\`, \`DELETE /api/tokens/<name>\`. The new token is named \`<your name>-<name>\`. Each rule's path must be under a path where you have \`issue\`, at \`delete\` or lower and no higher than your own level there; issued tokens cannot issue. They stay tied to you: on every request their permission is capped by your current one (at most \`delete\`), and they are removed when you are. The token and an MCP config are returned once; owners (session or device tokens) get 403 \`issue_agent_only\`.
 - Review queue: writes under folders the owner marked for review return \`pending\` and the vault is unchanged until a person approves. Check the outcome with \`my_proposals\`.
 
 ## Rules to follow

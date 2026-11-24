@@ -21,7 +21,7 @@ export interface AgentText {
 const EN: AgentText = {
   instructions: `Tools for a Keyring Notes vault (markdown notes).
 - You only see paths this token may read. Check your permission table with whoami.
-- Permissions: read < append (new documents, append to the end) < write (edit) < delete (delete, move).
+- Permissions: read < append (new documents, append to the end) < write (edit) < delete (delete, move) < issue (also issue tokens for other agents with issue_token).
 - The vault is a tree of nodes: a node "A" is the note A.md plus its children under A/. Top-level nodes are workspaces. list_children walks the tree.
 - In an LLM Wiki topic (list_topics with wiki=true; a topic is <workspace>/<name>), read <topic>/SCHEMA.md first and follow it. Start from <topic>/wiki/index.md (index and unprocessed sources).
 - For long documents, look at the structure with read_outline and read only what you need with read_section.
@@ -63,6 +63,11 @@ const EN: AgentText = {
     delete_document: "Delete a document (it stays in the history)",
     batch_write:
       "Several operations (write/append/delete/move) as one commit. Each is checked on top of the previous ones; if one fails nothing changes. Moves also fix links (update_links=false to turn off).",
+    issue_token:
+      "Issue a token for another agent (needs issue). Its name becomes <your name>-<name>. Each rule's path must be under a path where you have issue, at level delete or lower and no higher than your own level there. Its real permission stays tied to yours on every request: if yours shrink, so do its; if you are removed, it is removed too. Returns the token and an MCP config once",
+    list_issued_tokens: "Tokens you issued: name, rules, creation time, last use (no token values)",
+    rotate_issued_token: "Issue a new token for one of your issued tokens. The old token stops working at once. Returns the token and an MCP config once",
+    revoke_issued_token: "Delete one of your issued tokens",
   },
   params: {
     folder: "Only under this folder (e.g. Work/wiki)",
@@ -73,6 +78,9 @@ const EN: AgentText = {
     message: "Commit message",
     updateLinks: "Fix links on move (default true)",
     childrenPath: "Node path (e.g. Work/Project A). Empty for workspaces",
+    issueName: "The part after <your name>- (lowercase letters, digits, - or _; the full name is at most 64 characters)",
+    issueRules: 'Per-path levels, e.g. {"Work/Project": "write"}. Levels: hidden, read, append, write, delete',
+    issuedName: "Full name of a token you issued (<your name>-<name>)",
   },
   lint: (i) => {
     const p = i.params ?? {};
@@ -103,7 +111,7 @@ const EN: AgentText = {
 const KO: AgentText = {
   instructions: `Keyring Notes 볼트(마크다운 노트)에 접근하는 도구입니다.
 - 이 토큰이 볼 수 있는 경로만 보입니다. whoami로 권한 표를 확인하세요.
-- 권한: read < append(새 문서·끝에 덧붙이기) < write(수정) < delete(삭제·이동).
+- 권한: read < append(새 문서·끝에 덧붙이기) < write(수정) < delete(삭제·이동) < issue(issue_token으로 다른 에이전트용 토큰 발급까지).
 - 볼트는 노드 트리입니다: 노드 "A"는 노트 A.md와 A/ 아래 하위입니다. 맨 위 노드는 워크스페이스입니다. list_children으로 트리를 따라갑니다.
 - LLM Wiki 토픽(list_topics의 wiki=true, 토픽은 <워크스페이스>/<이름>)에서는 먼저 <토픽>/SCHEMA.md를 읽고 그 절차를 따르세요. 시작점은 <토픽>/wiki/index.md(목차·미반영 원본)입니다.
 - 긴 문서는 read_outline으로 구조를 본 뒤 read_section으로 필요한 부분만 읽으세요.
@@ -142,6 +150,11 @@ const KO: AgentText = {
     delete_document: "문서 삭제(이력에는 남는다)",
     batch_write:
       "여러 연산(write/append/delete/move)을 하나의 커밋으로. 앞 연산 결과 위에서 차례로 검사되며, 하나라도 실패하면 아무것도 바뀌지 않는다. move가 있으면 링크를 함께 고친다(update_links=false로 끔).",
+    issue_token:
+      "다른 에이전트용 토큰을 발급한다(issue 권한 필요). 이름은 <내 이름>-<name>이 된다. 규칙의 경로는 내가 issue를 가진 경로 아래여야 하고, 단계는 delete 이하이면서 그 경로의 내 단계 이하여야 한다. 실제 권한은 요청마다 내 권한에 묶인다: 내 권한이 줄면 함께 줄고, 내가 지워지면 함께 지워진다. 토큰과 MCP 설정 예시는 이때 한 번만 준다",
+    list_issued_tokens: "내가 발급한 토큰 목록: 이름, 규칙, 만든 시각, 마지막 사용 시각(토큰 값은 없다)",
+    rotate_issued_token: "내가 발급한 토큰을 새로 발급한다. 이전 토큰은 바로 쓸 수 없다. 토큰과 MCP 설정 예시는 이때 한 번만 준다",
+    revoke_issued_token: "내가 발급한 토큰을 지운다",
   },
   params: {
     folder: "이 폴더 아래만 (예: 업무/wiki)",
@@ -152,6 +165,9 @@ const KO: AgentText = {
     message: "커밋 메시지",
     updateLinks: "move 때 링크 자동 갱신(기본 true)",
     childrenPath: "노드 경로(예: 업무/프로젝트A). 비우면 워크스페이스 목록",
+    issueName: "<내 이름>- 뒤에 붙는 부분(영문 소문자·숫자·-·_, 전체 이름은 64자 이하)",
+    issueRules: '경로별 단계. 예: {"업무/프로젝트": "write"}. 단계: hidden, read, append, write, delete',
+    issuedName: "내가 발급한 토큰의 전체 이름(<내 이름>-<name>)",
   },
   lint: (i) => {
     const p = i.params ?? {};

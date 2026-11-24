@@ -27,9 +27,40 @@ pnpm keyring agent grant wiki-work Work/SCHEMA.md read
 pnpm keyring agent list
 ```
 
-The levels, from least to most, are `hidden`, `read`, `append`, `write` and `delete`. The most specific rule wins, and paths without a rule are hidden. The full rules, including how node rules and history masking work, are in [Reference](../reference.md#permissions).
+The levels, from least to most, are `hidden`, `read`, `append`, `write`, `delete` and `issue`. The most specific rule wins, and paths without a rule are hidden. The full rules, including how node rules and history masking work, are in [Reference](../reference.md#permissions).
 
 Changes to permissions apply from the next request. No restart is needed.
+
+## Let an agent issue tokens
+
+An agent with `issue` on a folder can create tokens for other agents under that folder, so it can hand work to them without you. Grant it the level:
+
+```bash
+pnpm keyring agent grant lead Work issue
+```
+
+In the admin console, pick **Write, delete & issue** for the rule.
+
+The agent then calls MCP `issue_token` (or REST `POST /api/tokens`) with a name and rules:
+
+```json
+{ "name": "drafts", "rules": { "Work/Drafts": "write" } }
+```
+
+This creates the agent `lead-drafts` and returns its token and an MCP config once. The limits:
+
+- Rule paths must be under a path where the issuer has `issue`.
+- Levels must be `delete` or lower, and no higher than the issuer's own level on that path.
+- An issued token cannot have `issue` itself.
+- An existing agent with the same name is never replaced.
+
+The issued token stays tied to its issuer:
+
+- Its real permission is capped on every request by the issuer's current permission (at most `delete`). If you narrow the issuer, its issued tokens narrow too.
+- If you delete the issuer, its issued tokens are deleted with it. The admin console lists them in the confirmation before you delete. `agent remove` prints their names after the delete.
+- `whoami` for an issued token shows its own rules and `issuedBy`. Its real permission is narrowed again by the issuer's current permission.
+
+The issuer can list (`list_issued_tokens`), reissue (`rotate_issued_token`) and delete (`revoke_issued_token`) only the tokens it issued. It cannot change their rules. You can see and delete issued tokens in **Agents & permissions**, where they are grouped under their issuer, and with `agent list` and `agent remove`. The full rules are in [Reference](../reference.md#issued-tokens).
 
 ## Connect over MCP
 

@@ -351,6 +351,8 @@ button.on:not(.switch):disabled { background: var(--bg-soft); color: var(--muted
 .agent-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; margin: 10px 0; }
 .agent-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .agent-head .spacer { flex: 1; }
+/* 하위 토큰: 발급자 카드 아래로 들여 묶는다 */
+.agent-children { margin-left: 20px; padding-left: 10px; border-left: 2px solid var(--border); }
 .rules { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: var(--fs-md); }
 .rules th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px; }
 .rules td { padding: 3px 4px; }
