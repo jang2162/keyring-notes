@@ -8,6 +8,7 @@ import { formatCombo } from "./shortcuts";
  * 단추에 data 속성을 단다(tipProps): data-tip(이름), data-tip-keys(단축키), data-tip-why(비활성 이유), data-tip-side(right·bottom·top).
  * - 마우스를 올리고 약 300ms 뒤, 키보드로 포커스하면 바로 뜬다. 다른 단추로 옮겨 가면 기다리지 않고 바로 바뀐다(훑어보기).
  * - 화면 가장자리에서는 반대쪽으로 뒤집는다.
+ * - 메뉴(role="menu")가 열려 있거나 마우스 단추를 누른 채이면 띄우지 않는다.
  * - 터치: 길게 누르면 뜨고, 손을 떼도 동작은 실행하지 않는다.
  * - 접근성: 이름은 단추의 aria-label, 툴팁은 aria-describedby(보이는 동안)로 잇는다.
  */
@@ -76,6 +77,9 @@ export function TooltipLayer() {
       if (e.pointerType === "touch") return;
       const el = target(e);
       if (!el) return;
+      // 누른 채로 지나가는 것은 머무는 것이 아니다. 메뉴가 열려 있으면 띄우지 않는다 — 메뉴는 대개 그 단추 바로 아래에 열려
+      // 툴팁(z-index 1000)이 첫 줄을 덮는다. 단추를 누르면 숨기지만 단추 안 자식 사이를 움직이면 pointerover 가 다시 와서 곧바로 떴다
+      if (e.buttons !== 0 || document.querySelector('[role="menu"]')) return;
       if (shownRef.current?.el === el) return;
       const s = read(el);
       if (!s) return;
