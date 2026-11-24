@@ -538,7 +538,11 @@ export class ConfigStore {
     this.update((c) => {
       const existing = c.agents.find((a) => a.name === name);
       if (existing) existing.tokenHash = sha256(token);
-      else c.agents.push({ name, tokenHash: sha256(token), rules: {}, createdAt: new Date().toISOString() });
+      else {
+        // 발급자가 설정 손편집·복원으로 사라졌다면 남은 하위 토큰은 고아다. 같은 이름의 새 에이전트에 다시 묶이지 않게 지운다.
+        c.agents = c.agents.filter((a) => a.issuedBy !== name);
+        c.agents.push({ name, tokenHash: sha256(token), rules: {}, createdAt: new Date().toISOString() });
+      }
     });
     return token;
   }
