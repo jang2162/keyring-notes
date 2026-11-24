@@ -4,6 +4,8 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-24
+
 ### Added
 
 - A new permission level, `issue`, above `delete`. An agent with `issue` on a path can issue tokens for other agents under that path with the MCP tools `issue_token`, `list_issued_tokens`, `rotate_issued_token` and `revoke_issued_token`, or REST `/api/tokens`. An issued token is named `<issuer>-<name>`, gets `delete` or lower, and can never have more than its issuer has now: if you narrow or delete the issuer, its issued tokens narrow or are deleted too. **Agents & permissions** and `agent list` show issued tokens under their issuer. Deleting an issuer lists the issued tokens deleted with it.
@@ -294,7 +296,8 @@ First tagged release.
 - Notes and folders form one tree of nodes, grouped into workspaces.
 - English and Korean interface.
 
-[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.13.2...HEAD
+[Unreleased]: https://github.com/jang2162/keyring-notes/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/jang2162/keyring-notes/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/jang2162/keyring-notes/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/jang2162/keyring-notes/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/jang2162/keyring-notes/compare/v0.12.0...v0.13.0

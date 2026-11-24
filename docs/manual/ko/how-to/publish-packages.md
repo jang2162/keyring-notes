@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/publish-packages.md @ v0.13.2 -->
+<!-- source: docs/manual/en/how-to/publish-packages.md @ v0.14.0 -->
 # 마켓 패키지 올리기
 
 Keyring Notes 가 받아 쓸 수 있는 위젯·테마·언어 패키지 저장소를 만드는 방법입니다.

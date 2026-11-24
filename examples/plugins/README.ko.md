@@ -1,4 +1,4 @@
-<!-- source: examples/plugins/README.md @ v0.13.2 -->
+<!-- source: examples/plugins/README.md @ v0.14.0 -->
 [English](README.md) | **한국어**
 
 # 위젯 플러그인

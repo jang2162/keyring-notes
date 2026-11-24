@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/run-from-source.md @ v0.13.2 -->
+<!-- source: docs/manual/en/how-to/run-from-source.md @ v0.14.0 -->
 # 소스에서 실행하기
 
 Docker 없이 소스 체크아웃에서 바로 서버를 띄웁니다.

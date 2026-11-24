@@ -1,4 +1,4 @@
-<!-- source: docs/manual/en/how-to/install-packages.md @ v0.13.2 -->
+<!-- source: docs/manual/en/how-to/install-packages.md @ v0.14.0 -->
 # 패키지 설치하기
 
 마켓 저장소에서 위젯·테마·언어를 설치하고, 모든 기기에서 쓰는 방법입니다.
