@@ -1,9 +1,13 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AccessPolicy, type Level } from "../src/access.js";
+import { createApp } from "../src/app.js";
+import { BackupService } from "../src/backup.js";
 import { ConfigStore } from "../src/config.js";
 import type { NoteIndex } from "../src/noteindex.js";
 import { ReviewQueue, underReview } from "../src/review.js";
@@ -660,5 +664,43 @@ describe("위키 생성 문서 판정은 정규화를 맞춘다", () => {
     expect(wiki.isGenerated(nfd("업무/경제/wiki/index.md"))).toBe(true);
     expect(wiki.isGenerated(nfd("업무/경제/wiki/page.md"))).toBe(false);
     expect(wiki.isGenerated(nfd("업무/다른/wiki/index.md"))).toBe(false);
+  });
+});
+
+describe("하위 토큰의 실제 권한은 발급자 정책에 깎인다", () => {
+  it("발급자에게 숨긴 경로는 하위 토큰 규칙이 덮어도 MCP·REST 에서 없는 경로다", async () => {
+    const config = new ConfigStore(path.join(root, "config.json"));
+    config.issueToken("boss");
+    config.setRules("boss", { 업무: "issue", "업무/비밀": "hidden" });
+    const { token } = config.createChild("boss", "w1", { 업무: "delete" });
+    await owner.write("업무/비밀/a.md", "# 비밀\n", null);
+    await owner.write("업무/열린.md", "# 열린\n", null);
+    const app = createApp({
+      vault,
+      index,
+      config,
+      wiki,
+      ingestor: undefined as never,
+      admin: { backups: new BackupService(vault, config, path.join(root, "backups"), () => wiki.resync()) },
+    });
+    const headers = { authorization: `Bearer ${token}` };
+    const rest = (p: string) => app.request(`/api/file?path=${encodeURIComponent(p)}`, { headers });
+    expect((await rest("업무/비밀/a.md")).status).toBe(404);
+    expect((await rest("업무/열린.md")).status).toBe(200);
+
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://localhost/mcp"), {
+        requestInit: { headers },
+        fetch: async (url, init) => app.request(String(url), init as RequestInit),
+      }),
+    );
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+      return { error: res.isError === true, data: JSON.parse(res.content[0].text) };
+    };
+    expect(await call("read_document", { path: "업무/비밀/a.md" })).toMatchObject({ error: true, data: { error: "not_found" } });
+    expect(await call("read_document", { path: "업무/열린.md" })).toMatchObject({ error: false });
+    await client.close();
   });
 });
