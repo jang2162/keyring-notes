@@ -301,6 +301,23 @@ describe("에이전트 표면: REST·MCP", () => {
     expect(config.childrenOf("boss")).toEqual([]);
   });
 
+  it("발급자의 issue 경로 아래에서 넓은 delete 를 받은 하위 토큰도 issue_token 은 거부된다", async () => {
+    const { token } = config.createChild("boss", "w1", { 업무: "delete" });
+    const before = config.get().agents.map((a) => a.name);
+    const res = await app.request("/api/tokens", {
+      method: "POST",
+      headers: { ...json, ...bearer(token) },
+      body: JSON.stringify({ name: "x", rules: { "업무/a": "read" } }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: "issue_scope" });
+    const { client, call } = await connect(token);
+    const r = await call("issue_token", { name: "x", rules: { "업무/a": "read" } });
+    expect(r.error).toBe(true);
+    await client.close();
+    expect(config.get().agents.map((a) => a.name)).toEqual(before);
+  });
+
   it("REST: 소유자(세션)는 403 issue_agent_only", async () => {
     const owner = { ...json, cookie };
     for (const [method, url] of [

@@ -45,7 +45,12 @@ function printAgents() {
   const agents = config.get().agents;
   if (agents.length === 0) return console.log(serverText("cli.no_agents"));
   for (const a of agents) {
-    console.log(serverText("cli.agent_line", { name: a.name, created: a.createdAt.slice(0, 10) || "-" }));
+    const created = a.createdAt.slice(0, 10) || "-";
+    console.log(
+      a.issuedBy === undefined
+        ? serverText("cli.agent_line", { name: a.name, created })
+        : serverText("cli.agent_line_issued", { name: a.name, created, issuer: a.issuedBy }),
+    );
     const rules = Object.entries(a.rules).sort(([x], [y]) => x.localeCompare(y, serverLanguage()));
     if (rules.length === 0) console.log(`    ${serverText("cli.no_rules")}`);
     for (const [p, l] of rules) console.log(`    ${l.padEnd(7)} ${p}`);
@@ -84,8 +89,9 @@ async function main(args: string[]) {
     case "remove": {
       const [name] = rest;
       if (!name) throw new Error(serverText("cli.name_required"));
-      config.removeAgent(name);
+      const children = config.removeAgent(name);
       console.log(serverText("cli.agent_removed", { name }));
+      if (children.length > 0) console.log(serverText("cli.removed_children", { names: children.join(", ") }));
       return;
     }
     case "grant": {

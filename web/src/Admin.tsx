@@ -22,7 +22,7 @@ import { useCloseGuard } from "./Modal";
 import { errorText } from "./toast";
 import { tipProps } from "./Tooltip";
 
-const LEVELS: Level[] = ["hidden", "read", "append", "write", "delete"];
+const LEVELS: Level[] = ["hidden", "read", "append", "write", "delete", "issue"];
 
 function levelLabel(l: Level): string {
   switch (l) {
@@ -331,6 +331,13 @@ function AgentsView({ folders }: { folders: string[] }) {
     void load();
   }, [load]);
 
+  // 하위 토큰은 발급자 카드 아래에 묶는다. 발급자가 목록에 없는 하위 토큰(설정 손편집 등)은 따로 한 줄로 둔다
+  const groups = useMemo(() => {
+    const names = new Set(agents.map((a) => a.name));
+    const isChild = (a: AgentInfo) => !!a.issuedBy && names.has(a.issuedBy);
+    return agents.filter((a) => !isChild(a)).map((agent) => ({ agent, children: agents.filter((c) => isChild(c) && c.issuedBy === agent.name) }));
+  }, [agents]);
+
   const create = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const input = e.currentTarget.elements.namedItem("name") as HTMLInputElement;
@@ -363,8 +370,17 @@ function AgentsView({ folders }: { folders: string[] }) {
         ))}
       </datalist>
       {agents.length === 0 && <p className="meta">{t("admin.agents.empty")}</p>}
-      {agents.map((a) => (
-        <AgentCard key={a.name} agent={a} onToken={setToken} onChanged={load} onError={setError} />
+      {groups.map(({ agent, children }) => (
+        <div key={agent.name}>
+          <AgentCard agent={agent} childNames={children.map((c) => c.name)} onToken={setToken} onChanged={load} onError={setError} />
+          {children.length > 0 && (
+            <div className="agent-children">
+              {children.map((c) => (
+                <AgentCard key={c.name} agent={c} childNames={[]} onToken={setToken} onChanged={load} onError={setError} />
+              ))}
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -372,15 +388,19 @@ function AgentsView({ folders }: { folders: string[] }) {
 
 function AgentCard({
   agent,
+  childNames,
   onToken,
   onChanged,
   onError,
 }: {
   agent: AgentInfo;
+  /** 이 에이전트가 발급한 하위 토큰 이름(지우면 함께 지워진다) */
+  childNames: string[];
   onToken: (t: { name: string; token: string }) => void;
   onChanged: () => void;
   onError: (e: string) => void;
 }) {
+  const isChild = !!agent.issuedBy;
   const initial = useMemo(() => Object.entries(agent.rules).map(([path, level]) => ({ path, level })), [agent.rules]);
   const [rows, setRows] = useState(initial);
   const [saved, setSaved] = useState(true);
@@ -411,6 +431,7 @@ function AgentCard({
     <section className="agent-card">
       <div className="agent-head">
         <strong>{agent.name}</strong>
+        {agent.issuedBy && <span className="meta">{t("admin.agents.issuedBy", { name: agent.issuedBy })}</span>}
         <span className="meta">
           {t("admin.agents.meta", {
             created: agent.createdAt ? fmtDate(agent.createdAt) : "—",
@@ -420,7 +441,9 @@ function AgentCard({
         <span className="spacer" />
         <button
           onClick={async () => {
-            if (!confirm(t("admin.agents.confirmRotate", { name: agent.name }))) return;
+            const ask =
+              childNames.length > 0 ? t("admin.agents.confirmRotateIssuer", { name: agent.name }) : t("admin.agents.confirmRotate", { name: agent.name });
+            if (!confirm(ask)) return;
             try {
               onToken(await admin.rotate(agent.name));
             } catch (e) {
@@ -432,7 +455,11 @@ function AgentCard({
         </button>
         <button
           onClick={async () => {
-            if (!confirm(t("admin.agents.confirmDelete", { name: agent.name }))) return;
+            const ask =
+              childNames.length > 0
+                ? t("admin.agents.confirmRemoveWithChildren", { name: agent.name, children: childNames.join(", ") })
+                : t("admin.agents.confirmDelete", { name: agent.name });
+            if (!confirm(ask)) return;
             try {
               await admin.removeAgent(agent.name);
               onChanged();
@@ -466,7 +493,8 @@ function AgentCard({
               <td>
                 <select value={r.level} onChange={(e) => update(i, { level: e.target.value as Level })}>
                   {LEVELS.map((l) => (
-                    <option key={l} value={l}>
+                    // 하위 토큰은 issue 를 가질 수 없다(서버도 child_cannot_issue 로 막는다)
+                    <option key={l} value={l} disabled={isChild && l === "issue"}>
                       {levelLabel(l)}
                     </option>
                   ))}

@@ -190,6 +190,14 @@ describe("변경 검토 대기열", () => {
     expect((await owner.read("업무/경제/wiki/금리.md")).content).toBe(cur.content);
   });
 
+  it("사람이 만든 에이전트를 지우면 그 에이전트의 제안 승인은 proposal_agent_missing", async () => {
+    const cur = await owner.read("업무/경제/wiki/금리.md");
+    const res = await agent.write("업무/경제/wiki/금리.md", "# 금리\n지움\n", cur.hash);
+    config.removeAgent("wiki-work");
+    await expect(review.approve(res.pending!.proposal, "me")).rejects.toMatchObject({ code: "proposal_agent_missing", params: { name: "wiki-work" } });
+    expect((await review.get(res.pending!.proposal)).status).toBe("pending");
+  });
+
   it("하위 토큰의 제안은 발급자의 지금 규칙에 깎인 권한으로 판정한다", async () => {
     config.setRules("wiki-work", { ...RULES, "업무/경제/wiki": "issue" });
     const { token } = config.createChild("wiki-work", "w1", { "업무/경제/wiki": "write" });
