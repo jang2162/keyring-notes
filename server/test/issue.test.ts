@@ -68,11 +68,37 @@ describe("하위 토큰 발급", () => {
   it("issue 없는 발급자·하위 토큰 발급자는 거부", () => {
     config.issueToken("plain");
     config.setRules("plain", { 업무: "delete" });
-    expect(failure(() => config.createChild("plain", "w1", { "업무/a": "read" })).code).toBe("issue_scope");
-    expect(failure(() => config.createChild("plain", "w1", {})).code).toBe("issue_scope");
+    // issue 가 하나도 없으면 경로 문제가 아니므로 경로 없이 issue_none
+    expect(failure(() => config.createChild("plain", "w1", { "업무/a": "read" }))).toEqual({ code: "issue_none", params: {} });
+    expect(failure(() => config.createChild("plain", "w1", {})).code).toBe("issue_none");
     config.createChild("boss", "w1", { "업무/a": "read" });
-    expect(failure(() => config.createChild("boss-w1", "w2", { "업무/a": "read" })).code).toBe("issue_scope");
+    expect(failure(() => config.createChild("boss-w1", "w2", { "업무/a": "read" })).code).toBe("issue_none");
     expect(failure(() => config.createChild("nobody", "w1", {})).code).toBe("agent_missing");
+  });
+
+  it("다른 발급자의 이름 공간(<그 이름>-…)에 들어가는 이름은 거부", () => {
+    config.issueToken("a");
+    config.setRules("a", { 업무: "issue" });
+    config.issueToken("a-b");
+    config.setRules("a-b", { 업무: "issue" });
+    const before = config.get().agents.length;
+    expect(failure(() => config.createChild("a", "b-x", { "업무/a": "read" }))).toMatchObject({ code: "agent_exists", params: { name: "a-b-x" } });
+    expect(config.get().agents.length).toBe(before);
+    expect(config.createChild("a-b", "x", { "업무/a": "read" }).name).toBe("a-b-x");
+    // 자기보다 짧은 이름(a) 의 공간은 원래 자기 접두사이므로 막지 않는다
+    expect(config.createChild("a", "c", { "업무/a": "read" }).name).toBe("a-c");
+  });
+
+  it("발급 이름과 같은 이름을 발급자로 가진 고아는 발급 때 함께 지운다", () => {
+    const { token } = config.createChild("boss", "w1", { "업무/a": "read" });
+    config.agentByToken(token);
+    const now = config.get();
+    // 손편집: boss-w2 를 발급자로 가진 고아(boss-w2 자체는 없다)
+    config.replaceAll({ ...now, agents: [...now.agents, { ...now.agents.find((a) => a.name === "boss-w1")!, name: "zed", issuedBy: "boss-w2" }] });
+    config.lastUsed.set("zed", new Date());
+    expect(config.createChild("boss", "w2", { "업무/a": "read" }).name).toBe("boss-w2");
+    expect(config.get().agents.map((a) => a.name)).toEqual(["boss", "boss-w1", "boss-w2"]);
+    expect(config.lastUsed.has("zed")).toBe(false);
   });
 
   it("상한 50", () => {
@@ -301,6 +327,16 @@ describe("에이전트 표면: REST·MCP", () => {
     expect(config.childrenOf("boss")).toEqual([]);
   });
 
+  it("REST: 객체가 아닌 본문은 400 field_required, 깨진 JSON 도 400", async () => {
+    const raw = (body: string) => app.request("/api/tokens", { method: "POST", headers: { ...json, ...bearer(bossToken) }, body });
+    for (const body of ["null", "3", "[]", "{"]) {
+      const res = await raw(body);
+      expect(res.status, body).toBe(400);
+      expect(await res.json(), body).toMatchObject({ code: "field_required", params: { field: "name" } });
+    }
+    expect(config.childrenOf("boss")).toEqual([]);
+  });
+
   it("발급자의 issue 경로 아래에서 넓은 delete 를 받은 하위 토큰도 issue_token 은 거부된다", async () => {
     const { token } = config.createChild("boss", "w1", { 업무: "delete" });
     const before = config.get().agents.map((a) => a.name);
@@ -310,7 +346,7 @@ describe("에이전트 표면: REST·MCP", () => {
       body: JSON.stringify({ name: "x", rules: { "업무/a": "read" } }),
     });
     expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ code: "issue_scope" });
+    expect(await res.json()).toMatchObject({ code: "issue_none" });
     const { client, call } = await connect(token);
     const r = await call("issue_token", { name: "x", rules: { "업무/a": "read" } });
     expect(r.error).toBe(true);
@@ -330,6 +366,12 @@ describe("에이전트 표면: REST·MCP", () => {
       expect(res.status, `${method} ${url}`).toBe(403);
       expect(await res.json()).toMatchObject({ code: "issue_agent_only" });
     }
+    // 소유자 거부가 본문 파싱보다 먼저다
+    for (const body of ["{", "null"]) {
+      const res = await app.request("/api/tokens", { method: "POST", headers: owner, body });
+      expect(res.status, body).toBe(403);
+      expect(await res.json()).toMatchObject({ code: "issue_agent_only" });
+    }
     expect(config.childrenOf("boss")).toEqual([]);
   });
 
@@ -347,7 +389,7 @@ describe("에이전트 표면: REST·MCP", () => {
 
     const child = await connect(issued.data.token);
     expect((await child.call("whoami")).data).toMatchObject({ name: "boss-w1", kind: "agent", issuedBy: "boss", rules: { "업무/a": "read" } });
-    expect(await child.call("issue_token", { name: "x", rules: {} })).toMatchObject({ error: true, data: { code: "issue_scope" } });
+    expect(await child.call("issue_token", { name: "x", rules: {} })).toMatchObject({ error: true, data: { code: "issue_none" } });
     await child.client.close();
 
     const rotated = await call("rotate_issued_token", { name: "boss-w1" });

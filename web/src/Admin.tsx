@@ -17,6 +17,7 @@ import {
   type UpdateInfo,
   type WebhookInfo,
 } from "./api";
+import { agentGroups, issuedNames, unconfirmedRemoved } from "./agentGroups";
 import { fmtBytes, fmtDate, fmtDateTime, fmtNumber, t } from "./i18n";
 import { useCloseGuard } from "./Modal";
 import { errorText } from "./toast";
@@ -331,12 +332,7 @@ function AgentsView({ folders }: { folders: string[] }) {
     void load();
   }, [load]);
 
-  // 하위 토큰은 발급자 카드 아래에 묶는다. 발급자가 목록에 없는 하위 토큰(설정 손편집 등)은 따로 한 줄로 둔다
-  const groups = useMemo(() => {
-    const names = new Set(agents.map((a) => a.name));
-    const isChild = (a: AgentInfo) => !!a.issuedBy && names.has(a.issuedBy);
-    return agents.filter((a) => !isChild(a)).map((agent) => ({ agent, children: agents.filter((c) => isChild(c) && c.issuedBy === agent.name) }));
-  }, [agents]);
+  const groups = useMemo(() => agentGroups(agents), [agents]);
 
   const create = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -394,7 +390,7 @@ function AgentCard({
   onError,
 }: {
   agent: AgentInfo;
-  /** 이 에이전트가 발급한 하위 토큰 이름(지우면 함께 지워진다) */
+  /** 이 에이전트가 발급한 하위 토큰 이름(재발급 안내용. 삭제 확인은 직전에 새로 불러온 목록을 쓴다) */
   childNames: string[];
   onToken: (t: { name: string; token: string }) => void;
   onChanged: () => void;
@@ -455,14 +451,25 @@ function AgentCard({
         </button>
         <button
           onClick={async () => {
+            // 화면을 연 뒤 발급자가 하위 토큰을 더 만들었을 수 있으니 확인 직전에 새로 불러온다. 못 불러오면 지우지 않는다
+            let children: string[];
+            try {
+              children = issuedNames(await admin.agents(), agent.name);
+            } catch (e) {
+              onError(errorText(e));
+              return;
+            }
             const ask =
-              childNames.length > 0
-                ? t("admin.agents.confirmRemoveWithChildren", { name: agent.name, children: childNames.join(", ") })
+              children.length > 0
+                ? t("admin.agents.confirmRemoveWithChildren", { name: agent.name, children: children.join(", ") })
                 : t("admin.agents.confirmDelete", { name: agent.name });
             if (!confirm(ask)) return;
             try {
-              await admin.removeAgent(agent.name);
+              const { removed } = await admin.removeAgent(agent.name);
               onChanged();
+              // 확인과 삭제 사이에 발급된 것까지 서버가 함께 지웠으면 알린다
+              const extra = unconfirmedRemoved(removed, children);
+              if (extra.length > 0) onError(t("admin.agents.removedUnconfirmed", { children: extra.join(", ") }));
             } catch (e) {
               onError(errorText(e));
             }

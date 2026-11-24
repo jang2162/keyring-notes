@@ -53,9 +53,11 @@ An agent with `issue` on a path (the issuer) can create tokens for other agents 
 
 - The new token is named `<issuer>-<name>`. The issuer sends only `<name>`. The full name must match the agent name rule: lowercase letters, digits, `-` or `_`, starting with a letter or digit, at most 64 characters.
 - An existing agent with the same name is never replaced. Issuing fails instead.
+- The full name cannot fall under another agent's name with a longer name than the issuer. For example, if agents `a` and `a-b` both exist, `a` cannot issue `b-x`, because `a-b-x` would read as a token issued by `a-b`. Issuing fails with `agent_exists`.
 - Each rule's path must be under a rule where the issuer has `issue`. That `issue` rule must be spelled with the same letter case as the path.
 - Each rule's level must be `delete` or lower, and no higher than the issuer's own level on that path. Narrowing is allowed: with `Work: issue` and `Work/x: write`, the issuer can give `Work/x: read` or `Work/x: hidden`, but not `Work/x: delete`.
 - If any rule breaks these limits, no token is created, and the error lists the paths.
+- An agent with no `issue` rule at all, or an issued token, gets `issue_none`. The error has no path, because no path would work.
 - An issued token cannot have `issue`, so issuing goes only one level deep.
 - One issuer can have at most 50 issued tokens.
 - The issuer can list, reissue and delete only its own issued tokens. It cannot change their rules. A name it did not issue gets the same error as a missing agent.

@@ -484,24 +484,30 @@ export class ConfigStore {
     const normalized = normalizeRules(rules);
     const name = `${issuer}-${suffix}`;
     const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
+    let orphans: string[] = [];
     // 존재·상한 검사와 추가를 한 번의 update 안에서 한다(동시 요청이 상한을 넘지 않게)
     this.update((c) => {
       const from = c.agents.find((a) => a.name === issuer);
       if (!from) throw new PathError("agent_missing", { name: issuer });
       const own = new AccessPolicy(from.rules);
-      // 하위 토큰은 issue 를 가질 수 없지만 명시적으로 막는다. issue 규칙이 하나도 없으면 빈 규칙으로도 못 만든다
-      if (from.issuedBy !== undefined || !Object.values(from.rules).includes("issue")) {
-        throw new PathError("issue_scope", { path: Object.keys(normalized)[0] ?? "/" });
-      }
+      // 하위 토큰은 issue 를 가질 수 없지만 명시적으로 막는다. issue 규칙이 하나도 없으면 빈 규칙으로도 못 만든다.
+      // 경로가 아니라 발급 권한 자체가 없는 것이므로 경로 없는 issue_none 이다(경로만 바꿔 재시도하지 않게)
+      if (from.issuedBy !== undefined || !Object.values(from.rules).includes("issue")) throw new PathError("issue_none");
       if (!suffix || !AGENT_NAME_RE.test(name)) throw new PathError("agent_name");
       const bad = issueViolations(own, normalized);
       const scope = bad.filter((v) => v.reason === "scope");
       if (scope.length) throw new PathError("issue_scope", { path: scope.map((v) => v.path).join(", ") });
       if (bad.length) throw new PathError("issue_level", { path: bad.map((v) => v.path).join(", ") });
-      if (c.agents.some((a) => a.name === name)) throw new PathError("agent_exists", { name });
+      // 발급자보다 긴 다른 에이전트 X 의 이름 공간(X-…)에 들어가면 이력에서 X 가 발급한 것으로 읽히고 X 의 발급 이름을 선점한다
+      const taken = c.agents.some((a) => a.name === name || (a.name !== issuer && a.name.length > issuer.length && name.startsWith(`${a.name}-`)));
+      if (taken) throw new PathError("agent_exists", { name });
       if (c.agents.filter((a) => a.issuedBy === issuer).length >= CHILD_TOKEN_LIMIT) throw new PathError("issue_limit", { limit: CHILD_TOKEN_LIMIT });
+      // 손편집으로 이 이름을 발급자로 가진 고아가 남아 있으면 지운다(issueToken 의 새 에이전트 갈래와 같다 — 고아는 이미 못 쓴다)
+      orphans = c.agents.filter((a) => a.issuedBy === name).map((a) => a.name);
+      c.agents = c.agents.filter((a) => a.issuedBy !== name);
       c.agents.push({ name, tokenHash: sha256(token), rules: normalized, createdAt: new Date().toISOString(), issuedBy: issuer });
     });
+    for (const n of orphans) this.lastUsed.delete(n);
     return { name, token };
   }
 

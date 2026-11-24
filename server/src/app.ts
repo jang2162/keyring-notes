@@ -400,9 +400,12 @@ export function createApp({ vault, index, config, wiki, ingestor, admin, setupCo
   const publicBase = admin.publicUrl ?? "";
   api.get("/tokens", (c) => c.json({ tokens: c.var.scoped.issuedTokens() }));
   api.post("/tokens", async (c) => {
-    const { name, rules } = await c.req.json();
-    // 소유자 거부가 본문 검사보다 먼저다(본문 오류로 소유자에게 이 API 의 형식을 알려 주지 않는다)
+    // 소유자 거부가 본문 파싱보다 먼저다(본문 오류로 소유자에게 이 API 의 형식을 알려 주지 않는다)
     if (c.var.scoped.principal.kind !== "agent") throw new ForbiddenError("issue_agent_only");
+    // 깨진 JSON·객체가 아닌 본문(null·숫자·배열)은 구조 분해에서 500 이 나지 않게 이름 누락으로 본다
+    const body: unknown = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new PathError("field_required", { field: "name" });
+    const { name, rules } = body as { name?: unknown; rules?: unknown };
     if (typeof name !== "string") throw new PathError("field_required", { field: "name" });
     if (!rules || typeof rules !== "object" || Array.isArray(rules)) throw new PathError("rules_invalid");
     return c.json(c.var.scoped.issueToken(name, rules as Record<string, Level>, publicBase));
