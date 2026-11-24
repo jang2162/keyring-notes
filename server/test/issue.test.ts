@@ -181,11 +181,14 @@ describe("하위 토큰 발급", () => {
 
   it("발급자가 사라진 뒤 같은 이름을 새로 만들면 고아 하위 토큰은 지워진다", () => {
     const { token } = config.createChild("boss", "w1", { "업무/a": "read" });
+    config.agentByToken(token);
+    expect(config.lastUsed.has("boss-w1")).toBe(true);
     const now = config.get();
     config.replaceAll({ ...now, agents: now.agents.filter((a) => a.name !== "boss") });
     config.issueToken("boss");
     expect(config.agentByToken(token)).toBeNull();
     expect(config.get().agents.map((a) => a.name)).toEqual(["boss"]);
+    expect(config.lastUsed.has("boss-w1")).toBe(false);
   });
 
   it("발급자 재발급은 하위 토큰을 건드리지 않는다", () => {

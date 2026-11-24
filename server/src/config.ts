@@ -182,7 +182,7 @@ export function validateBackupSettings(raw: unknown): BackupSettings {
 
 export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 /** 발급자 한 명이 만들 수 있는 하위 토큰 수 */
-export const CHILD_LIMIT = 50;
+export const CHILD_TOKEN_LIMIT = 50;
 const TOKEN_PREFIX = "kn_";
 const DEVICE_TOKEN_PREFIX = "kd_";
 export const SESSION_COOKIE = "keyring_session";
@@ -499,7 +499,7 @@ export class ConfigStore {
       if (scope.length) throw new PathError("issue_scope", { path: scope.map((v) => v.path).join(", ") });
       if (bad.length) throw new PathError("issue_level", { path: bad.map((v) => v.path).join(", ") });
       if (c.agents.some((a) => a.name === name)) throw new PathError("agent_exists", { name });
-      if (c.agents.filter((a) => a.issuedBy === issuer).length >= CHILD_LIMIT) throw new PathError("issue_limit", { limit: CHILD_LIMIT });
+      if (c.agents.filter((a) => a.issuedBy === issuer).length >= CHILD_TOKEN_LIMIT) throw new PathError("issue_limit", { limit: CHILD_TOKEN_LIMIT });
       c.agents.push({ name, tokenHash: sha256(token), rules: normalized, createdAt: new Date().toISOString(), issuedBy: issuer });
     });
     return { name, token };
@@ -535,15 +535,18 @@ export class ConfigStore {
   issueToken(name: string): string {
     if (!AGENT_NAME_RE.test(name)) throw new PathError("agent_name");
     const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
+    let orphans: string[] = [];
     this.update((c) => {
       const existing = c.agents.find((a) => a.name === name);
       if (existing) existing.tokenHash = sha256(token);
       else {
         // 발급자가 설정 손편집·복원으로 사라졌다면 남은 하위 토큰은 고아다. 같은 이름의 새 에이전트에 다시 묶이지 않게 지운다.
+        orphans = c.agents.filter((a) => a.issuedBy === name).map((a) => a.name);
         c.agents = c.agents.filter((a) => a.issuedBy !== name);
         c.agents.push({ name, tokenHash: sha256(token), rules: {}, createdAt: new Date().toISOString() });
       }
     });
+    for (const n of orphans) this.lastUsed.delete(n);
     return token;
   }
 
