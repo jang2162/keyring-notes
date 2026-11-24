@@ -4,6 +4,10 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
+### Fixed
+
+- Daily notes with a title now show their date as a friendly date too (for example `Wed, November 11 Meeting`) in the tree, tabs and quick open when **Show daily note dates as friendly dates** is on. Hover the date to see the original one.
+
 ## [0.13.2] - 2026-11-18
 
 ### Fixed
