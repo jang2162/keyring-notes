@@ -1,0 +1,9 @@
+# Ruler 프로젝트 설정. 지침 소스는 .guideline/(받은 사본)·.ruler/*.md·.guideline/overrides/, .ruler/ruler.toml·AGENTS.md 등은 생성물이다(guideline apply).
+default_agents = ["claude", "codex", "opencode"]
+nested = false
+
+[gitignore]
+enabled = true
+
+[agents.claude]
+output_path = "AGENTS.md"

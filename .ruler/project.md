@@ -1,6 +1,6 @@
 # keyring-notes 에이전트 지침
 
-이 파일은 **keyring-notes 저장소만의 규칙**을 담는다. 모든 프로젝트에 공통인 규칙은 `guideline` 서버에서 받은 스택(`.ruler/<스택>/`)이 갖는다.
+이 파일은 **keyring-notes 저장소만의 규칙**을 담는다. 모든 프로젝트에 공통인 규칙은 `guideline` 서버에서 받은 스택(`.guideline/rules/<스택>/`, 에이전트가 읽는 사본은 `docs/guideline/`)이 갖는다.
 
 - 응답·커밋 메시지·문서는 **한국어**로 쓴다. 단 공개 문서는 영어가 원본이다: 영어 README(`README.md`)와 한국어 README(`README.ko.md`), 사용자 문서 `docs/manual/en/`(원본)과 `docs/manual/ko/`(번역)는 같은 커밋에서 함께 고친다. 화면 동작·설정·API 를 바꾸면 그 사용자 문서도 고친다.
 - 진행 중인 사용성 요청·결정·구현 현황은 `docs/ops/ux.md` 에 있다. 화면 동작을 바꾸면 그 절도 고친다. 일이 끝나 굳은 규칙은 `docs/guides/` 로 올린다.

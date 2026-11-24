@@ -14,16 +14,17 @@
     "keyring": "pnpm --silent --filter @keyring-notes/server keyring",
     "app:dev": "pnpm --filter @keyring-notes/app dev",
     "app:build": "pnpm --filter @keyring-notes/app build",
-    "ruler:apply": "ruler apply",
+    "guideline:apply": "guideline apply",
     "version:set": "node scripts/version.mjs set",
     "version:check": "node scripts/version.mjs check",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
     "lint": "oxlint .",
-    "prepare": "lefthook install || true"
+    "prepare": "if [ -f guideline.json ]; then guideline apply; fi && (lefthook install || true)"
   },
   "devDependencies": {
     "@intellectronica/ruler": "^0.3.44",
+    "guideline-manage": "^0.25.0",
     "lefthook": "2.2.1",
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0"
