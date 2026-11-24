@@ -69,6 +69,7 @@ import { LinkResolver } from "./markdown";
 import { invalidateEmbeds } from "./enhance";
 import { Palette, type PaletteItem } from "./Palette";
 import { dailyTarget } from "./dailyPick";
+import { dailyLabel, dailySearchLabel } from "./dailyLabel";
 import {
   applyTemplate,
   attachmentDirFor,
@@ -80,7 +81,6 @@ import {
   dailyOfPath,
   findNode,
   flattenNodes,
-  friendlyDate,
   headings,
   inWorkspace,
   isVaultSettingsPath,
@@ -776,18 +776,21 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
   };
   const [iconPick, setIconPick] = useState<{ x: number; y: number; node: string } | null>(null);
 
-  /** 문서 이름 보이기: 데일리 노트는 날짜를 흐리게·제목을 진하게(제목이 없으면 읽기 좋은 날짜) */
+  /** 문서 이름 보이기: 데일리 노트는 날짜를 흐리게·제목을 진하게. 설정이 켜져 있으면 날짜는 읽기 좋은 날짜(툴팁에 원래 날짜) */
   const docLabel = (path: string, opts: { plain?: boolean } = {}): ReactNode => {
     if (!/\.md$/i.test(path)) return path.split("/").pop();
     const d = dailyOfPath(path, daily);
     if (!d) return stemOf(path);
-    if (!d.title)
-      return prefs.dailyFriendly && !opts.plain ? <span {...tipProps({ label: d.datePart })}>{friendlyDate(d.date, new Date(), lang)}</span> : d.datePart;
+    const l = dailyLabel(d, { friendly: prefs.dailyFriendly, plain: opts.plain, lang });
+    const tip = l.tip ? tipProps({ label: l.tip }) : {};
+    if (!l.title) return l.tip ? <span {...tip}>{l.date}</span> : l.date;
     return (
       <>
-        <span className="daily-date">{d.datePart}</span>
-        {d.sep.trim() ? ` ${d.sep.trim()} ` : " "}
-        <span className="daily-title">{d.title}</span>
+        <span className="daily-date" {...tip}>
+          {l.date}
+        </span>
+        {l.sep}
+        <span className="daily-title">{l.title}</span>
       </>
     );
   };
@@ -3063,7 +3066,7 @@ export function Workspace({ onLogout }: { onLogout: () => void | Promise<void> }
         return {
           id: p,
           // 데일리 노트는 읽기 좋은 날짜로도 찾을 수 있게
-          label: d && !d.title && prefs.dailyFriendly ? `${stemOf(p)} ${friendlyDate(d.date, new Date(), lang)}` : stemOf(p),
+          label: d ? dailySearchLabel(stemOf(p), d, { friendly: prefs.dailyFriendly, lang }) : stemOf(p),
           display: d ? docLabel(p) : undefined,
           icon: icon ? <DocIcon icon={icon} /> : undefined,
           detail: p.includes("/") ? parentOf(p) : undefined,

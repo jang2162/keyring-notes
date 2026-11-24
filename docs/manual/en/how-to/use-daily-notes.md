@@ -46,7 +46,7 @@ Keyring Notes decides by the name and path only. A note is a daily note when:
 
 ## How daily notes look
 
-The title field shows the date as a dimmed prefix, and you edit only the title after it. Click the date to edit the full name. Deleting the date warns you that the note will no longer be a daily note. The tree, tabs and quick open show the date dimmed and the title in bold, or `Wed, Oct 7` when there is no title (configurable).
+The title field shows the date as a dimmed prefix, and you edit only the title after it. Click the date to edit the full name. Deleting the date warns you that the note will no longer be a daily note. The tree, tabs and quick open show the date dimmed and the title in bold. The date appears as a friendly date such as `Wed, October 7`, with or without a title, and hovering it shows the original date (configurable).
 
 ## Link to a day
 
