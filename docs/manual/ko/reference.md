@@ -12,11 +12,11 @@ Keyring Notes 의 명령, API, 파일 형식을 정확히 모았습니다.
 | 명령 | 설명 |
 | --- | --- |
 | `passwd` | 소유자(웹 로그인) 비밀번호를 정합니다 |
-| `agent list` | 에이전트와 권한을 봅니다 |
+| `agent list` | 에이전트와 권한을 봅니다. 하위 토큰에는 발급한 에이전트가 함께 나옵니다 |
 | `agent add <이름>` | 에이전트를 만들고 토큰을 발급합니다. 토큰은 이때 한 번만 보입니다 |
 | `agent rotate <이름>` | 토큰을 다시 발급합니다. 이전 토큰은 바로 쓸 수 없게 됩니다 |
-| `agent remove <이름>` | 에이전트를 지웁니다 |
-| `agent grant <이름> <경로> <단계>` | 폴더나 노트의 권한을 정합니다. 경로 `/` 는 볼트 전체입니다 |
+| `agent remove <이름>` | 에이전트를 지웁니다. 이 에이전트가 발급한 하위 토큰도 함께 지워지고, 지운 뒤 그 이름을 출력합니다 |
+| `agent grant <이름> <경로> <단계>` | 폴더나 노트의 권한을 정합니다. 경로 `/` 는 볼트 전체입니다. 하위 토큰에는 `issue` 를 줄 수 없습니다 |
 | `agent revoke <이름> <경로>` | 규칙을 지웁니다. 상위 규칙이나 `hidden` 이 다시 적용됩니다 |
 
 설정 파일이 바뀌면 서버가 다음 요청부터 다시 읽으므로 재시작할 필요가 없습니다.
@@ -32,6 +32,7 @@ Keyring Notes 의 명령, API, 파일 형식을 정확히 모았습니다.
 | `append` | `read` 에 더해 새 노트 만들기, 기존 노트 끝에 덧붙이기. 기존 내용을 고치거나 지우거나 옮길 수는 없습니다 |
 | `write` | `append` 에 더해 기존 내용 고치기, 되돌리기 |
 | `delete` | `write` 에 더해 지우기, 다른 곳으로 옮기기 |
+| `issue` | `delete` 에 더해 이 경로 아래로 다른 에이전트용 토큰 발급하기. [하위 토큰](#하위-토큰)을 보세요 |
 
 규칙:
 
@@ -47,6 +48,29 @@ Keyring Notes 의 명령, API, 파일 형식을 정확히 모았습니다.
 - 위키 토픽의 `SCHEMA.md` 와 볼트의 `keyring-settings.md` 는 규칙과 상관없이 에이전트에게 읽기 전용입니다. 이 이름과 대소문자만 다른 이름도 같습니다.
 - 에이전트가 만든 커밋은 작성자가 에이전트 이름으로 남습니다.
 
+### 하위 토큰
+
+어떤 경로에 `issue` 를 가진 에이전트(발급자)는 MCP `issue_token` 이나 REST `POST /api/tokens` 로 다른 에이전트용 토큰을 만들 수 있습니다. 소유자는 이것을 쓸 수 없습니다. 소유자는 관리 화면과 CLI 로 에이전트를 관리합니다.
+
+- 새 토큰의 이름은 `<발급자>-<이름>` 입니다. 발급자는 `<이름>` 만 보냅니다. 전체 이름은 에이전트 이름 규칙에 맞아야 합니다. 영문 소문자·숫자·`-`·`_` 로, 영문 소문자나 숫자로 시작하고 64자 이하입니다.
+- 같은 이름의 에이전트가 이미 있으면 갈아 끼우지 않고 발급이 실패합니다.
+- 규칙의 경로는 발급자가 `issue` 를 가진 규칙 아래여야 합니다. 그 `issue` 규칙은 경로와 대소문자까지 같은 철자여야 합니다.
+- 규칙의 단계는 `delete` 이하이면서 그 경로에서 발급자가 가진 단계 이하여야 합니다. 더 좁히는 것은 됩니다. `업무: issue`, `업무/x: write` 인 발급자는 `업무/x: read` 나 `업무/x: hidden` 은 줄 수 있지만 `업무/x: delete` 는 줄 수 없습니다.
+- 규칙 하나라도 이 제한을 어기면 토큰을 만들지 않고, 오류에 그 경로를 담습니다.
+- 하위 토큰은 `issue` 를 가질 수 없습니다. 그래서 발급은 한 단계뿐입니다.
+- 발급자 한 명은 하위 토큰을 50개까지 가질 수 있습니다.
+- 발급자는 자기가 발급한 하위 토큰만 목록 보기·재발급·삭제할 수 있습니다. 규칙은 고칠 수 없습니다. 자기가 발급하지 않은 이름은 없는 에이전트와 같은 오류가 납니다.
+- 발급자는 토큰과 MCP 설정 예시를 한 번만 받습니다. 그 안의 `mcp.url` 은 서버에 `KEYRING_PUBLIC_URL` 이 있으면 절대 주소이고, 없으면 상대 경로 `/mcp` 입니다.
+- 토큰 발급은 볼트 변경이 아니어서 검토 대기열을 거치지 않습니다.
+
+하위 토큰은 발급자에 묶여 있습니다.
+
+- 요청마다 경로의 실제 단계는 자기 규칙, 그 경로에서 발급자의 지금 단계, `delete` 가운데 가장 낮은 것입니다. 소유자가 발급자의 권한을 줄이면 하위 토큰도 다음 요청부터 줄어듭니다.
+- `whoami` 는 하위 토큰 자신의 규칙과, 발급자 이름을 담은 `issuedBy` 를 보여 줍니다. 실제 권한은 위처럼 발급자의 지금 권한으로 한 번 더 깎입니다.
+- 소유자가 발급자를 지우면 하위 토큰도 함께 지워집니다.
+- 발급자의 토큰을 재발급해도 하위 토큰은 그대로입니다. 발급자 토큰이 새어 나갔다면 하위 토큰 목록을 확인하고 모르는 것은 지우세요.
+- 백업 복원이나 손편집으로 발급자가 설정에서 사라지면 그 하위 토큰은 거부됩니다. 그 발급자와 같은 이름의 에이전트를 다시 만들면 남아 있던 하위 토큰은 지워집니다. 새 에이전트에 다시 묶이지 않게 하기 위해서입니다.
+
 ## MCP 도구
 
 MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, JSON 응답)입니다. `Authorization: Bearer <토큰>` 을 보내세요.
@@ -55,7 +79,7 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 
 | 도구 | 설명 |
 | --- | --- |
-| `whoami` | 내 이름과 권한 표 |
+| `whoami` | 내 이름과 권한 표. 하위 토큰이면 `issuedBy` 도 붙습니다 |
 | `list_children` | 노드의 하위(노트·하위 노드·첨부 수). 경로를 비우면 워크스페이스 목록 |
 | `list_topics` | 토픽 목록(`<워크스페이스>/<토픽>`). `wiki: true` 는 LLM Wiki 토픽 |
 | `ingest_url` | URL(웹 페이지·PDF)을 가져와 `<토픽>/raw/` 에 저장 |
@@ -77,6 +101,10 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | `write_document` / `append_document` | 쓰기 / 끝에 덧붙이기 |
 | `move_document` / `delete_document` | 옮기기 / 지우기. 옮기면 이 노트를 가리키는 링크를 같은 커밋에서 고칩니다(`update_links: false` 로 끔). 결과에 `linksUpdated` 와 `linkCount` 가 붙습니다 |
 | `batch_write` | 쓰기·덧붙이기·지우기·옮기기 여럿을 한 커밋으로. 하나라도 실패하면 아무것도 반영하지 않습니다. 옮기기는 링크도 고칩니다(`update_links`) |
+| `issue_token` | `name` 과 `rules` 로 토큰 `<내 이름>-<name>` 을 발급(`issue` 필요). `{name, token, mcp}` 를 한 번만 돌려줍니다. [하위 토큰](#하위-토큰)을 보세요 |
+| `list_issued_tokens` | 내가 발급한 하위 토큰. `{name, rules, createdAt, lastUsed}` 의 배열이고 토큰 값은 없습니다 |
+| `rotate_issued_token` | 내가 발급한 하위 토큰을 전체 `name` 으로 재발급. 이전 토큰은 바로 쓸 수 없게 됩니다. `{name, token, mcp}` 를 한 번만 돌려줍니다 |
+| `revoke_issued_token` | 내가 발급한 하위 토큰을 전체 `name` 으로 지우기 |
 
 쓸 때는 마지막으로 읽은 `hash` 를 `base_hash` 로 넘기세요(새 노트는 `null`). 서버 버전과 다르면 `conflict` 와 `current_hash` 를 돌려주고 아무것도 쓰지 않습니다. 검토 대상 폴더에 쓰면 `pending` 을 돌려줍니다. 볼트는 그대로이고, 돌려준 `hash` 는 승인 뒤의 해시입니다.
 
@@ -102,8 +130,12 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | POST | `/api/auth/passkey/options` · `/api/auth/passkey/login` | `{}` · `{id, response}` | 패스키 로그인: 도전값을 받고 서명을 보냅니다. 맞으면 로그인 쿠키 |
 | POST | `/api/auth/device` | `{password, name}` | 앱 기기 등록 → `{id, name, token}`. 토큰은 한 번만 보입니다 |
 | GET·POST·DELETE | `/api/admin/passkeys` · `/api/admin/passkeys/options` · `/api/admin/passkeys/:id` | | 패스키 목록·등록(`{id, response, name}`)·삭제. 소유자 웹 로그인만 |
-| * | `/api/admin/…` | | 관리 콘솔 API, 소유자만: `status`, `update`, `language`, `devices`(·`DELETE devices/:id`), `agents`(·`DELETE agents/:name`), `agents/:name/rules`, `agents/:name/rotate`, `password`, `backups`(·`GET`·`DELETE backups/:name`), `backups/settings`, `backups/upload`, `backups/:name/restore`, `backups/:name/push`, `backups/remote`, `backups/remote/:name/fetch`, `automation`, `automation/webhooks`, `automation/jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
-| GET | `/api/whoami` | | 이름과 권한 표 |
+| * | `/api/admin/…` | | 관리 콘솔 API, 소유자만: `status`, `update`, `language`, `devices`(·`DELETE devices/:id`), `agents`(·`DELETE agents/:name` — 그 에이전트의 하위 토큰도 함께 지우고 이름을 `removed` 로 돌려줍니다), `agents/:name/rules`, `agents/:name/rotate`, `password`, `backups`(·`GET`·`DELETE backups/:name`), `backups/settings`, `backups/upload`, `backups/:name/restore`, `backups/:name/push`, `backups/remote`, `backups/remote/:name/fetch`, `automation`, `automation/webhooks`, `automation/jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
+| GET | `/api/whoami` | | 이름과 권한 표. 하위 토큰이면 `issuedBy` 도 붙습니다 |
+| GET | `/api/tokens` | | 내가 발급한 하위 토큰 → `{tokens: [{name, rules, createdAt, lastUsed}]}`. 에이전트 토큰만 |
+| POST | `/api/tokens` | `{name, rules}` | 토큰 `<내 이름>-<name>` 발급(`issue` 필요) → `{name, token, mcp: {url, headers}}`, 한 번만 보입니다. 에이전트 토큰만 되고 소유자는 403 `issue_agent_only` 입니다. [하위 토큰](#하위-토큰)을 보세요 |
+| POST | `/api/tokens/:name/rotate` | | 내가 발급한 하위 토큰 재발급 → `{name, token, mcp}`. 이전 토큰은 바로 쓸 수 없게 됩니다. 내가 발급하지 않은 이름은 404 |
+| DELETE | `/api/tokens/:name` | | 내가 발급한 하위 토큰 지우기. 내가 발급하지 않은 이름은 404 |
 | GET | `/api/tree` · `/api/documents` | `?folder=` | 트리 / 평면 목록 |
 | GET | `/api/children` | `?path=` | 노드의 하위. 경로를 비우면 워크스페이스 목록 |
 | GET | `/api/file?path=` | | 노트 내용과 `hash`(sha256) |
@@ -143,7 +175,7 @@ MCP 엔드포인트는 `http://<서버>/mcp` 이고 Streamable HTTP(무상태, J
 | POST | `/api/ingest/file?topic=&name=` | 파일 바이트, 헤더 `x-keyring-upload: 1` | 올린 파일 수집 |
 | GET · PUT | `/api/review/settings` | `{reviewPaths}` | 검토 대상 폴더(소유자) |
 | GET | `/api/review` · `/api/review/:id` | `?status=pending` | 제안 목록 / diff 포함 상세(소유자) |
-| POST | `/api/review/:id/approve` · `/api/review/:id/reject` | `{reason?}` | 승인 / 거절(소유자) |
+| POST | `/api/review/:id/approve` · `/api/review/:id/reject` | `{reason?}` | 승인 / 거절(소유자). 승인할 때 에이전트의 지금 권한으로 다시 확인합니다 |
 | GET | `/api/sync/manifest` | | 동기화용 파일 목록 `{files: [{path, hash, size}]}`. 소유자와 기기. 서버가 만드는 위키 index·log 는 뺍니다 |
 | GET | `/api/plugins` · `/plugins/<이름>.js` | | 위젯 플러그인 목록 / 모듈(소유자 로그인) |
 | GET | `/api/market/index?repo=` | | 서버가 받아 검사한 마켓 저장소의 `index.json` → `{repo, index, ignored, error?}`. 5분 동안 캐시하고, 실패는 30초 동안 다시 묻지 않습니다. `&fresh=1` 을 붙이면 그 캐시를 건너뛰되 저장소마다 10초에 한 번까지만 새로 받습니다. 소유자와 기기 |

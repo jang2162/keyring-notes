@@ -18,6 +18,8 @@ From then on, changes that **agents** write under those folders are not applied 
 
 Permission and conflict checks run when the agent submits. If the note changed in the meantime, the proposal is marked as changed since, and approval is rejected as a conflict.
 
+Approval checks permissions again, with the agent's current permission. This applies to every agent, including the ones you created. So after you narrow an agent's rules, approving its older proposals can be rejected. If the agent no longer exists, approval is rejected with "The agent that made the proposal no longer exists". This also happens when the agent was an issued token deleted with its issuer. You can still reject such a proposal.
+
 The status bar shows how many reviews are waiting. On narrow screens the number appears on **More** in the bottom bar.
 
 ## What the agent sees

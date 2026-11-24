@@ -4,6 +4,14 @@ All notable user-facing changes to Keyring Notes are listed here. The server and
 
 ## [Unreleased]
 
+### Added
+
+- A new permission level, `issue`, above `delete`. An agent with `issue` on a path can issue tokens for other agents under that path with the MCP tools `issue_token`, `list_issued_tokens`, `rotate_issued_token` and `revoke_issued_token`, or REST `/api/tokens`. An issued token is named `<issuer>-<name>`, gets `delete` or lower, and can never have more than its issuer has now: if you narrow or delete the issuer, its issued tokens narrow or are deleted too. **Agents & permissions** and `agent list` show issued tokens under their issuer. Deleting an issuer lists the issued tokens deleted with it.
+
+### Changed
+
+- Approving a proposal in **Review** checks the agent's current permission again, for every agent. A proposal whose agent lost the needed permission, or no longer exists, can no longer be approved, only rejected.
+
 ### Fixed
 
 - Daily notes with a title now show their date as a friendly date too (for example `Wed, November 11 Meeting`) in the tree, tabs and quick open when **Show daily note dates as friendly dates** is on. Hover the date to see the original one.

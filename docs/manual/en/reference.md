@@ -11,11 +11,11 @@ Run the admin CLI with `pnpm keyring <command>` from a source checkout, or `dock
 | Command | Description |
 | --- | --- |
 | `passwd` | Set the owner (web login) password |
-| `agent list` | List agents and their permissions |
+| `agent list` | List agents and their permissions. An issued token shows the agent that issued it |
 | `agent add <name>` | Create an agent and issue a token. The token is shown only once |
 | `agent rotate <name>` | Reissue the token. The old token stops working immediately |
-| `agent remove <name>` | Delete an agent |
-| `agent grant <name> <path> <level>` | Set access to a folder or note. The path `/` means the whole vault |
+| `agent remove <name>` | Delete an agent. If it issued tokens, they are deleted too, and their names are printed after the delete |
+| `agent grant <name> <path> <level>` | Set access to a folder or note. The path `/` means the whole vault. An issued token cannot get `issue` |
 | `agent revoke <name> <path>` | Remove a rule. The parent rule, or `hidden`, applies again |
 
 The server re-reads the config file on the next request after it changes, so no restart is needed.
@@ -31,6 +31,7 @@ Checking packages, building `index.json` and serving a marketplace use the `keyr
 | `append` | `read`, plus create new notes and append to the end of existing notes. No editing, deleting or moving existing content |
 | `write` | `append`, plus edit existing content and roll back |
 | `delete` | `write`, plus delete and move elsewhere |
+| `issue` | `delete`, plus issue tokens for other agents under this path. See [Issued tokens](#issued-tokens) |
 
 Rules:
 
@@ -46,6 +47,29 @@ Rules:
 - A wiki topic's `SCHEMA.md` and the vault's `keyring-settings.md` are read-only for agents, whatever the rules. The same holds for names that differ from these only in letter case.
 - Commits made by an agent are recorded with the agent's name as author.
 
+### Issued tokens
+
+An agent with `issue` on a path (the issuer) can create tokens for other agents with MCP `issue_token` or REST `POST /api/tokens`. The owner cannot use these. The owner manages agents in the admin console and the CLI.
+
+- The new token is named `<issuer>-<name>`. The issuer sends only `<name>`. The full name must match the agent name rule: lowercase letters, digits, `-` or `_`, starting with a letter or digit, at most 64 characters.
+- An existing agent with the same name is never replaced. Issuing fails instead.
+- Each rule's path must be under a rule where the issuer has `issue`. That `issue` rule must be spelled with the same letter case as the path.
+- Each rule's level must be `delete` or lower, and no higher than the issuer's own level on that path. Narrowing is allowed: with `Work: issue` and `Work/x: write`, the issuer can give `Work/x: read` or `Work/x: hidden`, but not `Work/x: delete`.
+- If any rule breaks these limits, no token is created, and the error lists the paths.
+- An issued token cannot have `issue`, so issuing goes only one level deep.
+- One issuer can have at most 50 issued tokens.
+- The issuer can list, reissue and delete only its own issued tokens. It cannot change their rules. A name it did not issue gets the same error as a missing agent.
+- The issuer gets the token and an MCP config once. The `mcp.url` in it is absolute when the server has `KEYRING_PUBLIC_URL`, and the relative path `/mcp` otherwise.
+- Issuing a token is not a vault change, so it does not go through the review queue.
+
+An issued token stays tied to its issuer:
+
+- On every request, its real level on a path is the lowest of its own rule, the issuer's current level there, and `delete`. If the owner narrows the issuer, its issued tokens narrow from the next request.
+- `whoami` shows the issued token's own rules, plus `issuedBy` with the issuer's name. The real permission is narrowed again by the issuer's current permission, as above.
+- When the owner deletes the issuer, its issued tokens are deleted too.
+- Reissuing the issuer's token keeps its issued tokens. If the issuer's token leaked, check its issued tokens and delete the ones you do not recognize.
+- If the issuer is missing from the config, for example after a backup restore or a hand edit, the issued token is rejected. When an agent with that issuer's name is created again, those leftover issued tokens are deleted, so they never attach to the new agent.
+
 ## MCP tools
 
 The MCP endpoint is `http://<server>/mcp` over Streamable HTTP (stateless, JSON responses). Send `Authorization: Bearer <token>`.
@@ -54,7 +78,7 @@ Tool descriptions and error text follow the server's **Agent language** setting 
 
 | Tool | Description |
 | --- | --- |
-| `whoami` | Your name and permission table |
+| `whoami` | Your name and permission table. An issued token also gets `issuedBy` |
 | `list_children` | A node's children (notes, child nodes, attachment count). Empty path lists the workspaces |
 | `list_topics` | Topics (`<workspace>/<topic>`). `wiki: true` marks LLM Wiki topics |
 | `ingest_url` | Fetch a URL (web page or PDF) and save it to `<topic>/raw/` |
@@ -76,6 +100,10 @@ Tool descriptions and error text follow the server's **Agent language** setting 
 | `write_document` / `append_document` | Write / append to the end |
 | `move_document` / `delete_document` | Move / delete. Moving updates links to the note in the same commit (turn off with `update_links: false`). Results include `linksUpdated` and `linkCount` |
 | `batch_write` | Several write, append, delete and move operations in one commit. If any fails, none is applied. Moves update links too (`update_links`) |
+| `issue_token` | Issue a token `<your name>-<name>` with `name` and `rules` (needs `issue`). Returns `{name, token, mcp}` once. See [Issued tokens](#issued-tokens) |
+| `list_issued_tokens` | Your issued tokens, as an array of `{name, rules, createdAt, lastUsed}`. No token values |
+| `rotate_issued_token` | Reissue one of your issued tokens by its full `name`. The old token stops working immediately. Returns `{name, token, mcp}` once |
+| `revoke_issued_token` | Delete one of your issued tokens by its full `name` |
 
 For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If it differs from the server version, the result is `conflict` with `current_hash`, and nothing is written. A write into a review-target folder returns `pending`. The vault stays unchanged, and the returned `hash` is the hash after approval.
 
@@ -101,8 +129,12 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | POST | `/api/auth/passkey/options` · `/api/auth/passkey/login` | `{}` · `{id, response}` | Passkey login: get a challenge, then send the signature. Success sets the login cookie |
 | POST | `/api/auth/device` | `{password, name}` | Register an app device → `{id, name, token}`. The token is shown once |
 | GET·POST·DELETE | `/api/admin/passkeys` · `/api/admin/passkeys/options` · `/api/admin/passkeys/:id` | | List, register (`{id, response, name}`) and delete passkeys. Owner web login only |
-| * | `/api/admin/…` | | Admin console API, owner only: `status`, `update`, `language`, `devices` (and `DELETE devices/:id`), `agents` (and `DELETE agents/:name`), `agents/:name/rules`, `agents/:name/rotate`, `password`, `backups` (and `GET`/`DELETE backups/:name`), `backups/settings`, `backups/upload`, `backups/:name/restore`, `backups/:name/push`, `backups/remote`, `backups/remote/:name/fetch`, `automation`, `automation/webhooks`, `automation/jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
-| GET | `/api/whoami` | | Name and permission table |
+| * | `/api/admin/…` | | Admin console API, owner only: `status`, `update`, `language`, `devices` (and `DELETE devices/:id`), `agents` (and `DELETE agents/:name`, which also deletes the agent's issued tokens and returns their names in `removed`), `agents/:name/rules`, `agents/:name/rotate`, `password`, `backups` (and `GET`/`DELETE backups/:name`), `backups/settings`, `backups/upload`, `backups/:name/restore`, `backups/:name/push`, `backups/remote`, `backups/remote/:name/fetch`, `automation`, `automation/webhooks`, `automation/jobs`, `automation/webhooks/:id/test`, `automation/jobs/:id/run` |
+| GET | `/api/whoami` | | Name and permission table. An issued token also gets `issuedBy` |
+| GET | `/api/tokens` | | Your issued tokens → `{tokens: [{name, rules, createdAt, lastUsed}]}`. Agent tokens only |
+| POST | `/api/tokens` | `{name, rules}` | Issue a token `<your name>-<name>` (needs `issue`) → `{name, token, mcp: {url, headers}}`, shown once. Agent tokens only: the owner gets 403 `issue_agent_only`. See [Issued tokens](#issued-tokens) |
+| POST | `/api/tokens/:name/rotate` | | Reissue one of your issued tokens → `{name, token, mcp}`. The old token stops working immediately. 404 for a name you did not issue |
+| DELETE | `/api/tokens/:name` | | Delete one of your issued tokens. 404 for a name you did not issue |
 | GET | `/api/tree` · `/api/documents` | `?folder=` | Tree / flat list |
 | GET | `/api/children` | `?path=` | A node's children. Empty path lists the workspaces |
 | GET | `/api/file?path=` | | Note content and `hash` (sha256) |
@@ -142,7 +174,7 @@ For writes, pass the last read `hash` as `base_hash` (`null` for a new note). If
 | POST | `/api/ingest/file?topic=&name=` | file bytes, header `x-keyring-upload: 1` | Collect an uploaded file |
 | GET · PUT | `/api/review/settings` | `{reviewPaths}` | Review target folders (owner) |
 | GET | `/api/review` · `/api/review/:id` | `?status=pending` | Proposal list / details with diff (owner) |
-| POST | `/api/review/:id/approve` · `/api/review/:id/reject` | `{reason?}` | Approve / reject (owner) |
+| POST | `/api/review/:id/approve` · `/api/review/:id/reject` | `{reason?}` | Approve / reject (owner). Approval checks the agent's current permission again |
 | GET | `/api/sync/manifest` | | File list for sync, `{files: [{path, hash, size}]}`. Owner and devices. Leaves out the server-generated wiki index and log |
 | GET | `/api/plugins` · `/plugins/<name>.js` | | Widget plugin list / module (owner login) |
 | GET | `/api/market/index?repo=` | | A marketplace repository's `index.json`, downloaded and checked by the server → `{repo, index, ignored, error?}`. Cached for 5 minutes, failures for 30 seconds. With `&fresh=1` the server skips that cache, but downloads each repository at most once per 10 seconds. Owner and devices |
