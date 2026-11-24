@@ -7,6 +7,7 @@
   "admin.agents.level.append": "추가만",
   "admin.agents.level.delete": "쓰기·삭제",
   "admin.agents.level.hidden": "숨김",
+  "admin.agents.level.issue": "쓰기·삭제·발급",
   "admin.agents.level.read": "읽기",
   "admin.agents.level.write": "쓰기",
   "admin.agents.meta": "만든 날 {created} · 마지막 접속 {last}",

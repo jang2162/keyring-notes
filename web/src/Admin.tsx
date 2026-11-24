@@ -36,6 +36,8 @@ function levelLabel(l: Level): string {
       return t("admin.agents.level.write");
     case "delete":
       return t("admin.agents.level.delete");
+    case "issue":
+      return t("admin.agents.level.issue");
   }
 }
 

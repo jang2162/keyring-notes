@@ -197,7 +197,7 @@ export async function passkeyLogin(): Promise<void> {
   await request<{ ok: true }>("POST", "/api/auth/passkey/login", { id, response });
 }
 
-export type Level = "hidden" | "read" | "append" | "write" | "delete";
+export type Level = "hidden" | "read" | "append" | "write" | "delete" | "issue";
 
 export interface AgentInfo {
   name: string;

@@ -7,6 +7,7 @@
   "admin.agents.level.append": "Append only",
   "admin.agents.level.delete": "Write & delete",
   "admin.agents.level.hidden": "Hidden",
+  "admin.agents.level.issue": "Write, delete & issue",
   "admin.agents.level.read": "Read",
   "admin.agents.level.write": "Write",
   "admin.agents.meta": "Created {created} · last access {last}",
