@@ -4,8 +4,6 @@
     "default": 35
   },
   "sources": {
-    "default:mcp/codegraph": "01d216780214053bd3728391bbb87db603034af0d566ca43dc52bc228378cc00",
-    "default:mcp/context7": "8f182786a2622ee518d5fe624bb4725715b0337962923d51c73d16ef3ba2044f",
     "default:rules/base/00-agent.md": "8769ce88bbe59ad56fb00ab23e4b303befafc1d73f764be15033b245ff66bb89",
     "default:rules/base/01-git.md": "a6c05de86c1758ba1a3da5454a520c54b81573947fb56c527b323286aa299972",
     "default:rules/base/02-delegation.md": "eef0e640070a54f161d3807e14af6c52231bbca488bd38d0552cf00be637676e",
@@ -29,9 +27,6 @@
     "default:rules/browser/03-cdp.md": "2c5f83f8ad66728b3623ef3de2380b9642df841f37dc354a7be24a6deee19224",
     "default:rules/browser/04-shared-profile.md": "5f306b8212cff5572c7e8d1f2e012cd6ce7bd80e9ae0b1f985d61593635473d5",
     "default:rules/browser/05-page-scripts.md": "f4cd5fd94a30564e33a552a810dc453c75ffa0b59370a2ab821358d31670d3f7",
-    "default:rules/codegraph/00-index.md": "dfb04e418ad4e592a161c6cc0d895ba534c7191106b3945d91f4c29dde211f8e",
-    "default:rules/codegraph/01-orca-setup.md": "02b018ad80d5b31cf8269fde51afdafdf34e9a4d07a5d0e32d69e0498d10a5b6",
-    "default:rules/codegraph/SETUP.md": "af5d91882dbaa2fa131e0623519a5379273a6f9d055725be8dabb89687aeb2e4",
     "default:rules/komodo/00-stack.md": "a59767508bd633848f14c7e5fec0b4958dfeec00bb99d819a72c2fa8f645df6a",
     "default:rules/komodo/01-environment.md": "8ad000befaca09c3dd1ef565ce2de43d07939682d789a1978d1f792741c4d898",
     "default:rules/komodo/02-override.md": "06bce5f009fafa0173c91f0e6729ef538f36d2d18c28729b3790c94e8589ea28",
@@ -56,40 +51,14 @@
     "default:rules/ruler/01-nested.md": "ef31c4113a00f5e7229f076eac8eb128508c6a11a7d0acd3c2c5de9da391a897",
     "default:rules/ruler/02-documents.md": "67e70636a76b474fbbd24c8bd1f3f05ea03e3d6821ecd89f2246082c627db039",
     "default:rules/ruler/SETUP.md": "4ec303a0399bc671a5309fdad1852456ca3ee40fd2486a73fad6f2c03a27cb9f",
+    "default:rules/rust/00-fmt-lint.md": "587dd296f7997dd33afb9165364e89d8217f04115ad063568d3688c6f0c88535",
+    "default:rules/rust/01-toolchain.md": "1248f6c80854e07cd09b591e9c1c8cac1e1359f646d43b1443a7445ee5d8ff86",
     "default:rules/web/00-llms-txt.md": "6955a39ebcfb57a41677a9a9bbd0d2ffca45f1474737d10d988ac772ad450060",
     "default:skills/guideline-export": "78f0ac736d5f6d04a1673b490e8602333e51ca7b1bb94ceb56f5daab54efe92b",
     "default:skills/guideline-sync": "b0cc253ce07d28b7c1d6d3ca9c4d7bd67f4b8b9fc7e9cc3d8c73fc9a371e3f1d",
     "default:skills/orca-worker": "cb0f73fe1f9d67ab6c674274dc8a4045cc20bbd06eb5858eed4211dcb7579055"
   },
   "outputs": [
-    {
-      "path": ".guideline/mcp/codegraph/README.md",
-      "items": [
-        "default:mcp/codegraph"
-      ],
-      "hash": "d472372c1cdf56a4a19ba76c94881820854006a5c2811a575990270758f8d77c"
-    },
-    {
-      "path": ".guideline/mcp/codegraph/server.json",
-      "items": [
-        "default:mcp/codegraph"
-      ],
-      "hash": "82dfdf61495812bc2e7281c845caea63235069b3ec2d63b5f76750e783d2f91d"
-    },
-    {
-      "path": ".guideline/mcp/context7/README.md",
-      "items": [
-        "default:mcp/context7"
-      ],
-      "hash": "e6e5db686aa3186ad9c46126f4e724589cdc3e5a54e6c606e9ccc87014ff1232"
-    },
-    {
-      "path": ".guideline/mcp/context7/server.json",
-      "items": [
-        "default:mcp/context7"
-      ],
-      "hash": "0cb922c984b54defa9418add6828046bef6b67ade9e1b4ceb906f0d3b7546198"
-    },
     {
       "path": ".guideline/rules/base/00-agent.md",
       "items": [
@@ -250,27 +219,6 @@
         "default:rules/browser/05-page-scripts.md"
       ],
       "hash": "f4cd5fd94a30564e33a552a810dc453c75ffa0b59370a2ab821358d31670d3f7"
-    },
-    {
-      "path": ".guideline/rules/codegraph/00-index.md",
-      "items": [
-        "default:rules/codegraph/00-index.md"
-      ],
-      "hash": "dfb04e418ad4e592a161c6cc0d895ba534c7191106b3945d91f4c29dde211f8e"
-    },
-    {
-      "path": ".guideline/rules/codegraph/01-orca-setup.md",
-      "items": [
-        "default:rules/codegraph/01-orca-setup.md"
-      ],
-      "hash": "02b018ad80d5b31cf8269fde51afdafdf34e9a4d07a5d0e32d69e0498d10a5b6"
-    },
-    {
-      "path": ".guideline/rules/codegraph/SETUP.md",
-      "items": [
-        "default:rules/codegraph/SETUP.md"
-      ],
-      "hash": "af5d91882dbaa2fa131e0623519a5379273a6f9d055725be8dabb89687aeb2e4"
     },
     {
       "path": ".guideline/rules/komodo/00-stack.md",
@@ -439,6 +387,20 @@
         "default:rules/ruler/SETUP.md"
       ],
       "hash": "4ec303a0399bc671a5309fdad1852456ca3ee40fd2486a73fad6f2c03a27cb9f"
+    },
+    {
+      "path": ".guideline/rules/rust/00-fmt-lint.md",
+      "items": [
+        "default:rules/rust/00-fmt-lint.md"
+      ],
+      "hash": "587dd296f7997dd33afb9165364e89d8217f04115ad063568d3688c6f0c88535"
+    },
+    {
+      "path": ".guideline/rules/rust/01-toolchain.md",
+      "items": [
+        "default:rules/rust/01-toolchain.md"
+      ],
+      "hash": "1248f6c80854e07cd09b591e9c1c8cac1e1359f646d43b1443a7445ee5d8ff86"
     },
     {
       "path": ".guideline/rules/web/00-llms-txt.md",

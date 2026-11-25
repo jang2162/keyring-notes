@@ -27,13 +27,14 @@ dist/
 # 서버에서 직접 쓰는 개인 덮어쓰기 파일. 서버마다 다르며 커밋하지 않는다(쓰는 법: docs/manual/en/how-to/deploy-with-docker.md)
 /compose.override.yaml
 
+# 각자 로컬에서 쓰는 MCP 설정(지침의 공용 MCP 는 로컬로 옮겼다)
+/.mcp.json
+
 # START Ruler Generated Files
 /.agents/skills
 /.claude/skills
 /.codex/config.toml
 /.codex/config.toml.bak
-/.mcp.json
-/.mcp.json.bak
 /.opencode/skills
 /AGENTS.md
 /AGENTS.md.bak
@@ -50,7 +51,6 @@ dist/
 /.ruler/base/orca/05-switch.md
 /.ruler/base/orca/99-reference.md
 /.ruler/browser/99-reference.md
-/.ruler/codegraph/99-reference.md
 /.ruler/guideline.md
 /.ruler/komodo/99-reference.md
 /.ruler/lefthook/99-reference.md
@@ -61,6 +61,8 @@ dist/
 /.ruler/ruler.toml
 /.ruler/ruler/00-sources.md
 /.ruler/ruler/99-reference.md
+/.ruler/rust/00-fmt-lint.md
+/.ruler/rust/99-reference.md
 /.ruler/skills/guideline-export/SKILL.md
 /.ruler/skills/guideline-sync/SKILL.md
 /.ruler/skills/orca-worker/SKILL.md
@@ -88,9 +90,6 @@ dist/
 /docs/guideline/browser/03-cdp.md
 /docs/guideline/browser/04-shared-profile.md
 /docs/guideline/browser/05-page-scripts.md
-/docs/guideline/codegraph/00-index.md
-/docs/guideline/codegraph/01-orca-setup.md
-/docs/guideline/codegraph/SETUP.md
 /docs/guideline/komodo/00-stack.md
 /docs/guideline/komodo/01-environment.md
 /docs/guideline/komodo/02-override.md
@@ -113,5 +112,6 @@ dist/
 /docs/guideline/ruler/01-nested.md
 /docs/guideline/ruler/02-documents.md
 /docs/guideline/ruler/SETUP.md
+/docs/guideline/rust/01-toolchain.md
 /docs/guideline/web/00-llms-txt.md
 # END guideline generated files
